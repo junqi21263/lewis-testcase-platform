@@ -15,12 +15,16 @@ async function bootstrap() {
   app.setGlobalPrefix('api')
 
   // 跨域配置
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3001',
+    'https://lewis-testcase-platform-xyqvs7bh.edgeone.cool',
+  ]
+  if (process.env.FRONTEND_URL) {
+    allowedOrigins.push(process.env.FRONTEND_URL)
+  }
   app.enableCors({
-    origin: [
-      'http://localhost:5173',
-      'http://localhost:3001',
-      process.env.FRONTEND_URL || 'http://localhost:5173',
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })

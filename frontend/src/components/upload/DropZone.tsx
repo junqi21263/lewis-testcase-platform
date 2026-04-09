@@ -10,7 +10,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { Upload, FolderOpen, FileType } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { Button } from '@/components/ui/button'
 
 const ACCEPT_EXTENSIONS =
   '.doc,.docx,.pdf,.txt,.md,.xlsx,.json,.yaml,.yml,.png,.jpg,.jpeg'

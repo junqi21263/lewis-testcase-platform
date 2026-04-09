@@ -239,10 +239,10 @@ export default function UploadPage() {
                 <FileItemCard
                   key={task.id}
                   task={task}
-                  onPause={pauseUpload}
-                  onResume={resumeUpload}
-                  onRetry={retryUpload}
-                  onCancel={cancelUpload}
+                  onPause={(t) => pauseUpload(t.id)}
+                  onResume={(t) => resumeUpload(t)}
+                  onRetry={(t) => retryUpload(t)}
+                  onCancel={(t) => cancelUpload(t)}
                   onViewResult={(t) => {
                     // 滚动到对应的解析结果面板
                     document.getElementById(`parse-${t.id}`)?.scrollIntoView({

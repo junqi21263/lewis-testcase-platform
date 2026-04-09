@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/utils/cn'
 import RequirementItem from './RequirementItem'
 import { highlightSensitive } from '@/utils/sensitiveDetector'
-import type { UploadTask, RequirementPoint } from '@/types/upload'
+import type { UploadTask } from '@/types/upload'
 import toast from 'react-hot-toast'
 
 type Tab = 'requirements' | 'rawText'

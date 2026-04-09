@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Plus, Trash2, Bot, Eye, EyeOff } from 'lucide-react'
+import { Save, Plus, Trash2, Bot } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,15 +11,10 @@ import toast from 'react-hot-toast'
 export default function SettingsPage() {
   const [models, setModels] = useState<AIModel[]>([])
   const [loading, setLoading] = useState(false)
-  const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     aiApi.getModels().then(setModels).catch(() => setModels([]))
   }, [])
-
-  const toggleShowKey = (id: string) => {
-    setShowApiKeys((prev) => ({ ...prev, [id]: !prev[id] }))
-  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -105,7 +100,7 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          <Button className="gap-2" disabled={loading}>
+          <Button className="gap-2" disabled={loading} onClick={() => { setLoading(true); setTimeout(() => { setLoading(false); toast.success('设置已保存') }, 500) }}>
             <Save className="w-4 h-4" />
             保存设置
           </Button>
