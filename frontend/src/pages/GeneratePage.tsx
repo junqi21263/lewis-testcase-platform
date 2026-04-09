@@ -1,0 +1,361 @@
+import { useState, useCallback } from 'react'
+import { Upload, FileText, Type, Wand2, Loader2, ChevronRight, X, RefreshCw } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { useGenerateStore } from '@/store/generateStore'
+import { filesApi } from '@/api/files'
+import { aiApi } from '@/api/ai'
+import { formatFileSize, priorityColorMap } from '@/utils/format'
+import toast from 'react-hot-toast'
+import type { TestCase } from '@/types'
+
+/** 文件上传区域组件 */
+function FileUploadZone() {
+  const { setUploadedFile, uploadedFile } = useGenerateStore()
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const file = e.dataTransfer.files[0]
+      if (!file) return
+      await uploadFile(file)
+    },
+    [],
+  )
+
+  const uploadFile = async (file: File) => {
+    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain', 'application/x-yaml',
+      'image/png', 'image/jpeg']
+    if (!allowed.some((t) => file.type.includes(t.split('/')[1])) && !file.name.match(/\.(pdf|docx|xlsx|txt|yaml|yml|png|jpg|jpeg)$/i)) {
+      toast.error('不支持的文件格式，请上传 PDF/Word/Excel/YAML/图片 文件')
+      return
+    }
+    setUploading(true)
+    setProgress(0)
+    try {
+      const result = await filesApi.upload(file, setProgress)
+      setUploadedFile(result)
+      toast.success('文件上传成功')
+    } catch {
+      toast.error('文件上传失败')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  if (uploadedFile) {
+    return (
+      <div className="flex items-center gap-3 p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+        <FileText className="w-8 h-8 text-green-600 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm truncate">{uploadedFile.originalName}</p>
+          <p className="text-xs text-muted-foreground">{formatFileSize(uploadedFile.size)} · {uploadedFile.fileType}</p>
+        </div>
+        <Button variant="ghost" size="icon" className="flex-shrink-0" onClick={() => setUploadedFile(null)}>
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      onDrop={handleDrop}
+      onDragOver={(e) => e.preventDefault()}
+      className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 hover:bg-accent/30 transition-colors cursor-pointer"
+      onClick={() => document.getElementById('file-input')?.click()}
+    >
+      <input
+        id="file-input"
+        type="file"
+        className="hidden"
+        accept=".pdf,.docx,.xlsx,.txt,.yaml,.yml,.png,.jpg,.jpeg"
+        onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])}
+      />
+      {uploading ? (
+        <div className="space-y-3">
+          <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">上传中... {progress}%</p>
+          <div className="w-full bg-secondary rounded-full h-1.5">
+            <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      ) : (
+        <>
+          <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+          <p className="font-medium text-sm">拖拽文件到此处，或点击选择</p>
+          <p className="text-xs text-muted-foreground mt-1">支持 PDF、Word、Excel、YAML、图片（OCR）</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** 生成结果展示 */
+function GenerateResult({ cases }: { cases: TestCase[] }) {
+  const { reset } = useGenerateStore()
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold">生成完成</h3>
+          <p className="text-sm text-muted-foreground">共生成 {cases.length} 条测试用例</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={reset} className="gap-1">
+          <RefreshCw className="w-4 h-4" /> 重新生成
+        </Button>
+      </div>
+
+      <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        {cases.map((c, i) => (
+          <Card key={c.id || i} className="border">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <h4 className="font-medium text-sm">{c.title}</h4>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <Badge className={`text-xs ${priorityColorMap[c.priority] || ''}`} variant="outline">
+                    {c.priority}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">{c.type}</Badge>
+                </div>
+              </div>
+              {c.precondition && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  <span className="font-medium">前置条件：</span>{c.precondition}
+                </p>
+              )}
+              <div className="space-y-1">
+                {c.steps.map((step) => (
+                  <div key={step.order} className="text-xs flex gap-2">
+                    <span className="text-muted-foreground w-5 flex-shrink-0">{step.order}.</span>
+                    <span>{step.action}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs mt-2">
+                <span className="font-medium text-green-600">预期结果：</span>{c.expectedResult}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function GeneratePage() {
+  const {
+    currentStep, setStep,
+    sourceType, setSourceType,
+    uploadedFile,
+    inputText, setInputText,
+    customPrompt, setCustomPrompt,
+    aiParams, setAiParams,
+    generatedCases, setGeneratedCases,
+    isGenerating, setIsGenerating,
+    streamContent, appendStreamContent, clearStreamContent,
+  } = useGenerateStore()
+
+  const handleGenerate = async () => {
+    if (sourceType === 'file' && !uploadedFile) {
+      toast.error('请先上传文件')
+      return
+    }
+    if (sourceType === 'text' && !inputText.trim()) {
+      toast.error('请输入需求文本')
+      return
+    }
+    if (!customPrompt.trim()) {
+      toast.error('请输入或选择提示词模板')
+      return
+    }
+
+    setIsGenerating(true)
+    clearStreamContent()
+    setStep('generating')
+
+    try {
+      if (aiParams.stream) {
+        // 流式生成
+        await aiApi.generateStream(
+          {
+            sourceType,
+            fileId: uploadedFile?.id,
+            text: inputText,
+            customPrompt,
+            ...aiParams,
+          },
+          (chunk) => appendStreamContent(chunk),
+          () => {
+            setIsGenerating(false)
+            setStep('result')
+            toast.success('用例生成完成！')
+          },
+          (err) => {
+            setIsGenerating(false)
+            toast.error(`生成失败: ${err.message}`)
+            setStep('prompt')
+          },
+        )
+      } else {
+        // 非流式
+        const result = await aiApi.generateTestCases({
+          sourceType,
+          fileId: uploadedFile?.id,
+          text: inputText,
+          customPrompt,
+          ...aiParams,
+        })
+        setGeneratedCases(result.cases)
+        setIsGenerating(false)
+        setStep('result')
+        toast.success(`成功生成 ${result.cases.length} 条用例！`)
+      }
+    } catch {
+      setIsGenerating(false)
+      setStep('prompt')
+    }
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">生成测试用例</h1>
+        <p className="text-muted-foreground mt-1">上传需求文档或输入需求描述，AI 自动生成标准化测试用例</p>
+      </div>
+
+      {/* 步骤指示器 */}
+      <div className="flex items-center gap-2 text-sm">
+        {(['upload', 'prompt', 'generating', 'result'] as const).map((step, i) => {
+          const labels = ['上传文档', '配置提示词', '生成中', '查看结果']
+          const isActive = currentStep === step
+          const isDone = ['upload', 'prompt', 'generating', 'result'].indexOf(currentStep) > i
+          return (
+            <div key={step} className="flex items-center gap-2">
+              <div className={`flex items-center gap-1.5 ${isActive ? 'text-primary font-medium' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-primary text-white' : isDone ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>
+                  {i + 1}
+                </div>
+                {labels[i]}
+              </div>
+              {i < 3 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 步骤内容 */}
+      {(currentStep === 'upload' || currentStep === 'prompt') && (
+        <div className="grid grid-cols-1 gap-6">
+          {/* 输入来源 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">选择输入来源</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-3">
+                {(['file', 'text'] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setSourceType(type)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${sourceType === type ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-accent'}`}
+                  >
+                    {type === 'file' ? <Upload className="w-4 h-4" /> : <Type className="w-4 h-4" />}
+                    {type === 'file' ? '上传文档' : '文本输入'}
+                  </button>
+                ))}
+              </div>
+
+              {sourceType === 'file' ? (
+                <FileUploadZone />
+              ) : (
+                <textarea
+                  className="w-full h-32 p-3 text-sm border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="请输入需求描述、功能说明、API 文档等内容..."
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 提示词配置 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">配置提示词</CardTitle>
+              <CardDescription>自定义 AI 生成用例的方向和格式要求</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <textarea
+                className="w-full h-28 p-3 text-sm border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="例如：请根据以上需求生成完整的功能测试用例，包含正向、逆向和边界测试，优先级分 P0-P3 四级..."
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+              />
+
+              {/* AI 参数 */}
+              <div className="flex items-center gap-6 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiParams.stream}
+                    onChange={(e) => setAiParams({ stream: e.target.checked })}
+                    className="rounded"
+                  />
+                  流式输出
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">最大 Token：</span>
+                  <select
+                    value={aiParams.maxTokens}
+                    onChange={(e) => setAiParams({ maxTokens: Number(e.target.value) })}
+                    className="border rounded px-2 py-1 bg-background text-xs"
+                  >
+                    {[2048, 4096, 8192, 16384].map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <Button className="w-full gap-2" onClick={handleGenerate} disabled={isGenerating}>
+                <Wand2 className="w-4 h-4" />
+                开始生成
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 生成中（流式输出） */}
+      {currentStep === 'generating' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <CardTitle className="text-base">AI 正在生成中...</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs bg-muted p-4 rounded-lg max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
+              {streamContent || '等待 AI 响应...'}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 生成结果 */}
+      {currentStep === 'result' && generatedCases.length > 0 && (
+        <Card>
+          <CardContent className="p-6">
+            <GenerateResult cases={generatedCases} />
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}

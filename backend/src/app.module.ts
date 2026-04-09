@@ -1,0 +1,59 @@
+import { Module } from '@nestjs/common'
+import { ConfigModule } from '@nestjs/config'
+import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
+
+// 公共模块
+import { PrismaModule } from './prisma/prisma.module'
+import { HttpExceptionFilter, AllExceptionsFilter } from './common/filters/http-exception.filter'
+import { ResponseInterceptor } from './common/interceptors/response.interceptor'
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
+import { RolesGuard } from './common/guards/roles.guard'
+
+// 业务模块
+import { AuthModule } from './modules/auth/auth.module'
+import { FilesModule } from './modules/files/files.module'
+import { AiModule } from './modules/ai/ai.module'
+import { TestcasesModule } from './modules/testcases/testcases.module'
+import { TemplatesModule } from './modules/templates/templates.module'
+import { TeamsModule } from './modules/teams/teams.module'
+import { RecordsModule } from './modules/records/records.module'
+
+@Module({
+  imports: [
+    // 环境变量配置（全局）
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    // 限流防护
+    ThrottlerModule.forRoot([{
+      ttl: parseInt(process.env.THROTTLE_TTL || '60') * 1000,
+      limit: parseInt(process.env.THROTTLE_LIMIT || '100'),
+    }]),
+
+    // 数据库
+    PrismaModule,
+
+    // 业务模块
+    AuthModule,
+    FilesModule,
+    AiModule,
+    TestcasesModule,
+    TemplatesModule,
+    TeamsModule,
+    RecordsModule,
+  ],
+  providers: [
+    // 全局限流守卫
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // 全局 JWT 鉴权守卫
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // 全局角色权限守卫
+    { provide: APP_GUARD, useClass: RolesGuard },
+    // 全局 HTTP 异常过滤器
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
+    // 全局响应格式拦截器
+    { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+  ],
+})
+export class AppModule {}
