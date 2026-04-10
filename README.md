@@ -79,23 +79,23 @@ pnpm dev
 
 ### 后端 `backend/.env`
 
-| 变量名 | 说明 | 示例 |
-|--------|------|------|
-| `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://user:pass@localhost:5432/db` |
-| `JWT_SECRET` | JWT 签名密钥 | 随机32位字符串 |
-| `JWT_EXPIRES_IN` | JWT 过期时间 | `7d` |
-| `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
-| `OPENAI_BASE_URL` | AI 接口地址（兼容其他模型） | `https://api.openai.com/v1` |
-| `DEFAULT_AI_MODEL` | 默认 AI 模型 | `gpt-4o` |
-| `UPLOAD_DIR` | 文件上传目录 | `./uploads` |
-| `MAX_FILE_SIZE` | 最大文件大小（字节） | `10485760` |
+|| 变量名 | 说明 | 示例 |
+||--------|------|------||
+|| `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://user:pass@localhost:5432/db` |
+|| `JWT_SECRET` | JWT 签名密钥 | 随机32位字符串 |
+|| `JWT_EXPIRES_IN` | JWT 过期时间 | `7d` |
+|| `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
+|| `OPENAI_BASE_URL` | AI 接口地址（兼容其他模型） | `https://api.openai.com/v1` |
+|| `DEFAULT_AI_MODEL` | 默认 AI 模型 | `gpt-4o` |
+|| `UPLOAD_DIR` | 文件上传目录 | `./uploads` |
+|| `MAX_FILE_SIZE` | 最大文件大小（字节） | `10485760` |
 
 ### 前端 `frontend/.env`
 
-| 变量名 | 说明 | 示例 |
-|--------|------|------|
-| `VITE_API_BASE_URL` | 后端 API 地址 | `http://localhost:3000/api` |
-| `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
+|| 变量名 | 说明 | 示例 |
+||--------|------|------||
+|| `VITE_API_BASE_URL` | 后端 API 地址 | `http://localhost:3000/api` |
+|| `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
 ## 项目结构
 
