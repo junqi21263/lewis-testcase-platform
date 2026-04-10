@@ -4,9 +4,11 @@ WORKDIR /app
 
 RUN corepack enable
 
-# Copy everything first, then install (avoids BuildKit cache key issues with pnpm-lock.yaml)
-COPY . .
+# Build context is repo root; copy only backend/ contents into /app
+COPY backend/package.json backend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
+
+COPY backend/ .
 RUN pnpm prisma:generate
 RUN pnpm build
 
@@ -18,7 +20,6 @@ WORKDIR /app
 RUN corepack enable
 
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
