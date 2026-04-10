@@ -2,10 +2,11 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import type { ApiResponse } from '@/types'
+import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 /** 创建 axios 实例 */
 const instance: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: getApiBaseUrl(),
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
@@ -92,7 +93,7 @@ export async function streamRequest(
   onError?: (error: Error) => void,
 ): Promise<void> {
   const token = useAuthStore.getState().token
-  const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+  const baseURL = getApiBaseUrl()
 
   const response = await fetch(`${baseURL}${url}`, {
     method: 'POST',

@@ -3,13 +3,14 @@ import { request } from '@/utils/request'
 import { useAuthStore } from '@/store/authStore'
 import type { UploadedFile, PaginatedData, PaginationParams } from '@/types'
 import type { ChunkInfo } from '@/types/upload'
+import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 /** 单次上传大于此字节时启用分片（5 MB） */
 export const CHUNK_THRESHOLD = 5 * 1024 * 1024
 /** 每个分片大小（2 MB） */
 export const CHUNK_SIZE = 2 * 1024 * 1024
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+const BASE_URL = getApiBaseUrl()
 
 export const filesApi = {
   /**
