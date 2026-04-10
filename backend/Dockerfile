@@ -2,7 +2,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-RUN npm install -g pnpm
+# 用 corepack 启用 pnpm（内置于 Node 20，无需 npm install -g）
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -16,7 +17,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN npm install -g pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
@@ -30,4 +31,4 @@ RUN mkdir -p uploads
 
 EXPOSE 3000
 
-CMD npx prisma migrate deploy && node dist/main.js
+CMD sh -c "npx prisma migrate deploy && node dist/main.js"
