@@ -9,6 +9,7 @@ import { HttpExceptionFilter, AllExceptionsFilter } from './common/filters/http-
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
 import { RolesGuard } from './common/guards/roles.guard'
+import { HealthController } from './health.controller'
 
 // 业务模块
 import { AuthModule } from './modules/auth/auth.module'
@@ -20,6 +21,7 @@ import { TeamsModule } from './modules/teams/teams.module'
 import { RecordsModule } from './modules/records/records.module'
 
 @Module({
+  controllers: [HealthController],
   imports: [
     // 环境变量配置（全局）
     ConfigModule.forRoot({ isGlobal: true }),
