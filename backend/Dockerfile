@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl python3 make g++
 
 RUN corepack enable
 
