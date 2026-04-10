@@ -2,13 +2,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# corepack reads packageManager field from package.json, no network needed
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
+# Copy everything first, then install (avoids BuildKit cache key issues with pnpm-lock.yaml)
 COPY . .
+RUN pnpm install --frozen-lockfile
 RUN pnpm prisma:generate
 RUN pnpm build
 
@@ -19,9 +17,9 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
-
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/pnpm-lock.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
