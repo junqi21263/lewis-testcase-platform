@@ -10,6 +10,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
 import { RolesGuard } from './common/guards/roles.guard'
 import { HealthController } from './health.controller'
+import { MiddlewareConfiguration } from './common/middleware/configuration'
 
 // 业务模块
 import { AuthModule } from './modules/auth/auth.module'
@@ -43,6 +44,9 @@ import { RecordsModule } from './modules/records/records.module'
     TemplatesModule,
     TeamsModule,
     RecordsModule,
+
+    // 中间件配置
+    MiddlewareConfiguration,
   ],
   providers: [
     // 全局限流守卫

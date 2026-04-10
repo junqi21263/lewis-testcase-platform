@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength } from 'class-validator'
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class LoginDto {
@@ -27,6 +27,11 @@ export class RegisterDto {
   @IsString()
   @MinLength(6, { message: '密码至少6位' })
   password: string
+
+  @ApiProperty({ required: false, example: 'avatar.png' })
+  @IsOptional()
+  @IsString()
+  avatar?: string
 }
 
 export class ChangePasswordDto {
@@ -36,4 +41,35 @@ export class ChangePasswordDto {
   @IsString()
   @MinLength(6, { message: '新密码至少6位' })
   newPassword: string
+}
+
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+
+  @ApiProperty({ example: 'reset-token' })
+  @IsString()
+  token: string
+
+  @ApiProperty({ example: 'NewPassword123' })
+  @IsString()
+  @MinLength(6, { message: '新密码至少6位' })
+  newPassword: string
+}
+
+export class VerifyEmailDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+
+  @ApiProperty({ example: 'verification-token' })
+  @IsString()
+  token: string
 }

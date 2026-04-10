@@ -1,0 +1,52 @@
+{
+  "rules": [
+    {
+      "name": "Block GET requests to auth endpoints",
+      "description": "阻止对认证接口的GET请求，提高安全性",
+      "pattern": "/auth/*",
+      "methods": ["GET"],
+      "action": "block",
+      "priority": 100,
+      "response": {
+        "status_code": 405,
+        "body": "Method Not Allowed"
+      }
+    },
+    {
+      "name": "Allow only POST to login",
+      "description": "只允许POST方法访问登录接口",
+      "pattern": "/auth/login",
+      "methods": ["POST"],
+      "action": "allow",
+      "priority": 200
+    },
+    {
+      "name": "Allow only POST to register", 
+      "description": "只允许POST方法访问注册接口",
+      "pattern": "/auth/register",
+      "methods": ["POST"],
+      "action": "allow",
+      "priority": 200
+    },
+    {
+      "name": "Allow auth API methods",
+      "description": "允许认证相关的其他HTTP方法",
+      "pattern": "/auth/*",
+      "methods": ["POST", "PUT", "PATCH", "DELETE", "GET"],
+      "action": "allow",
+      "priority": 300
+    }
+  ],
+  "security_headers": {
+    "default": {
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY", 
+      "X-XSS-Protection": "1; mode=block",
+      "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    },
+    "auth_endpoints": {
+      "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; form-action 'self'"
+    }
+  }
+}

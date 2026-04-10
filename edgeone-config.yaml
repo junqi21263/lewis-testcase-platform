@@ -1,0 +1,59 @@
+# EdgeOne Pages 配置文件
+# 用于配置路由规则和安全策略
+
+# 路由规则配置
+routing_rules:
+  - name: "auth-get-block"
+    pattern: "/auth/*"
+    methods: ["GET"]
+    action: "block"
+    priority: 100
+    response:
+      status_code: 405
+      body: "Method Not Allowed"
+  
+  - name: "auth-login-allow"
+    pattern: "/auth/login"
+    methods: ["POST"]
+    action: "allow"
+    priority: 200
+  
+  - name: "auth-register-allow"
+    pattern: "/auth/register"
+    methods: ["POST"]
+    action: "allow"
+    priority: 200
+  
+  - name: "auth-other-methods"
+    pattern: "/auth/*"
+    methods: ["POST", "PUT", "PATCH", "DELETE", "GET"]
+    action: "allow"
+    priority: 300
+
+# 安全头配置
+security_headers:
+  default:
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+    X-XSS-Protection: "1; mode=block"
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+    Content-Security-Policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+  
+  auth_endpoints:
+    Content-Security-Policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; form-action 'self'"
+
+# 缓存配置
+cache_rules:
+  - pattern: "/static/*"
+    ttl: 3600
+    action: "cache"
+  
+  - pattern: "/api/*"
+    ttl: 0
+    action: "no-cache"
+
+# 错误页面配置
+error_pages:
+  404: "/404.html"
+  500: "/500.html"
+  405: "/405.html"

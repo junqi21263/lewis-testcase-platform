@@ -1,15 +1,47 @@
 import { request } from '@/utils/request'
+import { useAuthStore } from '@/store/authStore'
 import type { AuthTokens, LoginPayload, RegisterPayload, User } from '@/types'
 
 export const authApi = {
-  login: (payload: LoginPayload) =>
-    request.post<AuthTokens>('/auth/login', payload),
+  login: async (payload: LoginPayload) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      const result = await request.post<AuthTokens>('/auth/login', payload)
+      setSuccessMessage('登录成功')
+      return result
+    } catch (error: any) {
+      setError(error.response?.data?.message || '登录失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
 
-  register: (payload: RegisterPayload) =>
-    request.post<AuthTokens>('/auth/register', payload),
+  register: async (payload: RegisterPayload) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      const result = await request.post<AuthTokens>('/auth/register', payload)
+      setSuccessMessage('注册成功！请登录您的账号')
+      return result
+    } catch (error: any) {
+      setError(error.response?.data?.message || '注册失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
 
-  logout: () =>
-    request.post<void>('/auth/logout'),
+  logout: async () => {
+    const { logout } = useAuthStore.getState()
+    try {
+      await request.post<void>('/auth/logout')
+      logout()
+    } catch (error) {
+      // 忽略错误，因为 JWT 是无状态的
+    }
+  },
 
   getProfile: () =>
     request.get<User>('/auth/profile'),
@@ -17,6 +49,62 @@ export const authApi = {
   updateProfile: (data: Partial<Pick<User, 'username' | 'avatar'>>) =>
     request.patch<User>('/auth/profile', data),
 
-  changePassword: (data: { oldPassword: string; newPassword: string }) =>
-    request.post<void>('/auth/change-password', data),
+  changePassword: async (data: { oldPassword: string; newPassword: string }) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      await request.post<void>('/auth/change-password', data)
+      setSuccessMessage('密码修改成功')
+    } catch (error: any) {
+      setError(error.response?.data?.message || '密码修改失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
+
+  forgotPassword: async (email: string) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      const result = await request.post<{ resetToken: string }>('/auth/forgot-password', { email })
+      setSuccessMessage('密码重置链接已发送到您的邮箱')
+      return result
+    } catch (error: any) {
+      setError(error.response?.data?.message || '发送重置链接失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
+
+  resetPassword: async (data: { email: string; token: string; newPassword: string }) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      const result = await request.post<{ message: string }>('/auth/reset-password', data)
+      setSuccessMessage('密码重置成功！请使用新密码登录')
+      return result
+    } catch (error: any) {
+      setError(error.response?.data?.message || '密码重置失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
+
+  verifyEmail: async (data: { email: string; token: string }) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      const result = await request.post<{ message: string }>('/auth/verify-email', data)
+      setSuccessMessage('邮箱验证成功')
+      return result
+    } catch (error: any) {
+      setError(error.response?.data?.message || '邮箱验证失败，请重试')
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
 }
