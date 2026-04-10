@@ -5,14 +5,16 @@ const prisma = new PrismaClient()
 
 async function main() {
   console.log('🌱 开始初始化种子数据...')
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com'
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456'
 
   // 创建超级管理员
-  const hashedPwd = await bcrypt.hash('Admin@123456', 10)
+  const hashedPwd = await bcrypt.hash(adminPassword, 10)
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@example.com' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@example.com',
+      email: adminEmail,
       username: '超级管理员',
       password: hashedPwd,
       role: UserRole.SUPER_ADMIN,
@@ -135,8 +137,8 @@ API 文档：
   console.log(`✅ ${templates.length} 个提示词模板创建成功`)
 
   console.log('\n🎉 种子数据初始化完成！')
-  console.log('📧 管理员账号: admin@example.com')
-  console.log('🔑 管理员密码: Admin@123456')
+  console.log(`📧 管理员账号: ${adminEmail}`)
+  console.log(`🔑 管理员密码: ${adminPassword}`)
 }
 
 main()

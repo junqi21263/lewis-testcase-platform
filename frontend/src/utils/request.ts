@@ -4,6 +4,27 @@ import { useAuthStore } from '@/store/authStore'
 import type { ApiResponse } from '@/types'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
+type ErrorResponseData = Partial<{
+  code: number
+  message: string | string[]
+  data: unknown
+  timestamp: string
+  path: string
+}>
+
+function extractErrorMessage(data: unknown, fallback: string): string {
+  if (!data || typeof data !== 'object') return fallback
+  const message = (data as ErrorResponseData).message
+  if (Array.isArray(message)) return message[0] || fallback
+  if (typeof message === 'string' && message.trim()) return message
+  return fallback
+}
+
+function isAuthEntryRequest(url?: string): boolean {
+  if (!url) return false
+  return url.includes('/auth/login') || url.includes('/auth/register')
+}
+
 /** 创建 axios 实例 */
 const instance: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
@@ -31,32 +52,46 @@ instance.interceptors.response.use(
     const { data } = response
     // 业务错误码处理
     if (data.code !== 0 && data.code !== 200) {
-      toast.error(data.message || '请求失败')
-      return Promise.reject(new Error(data.message))
+      const message = data.message || '请求失败'
+      toast.error(message)
+      return Promise.reject(new Error(message))
     }
     return response
   },
   (error) => {
     if (error.response) {
       const { status, data } = error.response
+      const requestUrl = error.config?.url as string | undefined
+      const hasToken = !!useAuthStore.getState().token
       switch (status) {
         case 401:
-          // Token 过期，清除登录状态
-          useAuthStore.getState().logout()
-          toast.error('登录已过期，请重新登录')
-          window.location.href = '/login'
+          if (isAuthEntryRequest(requestUrl)) {
+            // 登录/注册页的 401 代表凭据错误，不应触发全局登出跳转
+            toast.error(extractErrorMessage(data, '账号或密码错误'))
+            break
+          }
+          if (hasToken) {
+            // 仅在已登录态下将 401 视为 token 失效
+            useAuthStore.getState().logout()
+            toast.error(extractErrorMessage(data, '登录已过期，请重新登录'))
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login'
+            }
+            break
+          }
+          toast.error(extractErrorMessage(data, '未授权访问'))
           break
         case 403:
-          toast.error('权限不足，无法执行此操作')
+          toast.error(extractErrorMessage(data, '权限不足，无法执行此操作'))
           break
         case 404:
-          toast.error('请求的资源不存在')
+          toast.error(extractErrorMessage(data, '请求的资源不存在'))
           break
         case 500:
-          toast.error(data?.message || '服务器内部错误')
+          toast.error(extractErrorMessage(data, '服务器内部错误'))
           break
         default:
-          toast.error(data?.message || '网络异常，请稍后重试')
+          toast.error(extractErrorMessage(data, '网络异常，请稍后重试'))
       }
     } else if (error.request) {
       toast.error('网络连接失败，请检查网络')

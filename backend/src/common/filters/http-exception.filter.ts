@@ -8,6 +8,24 @@ import {
 } from '@nestjs/common'
 import { Request, Response } from 'express'
 
+const DEFAULT_ERROR_MESSAGES: Record<number, string> = {
+  [HttpStatus.BAD_REQUEST]: '请求参数错误',
+  [HttpStatus.UNAUTHORIZED]: '未授权访问',
+  [HttpStatus.FORBIDDEN]: '权限不足',
+  [HttpStatus.NOT_FOUND]: '请求资源不存在',
+  [HttpStatus.CONFLICT]: '资源冲突',
+  [HttpStatus.UNPROCESSABLE_ENTITY]: '请求数据校验失败',
+  [HttpStatus.TOO_MANY_REQUESTS]: '请求过于频繁，请稍后重试',
+  [HttpStatus.INTERNAL_SERVER_ERROR]: '服务器内部错误',
+  [HttpStatus.SERVICE_UNAVAILABLE]: '服务暂时不可用',
+}
+
+function resolveErrorMessage(status: number, message: string | string[] | undefined) {
+  if (Array.isArray(message)) return message[0] || DEFAULT_ERROR_MESSAGES[status] || '请求失败'
+  if (typeof message === 'string' && message.trim()) return message
+  return DEFAULT_ERROR_MESSAGES[status] || '请求失败'
+}
+
 /** 全局 HTTP 异常过滤器，统一格式化错误响应 */
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -40,7 +58,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     response.status(status).json({
       code: status,
-      message: Array.isArray(message) ? message[0] : message,
+      message: resolveErrorMessage(status, message),
       data: null,
       timestamp: new Date().toISOString(),
       path: request.url,
@@ -68,7 +86,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     response.status(status).json({
       code: status,
-      message,
+      message: message || DEFAULT_ERROR_MESSAGES[status] || '请求失败',
       data: null,
       timestamp: new Date().toISOString(),
       path: request.url,
