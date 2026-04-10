@@ -14,8 +14,11 @@ COPY backend/ .
 RUN pnpm prisma:generate
 RUN pnpm build
 
-RUN mkdir -p uploads
+# Verify build output
+RUN ls -la dist/ && test -f dist/main.js && echo "[build] dist/main.js OK"
+
+RUN mkdir -p uploads && chmod +x start.sh
 
 EXPOSE 3000
 
-CMD sh -c "npx prisma migrate deploy && node dist/main.js"
+CMD ["/bin/sh", "start.sh"]
