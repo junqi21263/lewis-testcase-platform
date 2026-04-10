@@ -1,0 +1,266 @@
+// Prisma Schema - AI 测试用例生成平台（开发环境 - SQLite）
+// 运行 `pnpm prisma migrate dev --name init` 初始化数据库
+
+generator client {
+  provider      = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 枚举 ====================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum FileType {
+  PDF
+  WORD
+  EXCEL
+  YAML
+  IMAGE
+  TEXT
+}
+
+enum FileStatus {
+  PENDING
+  PARSING
+  PARSED
+  FAILED
+}
+
+enum TemplateCategory {
+  FUNCTIONAL
+  PERFORMANCE
+  SECURITY
+  API
+  UI
+  CUSTOM
+}
+
+enum TestCaseStatus {
+  DRAFT
+  REVIEWING
+  APPROVED
+  ARCHIVED
+}
+
+enum TestCasePriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum TestCaseType {
+  FUNCTIONAL
+  PERFORMANCE
+  SECURITY
+  COMPATIBILITY
+  REGRESSION
+}
+
+enum GenerationStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum ExportFormat {
+  EXCEL
+  CSV
+  JSON
+  MARKDOWN
+  YAML
+}
+
+// ==================== 表定义 ====================
+
+/// 团队表
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  
+  members     TeamMember[]
+  testSuites  TestSuite[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("teams")
+}
+
+/// 团队成员表
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  role     UserRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+/// 用户表
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  username  String?
+  password  String
+  name      String?
+  avatar    String?
+  role      UserRole  @default(MEMBER)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  teams         TeamMember[]
+  testSuites    TestSuite[]
+  testCases     TestCase[]
+  uploadedFiles UploadedFile[]
+  records       GenerationRecord[]
+  
+  @@map("users")
+}
+
+/// AI模型配置表
+model AIModelConfig {
+  id          String   @id @default(cuid())
+  name        String
+  provider    String
+  modelId     String
+  baseUrl     String
+  apiKey      String
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  maxTokens   Int      @default(4096)
+  temperature Float    @default(0.7)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("ai_model_configs")
+}
+
+/// 上传文件表
+model UploadedFile {
+  id          String    @id @default(cuid())
+  originalName String
+  filename    String
+  mimetype    String
+  size        Int
+  path        String
+  status      FileStatus @default(PENDING)
+  parsedContent String?
+  error       String?
+  uploadedAt  DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  testCases TestCase[]
+  records   GenerationRecord[]
+  
+  @@map("uploaded_files")
+}
+
+/// 测试用例模板表
+model TestTemplate {
+  id          String           @id @default(cuid())
+  name        String
+  category    TemplateCategory
+  content     String
+  description String?
+  isDefault   Boolean          @default(false)
+  isActive    Boolean          @default(true)
+  creatorId   String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  creator User @relation(fields: [creatorId], references: [id])
+  
+  @@map("test_templates")
+}
+
+/// 测试用例表
+model TestCase {
+  id             String           @id @default(cuid())
+  title          String
+  description    String?
+  precondition   String?
+  steps          Json
+  expectedResult String?
+  priority       TestCasePriority  @default(P2)
+  type           TestCaseType     @default(FUNCTIONAL)
+  status         TestCaseStatus   @default(DRAFT)
+  tags           String[]
+  estimatedTime  Int?
+  suiteId        String
+  creatorId      String
+  assigneeId     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  
+  suite     TestSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  creator   User      @relation(fields: [creatorId], references: [id])
+  assignee  User?     @relation(fields: [assigneeId], references: [id])
+  
+  @@map("test_cases")
+}
+
+/// 测试用例集表
+model TestSuite {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isTemplate  Boolean  @default(false)
+  templateId  String?
+  teamId      String?
+  creatorId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  team      Team?        @relation(fields: [teamId], references: [id])
+  template  TestTemplate? @relation(fields: [templateId], references: [id])
+  testCases TestCase[]
+  
+  @@map("test_suites")
+}
+
+/// 生成记录表
+model GenerationRecord {
+  id          String           @id @default(cuid())
+  title       String
+  status      GenerationStatus @default(PENDING)
+  sourceType  String
+  prompt      String?
+  modelId     String
+  modelName   String
+  caseCount   Int?
+  tokensUsed  Int?
+  duration    Int?
+  suiteId     String?
+  fileId      String?
+  templateId  String?
+  creatorId   String
+  errorMessage String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  suite     TestSuite? @relation(fields: [suiteId], references: [id])
+  file      UploadedFile? @relation(fields: [fileId], references: [id])
+  template  TestTemplate? @relation(fields: [templateId], references: [id])
+  creator   User       @relation(fields: [creatorId], references: [id])
+  
+  @@map("generation_records")
+}

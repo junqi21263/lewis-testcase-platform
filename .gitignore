@@ -52,3 +52,24 @@ coverage/
 # Cache
 .eslintcache
 .cache/
+
+# Cursor specific
+.cursor/
+.cursor-images/
+
+# Development files
+dev.db
+*.sqlite
+*.sqlite3
+backend/prisma/dev.db
+backend/prisma/schema.dev.prisma
+backend/prisma/schema.prod.prisma
+backend/prisma/migrations/dev
+
+# Build artifacts
+frontend/dist.zip
+backend/dist/
+
+# Node modules
+frontend/node_modules/
+backend/node_modules/
