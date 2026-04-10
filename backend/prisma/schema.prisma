@@ -2,7 +2,8 @@
 // 运行 `pnpm prisma migrate dev --name init` 初始化数据库
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
