@@ -17,7 +17,6 @@ fi
 # 此前仅在非 Railway 或 RAILWAY_MIGRATE_ON_START=1 时执行，若平台未配置 preDeployCommand 会导致新列未落库（如 emailVerified）。
 # 完全跳过迁移：SKIP_PRISMA_MIGRATE_ON_START=1
 
-STUCK_INIT_MIGRATION=20250413120000_init_postgresql
 RUN_MIGRATE_AT_START=1
 if [ "${SKIP_PRISMA_MIGRATE_ON_START:-}" = "1" ]; then
   RUN_MIGRATE_AT_START=0
@@ -25,8 +24,8 @@ if [ "${SKIP_PRISMA_MIGRATE_ON_START:-}" = "1" ]; then
 fi
 
 if [ "$RUN_MIGRATE_AT_START" = "1" ]; then
-  echo "[start] prisma migrate resolve --rolled-back $STUCK_INIT_MIGRATION (best-effort for P3009)..."
-  pnpm exec prisma migrate resolve --rolled-back "$STUCK_INIT_MIGRATION" --schema=./prisma/schema.prod.prisma || true
+  echo "[start] Best-effort: clear stuck failed migrations (P3009)..."
+  sh ./prisma-resolve-stuck-migrations.sh
 
   echo "[start] Running prisma migrate deploy... ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
   if ! pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma; then
