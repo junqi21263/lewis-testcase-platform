@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Loader2, Shield, Lock, CheckCircle } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Lock } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'

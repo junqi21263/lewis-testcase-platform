@@ -1,14 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Loader2, Lock, Shield, Fingerprint } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import toast from 'react-hot-toast'
-import { PasswordStrength } from '@/components/PasswordStrength'
 
 interface LoginForm {
   email: string
@@ -18,6 +16,8 @@ interface LoginForm {
 export default function LoginPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
+  const authError = useAuthStore((s) => s.error)
+  const setError = useAuthStore((s) => s.setError)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
@@ -29,12 +29,7 @@ export default function LoginPage() {
   } = useForm<LoginForm>()
 
   const onSubmit = async (data: LoginForm) => {
-    const { error } = useAuthStore.getState()
-    if (error) {
-      // 清除之前的错误
-      useAuthStore.getState().setError(null)
-    }
-    
+    setError(null)
     setLoading(true)
     try {
       const result = await authApi.login(data)
@@ -59,9 +54,9 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
           {/* 错误显示 */}
-          {error && (
+          {authError && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-              <p className="text-sm">{error}</p>
+              <p className="text-sm">{authError}</p>
             </div>
           )}
 
@@ -107,7 +102,7 @@ export default function LoginPage() {
           </div>
         </CardContent>
 
-<CardFooter className="flex flex-col gap-3 pt-2">
+        <CardFooter className="flex flex-col gap-3 pt-2">
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input

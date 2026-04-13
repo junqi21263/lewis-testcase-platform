@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Mail, Loader2, Shield, Lock } from 'lucide-react'
+import { Mail, Loader2 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Loader2, User, Mail, Lock, Shield, Fingerprint, CheckCircle } from 'lucide-react'
+import { Eye, EyeOff, Loader2, User, Mail, Lock } from 'lucide-react'
 import { authApi } from '@/api/auth'
-import toast from 'react-hot-toast'
+import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +18,8 @@ interface RegisterForm {
 
 export default function RegisterPage() {
   const navigate = useNavigate()
+  const authError = useAuthStore((s) => s.error)
+  const setError = useAuthStore((s) => s.setError)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
@@ -25,19 +27,17 @@ export default function RegisterPage() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<RegisterForm>()
 
+  const passwordValue = watch('password', '')
+
   const onSubmit = async (data: RegisterForm) => {
-    const { error } = useAuthStore.getState()
-    if (error) {
-      // 清除之前的错误
-      useAuthStore.getState().setError(null)
-    }
-    
+    setError(null)
     setLoading(true)
     try {
-      const result = await authApi.register(data)
+      await authApi.register(data)
       navigate('/login')
     } catch (error: any) {
       // 错误已在 authApi 中处理
@@ -58,9 +58,9 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
           {/* 错误显示 */}
-          {error && (
+          {authError && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-              <p className="text-sm">{error}</p>
+              <p className="text-sm">{authError}</p>
             </div>
           )}
 
@@ -129,7 +129,7 @@ export default function RegisterPage() {
             {errors.password && (
               <p className="text-xs text-destructive">{errors.password.message}</p>
             )}
-            <PasswordStrength password={data.password} />
+            <PasswordStrength password={passwordValue} />
           </div>
         </CardContent>
 
