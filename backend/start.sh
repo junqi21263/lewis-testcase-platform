@@ -2,10 +2,10 @@
 set -e
 
 echo "[start] Running prisma migrate deploy..."
-npx prisma migrate deploy --schema=./prisma/schema.prod.prisma
+pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma
 
-echo "[start] Listing dist/..."
-ls -la /app/dist/
+echo "[start] Checking build output..."
+ls -la dist/src/main.js || { echo "[start] ERROR: dist/src/main.js missing — build step may have failed"; exit 1; }
 
 echo "[start] Starting NestJS app..."
 exec node dist/src/main.js
