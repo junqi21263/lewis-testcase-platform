@@ -52,8 +52,10 @@ coverage/
 .eslintcache
 .cache/
 
-# Cursor specific
-.cursor/
+# Cursor: 版本库中保留 `.cursor/rules/`，其余 Cursor 数据仍忽略
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 .cursor-images/
 
 # Development files
