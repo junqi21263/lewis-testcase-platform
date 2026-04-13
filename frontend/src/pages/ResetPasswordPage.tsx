@@ -7,6 +7,8 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { passwordPolicyMessage } from '@/utils/passwordPolicy'
+import { getApiErrorMessage } from '@/utils/apiErrorMessage'
 
 interface ResetPasswordForm {
   newPassword: string
@@ -34,8 +36,8 @@ export default function ResetPasswordPage() {
       })
       toast.success('密码重置成功！请使用新密码登录')
       navigate('/login')
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || '密码重置失败，请重试')
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, '密码重置失败，请重试'))
     } finally {
       setLoading(false)
     }
@@ -63,7 +65,7 @@ export default function ResetPasswordPage() {
                 placeholder="请输入新密码"
                 {...register('newPassword', {
                   required: '请输入新密码',
-                  minLength: { value: 6, message: '新密码至少6位' },
+                  validate: (v) => passwordPolicyMessage(v),
                 })}
                 className={`pr-10 ${errors.newPassword ? 'border-destructive' : ''}`}
               />

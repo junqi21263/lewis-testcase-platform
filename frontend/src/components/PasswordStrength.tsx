@@ -63,7 +63,7 @@ export function PasswordStrength({ password, showStrength = true }: PasswordStre
         />
       </div>
       <div className="mt-2 text-xs text-gray-500 space-y-1">
-        <p>• 至少 8 个字符</p>
+        <p>• 至少 6 个字符</p>
         <p>• 包含大小写字母</p>
         <p>• 包含数字</p>
         <p>• 包含特殊字符</p>

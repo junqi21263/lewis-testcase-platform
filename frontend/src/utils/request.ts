@@ -64,6 +64,9 @@ instance.interceptors.response.use(
       const requestUrl = error.config?.url as string | undefined
       const hasToken = !!useAuthStore.getState().token
       switch (status) {
+        case 400:
+          toast.error(extractErrorMessage(data, '请求参数错误'))
+          break
         case 401:
           if (isAuthEntryRequest(requestUrl)) {
             // 登录/注册页的 401 代表凭据错误，不应触发全局登出跳转

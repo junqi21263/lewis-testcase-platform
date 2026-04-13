@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { PasswordStrength } from '@/components/PasswordStrength'
+import { passwordPolicyMessage } from '@/utils/passwordPolicy'
 
 interface RegisterForm {
   email: string
@@ -116,7 +117,7 @@ export default function RegisterPage() {
                 placeholder="请输入密码"
                 {...register('password', {
                   required: '请输入密码',
-                  minLength: { value: 6, message: '密码至少6位' },
+                  validate: (v) => passwordPolicyMessage(v),
                 })}
                 className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
               />

@@ -22,6 +22,40 @@ function buildCorsOrigins(): string[] {
   return [...origins]
 }
 
+/** 允许腾讯云 EdgeOne Pages 预览域名（子域会变），需返回具体 origin 才能与 credentials 共用 */
+function corsOriginDelegate(): (
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean | string) => void,
+) => void {
+  const staticList = buildCorsOrigins()
+  return (origin, callback) => {
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+    if (staticList.includes(origin)) {
+      callback(null, origin)
+      return
+    }
+    try {
+      const { hostname } = new URL(origin)
+      const edgeOne =
+        hostname.endsWith('.edgeone.cool') ||
+        hostname.endsWith('.edgeone.site') ||
+        hostname === 'edgeone.cool' ||
+        hostname === 'edgeone.site'
+      if (edgeOne) {
+        callback(null, origin)
+        return
+      }
+    } catch {
+      callback(new Error('Not allowed by CORS'))
+      return
+    }
+    callback(new Error('Not allowed by CORS'))
+  }
+}
+
 async function bootstrap() {
   if (process.env.NODE_ENV === 'production') {
     const jwt = process.env.JWT_SECRET?.trim()
@@ -35,7 +69,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
     cors: {
-      origin: buildCorsOrigins(),
+      origin: corsOriginDelegate(),
       credentials: true,
       methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
