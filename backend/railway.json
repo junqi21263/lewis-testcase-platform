@@ -7,7 +7,7 @@
   "deploy": {
     "preDeployCommand": "/bin/sh /app/migrate-release.sh",
     "startCommand": "/bin/sh /app/start.sh",
-    "healthcheckPath": "/api/health",
+    "healthcheckPath": "/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3

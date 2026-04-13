@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
+import type { Request, Response } from 'express'
 import { AppModule } from './app.module'
 import { corsOriginDelegate } from '@/config/cors.config'
 import * as fs from 'fs'
@@ -69,10 +70,21 @@ async function bootstrap() {
     host = '0.0.0.0'
   }
 
-  await app.listen(port, host)
+  // Railway 健康检查：走裸 Express 路由，不经 globalPrefix / 响应包装 / 守卫，减少 502 误判
+  const expressApp = app.getHttpAdapter().getInstance()
+  expressApp.get('/health', (_req: Request, res: Response) => {
+    res.status(200).type('text/plain').send('ok')
+  })
+
+  // Railway 上省略 host 时 Node 会按平台默认绑定（常同时覆盖 IPv4/IPv6）；仍传 0.0.0.0 亦可
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    await app.listen(port)
+  } else {
+    await app.listen(port, host)
+  }
 
   logger.log(
-    `🚀 应用启动成功: 监听 ${host}:${port}/api（Railway 请确认 Networking 转发端口与 PORT=${process.env.PORT ?? '未设置'} 一致）`,
+    `🚀 应用启动成功: port=${port}（Railway: 裸 GET /health 与 GET /api/health 均可用；PORT 须与 Networking 转发端口一致）`,
   )
 }
 
