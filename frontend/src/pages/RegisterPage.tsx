@@ -110,7 +110,7 @@ export default function RegisterPage() {
             </label>
             <div className="relative">
               <Input
-                type={showPassword ? 'text' : 'password'
+                type={showPassword ? 'text' : 'password'}
                 placeholder="请输入密码"
                 {...register('password', {
                   required: '请输入密码',
