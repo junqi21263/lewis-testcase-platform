@@ -58,10 +58,22 @@ async function bootstrap() {
   }
 
   const port = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10)
-  const host = process.env.HOST || '0.0.0.0'
+  let host = process.env.HOST || '0.0.0.0'
+  if (
+    process.env.RAILWAY_ENVIRONMENT &&
+    (host === '127.0.0.1' || host === 'localhost' || host === '::1')
+  ) {
+    logger.warn(
+      `HOST=${host} 仅本机可访问，Railway 边缘会 502；已改为 0.0.0.0。请删除 Variables 中的 HOST。`,
+    )
+    host = '0.0.0.0'
+  }
+
   await app.listen(port, host)
 
-  logger.log(`🚀 应用启动成功: http://localhost:${port}/api`)
+  logger.log(
+    `🚀 应用启动成功: 监听 ${host}:${port}/api（Railway 请确认 Networking 转发端口与 PORT=${process.env.PORT ?? '未设置'} 一致）`,
+  )
 }
 
 bootstrap().catch((err: unknown) => {

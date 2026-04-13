@@ -43,5 +43,12 @@ fi
 echo "[start] Checking build output..."
 ls -la dist/src/main.js || { echo "[start] ERROR: dist/src/main.js missing — build step may have failed"; exit 1; }
 
-echo "[start] Starting NestJS app (PORT=${PORT:-3000})..."
+# Railway 边缘转发到「容器内端口」，须与 process.listen 一致；且必须监听 0.0.0.0，不能是 127.0.0.1
+if [ -n "${RAILWAY_ENVIRONMENT:-}" ]; then
+  export HOST=0.0.0.0
+  echo "[start] Railway: 已设置 HOST=0.0.0.0（若 Variables 里曾设 HOST=localhost 会导致外网 502）"
+  echo "[start] Railway: 将监听的 PORT=${PORT:-未设置，将用 3000} — 请与 Networking 里「转发到端口」一致"
+fi
+
+echo "[start] Starting NestJS app (HOST=${HOST:-0.0.0.0} PORT=${PORT:-3000})..."
 exec node dist/src/main.js

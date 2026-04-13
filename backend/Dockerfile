@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Railway / 容器边缘转发需要监听所有接口（勿在平台 Variables 里设 HOST=localhost）
+ENV HOST=0.0.0.0
+
 RUN apk add --no-cache openssl
 
 RUN corepack enable
