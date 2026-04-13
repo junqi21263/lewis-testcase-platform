@@ -4,14 +4,12 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '@/prisma/prisma.service'
 import { LoginDto, RegisterDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto'
 import { PasswordValidator } from '@/common/validators/password.validator'
-import { PasswordConfig } from '@/config/password.config'
 
 @Injectable()
 export class AuthService {

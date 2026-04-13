@@ -75,13 +75,13 @@ export class TeamsService {
     })
   }
 
-  async removeMember(teamId: string, memberId: string) {
+  async removeMember(_teamId: string, memberId: string) {
     const member = await this.prisma.teamMember.findUnique({ where: { id: memberId } })
     if (!member) throw new NotFoundException('成员不存在')
     await this.prisma.teamMember.delete({ where: { id: memberId } })
   }
 
-  async updateMemberRole(teamId: string, memberId: string, role: UserRole) {
+  async updateMemberRole(_teamId: string, memberId: string, role: UserRole) {
     return this.prisma.teamMember.update({ where: { id: memberId }, data: { role } })
   }
 }

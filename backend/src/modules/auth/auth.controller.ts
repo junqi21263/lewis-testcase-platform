@@ -1,10 +1,9 @@
-import { Controller, Post, Get, Patch, UseGuards, HttpCode, HttpStatus, Body, Param, Query } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger'
+import { Controller, Post, Get, Patch, HttpCode, HttpStatus, Body } from '@nestjs/common'
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import { LoginDto, RegisterDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto'
 import { Public } from '@/common/decorators/public.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
 
 @ApiTags('认证')
 @Controller('auth')

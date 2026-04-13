@@ -34,7 +34,7 @@ export class RecordsService {
     return record
   }
 
-  async delete(id: string, userId: string) {
+  async delete(id: string, _userId: string) {
     const record = await this.prisma.generationRecord.findUnique({ where: { id } })
     if (!record) throw new NotFoundException('记录不存在')
     await this.prisma.generationRecord.delete({ where: { id } })
