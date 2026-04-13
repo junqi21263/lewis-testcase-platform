@@ -13,16 +13,12 @@ if [ "${NODE_ENV:-}" = "production" ] && [ -z "${JWT_SECRET:-}" ]; then
   exit 1
 fi
 
-# Railway：migrate 在 railway.json → preDeployCommand（migrate-release.sh）中执行，此处尽快启动 Node 以免健康检查 502。
-# 本地 / Docker Compose：无 RAILWAY_ENVIRONMENT 时仍在启动时执行 migrate。
-# 强制在本容器内再跑一遍迁移：设置 RAILWAY_MIGRATE_ON_START=1；完全跳过：SKIP_PRISMA_MIGRATE_ON_START=1
+# 启动时执行 prisma migrate deploy（幂等；与 preDeploy 重复执行无害）。
+# 此前仅在非 Railway 或 RAILWAY_MIGRATE_ON_START=1 时执行，若平台未配置 preDeployCommand 会导致新列未落库（如 emailVerified）。
+# 完全跳过迁移：SKIP_PRISMA_MIGRATE_ON_START=1
 
 STUCK_INIT_MIGRATION=20250413120000_init_postgresql
 RUN_MIGRATE_AT_START=1
-if [ -n "${RAILWAY_ENVIRONMENT:-}" ] && [ "${RAILWAY_MIGRATE_ON_START:-}" != "1" ]; then
-  RUN_MIGRATE_AT_START=0
-  echo "[start] Railway：跳过启动时 migrate（已由 preDeployCommand 执行）。调试可设 RAILWAY_MIGRATE_ON_START=1"
-fi
 if [ "${SKIP_PRISMA_MIGRATE_ON_START:-}" = "1" ]; then
   RUN_MIGRATE_AT_START=0
   echo "[start] WARN: SKIP_PRISMA_MIGRATE_ON_START=1，跳过 migrate"
