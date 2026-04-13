@@ -64,4 +64,9 @@ async function bootstrap() {
   logger.log(`🚀 应用启动成功: http://localhost:${port}/api`)
 }
 
-bootstrap()
+bootstrap().catch((err: unknown) => {
+  const logger = new Logger('Bootstrap')
+  const msg = err instanceof Error ? err.stack || err.message : String(err)
+  logger.error(`启动失败（Railway 上常表现为 502）:\n${msg}`)
+  process.exit(1)
+})
