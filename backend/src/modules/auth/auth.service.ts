@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
@@ -27,6 +28,8 @@ type JwtAuthPayload = { sub: string; email: string; purpose?: string }
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name)
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -165,6 +168,12 @@ export class AuthService {
       )
       const frontend = (this.config.get<string>('FRONTEND_URL') || '').trim().replace(/\/+$/, '')
       const resetUrl = frontend ? `${frontend}/reset-password/${encodeURIComponent(resetToken)}` : ''
+
+      if (!resetUrl) {
+        this.logger.warn(
+          'FRONTEND_URL 未设置，无法生成重置密码链接，已跳过发送邮件（注册验证邮件同样依赖 FRONTEND_URL）',
+        )
+      }
 
       // 邮件发送（若 SMTP 未配置则跳过；开发环境仍会输出 token 便于调试）
       if (resetUrl) {
@@ -305,7 +314,11 @@ export class AuthService {
     })
     const verifyUrl = frontend ? `${frontend}/verify-email?${q.toString()}` : ''
 
-    if (verifyUrl) {
+    if (!verifyUrl) {
+      this.logger.warn(
+        'FRONTEND_URL 未设置，无法生成邮箱验证链接，已跳过发送验证邮件（需同时配置 SMTP_HOST / SMTP_USER / SMTP_PASS）',
+      )
+    } else {
       await this.mail.sendMail({
         to: email,
         subject: '验证你的邮箱',
@@ -320,7 +333,7 @@ export class AuthService {
     }
 
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`Email verification token for ${email}: ${verificationToken}`)
+      this.logger.log(`Email verification token for ${email}: ${verificationToken}`)
     }
   }
 
