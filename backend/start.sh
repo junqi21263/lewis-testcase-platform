@@ -22,12 +22,13 @@ else
   echo "[start] prisma migrate resolve --rolled-back $STUCK_INIT_MIGRATION (best-effort for P3009)..."
   pnpm exec prisma migrate resolve --rolled-back "$STUCK_INIT_MIGRATION" --schema=./prisma/schema.prod.prisma || true
 
-  echo "[start] Running prisma migrate deploy..."
+  echo "[start] Running prisma migrate deploy... ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
   if ! pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma; then
     echo "[start] ERROR: prisma migrate deploy 失败。请检查 DATABASE_URL 是否指向本项目的 Postgres、网络是否互通、以及迁移历史（Logs 中 Prisma 报错原文）。"
     echo "[start] 临时排查：可设 Variables SKIP_PRISMA_MIGRATE_ON_START=1 重新部署，若 /api/health 恢复则说明问题在迁移/数据库。"
     exit 1
   fi
+  echo "[start] prisma migrate deploy 完成 ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 fi
 
 echo "[start] Checking build output..."
