@@ -20,7 +20,8 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const email = dto.email.trim()
+    const user = await this.prisma.user.findUnique({ where: { email } })
     if (!user) throw new UnauthorizedException('邮箱或密码错误')
 
     const isMatch = await bcrypt.compare(dto.password, user.password)
@@ -33,12 +34,15 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
+    const email = dto.email.trim()
+    const username = dto.username.trim()
+
     // 检查邮箱是否已存在
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const exists = await this.prisma.user.findUnique({ where: { email } })
     if (exists) throw new ConflictException('该邮箱已被注册')
 
     // 检查用户名是否已存在
-    const usernameExists = await this.prisma.user.findFirst({ where: { username: dto.username } })
+    const usernameExists = await this.prisma.user.findFirst({ where: { username } })
     if (usernameExists) throw new ConflictException('该用户名已被使用')
 
     // 验证密码强度
@@ -53,17 +57,26 @@ export class AuthService {
     // 创建用户
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email,
-        username: dto.username,
+        email,
+        username,
         password: hashed,
         avatar: dto.avatar,
       },
-      select: { id: true, email: true, username: true, role: true, avatar: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        avatar: true,
+        teamId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     })
 
     // 生成验证令牌
     const verificationToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
+      { sub: user.id, email },
       { expiresIn: this.passwordValidator.verificationTokenExpiry }
     )
 

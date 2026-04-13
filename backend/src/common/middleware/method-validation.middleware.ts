@@ -11,7 +11,7 @@ export class MethodValidationMiddleware implements NestMiddleware {
     // 检查是否是敏感路径
     const isSensitivePath = sensitivePaths.some(path => currentPath.includes(path))
     
-    if (isSensitivePath && method !== 'POST') {
+    if (isSensitivePath && method !== 'POST' && method !== 'OPTIONS') {
       return res.status(405).json({
         code: 405,
         message: 'Method Not Allowed',

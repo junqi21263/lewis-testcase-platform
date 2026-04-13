@@ -87,6 +87,12 @@ instance.interceptors.response.use(
         case 404:
           toast.error(extractErrorMessage(data, '请求的资源不存在'))
           break
+        case 409:
+          toast.error(extractErrorMessage(data, '数据冲突，请检查后重试'))
+          break
+        case 429:
+          toast.error(extractErrorMessage(data, '请求过于频繁，请稍后再试'))
+          break
         case 500:
           toast.error(extractErrorMessage(data, '服务器内部错误'))
           break

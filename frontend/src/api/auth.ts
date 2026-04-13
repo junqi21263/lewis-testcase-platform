@@ -4,14 +4,20 @@ import type { AuthTokens, LoginPayload, RegisterPayload, User } from '@/types'
 
 export const authApi = {
   login: async (payload: LoginPayload) => {
-    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    const { setLoading, setError } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<AuthTokens>('/auth/login', payload)
-      setSuccessMessage('登录成功')
+      const result = await request.post<AuthTokens>('/auth/login', {
+        email: payload.email.trim(),
+        password: payload.password,
+      })
       return result
     } catch (error: any) {
-      setError(error.response?.data?.message || '登录失败，请重试')
+      setError(
+        error.response?.data?.message ||
+          error.message ||
+          '登录失败，请重试',
+      )
       throw error
     } finally {
       setLoading(false)
@@ -19,14 +25,21 @@ export const authApi = {
   },
 
   register: async (payload: RegisterPayload) => {
-    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    const { setLoading, setError } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<AuthTokens>('/auth/register', payload)
-      setSuccessMessage('注册成功！请登录您的账号')
-      return result
+      const body = {
+        email: payload.email.trim(),
+        username: payload.username.trim(),
+        password: payload.password,
+      }
+      return await request.post<AuthTokens>('/auth/register', body)
     } catch (error: any) {
-      setError(error.response?.data?.message || '注册失败，请重试')
+      setError(
+        error.response?.data?.message ||
+          error.message ||
+          '注册失败，请重试',
+      )
       throw error
     } finally {
       setLoading(false)
@@ -53,7 +66,7 @@ export const authApi = {
     const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
     setLoading(true)
     try {
-      await request.post<void>('/auth/change-password', data)
+      await request.patch<void>('/auth/change-password', data)
       setSuccessMessage('密码修改成功')
     } catch (error: any) {
       setError(error.response?.data?.message || '密码修改失败，请重试')

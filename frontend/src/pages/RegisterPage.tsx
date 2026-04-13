@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { Eye, EyeOff, Loader2, User, Mail, Lock } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -20,8 +21,9 @@ export default function RegisterPage() {
   const navigate = useNavigate()
   const authError = useAuthStore((s) => s.error)
   const setError = useAuthStore((s) => s.setError)
+  const setAuth = useAuthStore((s) => s.setAuth)
+  const loading = useAuthStore((s) => s.loading)
   const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
 
   const {
@@ -35,14 +37,14 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterForm) => {
     setError(null)
-    setLoading(true)
     try {
-      await authApi.register(data)
-      navigate('/login')
-    } catch (error: any) {
-      // 错误已在 authApi 中处理
-    } finally {
-      setLoading(false)
+      const { email, username, password } = data
+      const result = await authApi.register({ email, username, password })
+      setAuth(result.user, result.accessToken, false)
+      toast.success('注册成功')
+      navigate('/dashboard')
+    } catch {
+      /* 错误已由 axios 拦截器与 authApi setError 处理 */
     }
   }
 
@@ -152,9 +154,9 @@ export default function RegisterPage() {
           </Button>
           <p className="text-sm text-center text-muted-foreground">
             已有账号？{' '}
-            <a href="/login" className="text-primary hover:underline font-medium">
+            <Link to="/login" className="text-primary hover:underline font-medium">
               立即登录
-            </a>
+            </Link>
           </p>
         </CardFooter>
       </form>

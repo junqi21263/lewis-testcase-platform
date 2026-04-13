@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { authApi } from '@/api/auth'
@@ -18,8 +19,8 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const authError = useAuthStore((s) => s.error)
   const setError = useAuthStore((s) => s.setError)
+  const loading = useAuthStore((s) => s.loading)
   const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
 
   const {
@@ -30,15 +31,13 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     setError(null)
-    setLoading(true)
     try {
       const result = await authApi.login(data)
       setAuth(result.user, result.accessToken, rememberMe)
+      toast.success('登录成功')
       navigate('/dashboard')
-    } catch (error: any) {
-      // 错误已在 authApi 中处理
-    } finally {
-      setLoading(false)
+    } catch {
+      /* 错误已由 axios 拦截器与 authApi setError 处理 */
     }
   }
 
