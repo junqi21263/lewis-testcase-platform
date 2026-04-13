@@ -10,6 +10,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==================== 枚举 ====================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MEMBER
+}
+
+enum TeamMemberRole {
+  SUPER_ADMIN
+  ADMIN
+  MEMBER
+}
+
 // ==================== 表定义 ====================
 
 /// 用户表
@@ -18,7 +32,7 @@ model User {
   email     String    @unique
   password  String
   name      String?
-  role      String    @default("MEMBER")
+  role      UserRole  @default(MEMBER)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   
@@ -52,7 +66,7 @@ model TeamMember {
   id     String   @id @default(cuid())
   userId String
   teamId String
-  role   String   @default("MEMBER")
+  role   TeamMemberRole @default(MEMBER)
   joinedAt DateTime @default(now())
   
   user User @relation(fields: [userId], references: [id])
