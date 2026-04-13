@@ -2,59 +2,8 @@ import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
 import { AppModule } from './app.module'
+import { corsOriginDelegate } from '@/config/cors.config'
 import * as fs from 'fs'
-
-function buildCorsOrigins(): string[] {
-  const origins = new Set<string>([
-    'http://localhost:5173',
-    'http://localhost:3001',
-    'https://lewis-testcase-platform-xyqvs7bh.edgeone.cool',
-  ])
-  const extra = process.env.FRONTEND_URL?.trim()
-  if (extra) origins.add(extra)
-  const csv = process.env.CORS_ORIGINS?.trim()
-  if (csv) {
-    for (const part of csv.split(',')) {
-      const o = part.trim()
-      if (o) origins.add(o)
-    }
-  }
-  return [...origins]
-}
-
-/** 允许腾讯云 EdgeOne Pages 预览域名（子域会变），需返回具体 origin 才能与 credentials 共用 */
-function corsOriginDelegate(): (
-  origin: string | undefined,
-  callback: (err: Error | null, allow?: boolean | string) => void,
-) => void {
-  const staticList = buildCorsOrigins()
-  return (origin, callback) => {
-    if (!origin) {
-      callback(null, true)
-      return
-    }
-    if (staticList.includes(origin)) {
-      callback(null, origin)
-      return
-    }
-    try {
-      const { hostname } = new URL(origin)
-      const edgeOne =
-        hostname.endsWith('.edgeone.cool') ||
-        hostname.endsWith('.edgeone.site') ||
-        hostname === 'edgeone.cool' ||
-        hostname === 'edgeone.site'
-      if (edgeOne) {
-        callback(null, origin)
-        return
-      }
-    } catch {
-      callback(new Error('Not allowed by CORS'))
-      return
-    }
-    callback(new Error('Not allowed by CORS'))
-  }
-}
 
 async function bootstrap() {
   if (process.env.NODE_ENV === 'production') {

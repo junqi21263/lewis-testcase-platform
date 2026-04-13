@@ -94,7 +94,7 @@ pnpm dev
 
 || 变量名 | 说明 | 示例 |
 ||--------|------|------||
-|| `VITE_API_BASE_URL` | 后端 API 地址 | `http://localhost:3000/api` |
+|| `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致；生产与 Railway Networking 域名对齐） | `http://localhost:3000/api`；默认兜底见 `frontend/src/config/deploy.ts` |
 || `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
 ## 项目结构
