@@ -3,7 +3,9 @@ import { ThrottlerGuard } from '@nestjs/throttler'
 
 @Injectable()
 export class RateLimitGuard extends ThrottlerGuard {
-  canActivate(context: ExecutionContext): Promise<boolean> {
-    return super.canActivate(context)
+  protected override async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<{ method?: string }>()
+    if (req.method === 'OPTIONS') return true
+    return super.shouldSkip(context)
   }
 }

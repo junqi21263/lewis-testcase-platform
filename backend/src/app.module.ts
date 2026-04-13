@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
+import { ThrottlerModule } from '@nestjs/throttler'
 
 // 公共模块
 import { PrismaModule } from './prisma/prisma.module'
@@ -11,6 +11,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
 import { RolesGuard } from './common/guards/roles.guard'
 import { HealthController } from './health.controller'
 import { MiddlewareConfiguration } from './common/middleware/configuration'
+import { RateLimitGuard } from './common/guards/rate-limit.guard'
 
 // 业务模块
 import { AuthModule } from './modules/auth/auth.module'
@@ -50,7 +51,7 @@ import { RecordsModule } from './modules/records/records.module'
   ],
   providers: [
     // 全局限流守卫
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     // 全局 JWT 鉴权守卫
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // 全局角色权限守卫
