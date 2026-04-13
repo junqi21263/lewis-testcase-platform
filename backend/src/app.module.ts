@@ -21,6 +21,7 @@ import { TestcasesModule } from './modules/testcases/testcases.module'
 import { TemplatesModule } from './modules/templates/templates.module'
 import { TeamsModule } from './modules/teams/teams.module'
 import { RecordsModule } from './modules/records/records.module'
+import { SettingsModule } from './modules/settings/settings.module'
 
 @Module({
   controllers: [HealthController],
@@ -45,6 +46,7 @@ import { RecordsModule } from './modules/records/records.module'
     TemplatesModule,
     TeamsModule,
     RecordsModule,
+    SettingsModule,
 
     // 中间件配置
     MiddlewareConfiguration,
