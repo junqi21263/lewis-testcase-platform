@@ -2,7 +2,7 @@
 set -e
 
 echo "[start] Running prisma migrate deploy..."
-npx prisma migrate deploy
+npx prisma migrate deploy --schema=./prisma/schema.prod.prisma
 
 echo "[start] Listing dist/..."
 ls -la /app/dist/

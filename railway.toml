@@ -8,10 +8,8 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+region = "hkg"
 
 [env]
 NODE_ENV = "production"
 PORT = "3000"
-
-[deploy]
-region = "hkg"

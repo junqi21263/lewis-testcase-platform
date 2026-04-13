@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
 import { AppModule } from './app.module'
-import { HealthModule } from './common/health'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -11,9 +10,6 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
   })
-
-  // 注册健康检查模块
-  app.register(HealthModule)
 
   // 统一 API 前缀
   app.setGlobalPrefix('api')
@@ -62,7 +58,7 @@ async function bootstrap() {
     fs.mkdirSync(uploadDir, { recursive: true })
   }
 
-  const port = parseInt(process.env.APP_PORT || '3000')
+  const port = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10)
   await app.listen(port)
 
   logger.log(`🚀 应用启动成功: http://localhost:${port}/api`)

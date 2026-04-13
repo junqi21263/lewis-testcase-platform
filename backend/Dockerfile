@@ -10,7 +10,8 @@ COPY backend/package.json backend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY backend/ .
-RUN pnpm prisma:generate
+# Railway / 生产使用 PostgreSQL schema（与 sqlite 开发 schema 分离）
+RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
 RUN pnpm build
 
 RUN ls -la dist/ && echo "[build] dist OK"
