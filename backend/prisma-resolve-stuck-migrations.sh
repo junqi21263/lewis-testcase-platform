@@ -5,7 +5,7 @@
 # 若某迁移实际已在库中执行成功（仅 Prisma 状态错误），应改为一次性手动执行：
 #   pnpm exec prisma migrate resolve --applied <迁移目录名> --schema=./prisma/schema.prod.prisma
 #
-# 若重试时报「type already exists」等，说明库已部分/全部应用该迁移，请用上面的 --applied。
+# 若库结构已与迁移一致但仍失败，可对对应迁移使用一次 --applied（见 Prisma 文档）。
 
 set -e
 SCHEMA="${PRISMA_SCHEMA:-./prisma/schema.prod.prisma}"
