@@ -11,6 +11,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { PasswordStrength } from '@/components/PasswordStrength'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
 
+const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
+
 interface RegisterForm {
   email: string
   username: string
@@ -40,7 +42,11 @@ export default function RegisterPage() {
     setError(null)
     try {
       const { email, username, password } = data
-      const result = await authApi.register({ email, username, password })
+      const result = await authApi.register({
+        email: email.trim().toLowerCase(),
+        username: username.trim(),
+        password,
+      })
       setAuth(result.user, result.accessToken, false)
       toast.success('注册成功')
       navigate('/dashboard')
@@ -54,7 +60,7 @@ export default function RegisterPage() {
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold text-center">创建新账号</CardTitle>
         <CardDescription className="text-center">
-          注册新账号开始使用 AI 测试用例生成平台
+          使用邮箱 + 用户名 + 密码注册；登录时使用用户名
         </CardDescription>
       </CardHeader>
 
@@ -98,6 +104,10 @@ export default function RegisterPage() {
                 required: '请输入用户名',
                 minLength: { value: 2, message: '用户名至少2个字符' },
                 maxLength: { value: 50, message: '用户名最多50个字符' },
+                pattern: {
+                  value: USERNAME_RE,
+                  message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
+                },
               })}
               className={errors.username ? 'border-destructive' : ''}
             />

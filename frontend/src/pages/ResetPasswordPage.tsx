@@ -30,7 +30,6 @@ export default function ResetPasswordPage() {
     setLoading(true)
     try {
       await authApi.resetPassword({
-        email: '', // 在实际应用中，这里应该从 token 中提取邮箱
         token: token || '',
         newPassword: data.newPassword,
       })

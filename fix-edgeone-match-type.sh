@@ -50,7 +50,7 @@ echo ""
 echo "  curl -X GET \"https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login\" -v"
 echo "  curl -X POST \"https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login\" \\"
 echo "    -H \"Content-Type: application/json\" \\"
-echo "    -d '{\"email\":\"test@example.com\",\"password\":\"test123\"}' \\"
+echo "    -d '{\"username\":\"test\",\"password\":\"test123\"}' \\"
 echo "    -v"
 echo ""
 

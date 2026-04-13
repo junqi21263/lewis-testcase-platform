@@ -48,7 +48,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = exception.message
     }
 
-    // 记录 4xx 以上的错误日志
+    // 语义错误码放在 JSON `code`，HTTP 状态统一200，便于网关/客户端统一按报文处理
     if (status >= 500) {
       this.logger.error(
         `${request.method} ${request.url} - ${status}: ${JSON.stringify(message)}`,
@@ -56,7 +56,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       )
     }
 
-    response.status(status).json({
+    response.status(HttpStatus.OK).json({
       code: status,
       message: resolveErrorMessage(status, message),
       data: null,
@@ -84,7 +84,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof Error ? exception.stack : String(exception),
     )
 
-    response.status(status).json({
+    response.status(HttpStatus.OK).json({
       code: status,
       message: message || DEFAULT_ERROR_MESSAGES[status] || '请求失败',
       data: null,

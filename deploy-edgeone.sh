@@ -68,7 +68,7 @@ verify_deployment() {
     
     # 测试GET请求应该被拒绝
     echo "测试GET请求到登录接口..."
-    if curl -s -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" | grep -q "Method Not Allowed"; then
+    if curl -s -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" | grep -q '"code":405'; then
         echo "${GREEN}✅ GET请求被正确拒绝${NC}"
     else
         echo "${RED}❌ GET请求未被正确拒绝${NC}"
@@ -78,7 +78,7 @@ verify_deployment() {
     echo "测试POST请求到登录接口..."
     if curl -s -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
         -H "Content-Type: application/json" \
-        -d '{"email":"test@example.com","password":"test123"}' | grep -q "code"; then
+        -d '{"username":"test","password":"test123"}' | grep -q "code"; then
         echo "${GREEN}✅ POST请求被正确处理${NC}"
     else
         echo "${RED}❌ POST请求处理异常${NC}"

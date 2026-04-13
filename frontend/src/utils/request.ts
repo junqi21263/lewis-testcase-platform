@@ -46,17 +46,51 @@ instance.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
-/** 响应拦截器：统一处理错误 */
+/** 响应拦截器：HTTP 200 但 body.code 非成功时，按业务错误处理（与后端统一报文约定一致） */
 instance.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
     const { data } = response
-    // 业务错误码处理
-    if (data.code !== 0 && data.code !== 200) {
-      const message = data.message || '请求失败'
-      toast.error(message)
-      return Promise.reject(new Error(message))
+    const code = data.code
+    if (code === 0 || code === 200) {
+      return response
     }
-    return response
+
+    const requestUrl = response.config?.url as string | undefined
+    const msg =
+      typeof data.message === 'string' && data.message.trim()
+        ? data.message
+        : '请求失败'
+
+    if (code === 401) {
+      if (isAuthEntryRequest(requestUrl)) {
+        toast.error(extractErrorMessage(data, '用户名或密码错误'))
+      } else if (useAuthStore.getState().token) {
+        useAuthStore.getState().logout()
+        toast.error(extractErrorMessage(data, '登录已过期，请重新登录'))
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+      } else {
+        toast.error(extractErrorMessage(data, '未授权访问'))
+      }
+    } else if (code === 403) {
+      toast.error(extractErrorMessage(data, '权限不足，无法执行此操作'))
+    } else if (code === 404) {
+      toast.error(extractErrorMessage(data, '请求的资源不存在'))
+    } else if (code === 409) {
+      toast.error(extractErrorMessage(data, '数据冲突，请检查后重试'))
+    } else if (code === 429) {
+      toast.error(extractErrorMessage(data, '请求过于频繁，请稍后再试'))
+    } else if (code >= 500) {
+      toast.error(extractErrorMessage(data, '服务器内部错误'))
+    } else {
+      toast.error(extractErrorMessage(data, msg))
+    }
+
+    const err = Object.assign(new Error(msg), { response }) as Error & {
+      response: AxiosResponse<ApiResponse>
+    }
+    return Promise.reject(err)
   },
   (error) => {
     if (error.response) {
@@ -69,12 +103,10 @@ instance.interceptors.response.use(
           break
         case 401:
           if (isAuthEntryRequest(requestUrl)) {
-            // 登录/注册页的 401 代表凭据错误，不应触发全局登出跳转
-            toast.error(extractErrorMessage(data, '账号或密码错误'))
+            toast.error(extractErrorMessage(data, '用户名或密码错误'))
             break
           }
           if (hasToken) {
-            // 仅在已登录态下将 401 视为 token 失效
             useAuthStore.getState().logout()
             toast.error(extractErrorMessage(data, '登录已过期，请重新登录'))
             if (window.location.pathname !== '/login') {

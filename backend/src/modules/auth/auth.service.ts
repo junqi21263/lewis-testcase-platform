@@ -3,7 +3,6 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
-  NotFoundException,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
@@ -20,12 +19,12 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto) {
-    const email = dto.email.trim()
-    const user = await this.prisma.user.findUnique({ where: { email } })
-    if (!user) throw new UnauthorizedException('邮箱或密码错误')
+    const username = dto.username.trim()
+    const user = await this.prisma.user.findFirst({ where: { username } })
+    if (!user) throw new UnauthorizedException('用户名或密码错误')
 
     const isMatch = await bcrypt.compare(dto.password, user.password)
-    if (!isMatch) throw new UnauthorizedException('邮箱或密码错误')
+    if (!isMatch) throw new UnauthorizedException('用户名或密码错误')
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
     const { password: _, ...userInfo } = user
@@ -34,7 +33,7 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    const email = dto.email.trim()
+    const email = dto.email.trim().toLowerCase()
     const username = dto.username.trim()
 
     // 检查邮箱是否已存在
@@ -74,17 +73,15 @@ export class AuthService {
       },
     })
 
-    // 生成验证令牌
     const verificationToken = this.jwtService.sign(
       { sub: user.id, email },
       { expiresIn: this.passwordValidator.verificationTokenExpiry }
     )
-
-    // 这里可以添加发送验证邮件的逻辑
+    // 可在此接入发信；令牌不向客户端返回，避免泄露
     console.log(`Verification token for ${user.email}: ${verificationToken}`)
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
-    return { accessToken: token, user, verificationToken }
+    return { accessToken: token, user }
   }
 
   async getProfile(userId: string) {
@@ -128,35 +125,34 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
-    if (!user) throw new NotFoundException('用户不存在')
+    const email = dto.email.trim().toLowerCase()
+    const user = await this.prisma.user.findUnique({ where: { email } })
 
-    // 生成重置令牌
-    const resetToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
-      { expiresIn: '1h' }
-    )
+    if (user) {
+      const resetToken = this.jwtService.sign(
+        { sub: user.id, email: user.email },
+        { expiresIn: '1h' },
+      )
+      console.log(`Password reset token for ${user.email}: ${resetToken}`)
+    }
 
-    // 这里可以添加发送重置邮件的逻辑
-    console.log(`Password reset token for ${user.email}: ${resetToken}`)
-
-    return { resetToken }
+    // 统一文案，避免被用于探测邮箱是否注册（具体说明由响应拦截器 message 字段给出）
+    return {}
   }
 
   async resetPassword(dto: ResetPasswordDto) {
     try {
-      // 验证重置令牌
-      const payload = this.jwtService.verify(dto.token)
-      const user = await this.prisma.user.findFirst({
-        where: { id: payload.sub, email: payload.email },
-      })
+      const payload = this.jwtService.verify(dto.token) as { sub: string; email: string }
+      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } })
 
-      if (!user) throw new BadRequestException('无效的重置令牌')
+      if (!user || user.email !== payload.email) {
+        throw new BadRequestException('无效的重置令牌')
+      }
 
       const hashed = await bcrypt.hash(dto.newPassword, 10)
       await this.prisma.user.update({ where: { id: user.id }, data: { password: hashed } })
 
-      return { message: '密码重置成功' }
+      return {}
     } catch (error) {
       throw new BadRequestException('无效的重置令牌或已过期')
     }
@@ -164,16 +160,16 @@ export class AuthService {
 
   async verifyEmail(dto: VerifyEmailDto) {
     try {
-      // 验证邮箱令牌
-      const payload = this.jwtService.verify(dto.token)
+      const email = dto.email.trim().toLowerCase()
+      const payload = this.jwtService.verify(dto.token) as { sub: string; email: string }
       const user = await this.prisma.user.findFirst({
-        where: { id: payload.sub, email: payload.email },
+        where: { id: payload.sub, email },
       })
 
       if (!user) throw new BadRequestException('无效的验证令牌')
 
       // 生产 schema 暂无 emailVerified 字段；校验令牌后即视为通过
-      return { message: '邮箱验证成功' }
+      return {}
     } catch (error) {
       throw new BadRequestException('无效的验证令牌或已过期')
     }
@@ -183,6 +179,6 @@ export class AuthService {
     // JWT 无状态，客户端删除 token 即可
     // 这里可以添加 token 黑名单逻辑
     console.log(`User ${userId} logged out`)
-    return { message: '已退出登录' }
+    return {}
   }
 }

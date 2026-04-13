@@ -26,7 +26,7 @@ curl -X POST http://localhost:5173/api/auth/register \
 echo "测试用户登录..."
 curl -X POST http://localhost:5173/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123"}'
+  -d '{"username":"testuser","password":"TestPass123"}'
 
 # 5. 测试密码重置
 echo "测试密码重置..."
@@ -38,7 +38,7 @@ curl -X POST http://localhost:5173/api/auth/forgot-password \
 echo "测试重置密码..."
 curl -X POST http://localhost:5173/api/auth/reset-password \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","token":"test-token","newPassword":"NewPass123"}'
+  -d '{"token":"test-token","newPassword":"NewPass123"}'
 
 # 7. 测试忘记密码页面
 echo "测试忘记密码页面..."
@@ -74,7 +74,7 @@ echo "测试安全特性..."
 for i in {1..10}; do
   curl -X POST http://localhost:5173/api/auth/login \
     -H "Content-Type: application/json" \
-    -d '{"email":"wrong@example.com","password":"wrongpassword"}' &
+    -d '{"username":"wronguser","password":"wrongpassword"}' &
 done
 
 echo "测试完成！"

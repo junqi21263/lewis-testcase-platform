@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
     setLoading(true)
     try {
       await authApi.forgotPassword(data.email)
-      toast.success('密码重置链接已发送到您的邮箱')
+      toast.success('若该邮箱已注册，您将收到重置说明（开发环境请查看服务端日志）')
       navigate('/login')
     } catch (error: any) {
       toast.error(error.response?.data?.message || '发送重置链接失败，请重试')

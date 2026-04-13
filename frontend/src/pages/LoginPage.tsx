@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
+const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
+
 interface LoginForm {
-  email: string
+  username: string
   password: string
 }
 
@@ -46,7 +48,7 @@ export default function LoginPage() {
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold text-center">欢迎回来</CardTitle>
         <CardDescription className="text-center">
-          登录您的账号以继续使用平台
+          使用注册时的用户名登录；找回密码请使用邮箱
         </CardDescription>
       </CardHeader>
 
@@ -60,18 +62,24 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">邮箱</label>
+            <label className="text-sm font-medium text-foreground">用户名</label>
             <Input
-              type="email"
-              placeholder="请输入邮箱地址"
-              {...register('email', {
-                required: '请输入邮箱',
-                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: '邮箱格式不正确' },
+              type="text"
+              autoComplete="username"
+              placeholder="请输入用户名"
+              {...register('username', {
+                required: '请输入用户名',
+                minLength: { value: 2, message: '用户名至少2个字符' },
+                maxLength: { value: 50, message: '用户名最多50个字符' },
+                pattern: {
+                  value: USERNAME_RE,
+                  message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
+                },
               })}
-              className={errors.email ? 'border-destructive' : ''}
+              className={errors.username ? 'border-destructive' : ''}
             />
-            {errors.email && (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
+            {errors.username && (
+              <p className="text-xs text-destructive">{errors.username.message}</p>
             )}
           </div>
 

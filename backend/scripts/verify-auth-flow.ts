@@ -79,7 +79,7 @@ async function main() {
       process.exit(1)
     }
 
-    if (!regRes.ok || regBody.code !== 0) {
+    if (regBody.code !== 0) {
       console.error('注册失败', regRes.status, regBody.message || regBody)
       process.exit(1)
     }
@@ -98,7 +98,7 @@ async function main() {
     const loginRes = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     })
     const loginBody = (await loginRes.json()) as {
       code?: number
@@ -106,7 +106,7 @@ async function main() {
       data?: { accessToken?: string }
     }
 
-    if (!loginRes.ok || loginBody.code !== 0 || !loginBody.data?.accessToken) {
+    if (loginBody.code !== 0 || !loginBody.data?.accessToken) {
       console.error('登录失败', loginRes.status, loginBody.message || loginBody)
       process.exit(1)
     }

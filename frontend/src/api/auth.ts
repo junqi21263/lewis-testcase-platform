@@ -9,7 +9,7 @@ export const authApi = {
     setLoading(true)
     try {
       const result = await request.post<AuthTokens>('/auth/login', {
-        email: payload.email.trim(),
+        username: payload.username.trim(),
         password: payload.password,
       })
       return result
@@ -26,7 +26,7 @@ export const authApi = {
     setLoading(true)
     try {
       const body = {
-        email: payload.email.trim(),
+        email: payload.email.trim().toLowerCase(),
         username: payload.username.trim(),
         password: payload.password,
       }
@@ -73,8 +73,10 @@ export const authApi = {
     const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<{ resetToken: string }>('/auth/forgot-password', { email })
-      setSuccessMessage('密码重置链接已发送到您的邮箱')
+      const result = await request.post<Record<string, never>>('/auth/forgot-password', {
+        email: email.trim().toLowerCase(),
+      })
+      setSuccessMessage('若该邮箱已注册，您将收到重置说明')
       return result
     } catch (error: unknown) {
       setError(getApiErrorMessage(error, '发送重置链接失败，请重试'))
@@ -84,11 +86,14 @@ export const authApi = {
     }
   },
 
-  resetPassword: async (data: { email: string; token: string; newPassword: string }) => {
+  resetPassword: async (data: { token: string; newPassword: string }) => {
     const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<{ message: string }>('/auth/reset-password', data)
+      const result = await request.post<Record<string, never>>('/auth/reset-password', {
+        token: data.token,
+        newPassword: data.newPassword,
+      })
       setSuccessMessage('密码重置成功！请使用新密码登录')
       return result
     } catch (error: unknown) {
@@ -103,7 +108,10 @@ export const authApi = {
     const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<{ message: string }>('/auth/verify-email', data)
+      const result = await request.post<Record<string, never>>('/auth/verify-email', {
+        email: data.email.trim().toLowerCase(),
+        token: data.token,
+      })
       setSuccessMessage('邮箱验证成功')
       return result
     } catch (error: unknown) {

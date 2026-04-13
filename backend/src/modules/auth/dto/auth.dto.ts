@@ -1,10 +1,17 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional } from 'class-validator'
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
+const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
+
 export class LoginDto {
-  @ApiProperty({ example: 'admin@example.com' })
-  @IsEmail({}, { message: '邮箱格式不正确' })
-  email: string
+  @ApiProperty({ example: 'admin_user' })
+  @IsString()
+  @MinLength(2, { message: '用户名至少2个字符' })
+  @MaxLength(50, { message: '用户名最多50个字符' })
+  @Matches(USERNAME_RE, {
+    message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
+  })
+  username: string
 
   @ApiProperty({ example: 'Admin@123456' })
   @IsString()
@@ -21,6 +28,9 @@ export class RegisterDto {
   @IsString()
   @MinLength(2, { message: '用户名至少2个字符' })
   @MaxLength(50, { message: '用户名最多50个字符' })
+  @Matches(USERNAME_RE, {
+    message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
+  })
   username: string
 
   @ApiProperty()
@@ -50,9 +60,10 @@ export class ForgotPasswordDto {
 }
 
 export class ResetPasswordDto {
-  @ApiProperty({ example: 'user@example.com' })
+  @ApiProperty({ required: false, example: 'user@example.com' })
+  @IsOptional()
   @IsEmail({}, { message: '邮箱格式不正确' })
-  email: string
+  email?: string
 
   @ApiProperty({ example: 'reset-token' })
   @IsString()
