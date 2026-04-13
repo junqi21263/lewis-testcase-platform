@@ -12,7 +12,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "verify:auth-flow": "pnpm exec prisma generate --schema=./prisma/schema.prod.prisma && ts-node scripts/verify-auth-flow.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.10",
