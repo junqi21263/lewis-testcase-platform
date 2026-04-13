@@ -5,6 +5,7 @@
     "dockerfilePath": "backend/Dockerfile"
   },
   "deploy": {
+    "preDeployCommand": "/bin/sh /app/migrate-release.sh",
     "startCommand": "/bin/sh /app/start.sh",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 120,

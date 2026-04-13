@@ -16,7 +16,7 @@ RUN pnpm build
 
 RUN ls -la dist/ && echo "[build] dist OK"
 
-RUN mkdir -p uploads && chmod +x start.sh
+RUN mkdir -p uploads && chmod +x start.sh migrate-release.sh
 
 EXPOSE 3000
 
