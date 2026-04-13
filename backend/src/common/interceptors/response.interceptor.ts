@@ -34,6 +34,9 @@ function getSuccessMessage(method: string, path: string): string {
       }
       if (normalizedPath.includes('/auth/reset-password')) return '密码重置成功'
       if (normalizedPath.includes('/auth/verify-email')) return '邮箱验证成功'
+      if (normalizedPath.includes('/auth/resend-verification-email')) {
+        return '若该邮箱有待验证账号，您将收到验证邮件'
+      }
       return '创建成功'
     case 'PUT':
     case 'PATCH':

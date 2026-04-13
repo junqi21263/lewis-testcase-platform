@@ -24,7 +24,6 @@ export default function RegisterPage() {
   const navigate = useNavigate()
   const authError = useAuthStore((s) => s.error)
   const setError = useAuthStore((s) => s.setError)
-  const setAuth = useAuthStore((s) => s.setAuth)
   const loading = useAuthStore((s) => s.loading)
   const [showPassword, setShowPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
@@ -47,7 +46,14 @@ export default function RegisterPage() {
         username: username.trim(),
         password,
       })
-      setAuth(result.user, result.accessToken, false)
+      if (result?.needsEmailVerification) {
+        toast.success('请查收邮件，点击链接完成验证后再登录')
+        navigate(
+          `/verify-email?email=${encodeURIComponent(result.email)}&pending=1`,
+          { replace: true },
+        )
+        return
+      }
       toast.success('注册成功')
       navigate('/dashboard')
     } catch {

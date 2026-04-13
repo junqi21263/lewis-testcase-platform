@@ -84,3 +84,9 @@ export class VerifyEmailDto {
   @IsString()
   token: string
 }
+
+export class ResendVerificationDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+}

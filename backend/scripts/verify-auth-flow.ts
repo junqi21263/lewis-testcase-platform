@@ -70,7 +70,12 @@ async function main() {
     let regBody: {
       code?: number
       message?: string
-      data?: { accessToken?: string; user?: { id: string } }
+      data?: {
+        accessToken?: string
+        user?: { id: string }
+        needsEmailVerification?: boolean
+        email?: string
+      }
     }
     try {
       regBody = (await regRes.json()) as typeof regBody
@@ -93,6 +98,18 @@ async function main() {
       id: row.id,
       email: row.email,
       username: row.username,
+      emailVerified: row.emailVerified,
+    })
+
+    if (!regBody.data?.needsEmailVerification) {
+      console.error('FAIL: 预期注册返回 needsEmailVerification（请检查 auth/register 实现）')
+      process.exit(1)
+    }
+
+    // 模拟用户完成邮件验证（自测不依赖真实 SMTP）
+    await prisma.user.update({
+      where: { id: row.id },
+      data: { emailVerified: true },
     })
 
     const loginRes = await fetch(`${apiBase}/auth/login`, {

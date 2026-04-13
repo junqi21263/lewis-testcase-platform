@@ -33,6 +33,7 @@ export interface User {
   avatar?: string
   role: UserRole
   teamId?: string
+  emailVerified?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -52,6 +53,12 @@ export interface AuthTokens {
   accessToken: string
   refreshToken?: string
   user: User
+}
+
+/** 注册后需邮件验证时接口返回的 data（无 accessToken） */
+export interface RegisterPendingVerification {
+  email: string
+  needsEmailVerification: true
 }
 
 // ==================== 团队相关 ====================
@@ -144,6 +151,17 @@ export interface TemplateVariable {
 export type TestCaseStatus = 'DRAFT' | 'REVIEWING' | 'APPROVED' | 'ARCHIVED'
 export type TestCasePriority = 'P0' | 'P1' | 'P2' | 'P3'
 export type TestCaseType = 'FUNCTIONAL' | 'PERFORMANCE' | 'SECURITY' | 'COMPATIBILITY' | 'REGRESSION'
+
+/** 生成页偏好（与后端 generation options 对齐） */
+export interface GenerationOptions {
+  testType: TestCaseType
+  granularity: string
+  priorityPreset: string
+  priorityRule: string
+  sceneNormal: number
+  sceneAbnormal: number
+  sceneBoundary: number
+}
 
 export interface TestCase {
   id: string

@@ -12,12 +12,13 @@ async function main() {
   const hashedPwd = await bcrypt.hash(adminPassword, 10)
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: {},
+    update: { emailVerified: true },
     create: {
       email: adminEmail,
       username: '超级管理员',
       password: hashedPwd,
       role: UserRole.SUPER_ADMIN,
+      emailVerified: true,
     },
   })
   console.log('✅ 管理员账号创建成功:', admin.email)

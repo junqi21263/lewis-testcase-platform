@@ -1,6 +1,12 @@
 import { request } from '@/utils/request'
 import { useAuthStore } from '@/store/authStore'
-import type { AuthTokens, LoginPayload, RegisterPayload, User } from '@/types'
+import type {
+  AuthTokens,
+  LoginPayload,
+  RegisterPayload,
+  RegisterPendingVerification,
+  User,
+} from '@/types'
 import { getApiErrorMessage } from '@/utils/apiErrorMessage'
 
 export const authApi = {
@@ -30,7 +36,7 @@ export const authApi = {
         username: payload.username.trim(),
         password: payload.password,
       }
-      return await request.post<AuthTokens>('/auth/register', body)
+      return await request.post<RegisterPendingVerification>('/auth/register', body)
     } catch (error: unknown) {
       setError(getApiErrorMessage(error, '注册失败，请重试'))
       throw error
@@ -105,17 +111,31 @@ export const authApi = {
   },
 
   verifyEmail: async (data: { email: string; token: string }) => {
-    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    const { setLoading, setError } = useAuthStore.getState()
     setLoading(true)
     try {
-      const result = await request.post<Record<string, never>>('/auth/verify-email', {
+      return await request.post<AuthTokens>('/auth/verify-email', {
         email: data.email.trim().toLowerCase(),
         token: data.token,
       })
-      setSuccessMessage('邮箱验证成功')
-      return result
     } catch (error: unknown) {
       setError(getApiErrorMessage(error, '邮箱验证失败，请重试'))
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  },
+
+  resendVerificationEmail: async (email: string) => {
+    const { setLoading, setError, setSuccessMessage } = useAuthStore.getState()
+    setLoading(true)
+    try {
+      await request.post<Record<string, never>>('/auth/resend-verification-email', {
+        email: email.trim().toLowerCase(),
+      })
+      setSuccessMessage('若该邮箱有待验证账号，您将收到验证邮件')
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, '发送失败，请重试'))
       throw error
     } finally {
       setLoading(false)
