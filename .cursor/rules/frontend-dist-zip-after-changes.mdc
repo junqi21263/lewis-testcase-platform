@@ -1,0 +1,16 @@
+---
+description: 修改前端或交付静态资源时默认构建并生成 dist.zip
+alwaysApply: true
+---
+
+# 前端 dist.zip 打包（默认收尾）
+
+当本会话 **改动了 `frontend/` 下任意文件**，或用户提到 **打包 / dist.zip / EdgeOne / 静态部署** 时，在任务收尾执行：
+
+```bash
+cd frontend && pnpm build && rm -f dist.zip && (cd dist && zip -r ../dist.zip .)
+```
+
+向用户说明产物路径：**`frontend/dist.zip`**（约等于 `dist/` 根目录内容，解压后直接上传静态托管）。该文件在 `.gitignore` 中，不提交仓库。
+
+纯后端或其它目录修改、且用户未要求前端包时，可跳过。
