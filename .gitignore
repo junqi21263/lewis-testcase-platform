@@ -42,8 +42,7 @@ pids/
 ._*
 Thumbs.db
 
-# Prisma
-prisma/migrations/
+# Prisma: keep migration SQL under version control (do not ignore backend/prisma/migrations)
 
 # Test coverage
 coverage/
