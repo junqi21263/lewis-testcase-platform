@@ -5,10 +5,12 @@ import {
   BadRequestException,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
+import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '@/prisma/prisma.service'
 import { LoginDto, RegisterDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto'
 import { PasswordValidator } from '@/common/validators/password.validator'
+import { MailService } from '@/modules/mail/mail.service'
 
 @Injectable()
 export class AuthService {
@@ -16,6 +18,8 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private passwordValidator: PasswordValidator,
+    private config: ConfigService,
+    private mail: MailService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -133,7 +137,27 @@ export class AuthService {
         { sub: user.id, email: user.email },
         { expiresIn: '1h' },
       )
-      console.log(`Password reset token for ${user.email}: ${resetToken}`)
+      const frontend = (this.config.get<string>('FRONTEND_URL') || '').trim().replace(/\/+$/, '')
+      const resetUrl = frontend ? `${frontend}/reset-password/${encodeURIComponent(resetToken)}` : ''
+
+      // 邮件发送（若 SMTP 未配置则跳过；开发环境仍会输出 token 便于调试）
+      if (resetUrl) {
+        await this.mail.sendMail({
+          to: user.email,
+          subject: '重置密码',
+          text: `我们收到你的重置密码请求。\n\n请在 1 小时内打开链接设置新密码：\n${resetUrl}\n\n若非本人操作请忽略此邮件。`,
+          html: `
+            <p>我们收到你的重置密码请求。</p>
+            <p>请在 <b>1 小时</b> 内打开链接设置新密码：</p>
+            <p><a href="${resetUrl}">${resetUrl}</a></p>
+            <p>若非本人操作请忽略此邮件。</p>
+          `,
+        })
+      }
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`Password reset token for ${user.email}: ${resetToken}`)
+      }
     }
 
     // 统一文案，避免被用于探测邮箱是否注册（具体说明由响应拦截器 message 字段给出）
