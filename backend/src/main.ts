@@ -5,6 +5,13 @@ import { AppModule } from './app.module'
 import * as fs from 'fs'
 
 async function bootstrap() {
+  if (process.env.NODE_ENV === 'production') {
+    const jwt = process.env.JWT_SECRET?.trim()
+    if (!jwt) {
+      throw new Error('JWT_SECRET is required in production. Set it in Railway service variables.')
+    }
+  }
+
   const logger = new Logger('Bootstrap')
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
@@ -58,7 +65,8 @@ async function bootstrap() {
   }
 
   const port = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10)
-  await app.listen(port)
+  const host = process.env.HOST || '0.0.0.0'
+  await app.listen(port, host)
 
   logger.log(`🚀 应用启动成功: http://localhost:${port}/api`)
 }

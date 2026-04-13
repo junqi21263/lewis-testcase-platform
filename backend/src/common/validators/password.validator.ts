@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import { PasswordConfig } from '@/config/password.config'
+import { PASSWORD_CONFIG } from '@/config/password.config'
 
 @Injectable()
 export class PasswordValidator {
-  constructor(private config: PasswordConfig) {}
+  private readonly config = PASSWORD_CONFIG
 
   get verificationTokenExpiry(): string {
     return this.config.verificationTokenExpiry
