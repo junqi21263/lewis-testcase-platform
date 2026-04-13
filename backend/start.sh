@@ -1,13 +1,11 @@
 #!/bin/sh
 set -e
 
-# 若上次 deploy 留下 P3009（失败迁移记录），在 Railway 临时设置：
-# PRISMA_MIGRATE_RESOLVE_ROLLED_BACK=20250413120000_init_postgresql
-# 部署一次成功后删除该变量。
-if [ -n "$PRISMA_MIGRATE_RESOLVE_ROLLED_BACK" ]; then
-  echo "[start] prisma migrate resolve --rolled-back $PRISMA_MIGRATE_RESOLVE_ROLLED_BACK"
-  pnpm exec prisma migrate resolve --rolled-back "$PRISMA_MIGRATE_RESOLVE_ROLLED_BACK" --schema=./prisma/schema.prod.prisma
-fi
+# P3009：库中若存在「已开始但未成功」的初始迁移记录，migrate deploy 会拒绝执行。
+# 启动前尝试将该迁移标为 rolled-back；若无失败记录或已应用成功，命令会失败，忽略即可（|| true）。
+STUCK_INIT_MIGRATION=20250413120000_init_postgresql
+echo "[start] prisma migrate resolve --rolled-back $STUCK_INIT_MIGRATION (best-effort for P3009)..."
+pnpm exec prisma migrate resolve --rolled-back "$STUCK_INIT_MIGRATION" --schema=./prisma/schema.prod.prisma || true
 
 echo "[start] Running prisma migrate deploy..."
 pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma
