@@ -145,10 +145,10 @@ docker run -p 3000:3000 testcase-platform-backend
 backend/
 ├── src/
 │   ├── common/           # 公共模块
-│   │   ├── health/      # 健康检查
 │   │   ├── filters/     # 异常过滤器
 │   │   ├── guards/      # 路由守卫
 │   │   └── interceptors/# 响应拦截器
+│   ├── health.controller.ts  # 健康检查（/api/health）
 │   ├── modules/         # 业务模块
 │   │   ├── auth/        # 认证模块
 │   │   ├── users/       # 用户模块

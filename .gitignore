@@ -63,9 +63,10 @@ dev.db
 *.sqlite
 *.sqlite3
 backend/prisma/dev.db
-backend/prisma/schema.dev.prisma
-backend/prisma/schema.prod.prisma
 backend/prisma/migrations/dev
+
+# Local pnpm store (should use global store; do not commit)
+.pnpm-store/
 
 # Build artifacts
 frontend/dist.zip
