@@ -137,6 +137,12 @@ lewis_testcase_platform/
 
 ## 默认账号
 
-种子数据初始化后默认管理员：
+种子数据初始化后默认管理员（折叠显示）：
+
+<details>
+<summary>点击展开默认账号</summary>
+
 - 邮箱：`admin@example.com`
 - 密码：`Admin@123456`
+
+</details>

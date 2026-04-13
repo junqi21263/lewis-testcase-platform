@@ -9,6 +9,12 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator'
 export class RecordsController {
   constructor(private service: RecordsService) {}
 
+  @Get('summary')
+  @ApiOperation({ summary: '工作台：生成记录汇总' })
+  getSummary(@CurrentUser('id') userId: string) {
+    return this.service.getSummary(userId)
+  }
+
   @Get()
   @ApiOperation({ summary: '获取生成记录列表' })
   getList(

@@ -6,6 +6,18 @@ import { TestCaseStatus } from '@prisma/client'
 export class TestcasesService {
   constructor(private prisma: PrismaService) {}
 
+  async getSummary(userId: string) {
+    const where = { creatorId: userId }
+    const [totalSuites, totalCasesAgg] = await Promise.all([
+      this.prisma.testSuite.count({ where }),
+      this.prisma.testCase.aggregate({
+        where: { suite: { creatorId: userId } },
+        _count: { id: true },
+      }),
+    ])
+    return { totalSuites, totalCases: totalCasesAgg._count.id }
+  }
+
   // ---- 用例集 ----
 
   async getSuites(userId: string, page = 1, pageSize = 10, keyword?: string) {

@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wand2, FileText, CheckSquare, TrendingUp, ArrowRight, Clock } from 'lucide-react'
+import {
+  Wand2,
+  FileText,
+  CheckSquare,
+  TrendingUp,
+  ArrowRight,
+  Clock,
+  FileUp,
+  BookTemplate,
+  Settings,
+} from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
 import { recordsApi } from '@/api/records'
 import { testcasesApi } from '@/api/testcases'
-import { formatDate, statusColorMap } from '@/utils/format'
+import { formatDate, statusColorMap, timeAgo } from '@/utils/format'
 import type { GenerationRecord, TestSuite } from '@/types'
 
 interface Stats {
@@ -28,18 +38,19 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [recordsRes, suitesRes] = await Promise.all([
+        const [recordsRes, suitesRes, recordsSummary, tcSummary] = await Promise.all([
           recordsApi.getRecords({ page: 1, pageSize: 5 }),
           testcasesApi.getSuites({ page: 1, pageSize: 4 }),
+          recordsApi.getSummary(),
+          testcasesApi.getSummary(),
         ])
         setRecentRecords(recordsRes.list)
         setRecentSuites(suitesRes.list)
-        const successCount = recordsRes.list.filter((r) => r.status === 'SUCCESS').length
         setStats({
-          totalRecords: recordsRes.total,
-          totalSuites: suitesRes.total,
-          totalCases: suitesRes.list.reduce((acc, s) => acc + s.caseCount, 0),
-          successRate: recordsRes.list.length ? Math.round((successCount / recordsRes.list.length) * 100) : 0,
+          totalRecords: recordsSummary.total,
+          totalSuites: tcSummary.totalSuites,
+          totalCases: tcSummary.totalCases,
+          successRate: recordsSummary.successRate,
         })
       } catch {
         // 请求失败静默处理，显示空数据
@@ -54,7 +65,14 @@ export default function DashboardPage() {
     { title: '总生成记录', value: stats.totalRecords, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/30' },
     { title: '用例集数量', value: stats.totalSuites, icon: CheckSquare, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-950/30' },
     { title: '累计生成用例', value: stats.totalCases, icon: TrendingUp, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-    { title: '本周成功率', value: `${stats.successRate}%`, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
+    { title: '成功率', value: `${stats.successRate}%`, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
+  ]
+
+  const quickActions = [
+    { title: '解析文档', desc: '上传并解析需求文档', icon: FileUp, to: '/upload' },
+    { title: '生成用例', desc: '配置参数并流式生成', icon: Wand2, to: '/generate' },
+    { title: '模板管理', desc: '维护提示词模板库', icon: BookTemplate, to: '/templates' },
+    { title: '系统设置', desc: '模型配置与个人设置', icon: Settings, to: '/settings' },
   ]
 
   return (
@@ -63,7 +81,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">
-            早上好，{user?.username} 👋
+            欢迎回来，{user?.username}
           </h1>
           <p className="text-muted-foreground mt-1">今天也是提升测试效率的好日子</p>
         </div>
@@ -71,6 +89,29 @@ export default function DashboardPage() {
           <Wand2 className="w-4 h-4" />
           立即生成用例
         </Button>
+      </div>
+
+      {/* 快捷入口 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {quickActions.map((a) => (
+          <Card
+            key={a.title}
+            className="hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => navigate(a.to)}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{a.title}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                  <a.icon className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* 统计卡片 */}
@@ -108,12 +149,19 @@ export default function DashboardPage() {
               <div className="text-center text-muted-foreground py-8 text-sm">暂无记录，去生成第一个用例吧</div>
             ) : (
               recentRecords.map((record) => (
-                <div key={record.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div
+                  key={record.id}
+                  className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-accent/30 rounded-md px-2 -mx-2"
+                  onClick={() => navigate('/records')}
+                  title="查看生成记录"
+                >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{record.title}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{formatDate(record.createdAt, 'MM-dd HH:mm')}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {timeAgo(record.createdAt)}（{formatDate(record.createdAt, 'MM-dd HH:mm')}）
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
@@ -132,8 +180,8 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base font-semibold">最近用例集</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/records')} className="gap-1 text-xs">
-              查看全部 <ArrowRight className="w-3 h-3" />
+            <Button variant="ghost" size="sm" onClick={() => navigate('/generate')} className="gap-1 text-xs">
+              去生成 <ArrowRight className="w-3 h-3" />
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -143,7 +191,12 @@ export default function DashboardPage() {
               <div className="text-center text-muted-foreground py-8 text-sm">暂无用例集</div>
             ) : (
               recentSuites.map((suite) => (
-                <div key={suite.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div
+                  key={suite.id}
+                  className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-accent/30 rounded-md px-2 -mx-2"
+                  onClick={() => navigate('/records')}
+                  title="查看生成记录"
+                >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{suite.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{suite.projectName || '无项目'}</p>

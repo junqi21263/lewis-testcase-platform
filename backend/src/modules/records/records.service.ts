@@ -5,6 +5,21 @@ import { PrismaService } from '@/prisma/prisma.service'
 export class RecordsService {
   constructor(private prisma: PrismaService) {}
 
+  async getSummary(userId: string) {
+    const where = { creatorId: userId }
+
+    const [total, success, failed, processing, pending] = await Promise.all([
+      this.prisma.generationRecord.count({ where }),
+      this.prisma.generationRecord.count({ where: { ...where, status: 'SUCCESS' as any } }),
+      this.prisma.generationRecord.count({ where: { ...where, status: 'FAILED' as any } }),
+      this.prisma.generationRecord.count({ where: { ...where, status: 'PROCESSING' as any } }),
+      this.prisma.generationRecord.count({ where: { ...where, status: 'PENDING' as any } }),
+    ])
+
+    const successRate = total ? Math.round((success / total) * 100) : 0
+    return { total, success, failed, processing, pending, successRate }
+  }
+
   async getRecords(userId: string, params: { page?: number; pageSize?: number; status?: string; keyword?: string }) {
     const { page = 1, pageSize = 10, status, keyword } = params
     const where = {

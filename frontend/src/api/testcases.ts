@@ -1,8 +1,16 @@
 import { request } from '@/utils/request'
 import type { TestSuite, TestCase, PaginatedData, PaginationParams, ExportFormat } from '@/types'
 
+export interface TestcasesSummary {
+  totalSuites: number
+  totalCases: number
+}
+
 export const testcasesApi = {
   // ---- 用例集 ----
+  getSummary: () =>
+    request.get<TestcasesSummary>('/testcases/summary'),
+
   getSuites: (params?: PaginationParams & { keyword?: string }) =>
     request.get<PaginatedData<TestSuite>>('/testcases/suites', { params }),
 

@@ -11,6 +11,12 @@ export class TestcasesController {
   constructor(private service: TestcasesService) {}
 
   // ---- 用例集 ----
+  @Get('summary')
+  @ApiOperation({ summary: '工作台：用例数据汇总' })
+  getSummary(@CurrentUser('id') userId: string) {
+    return this.service.getSummary(userId)
+  }
+
   @Get('suites')
   @ApiOperation({ summary: '获取用例集列表' })
   getSuites(
