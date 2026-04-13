@@ -1,11 +1,12 @@
-import { Injectable, NestMiddleware, Request, Response, NextFunction } from '@nestjs/common'
+import { Injectable, NestMiddleware } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import type { NextFunction, Request, Response } from 'express'
 
 @Injectable()
 export class SecurityMiddleware implements NestMiddleware {
   constructor(private configService: ConfigService) {}
 
-  use(req: Request, res: Response, next: NextFunction) {
+  use(req: Request, res: Response, next: NextFunction): void {
     // 设置安全头
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
@@ -24,15 +25,24 @@ export class SecurityMiddleware implements NestMiddleware {
     // 防止 XSS 攻击
     res.setHeader('X-XSS-Protection', '1; mode=block')
 
-    // 强制 HTTPS（在生产环境中）
+    // 强制 HTTPS（生产环境；Railway 等反代需看 x-forwarded-proto）
     if (this.configService.get('NODE_ENV') === 'production') {
-      if (req.secure) {
+      const forwarded = req.headers['x-forwarded-proto']
+      const proto =
+        typeof forwarded === 'string'
+          ? forwarded.split(',')[0].trim()
+          : Array.isArray(forwarded)
+            ? forwarded[0]
+            : ''
+      const isHttps = req.secure || proto === 'https'
+      if (isHttps) {
         next()
-      } else {
-        res.redirect(301, `https://${req.headers.host}${req.originalUrl}`)
+        return
       }
-    } else {
-      next()
+      const host = req.headers.host ?? ''
+      res.redirect(301, `https://${host}${req.originalUrl}`)
+      return
     }
+    next()
   }
 }

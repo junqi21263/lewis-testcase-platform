@@ -10,7 +10,6 @@ import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '@/prisma/prisma.service'
 import { LoginDto, RegisterDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto'
-import { User } from '@/prisma/client'
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { PasswordConfig } from '@/config/password.config'
 
@@ -41,7 +40,7 @@ export class AuthService {
     if (exists) throw new ConflictException('该邮箱已被注册')
 
     // 检查用户名是否已存在
-    const usernameExists = await this.prisma.user.findUnique({ where: { username: dto.username } })
+    const usernameExists = await this.prisma.user.findFirst({ where: { username: dto.username } })
     if (usernameExists) throw new ConflictException('该用户名已被使用')
 
     // 验证密码强度
@@ -60,7 +59,6 @@ export class AuthService {
         username: dto.username,
         password: hashed,
         avatar: dto.avatar,
-        emailVerified: false,
       },
       select: { id: true, email: true, username: true, role: true, avatar: true, createdAt: true },
     })
@@ -68,7 +66,7 @@ export class AuthService {
     // 生成验证令牌
     const verificationToken = this.jwtService.sign(
       { sub: user.id, email: user.email },
-      { expiresIn: this.passwordValidator.config.verificationTokenExpiry }
+      { expiresIn: this.passwordValidator.verificationTokenExpiry }
     )
 
     // 这里可以添加发送验证邮件的逻辑
@@ -88,7 +86,7 @@ export class AuthService {
   async updateProfile(userId: string, data: { username?: string; avatar?: string }) {
     // 检查用户名是否已被使用
     if (data.username) {
-      const usernameExists = await this.prisma.user.findUnique({ where: { username: data.username } })
+      const usernameExists = await this.prisma.user.findFirst({ where: { username: data.username } })
       if (usernameExists && usernameExists.id !== userId) {
         throw new ConflictException('该用户名已被使用')
       }
@@ -138,8 +136,10 @@ export class AuthService {
     try {
       // 验证重置令牌
       const payload = this.jwtService.verify(dto.token)
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub, email: payload.email } })
-      
+      const user = await this.prisma.user.findFirst({
+        where: { id: payload.sub, email: payload.email },
+      })
+
       if (!user) throw new BadRequestException('无效的重置令牌')
 
       const hashed = await bcrypt.hash(dto.newPassword, 10)
@@ -155,13 +155,13 @@ export class AuthService {
     try {
       // 验证邮箱令牌
       const payload = this.jwtService.verify(dto.token)
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub, email: payload.email } })
-      
+      const user = await this.prisma.user.findFirst({
+        where: { id: payload.sub, email: payload.email },
+      })
+
       if (!user) throw new BadRequestException('无效的验证令牌')
 
-      // 更新用户邮箱验证状态
-      await this.prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } })
-
+      // 生产 schema 暂无 emailVerified 字段；校验令牌后即视为通过
       return { message: '邮箱验证成功' }
     } catch (error) {
       throw new BadRequestException('无效的验证令牌或已过期')

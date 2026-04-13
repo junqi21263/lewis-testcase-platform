@@ -5,7 +5,6 @@ import { LoginDto, RegisterDto, ChangePasswordDto, ForgotPasswordDto, ResetPassw
 import { Public } from '@/common/decorators/public.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard'
-import { User } from '@/prisma/client'
 
 @ApiTags('认证')
 @Controller('auth')

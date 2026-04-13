@@ -5,6 +5,10 @@ import { PasswordConfig } from '@/config/password.config'
 export class PasswordValidator {
   constructor(private config: PasswordConfig) {}
 
+  get verificationTokenExpiry(): string {
+    return this.config.verificationTokenExpiry
+  }
+
   validate(password: string): { valid: boolean; errors: string[] } {
     const errors: string[] = []
 
