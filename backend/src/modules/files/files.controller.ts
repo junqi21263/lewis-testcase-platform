@@ -60,11 +60,14 @@ export class FilesController {
         destination: process.env.UPLOAD_DIR || './uploads',
         filename: (_req, _file, cb) => cb(null, `${uuid()}.chunk`),
       }),
-      limits: { fileSize: parseInt(process.env.MAX_CHUNK_SIZE || String(2 * 1024 * 1024)) },
+      // 分片大小上限（字节）。默认放宽到 10MB，避免 2MB 边界条件/代理层差异导致 413
+      limits: { fileSize: parseInt(process.env.MAX_CHUNK_SIZE || String(10 * 1024 * 1024)) },
     }),
   )
   uploadChunk(
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })] }))
+    @UploadedFile(new ParseFilePipe({
+      validators: [new MaxFileSizeValidator({ maxSize: parseInt(process.env.MAX_CHUNK_SIZE || String(10 * 1024 * 1024)) })],
+    }))
     chunk: Express.Multer.File,
     @Body('fileId') fileId: string,
     @Body('chunkIndex') chunkIndex: string,
