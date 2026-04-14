@@ -195,7 +195,10 @@ export class FilesService {
 
     if (partFiles.length === 0) throw new BadRequestException('未找到任何分片')
     if (partFiles.length !== expectedTotal) {
-      throw new BadRequestException(`分片数量不完整：已收到 ${partFiles.length}/${expectedTotal}`)
+      const storage = (process.env.FILE_STORAGE || 'local').toLowerCase()
+      throw new BadRequestException(
+        `分片数量不完整：已收到 ${partFiles.length}/${expectedTotal}（storage=${storage}，LOCAL 模式下多实例会导致分片丢失；请设 FILE_STORAGE=cos 并配置 COS_*）`,
+      )
     }
 
     try {
