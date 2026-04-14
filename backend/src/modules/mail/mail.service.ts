@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
+import * as dns from 'node:dns'
 import { envStr } from '@/common/utils/config-env.util'
 
 export type MailPayload = {
@@ -19,7 +20,42 @@ export type SendMailResult =
 export class MailService {
   private readonly logger = new Logger(MailService.name)
 
-  constructor(private config: ConfigService) {}
+  /** 避免 smtp.qq.com 等解析出 AAAA 后走 IPv6，在 Railway等环境常报 ENETUNREACH */
+  private static smtpDnsIpv4FirstApplied = false
+
+  constructor(private config: ConfigService) {
+    this.applySmtpDnsPreferIpv4()
+    this.warnIfFromAddressMismatchesLogin()
+  }
+
+  /** 默认 true；设 MAIL_SMTP_IPV4FIRST=false 时关闭（仅用系统默认解析顺序）。 */
+  private smtpPreferIpv4(): boolean {
+    const raw = envStr(this.config, 'MAIL_SMTP_IPV4FIRST').toLowerCase()
+    return !(raw === '0' || raw === 'false' || raw === 'no')
+  }
+
+  /**
+   * 默认开启：SMTP 连接优先使用 IPv4（可通过 MAIL_SMTP_IPV4FIRST=false 关闭）。
+   * 与日志中 `connect ENETUNREACH 240d:...:587` 同类问题对应。
+   */
+  private applySmtpDnsPreferIpv4() {
+    if (!this.smtpPreferIpv4()) return
+    if (MailService.smtpDnsIpv4FirstApplied) return
+    if (typeof dns.setDefaultResultOrder !== 'function') return
+    dns.setDefaultResultOrder('ipv4first')
+    MailService.smtpDnsIpv4FirstApplied = true
+    this.logger.log('SMTP DNS 已设为 ipv4first（缓解云平台 IPv6 不可达导致的 ENETUNREACH）')
+  }
+
+  private warnIfFromAddressMismatchesLogin() {
+    const fromAddr = envStr(this.config, 'MAIL_FROM_ADDRESS')
+    const login = this.smtpUser()
+    if (!fromAddr || !login) return
+    if (fromAddr.toLowerCase() === login.toLowerCase()) return
+    this.logger.warn(
+      `MAIL_FROM_ADDRESS（${fromAddr}）与 MAIL_USERNAME（${login}）不一致，QQ 等邮箱易拒信；请改为同一发信账号`,
+    )
+  }
 
   /**
    * 同步检测：是否具备发信能力（不连 SMTP）。

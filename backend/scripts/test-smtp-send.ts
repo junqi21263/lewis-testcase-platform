@@ -7,6 +7,7 @@
  */
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import * as dns from 'node:dns'
 import * as nodemailer from 'nodemailer'
 
 function loadEnvFile(p: string) {
@@ -68,8 +69,17 @@ function buildFrom(): string {
   return smtpUser() || 'no-reply@example.com'
 }
 
+function applyIpv4FirstDns() {
+  const v = env('MAIL_SMTP_IPV4FIRST').toLowerCase()
+  if (v === '0' || v === 'false' || v === 'no') return
+  if (typeof dns.setDefaultResultOrder !== 'function') return
+  dns.setDefaultResultOrder('ipv4first')
+  console.log('DNS: 已 setDefaultResultOrder("ipv4first")（与 MailService 一致，缓解 ENETUNREACH IPv6）')
+}
+
 async function main() {
   loadEnvFile(join(__dirname, '..', '.env'))
+  applyIpv4FirstDns()
 
   const host = smtpHost()
   const port = smtpPort()
