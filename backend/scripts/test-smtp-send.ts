@@ -125,8 +125,8 @@ async function main() {
 
   const to = env('TEST_MAIL_TO') || user
   const from = buildFrom()
-  const connectionTimeout = parseInt(env('SMTP_CONNECTION_TIMEOUT_MS') || '45000', 10)
-  const socketTimeout = parseInt(env('SMTP_SOCKET_TIMEOUT_MS') || '90000', 10)
+  const connectionTimeout = parseInt(env('SMTP_CONNECTION_TIMEOUT_MS') || '60000', 10)
+  const socketTimeout = parseInt(env('SMTP_SOCKET_TIMEOUT_MS') || '120000', 10)
 
   const manualSn = env('MAIL_TLS_SERVERNAME')
   const { host: connectHost, servername: snFromResolve } = await smtpConnectHostAndTls(host)

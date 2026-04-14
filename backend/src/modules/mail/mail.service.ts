@@ -162,12 +162,12 @@ export class MailService {
       secure = true
     }
 
-    // 默认放宽：海外机房 → QQ等国内 SMTP 常慢于 15s；仍超时可再调大或改用 465 / 中继服务
+    // 默认放宽：海外机房 → QQ 等国内 SMTP 常较慢；仍超时可再调大或改用 465 / 中继服务
     const connectionTimeout = parseInt(
-      envStr(this.config, 'SMTP_CONNECTION_TIMEOUT_MS') || '45000',
+      envStr(this.config, 'SMTP_CONNECTION_TIMEOUT_MS') || '60000',
       10,
     )
-    const socketTimeout = parseInt(envStr(this.config, 'SMTP_SOCKET_TIMEOUT_MS') || '90000', 10)
+    const socketTimeout = parseInt(envStr(this.config, 'SMTP_SOCKET_TIMEOUT_MS') || '120000', 10)
 
     const { host: connectHost, tls: tlsExtra } = await this.smtpConnectHostAndTls(host)
     const manualServername = envStr(this.config, 'MAIL_TLS_SERVERNAME')
@@ -211,7 +211,7 @@ export class MailService {
       this.logger.error(`SMTP 发送失败: ${msg}`)
       if (/timeout/i.test(msg)) {
         this.logger.warn(
-          'SMTP 连接/握手超时：可设置 SMTP_CONNECTION_TIMEOUT_MS（默认 45000）、SMTP_SOCKET_TIMEOUT_MS（默认 90000）；或试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl。若仍失败，多为机房到 QQ SMTP 链路或对数据中心 IP 限制，需改用 Resend/SendGrid 等中继或国内可出站 SMTP。',
+          'SMTP 连接/握手超时：可设置 SMTP_CONNECTION_TIMEOUT_MS（默认 60000）、SMTP_SOCKET_TIMEOUT_MS（默认 120000）；或试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl。若仍失败，多为机房到 QQ SMTP 链路或对数据中心 IP 限制，需改用 Resend/SendGrid 等中继或国内可出站 SMTP。',
         )
       }
       return { skipped: true, sendFailed: true }
