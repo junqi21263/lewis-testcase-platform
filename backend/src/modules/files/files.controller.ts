@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Query,
+  Body,
   UseInterceptors,
   UploadedFile,
   ParseFilePipe,
@@ -45,6 +46,41 @@ export class FilesController {
     @CurrentUser('id') userId: string,
   ) {
     return this.filesService.saveUploadedFile(file, userId)
+  }
+
+  @Post('upload/chunk')
+  @ApiOperation({ summary: '上传文件分片' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: diskStorage({
+        destination: process.env.UPLOAD_DIR || './uploads',
+        filename: (_req, _file, cb) => cb(null, `${uuid()}.chunk`),
+      }),
+      limits: { fileSize: parseInt(process.env.MAX_CHUNK_SIZE || String(2 * 1024 * 1024)) },
+    }),
+  )
+  uploadChunk(
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })] }))
+    chunk: Express.Multer.File,
+    @Body('fileId') fileId: string,
+    @Body('chunkIndex') chunkIndex: string,
+    @Body('chunkTotal') chunkTotal: string,
+  ) {
+    return this.filesService.saveUploadChunk(chunk, {
+      fileId,
+      chunkIndex: Number(chunkIndex),
+      chunkTotal: Number(chunkTotal),
+    })
+  }
+
+  @Post('upload/merge')
+  @ApiOperation({ summary: '合并文件分片' })
+  mergeChunks(
+    @CurrentUser('id') userId: string,
+    @Body() body: { fileId: string; originalName: string; mimeType: string; chunkTotal?: number },
+  ) {
+    return this.filesService.mergeUploadChunks(userId, body)
   }
 
   @Get()
