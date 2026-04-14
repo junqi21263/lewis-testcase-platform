@@ -38,6 +38,23 @@ export class AuthService {
     private mail: MailService,
   ) {}
 
+  /**
+   * 管理员模式：临时关闭注册/找回密码/邮件验证码，只允许管理员登录。
+   * - 显式设置 AUTH_ADMIN_ONLY=true/false
+   * - 未设置时：生产环境默认开启，开发环境默认关闭
+   */
+  private adminOnly(): boolean {
+    const raw = (process.env.AUTH_ADMIN_ONLY || '').trim().toLowerCase()
+    if (raw === '1' || raw === 'true' || raw === 'yes') return true
+    if (raw === '0' || raw === 'false' || raw === 'no') return false
+    return process.env.NODE_ENV === 'production'
+  }
+
+  private assertAdminOnlyAllowed(action: string) {
+    if (!this.adminOnly()) return
+    throw new BadRequestException(`当前已关闭${action}功能，请使用管理员账号登录或联系管理员`)
+  }
+
   private normalizeEmail(raw: string) {
     return raw.trim().toLowerCase()
   }
@@ -75,6 +92,12 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    if (this.adminOnly()) {
+      const u = dto.username.trim()
+      if (u.toLowerCase() !== 'admin') {
+        throw new UnauthorizedException('当前仅允许管理员账号登录')
+      }
+    }
     const username = dto.username.trim()
     const user = await this.prisma.user.findFirst({ where: { username } })
     if (!user) throw new UnauthorizedException('用户名或密码错误')
@@ -82,7 +105,7 @@ export class AuthService {
     const isMatch = await bcrypt.compare(dto.password, user.password)
     if (!isMatch) throw new UnauthorizedException('用户名或密码错误')
 
-    if (!user.emailVerified) {
+    if (!this.adminOnly() && !user.emailVerified) {
       throw new UnauthorizedException('该账号邮箱尚未完成验证，请完成注册验证流程或联系管理员')
     }
 
@@ -94,6 +117,7 @@ export class AuthService {
 
   /** 注册第一步：校验资料、写入待验证记录、发验证码（不写 users） */
   async registerSendCode(dto: RegisterSendCodeDto) {
+    this.assertAdminOnlyAllowed('注册')
     const email = this.normalizeEmail(dto.email)
     const username = dto.username.trim()
 
@@ -165,6 +189,7 @@ export class AuthService {
 
   /** 注册第二步：校验验证码并创建已验证用户 */
   async registerConfirm(dto: RegisterConfirmDto) {
+    this.assertAdminOnlyAllowed('注册')
     const email = this.normalizeEmail(dto.email)
     const challenge = await this.prisma.emailOtpChallenge.findUnique({
       where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
@@ -227,6 +252,7 @@ export class AuthService {
 
   /** 仅邮箱重发注册验证码 */
   async registerResendCode(dto: RegisterResendCodeDto) {
+    this.assertAdminOnlyAllowed('注册')
     const email = this.normalizeEmail(dto.email)
     const challenge = await this.prisma.emailOtpChallenge.findUnique({
       where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
@@ -319,6 +345,7 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
+    this.assertAdminOnlyAllowed('找回密码')
     const email = this.normalizeEmail(dto.email)
     const user = await this.prisma.user.findUnique({ where: { email } })
 
@@ -360,6 +387,7 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
+    this.assertAdminOnlyAllowed('找回密码')
     const email = this.normalizeEmail(dto.email)
     const challenge = await this.prisma.emailOtpChallenge.findUnique({
       where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },

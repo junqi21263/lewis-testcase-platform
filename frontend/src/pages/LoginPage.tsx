@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -48,7 +48,7 @@ export default function LoginPage() {
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold text-center">欢迎回来</CardTitle>
         <CardDescription className="text-center">
-          使用注册时的用户名登录；找回密码请使用邮箱
+          当前已关闭注册与找回密码，请使用管理员账号登录
         </CardDescription>
       </CardHeader>
 
@@ -120,20 +120,11 @@ export default function LoginPage() {
                 />
                 记住我
               </label>
-              <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-                忘记密码？
-              </Link>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {loading ? '登录中...' : '登录'}
             </Button>
-            <p className="text-sm text-center text-muted-foreground">
-              还没有账号？{' '}
-              <Link to="/register" className="text-primary hover:underline font-medium">
-                立即注册
-              </Link>
-            </p>
           </CardFooter>
       </form>
     </Card>

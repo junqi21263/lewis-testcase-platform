@@ -5,9 +5,6 @@ import { useEffect } from 'react'
 import MainLayout from '@/components/layout/MainLayout'
 import AuthLayout from '@/components/layout/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
-import RegisterPage from '@/pages/RegisterPage'
-import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
-import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import DashboardPage from '@/pages/DashboardPage'
 import GeneratePage from '@/pages/GeneratePage'
 import RecordsPage from '@/pages/RecordsPage'
@@ -39,10 +36,11 @@ export default function App() {
         {/* 公开路由 */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/verify-email" element={<Navigate to="/register" replace />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* 管理员模式：关闭注册/找回密码入口，全部回到登录 */}
+          <Route path="/register" element={<Navigate to="/login" replace />} />
+          <Route path="/verify-email" element={<Navigate to="/login" replace />} />
+          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
         </Route>
 
         {/* 受保护路由 */}
