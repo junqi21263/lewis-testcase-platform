@@ -114,6 +114,27 @@ export class CosService {
     return res.Body as NodeJS.ReadableStream
   }
 
+  async listKeys(prefix: string) {
+    if (!this.enabled || !this.cos) throw new Error('COS not enabled')
+    const cleanPrefix = prefix.replace(/^\/+/, '')
+    const listed = await new Promise<any>((resolve, reject) => {
+      this.cos!.getBucket(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Prefix: cleanPrefix,
+          MaxKeys: 1000,
+        },
+        (err, data) => {
+          if (err) reject(err)
+          else resolve(data)
+        },
+      )
+    })
+    const contents: Array<{ Key: string }> = listed?.Contents || []
+    return contents.map((c) => c.Key)
+  }
+
   async deletePrefix(prefix: string) {
     if (!this.enabled || !this.cos) return
     const cleanPrefix = prefix.replace(/^\/+/, '')
