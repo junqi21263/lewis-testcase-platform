@@ -20,7 +20,7 @@ export type SendMailResult =
 export class MailService {
   private readonly logger = new Logger(MailService.name)
 
-  /** 避免 smtp.qq.com 等解析出 AAAA 后走 IPv6，在 Railway等环境常报 ENETUNREACH */
+  /** 避免 SMTP 主机名解析出 AAAA 后优先走 IPv6，在 Railway 等环境常报 ENETUNREACH */
   private static smtpDnsIpv4FirstApplied = false
 
   constructor(private config: ConfigService) {
@@ -53,7 +53,7 @@ export class MailService {
     if (!fromAddr || !login) return
     if (fromAddr.toLowerCase() === login.toLowerCase()) return
     this.logger.warn(
-      `MAIL_FROM_ADDRESS（${fromAddr}）与 MAIL_USERNAME（${login}）不一致，QQ 等邮箱易拒信；请改为同一发信账号`,
+      `MAIL_FROM_ADDRESS（${fromAddr}）与 MAIL_USERNAME（${login}）不一致，Outlook 等邮箱易拒信；请改为同一发信账号`,
     )
   }
 
@@ -165,7 +165,7 @@ export class MailService {
       secure = true
     }
 
-    // 默认放宽：海外机房 → QQ 等国内 SMTP 常较慢；仍超时可再调大或改用 465 / 中继服务
+    // 默认放宽：远距离链路 SMTP 握手可能较慢；仍超时可再调大或改用 465 / 中继服务
     const connectionTimeout = parseInt(
       envStr(this.config, 'SMTP_CONNECTION_TIMEOUT_MS') || '60000',
       10,
@@ -218,7 +218,7 @@ export class MailService {
       this.logger.error(`SMTP 发送失败: ${msg}`)
       if (/timeout/i.test(msg)) {
         this.logger.warn(
-          `SMTP 连接/握手超时（本次 ${peer}）。再大超时往往无效：请试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl，或换 Resend/SendGrid 等 HTTPS发信；直连 QQ 从海外机房常被限速/丢弃。采集日志可设 NO_COLOR=1 去掉 ANSI。`,
+          `SMTP 连接/握手超时（本次 ${peer}）。再大超时往往无效：请试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl，或换 Resend/SendGrid 等 HTTPS 发信；部分 SMTP 从海外机房直连可能被限速/丢弃。采集日志可设 NO_COLOR=1 去掉 ANSI。`,
         )
       }
       return { skipped: true, sendFailed: true }

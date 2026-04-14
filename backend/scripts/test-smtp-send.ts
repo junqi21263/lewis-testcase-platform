@@ -155,7 +155,7 @@ async function main() {
   })
 
   const subject = `[SMTP自检] AI 用例平台 ${new Date().toISOString()}`
-  const text = '若收到此邮件，说明当前 MAIL_* / SMTP_* 与 QQ SMTP 联通正常。'
+  const text = '若收到此邮件，说明当前 MAIL_* / SMTP_* 与发信服务器（如 Outlook SMTP）联通正常。'
 
   try {
     const info = await transport.sendMail({
