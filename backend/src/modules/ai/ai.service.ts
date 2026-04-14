@@ -9,6 +9,7 @@ import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
 import { GenerationStatus } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
+import { PromptBuilderService } from './prompt-builder.service'
 
 @Injectable()
 export class AiService {
@@ -17,6 +18,7 @@ export class AiService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private promptBuilder: PromptBuilderService,
   ) {}
 
   /** 根据配置获取 OpenAI 客户端（兼容多模型） */
@@ -62,47 +64,31 @@ export class AiService {
     return models
   }
 
-  /** 构建提示词 */
-  private buildPrompt(dto: GenerateDto, fileContent?: string): string {
-    const systemPrompt = `你是一名专业的软件测试工程师，精通各类测试方法和测试用例编写规范。
-请严格按照 JSON 格式输出测试用例，格式如下：
-{
-  "cases": [
-    {
-      "title": "用例标题",
-      "priority": "P0|P1|P2|P3",
-      "type": "FUNCTIONAL|PERFORMANCE|SECURITY|COMPATIBILITY|REGRESSION",
-      "precondition": "前置条件（可为空）",
-      "steps": [{"order": 1, "action": "操作步骤", "expected": "中间预期（可为空）"}],
-      "expectedResult": "最终预期结果",
-      "tags": ["标签1", "标签2"]
+  private async resolveRequirement(dto: GenerateDto): Promise<{ requirement: string; fileId?: string }> {
+    if (dto.sourceType === 'file') {
+      if (!dto.fileId) throw new BadRequestException('缺少 fileId')
+      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
+      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
+      return { requirement: file.parsedContent, fileId: dto.fileId }
     }
-  ]
-}`
-
-    let userContent = dto.customPrompt || '请生成全面的测试用例，覆盖正向、逆向和边界场景。'
-
-    if (fileContent) {
-      userContent += `\n\n需求/文档内容：\n${fileContent}`
-    } else if (dto.text) {
-      userContent += `\n\n需求描述：\n${dto.text}`
+    if (dto.sourceType === 'text') {
+      if (!dto.text?.trim()) throw new BadRequestException('请输入需求文本')
+      return { requirement: dto.text.trim() }
     }
-
-    return JSON.stringify({ system: systemPrompt, user: userContent })
+    if (dto.sourceType === 'url') {
+      if (!dto.url?.trim()) throw new BadRequestException('请输入 URL')
+      return { requirement: dto.url.trim() }
+    }
+    throw new BadRequestException('不支持的 sourceType')
   }
 
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
-    const { client, modelId, modelName } = await this.getOpenAIClient()
+    const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    // 获取文件内容
-    let fileContent: string | undefined
-    if (dto.fileId) {
-      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
-      fileContent = file.parsedContent
-    }
+    const { requirement, fileId } = await this.resolveRequirement(dto)
+    const built = await this.promptBuilder.build(dto, requirement)
 
     // 创建生成记录
     const record = await this.prisma.generationRecord.create({
@@ -110,22 +96,27 @@ export class AiService {
         title: `生成记录 ${new Date().toLocaleString('zh-CN')}`,
         status: GenerationStatus.PROCESSING,
         sourceType: dto.sourceType,
-        prompt: dto.customPrompt || '',
+        prompt: JSON.stringify({
+          system: built.system,
+          user: built.user,
+          templateId: built.resolvedTemplateId ?? dto.templateId ?? null,
+          generationOptions: dto.generationOptions ?? null,
+          aiParams: { modelConfigId: dto.modelConfigId ?? null, temperature: dto.temperature, maxTokens: dto.maxTokens },
+        }),
         modelId,
         modelName,
         creatorId: userId,
-        fileId: dto.fileId,
-        templateId: dto.templateId,
+        fileId,
+        templateId: built.resolvedTemplateId ?? dto.templateId,
       },
     })
 
     try {
-      const messages = JSON.parse(this.buildPrompt(dto, fileContent))
       const completion = await client.chat.completions.create({
         model: modelId,
         messages: [
-          { role: 'system', content: messages.system },
-          { role: 'user', content: messages.user },
+          { role: 'system', content: built.system },
+          { role: 'user', content: built.user },
         ],
         temperature: dto.temperature ?? 0.7,
         max_tokens: dto.maxTokens ?? 4096,
@@ -135,6 +126,7 @@ export class AiService {
       const content = completion.choices[0]?.message?.content || '{}'
       const parsed = JSON.parse(content)
       const cases = parsed.cases || []
+      const quality = parsed.quality || null
 
       // 创建用例集和用例
       const suite = await this.prisma.testSuite.create({
@@ -143,13 +135,17 @@ export class AiService {
           creatorId: userId,
           cases: {
             create: cases.map((c: any) => ({
-              title: c.title,
-              precondition: c.precondition,
-              steps: c.steps || [],
-              expectedResult: c.expectedResult,
-              priority: c.priority || 'P2',
-              type: c.type || 'FUNCTIONAL',
-              tags: c.tags || [],
+              title: c.title || c.name || '未命名用例',
+              precondition: c.precondition || '',
+              steps: (Array.isArray(c.steps) ? c.steps : []).map((s: any, idx: number) => ({
+                order: idx + 1,
+                action: typeof s === 'string' ? s : (s?.action || ''),
+                expected: typeof s === 'string' ? '' : (s?.expected || ''),
+              })),
+              expectedResult: c.expected || c.expectedResult || '',
+              priority: (c.priority || 'P2') as any,
+              type: (dto.generationOptions?.testType || c.type || 'FUNCTIONAL') as any,
+              tags: Array.isArray(c.tags) ? c.tags : [],
             })),
           },
         },
@@ -168,11 +164,18 @@ export class AiService {
         },
       })
 
-      return { recordId: record.id, cases: suite.cases, tokensUsed: completion.usage?.total_tokens, duration }
+      return {
+        recordId: record.id,
+        cases: suite.cases,
+        tokensUsed: completion.usage?.total_tokens,
+        duration,
+        qualityScore: typeof quality?.score === 'number' ? quality.score : null,
+        qualitySuggestions: Array.isArray(quality?.suggestions) ? quality.suggestions.join('\n') : null,
+      }
     } catch (err) {
       await this.prisma.generationRecord.update({
         where: { id: record.id },
-        data: { status: GenerationStatus.FAILED, errorMessage: err.message },
+        data: { status: GenerationStatus.FAILED, errorMessage: err instanceof Error ? err.message : String(err) },
       })
       throw err
     }
@@ -180,26 +183,29 @@ export class AiService {
 
   /** 流式生成（SSE） */
   async generateStream(dto: GenerateDto, userId: string, res: Response) {
-    const { client, modelId, modelName } = await this.getOpenAIClient()
+    const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    let fileContent: string | undefined
-    if (dto.fileId) {
-      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成')
-      fileContent = file.parsedContent
-    }
+    const { requirement, fileId } = await this.resolveRequirement(dto)
+    const built = await this.promptBuilder.build(dto, requirement)
 
     const record = await this.prisma.generationRecord.create({
       data: {
         title: `流式生成记录 ${new Date().toLocaleString('zh-CN')}`,
         status: GenerationStatus.PROCESSING,
         sourceType: dto.sourceType,
-        prompt: dto.customPrompt || '',
+        prompt: JSON.stringify({
+          system: built.system,
+          user: built.user,
+          templateId: built.resolvedTemplateId ?? dto.templateId ?? null,
+          generationOptions: dto.generationOptions ?? null,
+          aiParams: { modelConfigId: dto.modelConfigId ?? null, temperature: dto.temperature, maxTokens: dto.maxTokens },
+        }),
         modelId,
         modelName,
         creatorId: userId,
-        fileId: dto.fileId,
+        fileId,
+        templateId: built.resolvedTemplateId ?? dto.templateId,
       },
     })
 
@@ -211,12 +217,11 @@ export class AiService {
 
     let fullContent = ''
     try {
-      const messages = JSON.parse(this.buildPrompt(dto, fileContent))
       const stream = await client.chat.completions.create({
         model: modelId,
         messages: [
-          { role: 'system', content: messages.system },
-          { role: 'user', content: messages.user },
+          { role: 'system', content: built.system },
+          { role: 'user', content: built.user },
         ],
         temperature: dto.temperature ?? 0.7,
         max_tokens: dto.maxTokens ?? 4096,
@@ -227,15 +232,18 @@ export class AiService {
         const delta = chunk.choices[0]?.delta?.content || ''
         if (delta) {
           fullContent += delta
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+          // 仅输出纯文本片段；前端实时拼接展示
+          res.write(`data: ${JSON.stringify({ t: delta })}\n\n`)
         }
       }
 
       // 解析最终内容，保存用例
       let cases: any[] = []
+      let quality: any = null
       try {
         const parsed = JSON.parse(fullContent)
         cases = parsed.cases || []
+        quality = parsed.quality || null
       } catch {
         this.logger.warn('流式响应内容解析 JSON 失败')
       }
@@ -254,12 +262,13 @@ export class AiService {
         data: { status: GenerationStatus.SUCCESS, caseCount: suite.cases.length, suiteId: suite.id, duration: Date.now() - startTime },
       })
 
+      res.write(`data: ${JSON.stringify({ done: true, recordId: record.id, quality })}\n\n`)
       res.write(`data: [DONE]\n\n`)
       res.end()
     } catch (err) {
       await this.prisma.generationRecord.update({
         where: { id: record.id },
-        data: { status: GenerationStatus.FAILED, errorMessage: err.message },
+        data: { status: GenerationStatus.FAILED, errorMessage: err instanceof Error ? err.message : String(err) },
       })
       res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
       res.end()

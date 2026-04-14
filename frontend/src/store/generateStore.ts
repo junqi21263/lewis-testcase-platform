@@ -179,6 +179,8 @@ export const useGenerateStore = create<GenerateState>()(
         generationOptions: s.generationOptions,
         aiParams: s.aiParams,
         generatedCases: s.generatedCases,
+        streamContent: s.streamContent,
+        isGenerating: s.isGenerating,
         lastRecordId: s.lastRecordId,
         qualityScore: s.qualityScore,
         qualitySuggestions: s.qualitySuggestions,

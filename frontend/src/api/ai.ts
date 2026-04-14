@@ -8,6 +8,9 @@ export interface GenerateTestCasesPayload extends AIGenerateParams {
   url?: string
   templateId?: string
   customPrompt?: string
+  userNotes?: string
+  outputLanguage?: string
+  generationOptions?: Record<string, unknown>
 }
 
 export interface GenerateResult {
@@ -15,6 +18,8 @@ export interface GenerateResult {
   cases: TestCase[]
   tokensUsed: number
   duration: number
+  qualityScore?: number | null
+  qualitySuggestions?: string | null
 }
 
 export const aiApi = {
@@ -30,15 +35,27 @@ export const aiApi = {
   generateStream: (
     payload: GenerateTestCasesPayload,
     onChunk: (chunk: string) => void,
-    onDone?: (recordId: string) => void,
+    onDone?: (meta: { recordId?: string; quality?: unknown }) => void,
     onError?: (error: Error) => void,
+    signal?: AbortSignal,
   ) => {
     return streamRequest(
       '/ai/generate/stream',
       payload,
-      onChunk,
-      () => onDone?.(''),
+      (jsonStr) => {
+        try {
+          const obj = JSON.parse(jsonStr) as any
+          if (obj?.t) onChunk(String(obj.t))
+          if (obj?.done) onDone?.({ recordId: obj.recordId, quality: obj.quality })
+          if (obj?.error) throw new Error(String(obj.error))
+        } catch {
+          // 兼容后端直接输出纯文本片段
+          onChunk(jsonStr)
+        }
+      },
+      () => onDone?.({}),
       onError,
+      signal,
     )
   },
 }

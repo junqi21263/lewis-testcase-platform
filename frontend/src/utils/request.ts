@@ -167,6 +167,7 @@ export async function streamRequest(
   onChunk: (chunk: string) => void,
   onDone?: () => void,
   onError?: (error: Error) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const token = useAuthStore.getState().token
   const baseURL = getApiBaseUrl()
@@ -178,6 +179,7 @@ export async function streamRequest(
       Authorization: token ? `Bearer ${token}` : '',
     },
     body: JSON.stringify(data),
+    signal,
   })
 
   if (!response.ok) {

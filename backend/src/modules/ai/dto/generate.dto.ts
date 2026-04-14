@@ -1,5 +1,32 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsIn } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsBoolean, IsIn, ValidateNested, IsObject } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
+import { Type } from 'class-transformer'
+
+class GenerationOptionsDto {
+  @IsOptional()
+  @IsString()
+  testType?: string
+
+  @IsOptional()
+  @IsString()
+  granularity?: string
+
+  @IsOptional()
+  @IsString()
+  priorityRule?: string
+
+  @IsOptional()
+  @IsNumber()
+  sceneNormal?: number
+
+  @IsOptional()
+  @IsNumber()
+  sceneAbnormal?: number
+
+  @IsOptional()
+  @IsNumber()
+  sceneBoundary?: number
+}
 
 export class GenerateDto {
   @ApiProperty({ enum: ['file', 'text', 'url'] })
@@ -25,6 +52,20 @@ export class GenerateDto {
   @IsOptional()
   @IsString()
   customPrompt?: string
+
+  @IsOptional()
+  @IsString()
+  userNotes?: string
+
+  @IsOptional()
+  @IsString()
+  outputLanguage?: string
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => GenerationOptionsDto)
+  generationOptions?: GenerationOptionsDto
 
   @IsOptional()
   @IsString()

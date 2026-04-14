@@ -1,14 +1,16 @@
-import { useState, useCallback } from 'react'
-import { Upload, FileText, Type, Wand2, Loader2, ChevronRight, X, RefreshCw } from 'lucide-react'
+import { useState, useCallback, useRef } from 'react'
+import { Upload, FileText, Type, Wand2, Loader2, ChevronRight, X, RefreshCw, PauseCircle, XCircle, Copy, Download } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useGenerateStore } from '@/store/generateStore'
 import { filesApi } from '@/api/files'
 import { aiApi } from '@/api/ai'
-import { formatFileSize, priorityColorMap } from '@/utils/format'
+import { formatFileSize } from '@/utils/format'
 import toast from 'react-hot-toast'
 import type { TestCase } from '@/types'
+import { recordsApi } from '@/api/records'
+import { testcasesApi } from '@/api/testcases'
 
 /** 文件上传区域组件 */
 function FileUploadZone() {
@@ -97,7 +99,8 @@ function FileUploadZone() {
 
 /** 生成结果展示 */
 function GenerateResult({ cases }: { cases: TestCase[] }) {
-  const { reset } = useGenerateStore()
+  const { reset, updateCaseLocal, qualityScore, qualitySuggestions } = useGenerateStore()
+  const suiteId = cases[0]?.suiteId
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -105,43 +108,135 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           <h3 className="font-semibold">生成完成</h3>
           <p className="text-sm text-muted-foreground">共生成 {cases.length} 条测试用例</p>
         </div>
-        <Button variant="outline" size="sm" onClick={reset} className="gap-1">
-          <RefreshCw className="w-4 h-4" /> 重新生成
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(JSON.stringify(cases, null, 2))
+                toast.success('已复制用例 JSON')
+              } catch {
+                toast.error('复制失败，请检查浏览器权限')
+              }
+            }}
+          >
+            <Copy className="w-4 h-4" />
+            复制
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            disabled={!suiteId}
+            onClick={async () => {
+              if (!suiteId) return
+              try {
+                const { downloadUrl } = await testcasesApi.exportSuite(suiteId, 'EXCEL')
+                window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+              } catch {
+                toast.error('导出失败')
+              }
+            }}
+          >
+            <Download className="w-4 h-4" />
+            导出 Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={reset} className="gap-1">
+            <RefreshCw className="w-4 h-4" /> 重新生成
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-        {cases.map((c, i) => (
-          <Card key={c.id || i} className="border">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h4 className="font-medium text-sm">{c.title}</h4>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Badge className={`text-xs ${priorityColorMap[c.priority] || ''}`} variant="outline">
-                    {c.priority}
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs">{c.type}</Badge>
-                </div>
-              </div>
-              {c.precondition && (
-                <p className="text-xs text-muted-foreground mb-2">
-                  <span className="font-medium">前置条件：</span>{c.precondition}
-                </p>
+      {(qualityScore != null || (qualitySuggestions && qualitySuggestions.trim())) && (
+        <Card className="border">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">用例质量评分</span>
+              {qualityScore != null && (
+                <Badge variant="secondary" className="text-xs">
+                  {qualityScore}/100
+                </Badge>
               )}
-              <div className="space-y-1">
-                {c.steps.map((step) => (
-                  <div key={step.order} className="text-xs flex gap-2">
-                    <span className="text-muted-foreground w-5 flex-shrink-0">{step.order}.</span>
-                    <span>{step.action}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs mt-2">
-                <span className="font-medium text-green-600">预期结果：</span>{c.expectedResult}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+            {qualitySuggestions && (
+              <pre className="text-xs bg-muted p-3 rounded whitespace-pre-wrap">{qualitySuggestions}</pre>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="max-h-[60vh] overflow-auto border rounded-lg">
+        <table className="min-w-full text-xs">
+          <thead className="sticky top-0 bg-background border-b">
+            <tr className="text-left">
+              <th className="p-2 w-16">优先级</th>
+              <th className="p-2 w-24">类型</th>
+              <th className="p-2 min-w-[240px]">标题</th>
+              <th className="p-2 min-w-[220px]">前置条件</th>
+              <th className="p-2 min-w-[320px]">步骤</th>
+              <th className="p-2 min-w-[260px]">预期结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cases.map((c) => (
+              <tr key={c.id} className="border-b align-top">
+                <td className="p-2">
+                  <select
+                    value={c.priority}
+                    onChange={(e) => updateCaseLocal(c.id, { priority: e.target.value as any })}
+                    className="border rounded px-2 py-1 bg-background"
+                  >
+                    {['P0', 'P1', 'P2', 'P3'].map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="p-2">
+                  <Badge variant="secondary" className="text-xs">
+                    {c.type}
+                  </Badge>
+                </td>
+                <td className="p-2">
+                  <input
+                    value={c.title}
+                    onChange={(e) => updateCaseLocal(c.id, { title: e.target.value })}
+                    className="w-full border rounded px-2 py-1 bg-background"
+                  />
+                </td>
+                <td className="p-2">
+                  <textarea
+                    value={c.precondition || ''}
+                    onChange={(e) => updateCaseLocal(c.id, { precondition: e.target.value })}
+                    className="w-full border rounded px-2 py-1 bg-background min-h-12"
+                  />
+                </td>
+                <td className="p-2">
+                  <textarea
+                    value={c.steps.map((s) => `${s.order}. ${s.action}`).join('\n')}
+                    onChange={(e) => {
+                      const lines = e.target.value.split('\n').map((t) => t.trim()).filter(Boolean)
+                      updateCaseLocal(c.id, {
+                        steps: lines.map((line, idx) => ({ order: idx + 1, action: line.replace(/^\d+\.\s*/, '') })),
+                      } as any)
+                    }}
+                    className="w-full border rounded px-2 py-1 bg-background min-h-20"
+                  />
+                </td>
+                <td className="p-2">
+                  <textarea
+                    value={c.expectedResult || ''}
+                    onChange={(e) => updateCaseLocal(c.id, { expectedResult: e.target.value })}
+                    className="w-full border rounded px-2 py-1 bg-background min-h-16"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -158,7 +253,11 @@ export default function GeneratePage() {
     generatedCases, setGeneratedCases,
     isGenerating, setIsGenerating,
     streamContent, appendStreamContent, clearStreamContent,
+    setQualityMeta,
+    setLastRecordId,
   } = useGenerateStore()
+
+  const streamAbortRef = useRef<AbortController | null>(null)
 
   const handleGenerate = async () => {
     if (sourceType === 'file' && !uploadedFile) {
@@ -180,6 +279,9 @@ export default function GeneratePage() {
 
     try {
       if (aiParams.stream) {
+        streamAbortRef.current?.abort()
+        const controller = new AbortController()
+        streamAbortRef.current = controller
         // 流式生成
         await aiApi.generateStream(
           {
@@ -190,16 +292,41 @@ export default function GeneratePage() {
             ...aiParams,
           },
           (chunk) => appendStreamContent(chunk),
-          () => {
+          (meta) => {
             setIsGenerating(false)
+            if (meta?.recordId) setLastRecordId(meta.recordId)
+            // 优先从后端记录拿 suiteId 并拉取结构化用例（避免流式 JSON 半截解析失败）
+            ;(async () => {
+              try {
+                if (meta?.recordId) {
+                  const record = await recordsApi.getRecordById(meta.recordId)
+                  if (record.suiteId) {
+                    const list = await testcasesApi.getCasesBySuiteId(record.suiteId)
+                    setGeneratedCases(list)
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            })()
+            const q = meta?.quality as any
+            const score = typeof q?.score === 'number' ? q.score : null
+            const sugg = Array.isArray(q?.suggestions) ? q.suggestions.join('\n') : null
+            if (score != null || sugg) setQualityMeta(score, sugg)
             setStep('result')
             toast.success('用例生成完成！')
           },
           (err) => {
             setIsGenerating(false)
+            if ((err as { name?: string }).name === 'AbortError') {
+              toast('已暂停生成，可继续调整参数后重新生成')
+              setStep('prompt')
+              return
+            }
             toast.error(`生成失败: ${err.message}`)
             setStep('prompt')
           },
+          controller.signal,
         )
       } else {
         // 非流式
@@ -211,6 +338,10 @@ export default function GeneratePage() {
           ...aiParams,
         })
         setGeneratedCases(result.cases)
+        setLastRecordId(result.recordId)
+        if ('qualityScore' in result || 'qualitySuggestions' in result) {
+          setQualityMeta((result as any).qualityScore ?? null, (result as any).qualitySuggestions ?? null)
+        }
         setIsGenerating(false)
         setStep('result')
         toast.success(`成功生成 ${result.cases.length} 条用例！`)
@@ -335,9 +466,39 @@ export default function GeneratePage() {
       {currentStep === 'generating' && (
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-              <CardTitle className="text-base">AI 正在生成中...</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <CardTitle className="text-base">AI 正在生成中...</CardTitle>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => streamAbortRef.current?.abort()}
+                  disabled={!isGenerating}
+                  className="gap-1"
+                >
+                  <PauseCircle className="w-4 h-4" />
+                  暂停
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    streamAbortRef.current?.abort()
+                    clearStreamContent()
+                    setIsGenerating(false)
+                    setStep('prompt')
+                  }}
+                  className="gap-1"
+                >
+                  <XCircle className="w-4 h-4" />
+                  取消
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
