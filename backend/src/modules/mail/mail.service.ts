@@ -29,11 +29,20 @@ export class MailService {
 
     if (!host || !user || !pass) return null
 
+    const connectionTimeout = parseInt(
+      this.config.get<string>('SMTP_CONNECTION_TIMEOUT_MS') || '15000',
+      10,
+    )
+    const socketTimeout = parseInt(this.config.get<string>('SMTP_SOCKET_TIMEOUT_MS') || '20000', 10)
+
     return nodemailer.createTransport({
       host,
       port,
       secure,
       auth: { user, pass },
+      connectionTimeout,
+      greetingTimeout: connectionTimeout,
+      socketTimeout,
     })
   }
 

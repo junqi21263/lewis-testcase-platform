@@ -99,7 +99,12 @@ export class AuthService {
       },
     })
 
-    await this.sendVerificationEmail(user.id, user.email)
+    // 异步发信，避免 SMTP 握手/网络卡住导致 HTTP 长时间无响应（前端 60s 超时）
+    void this.sendVerificationEmail(user.id, user.email).catch((err) => {
+      this.logger.error(
+        `注册后异步发送验证邮件失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
 
     return {
       message: '注册成功，验证邮件已发送，请查收邮箱完成验证后再登录',
@@ -175,22 +180,30 @@ export class AuthService {
         )
       }
 
-      // 邮件发送（若 SMTP 未配置则跳过；发送失败不抛错，避免 502；开发环境仍会输出 token）
+      // 异步发信，避免请求被 SMTP 拖满超时
       if (resetUrl) {
-        const sent = await this.mail.sendMail({
-          to: user.email,
-          subject: '重置密码（邮箱验证）',
-          text: `我们收到你的重置密码请求。打开下方链接即表示你确认该邮箱可接收本操作。\n\n请在 1 小时内打开链接设置新密码：\n${resetUrl}\n\n若非本人操作请忽略此邮件。`,
-          html: `
+        void this.mail
+          .sendMail({
+            to: user.email,
+            subject: '重置密码（邮箱验证）',
+            text: `我们收到你的重置密码请求。打开下方链接即表示你确认该邮箱可接收本操作。\n\n请在 1 小时内打开链接设置新密码：\n${resetUrl}\n\n若非本人操作请忽略此邮件。`,
+            html: `
             <p>我们收到你的重置密码请求。打开链接即表示你确认该邮箱可接收本操作。</p>
             <p>请在 <b>1 小时</b> 内打开链接设置新密码：</p>
             <p><a href="${resetUrl}">${resetUrl}</a></p>
             <p>若非本人操作请忽略此邮件。</p>
           `,
-        })
-        if ('sendFailed' in sent && sent.sendFailed) {
-          this.logger.warn(`重置密码邮件未能送达 ${user.email}，请检查 SMTP 日志`)
-        }
+          })
+          .then((sent) => {
+            if ('sendFailed' in sent && sent.sendFailed) {
+              this.logger.warn(`重置密码邮件未能送达 ${user.email}，请检查 SMTP 日志`)
+            }
+          })
+          .catch((err) =>
+            this.logger.error(
+              `异步发送重置密码邮件失败: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          )
       }
 
       if (process.env.NODE_ENV !== 'production') {
@@ -300,7 +313,11 @@ export class AuthService {
     const email = dto.email.trim().toLowerCase()
     const user = await this.prisma.user.findUnique({ where: { email } })
     if (user && !user.emailVerified) {
-      await this.sendVerificationEmail(user.id, user.email)
+      void this.sendVerificationEmail(user.id, user.email).catch((err) => {
+        this.logger.error(
+          `重发验证邮件异步任务失败: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
     }
     return {}
   }
