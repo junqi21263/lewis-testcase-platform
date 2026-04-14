@@ -24,8 +24,19 @@ export class MailService {
   private static smtpDnsIpv4FirstApplied = false
 
   constructor(private config: ConfigService) {
-    this.applySmtpDnsPreferIpv4()
-    this.warnIfFromAddressMismatchesLogin()
+    if (this.isResendProvider()) {
+      this.logger.log(
+        '发信通道: Resend HTTPS API（Railway Free/Hobby 禁止出站 SMTP，直连 Outlook 会 Connection timeout；见 https://docs.railway.com/reference/outbound-networking）',
+      )
+    } else {
+      this.applySmtpDnsPreferIpv4()
+      this.warnIfFromAddressMismatchesLogin()
+    }
+  }
+
+  /** Railway Hobby 等需用 HTTPS发信；设 MAIL_PROVIDER=resend 且配置 RESEND_API_KEY */
+  private isResendProvider(): boolean {
+    return envStr(this.config, 'MAIL_PROVIDER').toLowerCase() === 'resend'
   }
 
   /** 默认 true；设 MAIL_SMTP_IPV4FIRST=false 时关闭（仅用系统默认解析顺序）。 */
@@ -48,6 +59,7 @@ export class MailService {
   }
 
   private warnIfFromAddressMismatchesLogin() {
+    if (this.isResendProvider()) return
     const fromAddr = envStr(this.config, 'MAIL_FROM_ADDRESS')
     const login = this.smtpUser()
     if (!fromAddr || !login) return
@@ -63,6 +75,16 @@ export class MailService {
    */
   getMailTransportReadiness(): { ready: boolean; issues: string[] } {
     const issues: string[] = []
+    if (this.isResendProvider()) {
+      if (!envStr(this.config, 'RESEND_API_KEY')) {
+        issues.push('MAIL_PROVIDER=resend 时须设置 RESEND_API_KEY')
+      }
+      const from = this.buildFrom()
+      if (!from || from === 'no-reply@example.com') {
+        issues.push('请设置 MAIL_FROM_ADDRESS（或 SMTP_FROM / MAIL_FROM_NAME）作为 Resend 发件人')
+      }
+      return { ready: issues.length === 0, issues }
+    }
     const host = this.smtpHost()
     const user = this.smtpUser()
     const pass = this.smtpPass()
@@ -191,7 +213,57 @@ export class MailService {
     return { transport, peer }
   }
 
+  private async sendViaResend(payload: MailPayload): Promise<SendMailResult> {
+    const key = envStr(this.config, 'RESEND_API_KEY')
+    if (!key) {
+      this.logger.warn('MAIL_PROVIDER=resend 但未设置 RESEND_API_KEY')
+      return { skipped: true }
+    }
+    const from = this.buildFrom()
+    if (!from || from === 'no-reply@example.com') {
+      this.logger.warn('Resend 发信须配置有效 MAIL_FROM_ADDRESS（域名需在 Resend 验证）')
+      return { skipped: true, sendFailed: true }
+    }
+    const body: Record<string, unknown> = {
+      from,
+      to: [payload.to],
+      subject: payload.subject,
+    }
+    if (payload.html) body.html = payload.html
+    if (payload.text) body.text = payload.text
+    if (!body.html && !body.text) body.text = ''
+
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        id?: string
+        message?: string
+      }
+      if (!res.ok) {
+        this.logger.error(`Resend API 失败 HTTP ${res.status}: ${JSON.stringify(json)}`)
+        return { skipped: true, sendFailed: true }
+      }
+      const id = json.id ?? 'n/a'
+      this.logger.log(`Resend 已接受邮件: to=${payload.to} id=${id}`)
+      return { skipped: false, messageId: id }
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      this.logger.error(`Resend 请求异常: ${m}`)
+      return { skipped: true, sendFailed: true }
+    }
+  }
+
   async sendMail(payload: MailPayload): Promise<SendMailResult> {
+    if (this.isResendProvider()) {
+      return this.sendViaResend(payload)
+    }
     const built = await this.createTransport()
     if (!built) {
       this.logger.warn('邮件未配置（MAIL_* 或 SMTP_*），跳过发送')
@@ -218,7 +290,7 @@ export class MailService {
       this.logger.error(`SMTP 发送失败: ${msg}`)
       if (/timeout/i.test(msg)) {
         this.logger.warn(
-          `SMTP 连接/握手超时（本次 ${peer}）。再大超时往往无效：请试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl，或换 Resend/SendGrid 等 HTTPS 发信；部分 SMTP 从海外机房直连可能被限速/丢弃。采集日志可设 NO_COLOR=1 去掉 ANSI。`,
+          `SMTP 连接/握手超时（本次 ${peer}）。Railway Free/Hobby/Trial 官方禁用出站 SMTP（587/465），现象即长期 Connection timeout，需升级 Pro+ 并重新部署，或设 MAIL_PROVIDER=resend + RESEND_API_KEY 走 HTTPS。若在 Pro 仍超时，可试 465+ssl 或联系 Railway。详见 https://docs.railway.com/reference/outbound-networking 。NO_COLOR=1 可去掉日志 ANSI。`,
         )
       }
       return { skipped: true, sendFailed: true }

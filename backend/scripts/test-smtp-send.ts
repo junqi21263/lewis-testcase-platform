@@ -1,7 +1,9 @@
 /**
- * 自检 SMTP：与 MailService 相同的 MAIL_* / SMTP_* 规则，发一封测试信。
+ * 自检发信：与 MailService 一致。
+ * - 默认：SMTP（MAIL_HOST等）
+ * - MAIL_PROVIDER=resend：Resend HTTPS API（Railway Hobby 等禁 SMTP 时用）
  *
- * 收件人：TEST_MAIL_TO，否则为 MAIL_USERNAME / SMTP_USER（发给自己）
+ * 收件人：TEST_MAIL_TO；SMTP 未设时默认为自己（MAIL_USERNAME）
  *
  * 运行：pnpm run test:smtp
  */
@@ -99,8 +101,54 @@ async function smtpConnectHostAndTls(hostname: string): Promise<{ host: string; 
   return { host: hostname }
 }
 
+async function sendResendSelfTest() {
+  const key = env('RESEND_API_KEY')
+  if (!key) {
+    console.error('MAIL_PROVIDER=resend 时须设置 RESEND_API_KEY')
+    process.exit(1)
+  }
+  const from = buildFrom()
+  if (!from || from === 'no-reply@example.com') {
+    console.error('请设置 MAIL_FROM_ADDRESS 等有效发件人（Resend 已验证域名）')
+    process.exit(1)
+  }
+  const to = env('TEST_MAIL_TO')
+  if (!to) {
+    console.error('Resend 自检请设置 TEST_MAIL_TO=收件邮箱')
+    process.exit(1)
+  }
+  const subject = `[Resend自检] AI 用例平台 ${new Date().toISOString()}`
+  const text = '若收到此邮件，说明 Resend API 与 MAIL_FROM 配置正常。'
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject,
+      text,
+      html: `<p>${text}</p>`,
+    }),
+  })
+  const json = (await res.json().catch(() => ({}))) as { id?: string }
+  if (!res.ok) {
+    console.error('FAIL: Resend HTTP', res.status, JSON.stringify(json))
+    process.exit(1)
+  }
+  console.log('OK: Resend id=', json.id ?? 'n/a', '收件人', to)
+}
+
 async function main() {
   loadEnvFile(join(__dirname, '..', '.env'))
+
+  if (env('MAIL_PROVIDER').toLowerCase() === 'resend') {
+    await sendResendSelfTest()
+    return
+  }
+
   applyIpv4FirstDns()
 
   const host = smtpHost()
