@@ -10,7 +10,8 @@ export interface GenerateTestCasesPayload extends AIGenerateParams {
   customPrompt?: string
   userNotes?: string
   outputLanguage?: string
-  generationOptions?: Record<string, unknown>
+  generationOptions?: unknown
+  modelConfigId?: string
 }
 
 export interface GenerateResult {

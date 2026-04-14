@@ -57,10 +57,14 @@ enum TestCasePriority {
   P1
   P2
   P3
+  P4
 }
 
 enum TestCaseType {
   FUNCTIONAL
+  API
+  UI
+  AUTOMATION
   PERFORMANCE
   SECURITY
   COMPATIBILITY
