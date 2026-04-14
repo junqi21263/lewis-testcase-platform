@@ -337,6 +337,35 @@ export class FilesService {
     return file
   }
 
+  async getFileByIdForUser(id: string, userId: string) {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) throw new BadRequestException('无权访问该文件')
+    return file
+  }
+
+  /** 重新触发解析（仅限上传者） */
+  async retryParse(id: string, userId: string) {
+    const file = await this.getFileByIdForUser(id, userId)
+    if (!file.path || !fs.existsSync(file.path)) throw new BadRequestException('本地文件不存在，无法解析')
+    const fileType = file.fileType as FileType
+    this.parseFileAsync(file.id, file.path, fileType).catch((err) =>
+      this.logger.error(`文件解析失败: ${file.id}`, err),
+    )
+    return { ok: true }
+  }
+
+  /** 获取下载链接：COS 返回实时签名 URL；LOCAL 返回 null（可用 streamDownload 走流式下载） */
+  async getDownloadUrl(id: string, userId: string) {
+    const file = await this.getFileByIdForUser(id, userId)
+    if (file.storageProvider === FileStorageProvider.COS && file.storageKey) {
+      const url = this.cos.getSignedUrl(file.storageKey, 3600)
+      // best-effort 刷新 DB（不阻断）
+      this.prisma.uploadedFile.update({ where: { id }, data: { storageUrl: url } }).catch(() => {})
+      return { provider: 'COS' as const, url }
+    }
+    return { provider: 'LOCAL' as const, url: null }
+  }
+
   async deleteFile(id: string, userId: string) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')

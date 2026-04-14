@@ -12,6 +12,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
 } from '@nestjs/common'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { FileStorageProvider } from '@prisma/client'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
@@ -97,21 +98,20 @@ export class FilesController {
 
   @Get(':id')
   @ApiOperation({ summary: '获取文件详情' })
-  getById(@Param('id') id: string) {
-    return this.filesService.getFileById(id)
+  getById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.getFileByIdForUser(id, userId)
   }
 
   @Get(':id/download')
   @ApiOperation({ summary: '获取文件下载链接（COS 优先）' })
-  async getDownloadUrl(@Param('id') id: string) {
-    const file = await this.filesService.getFileById(id)
-    if (file.storageProvider === FileStorageProvider.COS && file.storageKey) {
-      // storageUrl 可能过期；这里复用 service 侧逻辑：直接返回当前存的 url（若需要实时签名可后续增强）
-      return { url: file.storageUrl, provider: 'COS' }
-    }
-    if (!file.path) throw new BadRequestException('文件不可用')
-    // 本地文件：由前端使用原有 /uploads 静态映射（如存在）或另行实现流式下载
-    return { url: null, provider: 'LOCAL' }
+  async getDownloadUrl(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.getDownloadUrl(id, userId)
+  }
+
+  @Post(':id/parse')
+  @ApiOperation({ summary: '重新触发文件解析' })
+  retryParse(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.retryParse(id, userId)
   }
 
   @Delete(':id')
