@@ -205,7 +205,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
         }
 
         // 所有分片上传完毕，通知服务端合并
-        const merged = await filesApi.mergeChunks(fileId, file.name, file.type)
+        const merged = await filesApi.mergeChunks(fileId, file.name, file.type, chunkTotal)
         controllersRef.current.delete(task.id)
         onTaskUpdate(task.id, { serverFileId: merged.id, progress: 99 })
         startPolling(task.id, merged.id)

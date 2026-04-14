@@ -81,11 +81,12 @@ export const filesApi = {
   /**
    * 合并分片，触发服务端合并 + 解析
    */
-  mergeChunks(fileId: string, originalName: string, mimeType: string): Promise<UploadedFile> {
+  mergeChunks(fileId: string, originalName: string, mimeType: string, chunkTotal?: number): Promise<UploadedFile> {
     return request.post<UploadedFile>('/files/upload/merge', {
       fileId,
       originalName,
       mimeType,
+      chunkTotal,
     })
   },
 

@@ -146,6 +146,25 @@ export class FilesService {
       throw new BadRequestException(`分片数量不完整：已收到 ${partFiles.length}/${expectedTotal}`)
     }
 
+    const indices = partFiles
+      .map((f) => Number(f.replace('.part', '')))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b)
+    if (indices.length !== partFiles.length) {
+      throw new BadRequestException('分片文件名不合法')
+    }
+    const minIdx = indices[0]
+    const maxIdx = indices[indices.length - 1]
+    const missing: number[] = []
+    for (let i = 0; i < expectedTotal; i++) {
+      if (!fs.existsSync(path.join(dir, `${i}.part`))) missing.push(i)
+    }
+    if (missing.length) {
+      throw new BadRequestException(
+        `分片缺失：缺少 ${missing.slice(0, 20).join(', ')}（已收到 ${indices.join(', ')}；范围 ${minIdx}-${maxIdx}）`,
+      )
+    }
+
     const ext = path.extname(originalName)
     const finalName = `${fileId}${ext || ''}`
     const finalPath = path.join(this.uploadDir, finalName)
@@ -153,9 +172,8 @@ export class FilesService {
     // 合并写入
     const ws = fs.createWriteStream(finalPath)
     try {
-      for (let i = 0; i < partFiles.length; i++) {
+      for (let i = 0; i < expectedTotal; i++) {
         const p = path.join(dir, `${i}.part`)
-        if (!fs.existsSync(p)) throw new BadRequestException(`缺少分片 ${i}`)
         const rs = fs.createReadStream(p)
         await pipeline(rs, ws, { end: false } as any)
       }
