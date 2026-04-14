@@ -56,6 +56,20 @@ export class CosService {
     return `${prefix}${y}/${m}/${d}/${fileId}${safeExt}`
   }
 
+  /**
+   * 分片临时对象 key（必须稳定，不依赖日期/时间，避免上传跨日导致 merge 找不到）
+   * chunks/{fileId}/{chunkIndex}.part
+   */
+  buildChunkKey(fileId: string, chunkIndex: number) {
+    const prefix = this.prefix ? `${this.prefix}/` : ''
+    return `${prefix}chunks/${fileId}/${chunkIndex}.part`
+  }
+
+  buildChunkPrefix(fileId: string) {
+    const prefix = this.prefix ? `${this.prefix}/` : ''
+    return `${prefix}chunks/${fileId}/`
+  }
+
   async uploadLocalFile(localPath: string, key: string) {
     if (!this.enabled || !this.cos) throw new Error('COS not enabled')
     await new Promise<void>((resolve, reject) => {

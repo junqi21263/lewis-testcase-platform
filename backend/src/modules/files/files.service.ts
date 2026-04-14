@@ -108,7 +108,7 @@ export class FilesService {
 
     // 如果启用 COS，则分片临时对象也写 COS，避免多实例本地磁盘不一致
     if (this.cos.isEnabled()) {
-      const key = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks/${chunkIndex}.part`
+      const key = this.cos.buildChunkKey(fileId, chunkIndex)
       await this.cos.uploadLocalChunk(chunkFile.path, key)
       try {
         fs.unlinkSync(chunkFile.path)
@@ -153,9 +153,8 @@ export class FilesService {
     const ws = fs.createWriteStream(finalPath)
     if (this.cos.isEnabled()) {
       try {
-        const baseKey = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks`
         for (let i = 0; i < expectedTotal; i++) {
-          const key = `${baseKey}/${i}.part`
+          const key = this.cos.buildChunkKey(fileId, i)
           const rs = await this.cos.getObjectStream(key)
           await pipeline(rs as any, ws, { end: false } as any)
         }
@@ -167,8 +166,7 @@ export class FilesService {
       }
 
       // 清理 COS 临时分片
-      const baseKey = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks/`
-      this.cos.deletePrefix(baseKey).catch(() => {})
+      this.cos.deletePrefix(this.cos.buildChunkPrefix(fileId)).catch(() => {})
 
       const stat = fs.statSync(finalPath)
       const mergedFile: Express.Multer.File = {
