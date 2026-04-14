@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import COS from 'cos-nodejs-sdk-v5'
 import * as path from 'path'
+import { Readable } from 'stream'
 
 function envStr(name: string, defaultValue = ''): string {
   const v = process.env[name]
@@ -124,8 +125,21 @@ export class CosService {
         },
       )
     })
-    if (!res?.Body) throw new Error('COS getObject missing body')
-    return res.Body as NodeJS.ReadableStream
+    const body = res?.Body
+    if (body == null) throw new Error('COS getObject missing body')
+
+    // SDK 的 Body 可能是 stream / Buffer / string / Uint8Array 等；统一转成可读流
+    if (typeof (body as any)?.pipe === 'function') {
+      return body as NodeJS.ReadableStream
+    }
+    if (Buffer.isBuffer(body) || typeof body === 'string') {
+      return Readable.from([body])
+    }
+    if (body instanceof Uint8Array) {
+      return Readable.from([body])
+    }
+    // 兜底：尝试包一层，避免 pipeline 把 iterable<number> 写成 number
+    return Readable.from([body])
   }
 
   async getChunkStream(fileId: string, chunkIndex: number): Promise<{ stream: NodeJS.ReadableStream; key: string }> {
