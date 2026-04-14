@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { recordsApi } from '@/api/records'
 import { testcasesApi } from '@/api/testcases'
-import type { GenerationRecord, TestCase, ExportFormat } from '@/types'
+import type { GenerationRecord, TestCase, ExportFormat, TestSuite } from '@/types'
 import { formatDate, statusColorMap } from '@/utils/format'
 
 const statusLabels: Record<string, string> = {
@@ -40,6 +40,7 @@ export default function ResultPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [record, setRecord] = useState<GenerationRecord | null>(null)
+  const [suite, setSuite] = useState<TestSuite | null>(null)
   const [cases, setCases] = useState<TestCase[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -47,14 +48,10 @@ export default function ResultPage() {
     if (!id) return
     setLoading(true)
     try {
-      const r = await recordsApi.getRecordById(id)
-      setRecord(r)
-      if (r.suiteId) {
-        const list = await testcasesApi.getCasesBySuiteId(r.suiteId)
-        setCases(list)
-      } else {
-        setCases([])
-      }
+      const res = await recordsApi.getRecordResult(id)
+      setRecord(res.record)
+      setSuite(res.suite)
+      setCases(res.cases || [])
     } catch {
       toast.error('加载失败')
     } finally {
@@ -112,7 +109,7 @@ export default function ResultPage() {
     }
   }, [stats.byType])
 
-  const canExport = !!record?.suiteId && record?.status === 'SUCCESS'
+  const canExport = !!suite?.id && record?.status === 'SUCCESS'
 
   return (
     <div className="space-y-6">
@@ -147,7 +144,8 @@ export default function ResultPage() {
                 disabled={!canExport}
                 onClick={() => {
                   if (!record?.suiteId) return
-                  const url = testcasesApi.exportSuiteUrl(record.suiteId, f.id)
+                  if (!suite?.id) return
+                  const url = testcasesApi.exportSuiteUrl(suite.id, f.id)
                   window.open(url, '_blank', 'noopener,noreferrer')
                 }}
               >
