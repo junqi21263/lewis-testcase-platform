@@ -25,11 +25,16 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data: ForgotPasswordForm) => {
     setLoading(true)
     try {
-      await authApi.forgotPassword(data.email)
-      toast.success('若该邮箱已注册，您将收到重置说明（开发环境请查看服务端日志）')
-      navigate('/login')
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || '发送重置链接失败，请重试')
+      const email = data.email.trim().toLowerCase()
+      await authApi.forgotPassword(email)
+      toast.success('若该邮箱已注册，您将收到验证码（开发环境可查看服务端日志）')
+      navigate(`/reset-password?email=${encodeURIComponent(email)}`, { replace: true })
+    } catch (error: unknown) {
+      const msg =
+        error && typeof error === 'object' && 'response' in error
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined
+      toast.error(typeof msg === 'string' ? msg : '发送验证码失败，请重试')
     } finally {
       setLoading(false)
     }
@@ -40,7 +45,7 @@ export default function ForgotPasswordPage() {
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold text-center">忘记密码</CardTitle>
         <CardDescription className="text-center">
-          输入您的邮箱地址，我们将发送重置链接
+          输入注册邮箱，我们将发送 6 位验证码用于重置密码
         </CardDescription>
       </CardHeader>
 
@@ -69,7 +74,7 @@ export default function ForgotPasswordPage() {
         <CardFooter className="flex flex-col gap-3 pt-2">
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {loading ? '发送中...' : '发送重置链接'}
+            {loading ? '发送中...' : '发送验证码'}
           </Button>
           <p className="text-sm text-center text-muted-foreground">
             记得密码？{' '}

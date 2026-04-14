@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Loader2, User, Mail, Lock } from 'lucide-react'
+import { Eye, EyeOff, Loader2, User, Mail, Lock, KeyRound } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
@@ -20,13 +20,20 @@ interface RegisterForm {
   agreeTerms: boolean
 }
 
+interface CodeForm {
+  code: string
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate()
   const authError = useAuthStore((s) => s.error)
   const setError = useAuthStore((s) => s.setError)
+  const setAuth = useAuthStore((s) => s.setAuth)
   const loading = useAuthStore((s) => s.loading)
   const [showPassword, setShowPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
+  const [step, setStep] = useState<'form' | 'code'>('form')
+  const [pendingEmail, setPendingEmail] = useState('')
 
   const {
     register,
@@ -35,40 +42,68 @@ export default function RegisterPage() {
     formState: { errors },
   } = useForm<RegisterForm>()
 
+  const {
+    register: registerCode,
+    handleSubmit: handleSubmitCode,
+    formState: { errors: codeErrors },
+  } = useForm<CodeForm>()
+
   const passwordValue = watch('password', '')
 
-  const onSubmit = async (data: RegisterForm) => {
+  const onSendCode = async (data: RegisterForm) => {
     setError(null)
     try {
       const { email, username, password } = data
-      const result = await authApi.register({
+      const meta = await authApi.sendRegisterCode({
         email: email.trim().toLowerCase(),
         username: username.trim(),
         password,
       })
-      if (result?.needsEmailVerification) {
-        if (result.verificationMailConfigured === false && result.verificationMailIssues?.length) {
-          toast.error(
-            `账号已创建，但无法发信：${result.verificationMailIssues.join('；')}。请配置 Railway 环境变量后使用「重发验证邮件」。`,
-            { duration: 8000 },
-          )
-        } else {
-          toast.success(
-            '验证邮件已发送，请查收邮箱并打开垃圾邮件箱；数分钟未收到可点下一页「重发验证邮件」。',
-            { duration: 6000 },
-          )
-        }
-        navigate(
-          `/verify-email?email=${encodeURIComponent(result.email)}&pending=1`,
-          { replace: true },
+      setPendingEmail(meta.email)
+      if (meta.mailConfigured === false && meta.mailIssues?.length) {
+        toast.error(
+          `无法发信：${meta.mailIssues.join('；')}。开发环境可在服务端日志查看验证码。`,
+          { duration: 9000 },
         )
-        return
+      } else {
+        toast.success('验证码已发送，请查收邮箱（含垃圾箱），15 分钟内有效', { duration: 6000 })
       }
-      toast.success('注册成功')
-      navigate('/dashboard')
+      setStep('code')
     } catch {
       /* 错误已由 axios 拦截器与 authApi setError 处理 */
     }
+  }
+
+  const onConfirmCode = async (data: CodeForm) => {
+    setError(null)
+    try {
+      const result = await authApi.confirmRegister({
+        email: pendingEmail,
+        code: data.code.replace(/\s/g, ''),
+      })
+      setAuth(result.user, result.accessToken, false)
+      toast.success('注册成功')
+      navigate('/dashboard', { replace: true })
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  const handleResend = async () => {
+    if (!pendingEmail) return
+    setError(null)
+    try {
+      await authApi.resendRegisterCode(pendingEmail)
+      toast.success('若该邮箱有待验证注册，您将收到新的验证码', { duration: 5000 })
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  const goBackToForm = () => {
+    setStep('form')
+    setPendingEmail('')
+    setError(null)
   }
 
   return (
@@ -76,117 +111,190 @@ export default function RegisterPage() {
       <CardHeader className="space-y-1 pb-4">
         <CardTitle className="text-2xl font-bold text-center">创建新账号</CardTitle>
         <CardDescription className="text-center">
-          使用邮箱 + 用户名 + 密码注册；登录时使用用户名
+          {step === 'form'
+            ? '使用邮箱 + 用户名 + 密码注册；登录时使用用户名'
+            : `我们已向 ${pendingEmail} 发送 6 位验证码，填写后即可完成注册`}
         </CardDescription>
       </CardHeader>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          {/* 错误显示 */}
-          {authError && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-              <p className="text-sm">{authError}</p>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <Mail className="w-4 h-4" />
-              邮箱
-            </label>
-            <Input
-              type="email"
-              placeholder="请输入邮箱地址"
-              {...register('email', {
-                required: '请输入邮箱',
-                pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: '邮箱格式不正确' },
-              })}
-              className={errors.email ? 'border-destructive' : ''}
-            />
-            {errors.email && (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
+      {step === 'form' ? (
+        <form onSubmit={handleSubmit(onSendCode)}>
+          <CardContent className="space-y-4">
+            {authError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
+                <p className="text-sm">{authError}</p>
+              </div>
             )}
-          </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <User className="w-4 h-4" />
-              用户名
-            </label>
-            <Input
-              type="text"
-              placeholder="请输入用户名"
-              {...register('username', {
-                required: '请输入用户名',
-                minLength: { value: 2, message: '用户名至少2个字符' },
-                maxLength: { value: 50, message: '用户名最多50个字符' },
-                pattern: {
-                  value: USERNAME_RE,
-                  message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
-                },
-              })}
-              className={errors.username ? 'border-destructive' : ''}
-            />
-            {errors.username && (
-              <p className="text-xs text-destructive">{errors.username.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <Lock className="w-4 h-4" />
-              密码
-            </label>
-            <div className="relative">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Mail className="w-4 h-4" />
+                邮箱
+              </label>
               <Input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="请输入密码"
-                {...register('password', {
-                  required: '请输入密码',
-                  validate: (v) => passwordPolicyMessage(v),
+                type="email"
+                placeholder="请输入邮箱地址"
+                {...register('email', {
+                  required: '请输入邮箱',
+                  pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: '邮箱格式不正确' },
                 })}
-                className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
+                className={errors.email ? 'border-destructive' : ''}
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+              {errors.email && (
+                <p className="text-xs text-destructive">{errors.email.message}</p>
+              )}
             </div>
-            {errors.password && (
-              <p className="text-xs text-destructive">{errors.password.message}</p>
-            )}
-            <PasswordStrength password={passwordValue} />
-          </div>
-        </CardContent>
 
-        <CardFooter className="flex flex-col gap-3 pt-2">
-          <div className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              checked={agreeTerms}
-              onChange={(e) => setAgreeTerms(e.target.checked)}
-              className="mt-1 rounded border-gray-300"
-            />
-            <label className="text-sm text-muted-foreground">
-              我同意 <a href="#" className="text-primary hover:underline">服务条款</a> 和{' '}
-              <a href="#" className="text-primary hover:underline">隐私政策</a>
-            </label>
-          </div>
-          <Button type="submit" className="w-full" disabled={loading || !agreeTerms}>
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {loading ? '注册中...' : '注册'}
-          </Button>
-          <p className="text-sm text-center text-muted-foreground">
-            已有账号？{' '}
-            <Link to="/login" className="text-primary hover:underline font-medium">
-              立即登录
-            </Link>
-          </p>
-        </CardFooter>
-      </form>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <User className="w-4 h-4" />
+                用户名
+              </label>
+              <Input
+                type="text"
+                placeholder="请输入用户名"
+                {...register('username', {
+                  required: '请输入用户名',
+                  minLength: { value: 2, message: '用户名至少2个字符' },
+                  maxLength: { value: 50, message: '用户名最多50个字符' },
+                  pattern: {
+                    value: USERNAME_RE,
+                    message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
+                  },
+                })}
+                className={errors.username ? 'border-destructive' : ''}
+              />
+              {errors.username && (
+                <p className="text-xs text-destructive">{errors.username.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Lock className="w-4 h-4" />
+                密码
+              </label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="请输入密码"
+                  {...register('password', {
+                    required: '请输入密码',
+                    validate: (v) => passwordPolicyMessage(v),
+                  })}
+                  className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-xs text-destructive">{errors.password.message}</p>
+              )}
+              <PasswordStrength password={passwordValue} />
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex flex-col gap-3 pt-2">
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={agreeTerms}
+                onChange={(e) => setAgreeTerms(e.target.checked)}
+                className="mt-1 rounded border-gray-300"
+              />
+              <label className="text-sm text-muted-foreground">
+                我同意 <a href="#" className="text-primary hover:underline">服务条款</a> 和{' '}
+                <a href="#" className="text-primary hover:underline">隐私政策</a>
+              </label>
+            </div>
+            <Button type="submit" className="w-full" disabled={loading || !agreeTerms}>
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading ? '发送中...' : '发送验证码'}
+            </Button>
+            <p className="text-sm text-center text-muted-foreground">
+              已有账号？{' '}
+              <Link to="/login" className="text-primary hover:underline font-medium">
+                立即登录
+              </Link>
+            </p>
+          </CardFooter>
+        </form>
+      ) : (
+        <form onSubmit={handleSubmitCode(onConfirmCode)}>
+          <CardContent className="space-y-4">
+            {authError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
+                <p className="text-sm">{authError}</p>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <KeyRound className="w-4 h-4" />
+                邮箱验证码
+              </label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6 位数字"
+                maxLength={8}
+                {...registerCode('code', {
+                  required: '请输入验证码',
+                  pattern: { value: /^\d{6}$/, message: '请输入 6 位数字验证码' },
+                })}
+                className={codeErrors.code ? 'border-destructive' : ''}
+              />
+              {codeErrors.code && (
+                <p className="text-xs text-destructive">{codeErrors.code.message}</p>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              若邮箱有误，可返回上一步修改（需重新获取验证码）。
+            </p>
+          </CardContent>
+
+          <CardFooter className="flex flex-col gap-3 pt-2">
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading ? '验证中...' : '完成注册'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={loading}
+              onClick={handleResend}
+            >
+              重发验证码
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={loading}
+              onClick={() => {
+                goBackToForm()
+                toast('已返回：请确认邮箱与密码后重新发送验证码')
+              }}
+            >
+              返回修改资料
+            </Button>
+            <p className="text-sm text-center text-muted-foreground">
+              已有账号？{' '}
+              <Link to="/login" className="text-primary hover:underline font-medium">
+                立即登录
+              </Link>
+            </p>
+          </CardFooter>
+        </form>
+      )}
     </Card>
   )
 }

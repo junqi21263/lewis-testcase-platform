@@ -27,16 +27,14 @@ function getSuccessMessage(method: string, path: string): string {
       return '查询成功'
     case 'POST':
       if (normalizedPath.includes('/auth/login')) return '登录成功'
-      if (normalizedPath.includes('/auth/register')) return '注册成功'
+      if (normalizedPath.includes('/auth/register/send-code')) return '验证码已发送'
+      if (normalizedPath.includes('/auth/register/confirm')) return '注册成功'
+      if (normalizedPath.includes('/auth/register/resend-code')) return '验证码已重新发送'
       if (normalizedPath.includes('/auth/logout')) return '退出成功'
       if (normalizedPath.includes('/auth/forgot-password')) {
-        return '若该邮箱已注册，您将收到重置说明（开发环境请查看服务端日志中的 reset token）'
+        return '若该邮箱已注册，您将收到验证码邮件（开发环境可查看服务端日志）'
       }
       if (normalizedPath.includes('/auth/reset-password')) return '密码重置成功'
-      if (normalizedPath.includes('/auth/verify-email')) return '邮箱验证成功'
-      if (normalizedPath.includes('/auth/resend-verification-email')) {
-        return '若该邮箱有待验证账号，您将收到验证邮件'
-      }
       return '创建成功'
     case 'PUT':
     case 'PATCH':

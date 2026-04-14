@@ -82,6 +82,11 @@ enum ExportFormat {
   YAML
 }
 
+enum EmailOtpPurpose {
+  REGISTER
+  PASSWORD_RESET
+}
+
 // ==================== 表定义 ====================
 
 /// 团队表
@@ -122,6 +127,24 @@ model User {
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+/// 邮箱验证码（注册 / 重置密码），验证通过前不落 users 表（注册场景）
+model EmailOtpChallenge {
+  id           String           @id @default(cuid())
+  email        String           @db.VarChar(255)
+  purpose      EmailOtpPurpose
+  codeHash     String           @db.VarChar(255)
+  expiresAt    DateTime
+  username     String?          @db.VarChar(50)
+  passwordHash String?          @db.VarChar(255)
+  avatar       String?          @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, purpose])
+  @@map("email_otp_challenges")
 }
 
 /// 团队成员表（多对多关系）

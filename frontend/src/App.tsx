@@ -8,7 +8,6 @@ import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
 import ResetPasswordPage from '@/pages/ResetPasswordPage'
-import VerifyEmailPage from '@/pages/VerifyEmailPage'
 import DashboardPage from '@/pages/DashboardPage'
 import GeneratePage from '@/pages/GeneratePage'
 import RecordsPage from '@/pages/RecordsPage'
@@ -41,9 +40,9 @@ export default function App() {
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/verify-email" element={<Navigate to="/register" replace />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* 受保护路由 */}

@@ -3,12 +3,12 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import {
   LoginDto,
-  RegisterDto,
+  RegisterSendCodeDto,
+  RegisterConfirmDto,
+  RegisterResendCodeDto,
   ChangePasswordDto,
   ForgotPasswordDto,
   ResetPasswordDto,
-  VerifyEmailDto,
-  ResendVerificationDto,
 } from './dto/auth.dto'
 import { Public } from '@/common/decorators/public.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
@@ -27,17 +27,33 @@ export class AuthController {
   }
 
   @Public()
-  @Post('register')
+  @Post('register/send-code')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '用户注册' })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto)
+  @ApiOperation({ summary: '注册 - 发送邮箱验证码' })
+  async registerSendCode(@Body() dto: RegisterSendCodeDto) {
+    return this.authService.registerSendCode(dto)
+  }
+
+  @Public()
+  @Post('register/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '注册 - 提交验证码并创建账号' })
+  async registerConfirm(@Body() dto: RegisterConfirmDto) {
+    return this.authService.registerConfirm(dto)
+  }
+
+  @Public()
+  @Post('register/resend-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '注册 - 重发验证码' })
+  async registerResendCode(@Body() dto: RegisterResendCodeDto) {
+    return this.authService.registerResendCode(dto)
   }
 
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '忘记密码 - 发送重置链接' })
+  @ApiOperation({ summary: '忘记密码 - 发送邮箱验证码' })
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto)
   }
@@ -45,25 +61,9 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '重置密码' })
+  @ApiOperation({ summary: '重置密码（邮箱验证码 + 新密码）' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto)
-  }
-
-  @Public()
-  @Post('verify-email')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '验证邮箱' })
-  async verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto)
-  }
-
-  @Public()
-  @Post('resend-verification-email')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '重发注册验证邮件' })
-  async resendVerificationEmail(@Body() dto: ResendVerificationDto) {
-    return this.authService.resendVerificationEmail(dto)
   }
 
   @Get('profile')

@@ -4,28 +4,28 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
+import { randomInt } from 'node:crypto'
+import { EmailOtpPurpose } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import {
   LoginDto,
-  RegisterDto,
+  RegisterSendCodeDto,
+  RegisterConfirmDto,
+  RegisterResendCodeDto,
   ChangePasswordDto,
   ForgotPasswordDto,
   ResetPasswordDto,
-  VerifyEmailDto,
-  ResendVerificationDto,
 } from './dto/auth.dto'
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { MailService } from '@/modules/mail/mail.service'
-import { envStr } from '@/common/utils/config-env.util'
 
-const JWT_PURPOSE_VERIFY_EMAIL = 'verify_email' as const
-const JWT_PURPOSE_RESET_PASSWORD = 'reset_password' as const
-
-type JwtAuthPayload = { sub: string; email: string; purpose?: string }
+const OTP_TTL_MS = 15 * 60 * 1000
+const RESEND_COOLDOWN_MS = 60 * 1000
 
 @Injectable()
 export class AuthService {
@@ -35,9 +35,44 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private passwordValidator: PasswordValidator,
-    private config: ConfigService,
     private mail: MailService,
   ) {}
+
+  private normalizeEmail(raw: string) {
+    return raw.trim().toLowerCase()
+  }
+
+  private generateOtp(): string {
+    return randomInt(0, 1_000_000).toString().padStart(6, '0')
+  }
+
+  private assertResendCooldown(updatedAt: Date) {
+    const elapsed = Date.now() - updatedAt.getTime()
+    if (elapsed < RESEND_COOLDOWN_MS) {
+      const sec = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000)
+      throw new HttpException(`发送过于频繁，请 ${sec} 秒后再试`, HttpStatus.TOO_MANY_REQUESTS)
+    }
+  }
+
+  private async queueOtpEmail(
+    to: string,
+    plainCode: string,
+    kind: 'register' | 'reset',
+  ): Promise<void> {
+    const subject =
+      kind === 'register' ? '注册验证码（AI 用例平台）' : '重置密码验证码（AI 用例平台）'
+    const intro =
+      kind === 'register'
+        ? '你正在注册账号，请使用以下验证码完成注册（15 分钟内有效）。'
+        : '你正在重置密码，请使用以下验证码（15 分钟内有效）。'
+    const text = `${intro}\n\n验证码：${plainCode}\n\n如非本人操作请忽略本邮件。`
+    const html = `<p>${intro}</p><p style="font-size:22px;font-weight:bold;letter-spacing:4px">${plainCode}</p><p>如非本人操作请忽略。</p>`
+
+    const sent = await this.mail.sendMail({ to, subject, text, html })
+    if ('sendFailed' in sent && sent.sendFailed) {
+      this.logger.warn(`验证码邮件可能未送达 ${to}，请检查 MAIL_* / SMTP 配置与日志`)
+    }
+  }
 
   async login(dto: LoginDto) {
     const username = dto.username.trim()
@@ -48,7 +83,7 @@ export class AuthService {
     if (!isMatch) throw new UnauthorizedException('用户名或密码错误')
 
     if (!user.emailVerified) {
-      throw new UnauthorizedException('请先完成邮箱验证，查收注册邮件中的链接')
+      throw new UnauthorizedException('该账号邮箱尚未完成验证，请完成注册验证流程或联系管理员')
     }
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
@@ -57,67 +92,180 @@ export class AuthService {
     return { accessToken: token, user: userInfo }
   }
 
-  async register(dto: RegisterDto) {
-    const email = dto.email.trim().toLowerCase()
+  /** 注册第一步：校验资料、写入待验证记录、发验证码（不写 users） */
+  async registerSendCode(dto: RegisterSendCodeDto) {
+    const email = this.normalizeEmail(dto.email)
     const username = dto.username.trim()
 
-    // 检查邮箱是否已存在
-    const exists = await this.prisma.user.findUnique({ where: { email } })
-    if (exists) throw new ConflictException('该邮箱已被注册')
+    const existsEmail = await this.prisma.user.findUnique({ where: { email } })
+    if (existsEmail) throw new ConflictException('该邮箱已被注册')
 
-    // 检查用户名是否已存在
-    const usernameExists = await this.prisma.user.findFirst({ where: { username } })
-    if (usernameExists) throw new ConflictException('该用户名已被使用')
+    const usernameTaken = await this.prisma.user.findFirst({ where: { username } })
+    if (usernameTaken) throw new ConflictException('该用户名已被使用')
 
-    // 验证密码强度
     const passwordValidation = this.passwordValidator.validate(dto.password)
     if (!passwordValidation.valid) {
       throw new BadRequestException(`密码强度不足: ${passwordValidation.errors.join(', ')}`)
     }
 
-    // 生成密码哈希
-    const hashed = await bcrypt.hash(dto.password, 10)
-    
-    // 创建用户（需邮件验证后方可登录）
-    const user = await this.prisma.user.create({
-      data: {
+    const existing = await this.prisma.emailOtpChallenge.findUnique({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+    })
+    if (existing) {
+      this.assertResendCooldown(existing.updatedAt)
+    }
+
+    const plainCode = this.generateOtp()
+    const codeHash = await bcrypt.hash(plainCode, 10)
+    const passwordHash = await bcrypt.hash(dto.password, 10)
+    const expiresAt = new Date(Date.now() + OTP_TTL_MS)
+
+    await this.prisma.emailOtpChallenge.upsert({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+      create: {
         email,
+        purpose: EmailOtpPurpose.REGISTER,
+        codeHash,
+        expiresAt,
         username,
-        password: hashed,
-        avatar: dto.avatar,
-        emailVerified: false,
+        passwordHash,
+        avatar: dto.avatar ?? null,
       },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        role: true,
-        avatar: true,
-        teamId: true,
-        emailVerified: true,
-        createdAt: true,
-        updatedAt: true,
+      update: {
+        codeHash,
+        expiresAt,
+        username,
+        passwordHash,
+        avatar: dto.avatar ?? null,
       },
     })
 
-    const mailReady = this.mail.getVerificationMailReadiness()
-
-    // 异步发信，避免 SMTP 握手/网络卡住导致 HTTP 长时间无响应（前端 60s 超时）
-    void this.sendVerificationEmail(user.id, user.email).catch((err) => {
+    const mailReady = this.mail.getMailTransportReadiness()
+    void this.queueOtpEmail(email, plainCode, 'register').catch((err) =>
       this.logger.error(
-        `注册后异步发送验证邮件失败: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    })
+        `异步发送注册验证码失败: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    )
+
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(`[dev] 注册验证码 ${email}: ${plainCode}`)
+    }
 
     return {
       message: mailReady.ready
-        ? '注册成功，验证邮件已排队发送，请查收邮箱（含垃圾邮件箱）完成验证后再登录'
-        : '注册成功，但发信环境未就绪，验证邮件无法发出；请配置 FRONTEND_URL 与 SMTP 或使用管理员协助验证',
+        ? '验证码已发送，请查收邮箱（含垃圾箱），15 分钟内有效'
+        : '验证码已生成，但发信环境未就绪，无法发出邮件；开发环境请查看服务端日志中的验证码',
       data: {
-        email: user.email,
-        needsEmailVerification: true as const,
-        verificationMailConfigured: mailReady.ready,
-        ...(mailReady.ready ? {} : { verificationMailIssues: mailReady.issues }),
+        email,
+        mailConfigured: mailReady.ready,
+        ...(mailReady.ready ? {} : { mailIssues: mailReady.issues }),
+      },
+    }
+  }
+
+  /** 注册第二步：校验验证码并创建已验证用户 */
+  async registerConfirm(dto: RegisterConfirmDto) {
+    const email = this.normalizeEmail(dto.email)
+    const challenge = await this.prisma.emailOtpChallenge.findUnique({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+    })
+
+    if (!challenge || !challenge.username || !challenge.passwordHash) {
+      throw new BadRequestException('验证码无效或已过期，请重新获取验证码')
+    }
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      await this.prisma.emailOtpChallenge.delete({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+      }).catch(() => undefined)
+      throw new BadRequestException('验证码已过期，请重新获取')
+    }
+
+    const ok = await bcrypt.compare(dto.code, challenge.codeHash)
+    if (!ok) {
+      throw new BadRequestException('验证码错误')
+    }
+
+    const username = challenge.username
+    const existsEmail = await this.prisma.user.findUnique({ where: { email } })
+    if (existsEmail) throw new ConflictException('该邮箱已被注册')
+
+    const usernameTaken = await this.prisma.user.findFirst({ where: { username } })
+    if (usernameTaken) throw new ConflictException('该用户名已被使用')
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      await tx.emailOtpChallenge.delete({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+      })
+      return tx.user.create({
+        data: {
+          email,
+          username,
+          password: challenge.passwordHash!,
+          avatar: challenge.avatar ?? undefined,
+          emailVerified: true,
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          avatar: true,
+          teamId: true,
+          emailVerified: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    })
+
+    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
+    return {
+      message: '注册成功',
+      data: { accessToken: token, user },
+    }
+  }
+
+  /** 仅邮箱重发注册验证码 */
+  async registerResendCode(dto: RegisterResendCodeDto) {
+    const email = this.normalizeEmail(dto.email)
+    const challenge = await this.prisma.emailOtpChallenge.findUnique({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+    })
+
+    if (!challenge) {
+      return {}
+    }
+
+    this.assertResendCooldown(challenge.updatedAt)
+
+    const plainCode = this.generateOtp()
+    const codeHash = await bcrypt.hash(plainCode, 10)
+    const expiresAt = new Date(Date.now() + OTP_TTL_MS)
+
+    await this.prisma.emailOtpChallenge.update({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
+      data: { codeHash, expiresAt },
+    })
+
+    const mailReady = this.mail.getMailTransportReadiness()
+    void this.queueOtpEmail(email, plainCode, 'register').catch((err) =>
+      this.logger.error(
+        `异步重发注册验证码失败: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    )
+
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(`[dev] 重发注册验证码 ${email}: ${plainCode}`)
+    }
+
+    return {
+      message: mailReady.ready
+        ? '验证码已重新发送'
+        : '发信未就绪，开发环境请查看服务端日志中的验证码',
+      data: {
+        email,
+        mailConfigured: mailReady.ready,
+        ...(mailReady.ready ? {} : { mailIssues: mailReady.issues }),
       },
     }
   }
@@ -140,7 +288,6 @@ export class AuthService {
   }
 
   async updateProfile(userId: string, data: { username?: string; avatar?: string }) {
-    // 检查用户名是否已被使用
     if (data.username) {
       const usernameExists = await this.prisma.user.findFirst({ where: { username: data.username } })
       if (usernameExists && usernameExists.id !== userId) {
@@ -162,7 +309,6 @@ export class AuthService {
     const isMatch = await bcrypt.compare(dto.oldPassword, user.password)
     if (!isMatch) throw new BadRequestException('当前密码错误')
 
-    // 验证新密码强度
     const passwordValidation = this.passwordValidator.validate(dto.newPassword)
     if (!passwordValidation.valid) {
       throw new BadRequestException(`新密码强度不足: ${passwordValidation.errors.join(', ')}`)
@@ -173,206 +319,92 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const email = dto.email.trim().toLowerCase()
+    const email = this.normalizeEmail(dto.email)
     const user = await this.prisma.user.findUnique({ where: { email } })
 
     if (user) {
-      const resetToken = this.jwtService.sign(
-        { sub: user.id, email: user.email, purpose: JWT_PURPOSE_RESET_PASSWORD },
-        { expiresIn: '1h' },
+      const existing = await this.prisma.emailOtpChallenge.findUnique({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+      })
+      if (existing) {
+        this.assertResendCooldown(existing.updatedAt)
+      }
+
+      const plainCode = this.generateOtp()
+      const codeHash = await bcrypt.hash(plainCode, 10)
+      const expiresAt = new Date(Date.now() + OTP_TTL_MS)
+
+      await this.prisma.emailOtpChallenge.upsert({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+        create: {
+          email,
+          purpose: EmailOtpPurpose.PASSWORD_RESET,
+          codeHash,
+          expiresAt,
+        },
+        update: { codeHash, expiresAt },
+      })
+
+      void this.queueOtpEmail(email, plainCode, 'reset').catch((err) =>
+        this.logger.error(
+          `异步发送重置验证码失败: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       )
-      const frontend = envStr(this.config, 'FRONTEND_URL').replace(/\/+$/, '')
-      const resetUrl = frontend ? `${frontend}/reset-password/${encodeURIComponent(resetToken)}` : ''
-
-      if (!resetUrl) {
-        this.logger.warn(
-          'FRONTEND_URL 未设置，无法生成重置密码链接，已跳过发送邮件（注册验证邮件同样依赖 FRONTEND_URL）',
-        )
-      }
-
-      // 异步发信，避免请求被 SMTP 拖满超时
-      if (resetUrl) {
-        void this.mail
-          .sendMail({
-            to: user.email,
-            subject: '重置密码（邮箱验证）',
-            text: `我们收到你的重置密码请求。打开下方链接即表示你确认该邮箱可接收本操作。\n\n请在 1 小时内打开链接设置新密码：\n${resetUrl}\n\n若非本人操作请忽略此邮件。`,
-            html: `
-            <p>我们收到你的重置密码请求。打开链接即表示你确认该邮箱可接收本操作。</p>
-            <p>请在 <b>1 小时</b> 内打开链接设置新密码：</p>
-            <p><a href="${resetUrl}">${resetUrl}</a></p>
-            <p>若非本人操作请忽略此邮件。</p>
-          `,
-          })
-          .then((sent) => {
-            if ('sendFailed' in sent && sent.sendFailed) {
-              this.logger.warn(`重置密码邮件未能送达 ${user.email}，请检查 SMTP 日志`)
-            }
-          })
-          .catch((err) =>
-            this.logger.error(
-              `异步发送重置密码邮件失败: ${err instanceof Error ? err.message : String(err)}`,
-            ),
-          )
-      }
 
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`Password reset token for ${user.email}: ${resetToken}`)
+        this.logger.log(`[dev] 重置密码验证码 ${email}: ${plainCode}`)
       }
     }
 
-    // 统一文案，避免被用于探测邮箱是否注册（具体说明由响应拦截器 message 字段给出）
     return {}
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    try {
-      const payload = this.jwtService.verify(dto.token) as JwtAuthPayload
-      if (payload.purpose !== undefined && payload.purpose !== JWT_PURPOSE_RESET_PASSWORD) {
-        throw new BadRequestException('无效的重置令牌')
-      }
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } })
+    const email = this.normalizeEmail(dto.email)
+    const challenge = await this.prisma.emailOtpChallenge.findUnique({
+      where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+    })
 
-      if (!user || user.email !== payload.email) {
-        throw new BadRequestException('无效的重置令牌')
-      }
-
-      const hashed = await bcrypt.hash(dto.newPassword, 10)
-      await this.prisma.user.update({ where: { id: user.id }, data: { password: hashed } })
-
-      return {}
-    } catch (error) {
-      throw new BadRequestException('无效的重置令牌或已过期')
+    if (!challenge) {
+      throw new BadRequestException('验证码无效或已过期')
     }
-  }
-
-  async verifyEmail(dto: VerifyEmailDto) {
-    try {
-      const email = dto.email.trim().toLowerCase()
-      const payload = this.jwtService.verify(dto.token) as JwtAuthPayload
-      if (payload.purpose !== JWT_PURPOSE_VERIFY_EMAIL) {
-        throw new BadRequestException('无效的验证令牌')
-      }
-      if (payload.email.trim().toLowerCase() !== email) {
-        throw new BadRequestException('无效的验证令牌')
-      }
-
-      const user = await this.prisma.user.findFirst({
-        where: { id: payload.sub, email },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          role: true,
-          avatar: true,
-          teamId: true,
-          emailVerified: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
-      if (!user) throw new BadRequestException('无效的验证令牌')
-
-      if (user.emailVerified) {
-        const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
-        return {
-          message: '邮箱已验证',
-          data: { accessToken: token, user },
-        }
-      }
-
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerified: true },
-      })
-
-      const updated = await this.prisma.user.findUnique({
-        where: { id: user.id },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          role: true,
-          avatar: true,
-          teamId: true,
-          emailVerified: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
-      if (!updated) throw new BadRequestException('验证失败')
-
-      const token = this.jwtService.sign({
-        sub: updated.id,
-        email: updated.email,
-        role: updated.role,
-      })
-
-      return {
-        message: '邮箱验证成功',
-        data: { accessToken: token, user: updated },
-      }
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error
-      throw new BadRequestException('无效的验证令牌或已过期')
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      await this.prisma.emailOtpChallenge.delete({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+      }).catch(() => undefined)
+      throw new BadRequestException('验证码已过期，请重新获取')
     }
-  }
 
-  /** 未验证用户重发注册验证邮件（防枚举：邮箱不存在或已验证时同样返回成功） */
-  async resendVerificationEmail(dto: ResendVerificationDto) {
-    const email = dto.email.trim().toLowerCase()
+    const ok = await bcrypt.compare(dto.code, challenge.codeHash)
+    if (!ok) {
+      throw new BadRequestException('验证码错误')
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email } })
-    if (user && !user.emailVerified) {
-      void this.sendVerificationEmail(user.id, user.email).catch((err) => {
-        this.logger.error(
-          `重发验证邮件异步任务失败: ${err instanceof Error ? err.message : String(err)}`,
-        )
-      })
+    if (!user) {
+      await this.prisma.emailOtpChallenge.delete({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+      }).catch(() => undefined)
+      throw new BadRequestException('验证码无效或已过期')
     }
+
+    const passwordValidation = this.passwordValidator.validate(dto.newPassword)
+    if (!passwordValidation.valid) {
+      throw new BadRequestException(`新密码强度不足: ${passwordValidation.errors.join(', ')}`)
+    }
+
+    const hashed = await bcrypt.hash(dto.newPassword, 10)
+    await this.prisma.$transaction([
+      this.prisma.emailOtpChallenge.delete({
+        where: { email_purpose: { email, purpose: EmailOtpPurpose.PASSWORD_RESET } },
+      }),
+      this.prisma.user.update({ where: { id: user.id }, data: { password: hashed } }),
+    ])
+
     return {}
   }
 
-  private async sendVerificationEmail(userId: string, email: string) {
-    const verificationToken = this.jwtService.sign(
-      { sub: userId, email, purpose: JWT_PURPOSE_VERIFY_EMAIL },
-      { expiresIn: this.passwordValidator.verificationTokenExpiry },
-    )
-    const frontend = envStr(this.config, 'FRONTEND_URL').replace(/\/+$/, '')
-    const q = new URLSearchParams({
-      token: verificationToken,
-      email,
-    })
-    const verifyUrl = frontend ? `${frontend}/verify-email?${q.toString()}` : ''
-
-    if (!verifyUrl) {
-      this.logger.warn(
-        'FRONTEND_URL 未设置，无法生成邮箱验证链接，已跳过发送验证邮件（需同时配置 SMTP_HOST / SMTP_USER / SMTP_PASS）',
-      )
-    } else {
-      const sent = await this.mail.sendMail({
-        to: email,
-        subject: '验证你的邮箱',
-        text: `感谢注册。请在 24 小时内打开链接完成邮箱验证：\n${verifyUrl}\n\n若非本人注册请忽略。`,
-        html: `
-          <p>感谢注册。</p>
-          <p>请在 <b>24 小时</b> 内打开链接完成邮箱验证：</p>
-          <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-          <p>若非本人注册请忽略。</p>
-        `,
-      })
-      if ('sendFailed' in sent && sent.sendFailed) {
-        this.logger.warn(`注册验证邮件未能送达 ${email}，用户可使用「重发验证邮件」或检查 SMTP`)
-      }
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-      this.logger.log(`Email verification token for ${email}: ${verificationToken}`)
-    }
-  }
-
   async logout(userId: string) {
-    // JWT 无状态，客户端删除 token 即可
-    // 这里可以添加 token 黑名单逻辑
     console.log(`User ${userId} logged out`)
     return {}
   }

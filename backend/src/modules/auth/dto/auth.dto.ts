@@ -19,7 +19,8 @@ export class LoginDto {
   password: string
 }
 
-export class RegisterDto {
+/** 第一步：提交资料并发送邮箱验证码（此时不落 users 表） */
+export class RegisterSendCodeDto {
   @ApiProperty({ example: 'user@example.com' })
   @IsEmail({}, { message: '邮箱格式不正确' })
   email: string
@@ -44,6 +45,25 @@ export class RegisterDto {
   avatar?: string
 }
 
+/** 第二步：校验验证码并创建账号 */
+export class RegisterConfirmDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @Matches(/^\d{6}$/, { message: '验证码须为 6 位数字' })
+  code: string
+}
+
+/** 仅邮箱重发注册验证码（须已有待验证记录） */
+export class RegisterResendCodeDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email: string
+}
+
 export class ChangePasswordDto {
   @IsString()
   oldPassword: string
@@ -60,33 +80,17 @@ export class ForgotPasswordDto {
 }
 
 export class ResetPasswordDto {
-  @ApiProperty({ required: false, example: 'user@example.com' })
-  @IsOptional()
+  @ApiProperty({ example: 'user@example.com' })
   @IsEmail({}, { message: '邮箱格式不正确' })
-  email?: string
+  email: string
 
-  @ApiProperty({ example: 'reset-token' })
+  @ApiProperty({ example: '123456' })
   @IsString()
-  token: string
+  @Matches(/^\d{6}$/, { message: '验证码须为 6 位数字' })
+  code: string
 
   @ApiProperty({ example: 'NewPassword123' })
   @IsString()
   @MinLength(6, { message: '新密码至少6位' })
   newPassword: string
-}
-
-export class VerifyEmailDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsEmail({}, { message: '邮箱格式不正确' })
-  email: string
-
-  @ApiProperty({ example: 'verification-token' })
-  @IsString()
-  token: string
-}
-
-export class ResendVerificationDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsEmail({}, { message: '邮箱格式不正确' })
-  email: string
 }

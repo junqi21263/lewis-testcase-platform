@@ -55,13 +55,11 @@ export interface AuthTokens {
   user: User
 }
 
-/** 注册后需邮件验证时接口返回的 data（无 accessToken） */
-export interface RegisterPendingVerification {
+/** POST /auth/register/send-code、/auth/register/resend-code 返回的 data */
+export interface RegisterOtpMeta {
   email: string
-  needsEmailVerification: true
-  /** 后端是否检测到 FRONTEND_URL + SMTP 已配置（不代表一定进收件箱） */
-  verificationMailConfigured?: boolean
-  verificationMailIssues?: string[]
+  mailConfigured?: boolean
+  mailIssues?: string[]
 }
 
 // ==================== 团队相关 ====================
