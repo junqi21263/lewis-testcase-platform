@@ -154,16 +154,18 @@ export class FilesService {
     if (this.cos.isEnabled()) {
       try {
         for (let i = 0; i < expectedTotal; i++) {
-          const key = this.cos.buildChunkKey(fileId, i)
           let rs: NodeJS.ReadableStream
+          let usedKey = ''
           try {
-            rs = await this.cos.getObjectStream(key)
+            const got = await this.cos.getChunkStream(fileId, i)
+            rs = got.stream
+            usedKey = got.key
           } catch (e) {
-            const prefix = this.cos.buildChunkPrefix(fileId)
-            const keys = await this.cos.listKeys(prefix).catch(() => [])
+            const prefixes = this.cos.getChunkPrefixVariants(fileId)
+            const keys = await this.cos.listChunkKeys(fileId).catch(() => [])
             const msg = (e as Error)?.message || String(e)
             throw new BadRequestException(
-              `分片合并失败（COS）：缺少 ${key}；prefix=${prefix}；已存在=${keys.slice(0, 30).join(', ')}${keys.length > 30 ? `...(+${keys.length - 30})` : ''}；err=${msg}`,
+              `分片合并失败（COS）：缺少 chunkIndex=${i}（keys=${this.cos.getChunkKeyVariants(fileId, i).join(' | ')}）；prefix=${prefixes.join(' | ')}；已存在=${keys.slice(0, 50).join(', ')}${keys.length > 50 ? `...(+${keys.length - 50})` : ''}；err=${msg}`,
             )
           }
           await pipeline(rs as any, ws, { end: false } as any)
@@ -177,7 +179,10 @@ export class FilesService {
       }
 
       // 清理 COS 临时分片
-      this.cos.deletePrefix(this.cos.buildChunkPrefix(fileId)).catch(() => {})
+      // 兼容两种前缀都清理（best-effort）
+      for (const p of this.cos.getChunkPrefixVariants(fileId)) {
+        this.cos.deletePrefix(p).catch(() => {})
+      }
 
       const stat = fs.statSync(finalPath)
       const mergedFile: Express.Multer.File = {

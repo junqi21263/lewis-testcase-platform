@@ -58,16 +58,30 @@ export class CosService {
 
   /**
    * 分片临时对象 key（必须稳定，不依赖日期/时间，避免上传跨日导致 merge 找不到）
+   *
+   * 注意：这里**不使用 COS_PREFIX**，否则滚动发布/多实例环境变量不一致时会出现
+   * 同一 fileId 的分片写入到不同 prefix，导致 merge 只看到部分分片。
    * chunks/{fileId}/{chunkIndex}.part
    */
   buildChunkKey(fileId: string, chunkIndex: number) {
-    const prefix = this.prefix ? `${this.prefix}/` : ''
-    return `${prefix}chunks/${fileId}/${chunkIndex}.part`
+    return `chunks/${fileId}/${chunkIndex}.part`
   }
 
   buildChunkPrefix(fileId: string) {
-    const prefix = this.prefix ? `${this.prefix}/` : ''
-    return `${prefix}chunks/${fileId}/`
+    return `chunks/${fileId}/`
+  }
+
+  /** 兼容历史/错误配置：同时尝试带 prefix 与不带 prefix 的 chunk key */
+  getChunkKeyVariants(fileId: string, chunkIndex: number) {
+    const base = `chunks/${fileId}/${chunkIndex}.part`
+    const prefixed = this.prefix ? `${this.prefix}/${base}` : null
+    return prefixed ? [base, prefixed] : [base]
+  }
+
+  getChunkPrefixVariants(fileId: string) {
+    const base = `chunks/${fileId}/`
+    const prefixed = this.prefix ? `${this.prefix}/${base}` : null
+    return prefixed ? [base, prefixed] : [base]
   }
 
   async uploadLocalFile(localPath: string, key: string) {
@@ -112,6 +126,30 @@ export class CosService {
     })
     if (!res?.Body) throw new Error('COS getObject missing body')
     return res.Body as NodeJS.ReadableStream
+  }
+
+  async getChunkStream(fileId: string, chunkIndex: number): Promise<{ stream: NodeJS.ReadableStream; key: string }> {
+    const keys = this.getChunkKeyVariants(fileId, chunkIndex)
+    let lastErr: unknown
+    for (const key of keys) {
+      try {
+        const stream = await this.getObjectStream(key)
+        return { stream, key }
+      } catch (e) {
+        lastErr = e
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+  }
+
+  async listChunkKeys(fileId: string) {
+    const prefixes = this.getChunkPrefixVariants(fileId)
+    const all = new Set<string>()
+    for (const p of prefixes) {
+      const keys = await this.listKeys(p).catch(() => [])
+      for (const k of keys) all.add(k)
+    }
+    return Array.from(all).sort()
   }
 
   async listKeys(prefix: string) {
