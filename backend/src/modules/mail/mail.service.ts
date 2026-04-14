@@ -118,7 +118,37 @@ export class MailService {
     return this.smtpUser() || 'no-reply@example.com'
   }
 
-  private buildTransport() {
+  /**
+   * Railway 等环境 IPv6 不可达时，仅 setDefaultResultOrder 仍可能连到 AAAA。
+   * 对 FQDN 查 A 记录，用 IPv4 连；连 IP 时通过 tls.servername 保持与证书一致。
+   */
+  private async smtpConnectHostAndTls(
+    hostname: string,
+  ): Promise<{ host: string; tls?: { servername: string } }> {
+    if (!this.smtpPreferIpv4()) {
+      return { host: hostname }
+    }
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+      return { host: hostname }
+    }
+    if (hostname.includes(':')) {
+      return { host: hostname }
+    }
+    try {
+      const { address: ipv4 } = await dns.promises.lookup(hostname, { family: 4 })
+      if (ipv4 && ipv4 !== hostname) {
+        this.logger.log(`SMTP: ${hostname} → ${ipv4}（A 记录 / IPv4，避免 AAAA ENETUNREACH）`)
+        return { host: ipv4, tls: { servername: hostname } }
+      }
+    } catch (e) {
+      this.logger.warn(
+        `SMTP: 未取到 IPv4（A），沿用主机名: ${hostname} — ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+    return { host: hostname }
+  }
+
+  private async createTransport() {
     const host = this.smtpHost()
     const port = this.smtpPort()
     const user = this.smtpUser()
@@ -138,19 +168,24 @@ export class MailService {
     )
     const socketTimeout = parseInt(envStr(this.config, 'SMTP_SOCKET_TIMEOUT_MS') || '20000', 10)
 
+    const { host: connectHost, tls: tlsExtra } = await this.smtpConnectHostAndTls(host)
+    const manualServername = envStr(this.config, 'MAIL_TLS_SERVERNAME')
+    const servername = manualServername || tlsExtra?.servername
+
     return nodemailer.createTransport({
-      host,
+      host: connectHost,
       port,
       secure,
       auth: { user, pass },
       connectionTimeout,
       greetingTimeout: connectionTimeout,
       socketTimeout,
+      ...(servername ? { tls: { servername } } : {}),
     })
   }
 
   async sendMail(payload: MailPayload): Promise<SendMailResult> {
-    const transport = this.buildTransport()
+    const transport = await this.createTransport()
     if (!transport) {
       this.logger.warn('邮件未配置（MAIL_* 或 SMTP_*），跳过发送')
       return { skipped: true }

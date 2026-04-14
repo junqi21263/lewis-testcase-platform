@@ -69,12 +69,34 @@ function buildFrom(): string {
   return smtpUser() || 'no-reply@example.com'
 }
 
-function applyIpv4FirstDns() {
+function smtpPreferIpv4(): boolean {
   const v = env('MAIL_SMTP_IPV4FIRST').toLowerCase()
-  if (v === '0' || v === 'false' || v === 'no') return
+  return !(v === '0' || v === 'false' || v === 'no')
+}
+
+function applyIpv4FirstDns() {
+  if (!smtpPreferIpv4()) return
   if (typeof dns.setDefaultResultOrder !== 'function') return
   dns.setDefaultResultOrder('ipv4first')
-  console.log('DNS: 已 setDefaultResultOrder("ipv4first")（与 MailService 一致，缓解 ENETUNREACH IPv6）')
+  console.log('DNS: 已 setDefaultResultOrder("ipv4first")（与 MailService 一致）')
+}
+
+async function smtpConnectHostAndTls(hostname: string): Promise<{ host: string; servername?: string }> {
+  if (!smtpPreferIpv4()) return { host: hostname }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return { host: hostname }
+  if (hostname.includes(':')) return { host: hostname }
+  try {
+    const { address: ipv4 } = await dns.promises.lookup(hostname, { family: 4 })
+    if (ipv4 && ipv4 !== hostname) {
+      console.log(`SMTP: ${hostname} → ${ipv4}（A 记录，与线上 MailService 一致）`)
+      return { host: ipv4, servername: hostname }
+    }
+  } catch (e) {
+    console.warn(
+      `SMTP: IPv4 解析失败，沿用主机名 — ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  return { host: hostname }
 }
 
 async function main() {
@@ -106,23 +128,30 @@ async function main() {
   const connectionTimeout = parseInt(env('SMTP_CONNECTION_TIMEOUT_MS') || '15000', 10)
   const socketTimeout = parseInt(env('SMTP_SOCKET_TIMEOUT_MS') || '20000', 10)
 
+  const manualSn = env('MAIL_TLS_SERVERNAME')
+  const { host: connectHost, servername: snFromResolve } = await smtpConnectHostAndTls(host)
+  const servername = manualSn || snFromResolve
+
   console.log('连接参数:', {
-    host,
+    host: connectHost,
+    mailHost: host,
     port,
     secure,
     user: user.replace(/(.{2}).+(@.+)/, '$1***$2'),
     from,
     to: to.replace(/(.{2}).+(@.+)/, '$1***$2'),
+    tlsServername: servername || '(默认)',
   })
 
   const transport = nodemailer.createTransport({
-    host,
+    host: connectHost,
     port,
     secure,
     auth: { user, pass },
     connectionTimeout,
     greetingTimeout: connectionTimeout,
     socketTimeout,
+    ...(servername ? { tls: { servername } } : {}),
   })
 
   const subject = `[SMTP自检] AI 用例平台 ${new Date().toISOString()}`
