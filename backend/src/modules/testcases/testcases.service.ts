@@ -85,6 +85,35 @@ export class TestcasesService {
     return this.prisma.testCase.update({ where: { id }, data })
   }
 
+  async batchUpdateCases(
+    updates: Array<{ id: string; data: any }>,
+    userId: string,
+  ) {
+    if (!updates.length) return { updated: 0 }
+
+    const ids = updates.map((u) => u.id)
+    const cases = await this.prisma.testCase.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, suiteId: true, suite: { select: { creatorId: true } } },
+    })
+    if (cases.length !== ids.length) throw new NotFoundException('部分用例不存在')
+    const suiteIds = new Set(cases.map((c) => c.suiteId))
+    if (suiteIds.size !== 1) throw new ForbiddenException('批量更新仅支持同一用例集')
+    const creatorId = cases[0].suite.creatorId
+    if (creatorId !== userId) throw new ForbiddenException('无权修改该用例集')
+
+    await this.prisma.$transaction(
+      updates.map((u) =>
+        this.prisma.testCase.update({
+          where: { id: u.id },
+          data: u.data,
+        }),
+      ),
+    )
+
+    return { updated: updates.length }
+  }
+
   async deleteCase(id: string) {
     const c = await this.prisma.testCase.findUnique({ where: { id } })
     if (!c) throw new NotFoundException('用例不存在')

@@ -65,6 +65,15 @@ export class TestcasesController {
     return this.service.updateCase(id, data)
   }
 
+  @Patch('cases/batch')
+  @ApiOperation({ summary: '批量更新用例（同一用例集/同一用户）' })
+  batchUpdateCases(
+    @Body() body: { updates: Array<{ id: string; data: any }> },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.service.batchUpdateCases(body?.updates || [], userId)
+  }
+
   @Delete('cases/:id')
   @ApiOperation({ summary: '删除用例' })
   deleteCase(@Param('id') id: string) {
