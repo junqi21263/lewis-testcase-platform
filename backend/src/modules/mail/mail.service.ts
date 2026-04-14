@@ -20,6 +20,24 @@ export class MailService {
 
   constructor(private config: ConfigService) {}
 
+  /**
+   * 同步检测：是否具备发送「带验证/重置链接」邮件的条件（不连 SMTP）。
+   * 用于接口如实返回；异步任务里仍可能因账号/网络被拒。
+   */
+  getVerificationMailReadiness(): { ready: boolean; issues: string[] } {
+    const issues: string[] = []
+    if (!(this.config.get<string>('FRONTEND_URL') || '').trim()) {
+      issues.push('未设置 FRONTEND_URL（无法生成验证链接）')
+    }
+    const host = this.config.get<string>('SMTP_HOST')?.trim()
+    const user = this.config.get<string>('SMTP_USER')?.trim()
+    const pass = this.config.get<string>('SMTP_PASS')?.trim()
+    if (!host) issues.push('未设置 SMTP_HOST')
+    if (!user) issues.push('未设置 SMTP_USER')
+    if (!pass) issues.push('未设置 SMTP_PASS')
+    return { ready: issues.length === 0, issues }
+  }
+
   private buildTransport() {
     const host = this.config.get<string>('SMTP_HOST')?.trim()
     const port = parseInt(this.config.get<string>('SMTP_PORT') || '587', 10)
@@ -66,6 +84,9 @@ export class MailService {
         text: payload.text,
         html: payload.html,
       })
+      this.logger.log(
+        `SMTP 已接受邮件: to=${payload.to} subject=${payload.subject} messageId=${info.messageId ?? 'n/a'}`,
+      )
       return { skipped: false, messageId: info.messageId }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

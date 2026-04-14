@@ -59,6 +59,9 @@ export interface AuthTokens {
 export interface RegisterPendingVerification {
   email: string
   needsEmailVerification: true
+  /** 后端是否检测到 FRONTEND_URL + SMTP 已配置（不代表一定进收件箱） */
+  verificationMailConfigured?: boolean
+  verificationMailIssues?: string[]
 }
 
 // ==================== 团队相关 ====================

@@ -99,6 +99,8 @@ export class AuthService {
       },
     })
 
+    const mailReady = this.mail.getVerificationMailReadiness()
+
     // 异步发信，避免 SMTP 握手/网络卡住导致 HTTP 长时间无响应（前端 60s 超时）
     void this.sendVerificationEmail(user.id, user.email).catch((err) => {
       this.logger.error(
@@ -107,8 +109,15 @@ export class AuthService {
     })
 
     return {
-      message: '注册成功，验证邮件已发送，请查收邮箱完成验证后再登录',
-      data: { email: user.email, needsEmailVerification: true as const },
+      message: mailReady.ready
+        ? '注册成功，验证邮件已排队发送，请查收邮箱（含垃圾邮件箱）完成验证后再登录'
+        : '注册成功，但发信环境未就绪，验证邮件无法发出；请配置 FRONTEND_URL 与 SMTP 或使用管理员协助验证',
+      data: {
+        email: user.email,
+        needsEmailVerification: true as const,
+        verificationMailConfigured: mailReady.ready,
+        ...(mailReady.ready ? {} : { verificationMailIssues: mailReady.issues }),
+      },
     }
   }
 

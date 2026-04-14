@@ -47,7 +47,17 @@ export default function RegisterPage() {
         password,
       })
       if (result?.needsEmailVerification) {
-        toast.success('请查收邮件，点击链接完成验证后再登录')
+        if (result.verificationMailConfigured === false && result.verificationMailIssues?.length) {
+          toast.error(
+            `账号已创建，但无法发信：${result.verificationMailIssues.join('；')}。请配置 Railway 环境变量后使用「重发验证邮件」。`,
+            { duration: 8000 },
+          )
+        } else {
+          toast.success(
+            '验证邮件已发送，请查收邮箱并打开垃圾邮件箱；数分钟未收到可点下一页「重发验证邮件」。',
+            { duration: 6000 },
+          )
+        }
         navigate(
           `/verify-email?email=${encodeURIComponent(result.email)}&pending=1`,
           { replace: true },
