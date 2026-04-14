@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
+import { envStr } from '@/common/utils/config-env.util'
 
 export type MailPayload = {
   to: string
@@ -26,32 +27,29 @@ export class MailService {
    */
   getVerificationMailReadiness(): { ready: boolean; issues: string[] } {
     const issues: string[] = []
-    if (!(this.config.get<string>('FRONTEND_URL') || '').trim()) {
+    if (!envStr(this.config, 'FRONTEND_URL')) {
       issues.push('未设置 FRONTEND_URL（无法生成验证链接）')
     }
-    const host = this.config.get<string>('SMTP_HOST')?.trim()
-    const user = this.config.get<string>('SMTP_USER')?.trim()
-    const pass = this.config.get<string>('SMTP_PASS')?.trim()
-    if (!host) issues.push('未设置 SMTP_HOST')
-    if (!user) issues.push('未设置 SMTP_USER')
-    if (!pass) issues.push('未设置 SMTP_PASS')
+    if (!envStr(this.config, 'SMTP_HOST')) issues.push('未设置 SMTP_HOST')
+    if (!envStr(this.config, 'SMTP_USER')) issues.push('未设置 SMTP_USER')
+    if (!envStr(this.config, 'SMTP_PASS')) issues.push('未设置 SMTP_PASS')
     return { ready: issues.length === 0, issues }
   }
 
   private buildTransport() {
-    const host = this.config.get<string>('SMTP_HOST')?.trim()
-    const port = parseInt(this.config.get<string>('SMTP_PORT') || '587', 10)
-    const user = this.config.get<string>('SMTP_USER')?.trim()
-    const pass = this.config.get<string>('SMTP_PASS')?.trim()
-    const secure = String(this.config.get<string>('SMTP_SECURE') || '').trim() === 'true'
+    const host = envStr(this.config, 'SMTP_HOST')
+    const port = parseInt(envStr(this.config, 'SMTP_PORT') || '587', 10)
+    const user = envStr(this.config, 'SMTP_USER')
+    const pass = envStr(this.config, 'SMTP_PASS')
+    const secure = envStr(this.config, 'SMTP_SECURE').toLowerCase() === 'true'
 
     if (!host || !user || !pass) return null
 
     const connectionTimeout = parseInt(
-      this.config.get<string>('SMTP_CONNECTION_TIMEOUT_MS') || '15000',
+      envStr(this.config, 'SMTP_CONNECTION_TIMEOUT_MS') || '15000',
       10,
     )
-    const socketTimeout = parseInt(this.config.get<string>('SMTP_SOCKET_TIMEOUT_MS') || '20000', 10)
+    const socketTimeout = parseInt(envStr(this.config, 'SMTP_SOCKET_TIMEOUT_MS') || '20000', 10)
 
     return nodemailer.createTransport({
       host,
@@ -72,8 +70,8 @@ export class MailService {
     }
 
     const from =
-      this.config.get<string>('SMTP_FROM')?.trim() ||
-      this.config.get<string>('SMTP_USER')?.trim() ||
+      envStr(this.config, 'SMTP_FROM') ||
+      envStr(this.config, 'SMTP_USER') ||
       'no-reply@example.com'
 
     try {

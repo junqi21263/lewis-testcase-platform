@@ -27,8 +27,11 @@ import { MailModule } from './modules/mail/mail.module'
 @Module({
   controllers: [HealthController],
   imports: [
-    // 环境变量配置（全局）
-    ConfigModule.forRoot({ isGlobal: true }),
+    // 环境变量配置（全局）。生产不读磁盘 .env，仅以运行时注入的 process.env 为准，避免空 .env 干扰。
+    ConfigModule.forRoot({
+      isGlobal: true,
+      ignoreEnvFile: process.env.NODE_ENV === 'production',
+    }),
 
     // 限流防护
     ThrottlerModule.forRoot([{

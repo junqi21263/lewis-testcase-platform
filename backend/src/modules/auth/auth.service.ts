@@ -20,6 +20,7 @@ import {
 } from './dto/auth.dto'
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { MailService } from '@/modules/mail/mail.service'
+import { envStr } from '@/common/utils/config-env.util'
 
 const JWT_PURPOSE_VERIFY_EMAIL = 'verify_email' as const
 const JWT_PURPOSE_RESET_PASSWORD = 'reset_password' as const
@@ -180,7 +181,7 @@ export class AuthService {
         { sub: user.id, email: user.email, purpose: JWT_PURPOSE_RESET_PASSWORD },
         { expiresIn: '1h' },
       )
-      const frontend = (this.config.get<string>('FRONTEND_URL') || '').trim().replace(/\/+$/, '')
+      const frontend = envStr(this.config, 'FRONTEND_URL').replace(/\/+$/, '')
       const resetUrl = frontend ? `${frontend}/reset-password/${encodeURIComponent(resetToken)}` : ''
 
       if (!resetUrl) {
@@ -336,7 +337,7 @@ export class AuthService {
       { sub: userId, email, purpose: JWT_PURPOSE_VERIFY_EMAIL },
       { expiresIn: this.passwordValidator.verificationTokenExpiry },
     )
-    const frontend = (this.config.get<string>('FRONTEND_URL') || '').trim().replace(/\/+$/, '')
+    const frontend = envStr(this.config, 'FRONTEND_URL').replace(/\/+$/, '')
     const q = new URLSearchParams({
       token: verificationToken,
       email,
