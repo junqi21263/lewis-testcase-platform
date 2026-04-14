@@ -115,7 +115,7 @@ export class FilesService {
       } catch {
         // ignore
       }
-      return { uploaded: true }
+      return { uploaded: true, provider: 'COS' as const, key, chunkIndex, chunkTotal }
     }
 
     const dest = path.join(dir, `${chunkIndex}.part`)
@@ -126,7 +126,7 @@ export class FilesService {
       // ignore
     }
 
-    return { uploaded: true }
+    return { uploaded: true, provider: 'LOCAL' as const, key: dest, chunkIndex, chunkTotal }
   }
 
   /**

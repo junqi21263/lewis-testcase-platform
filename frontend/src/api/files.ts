@@ -51,7 +51,7 @@ export const filesApi = {
     info: ChunkInfo,
     onProgress?: (percent: number) => void,
     signal?: AbortSignal,
-  ): Promise<{ uploaded: boolean }> {
+  ): Promise<{ uploaded: boolean; provider?: 'COS' | 'LOCAL'; key?: string; chunkIndex?: number; chunkTotal?: number }> {
     const formData = new FormData()
     formData.append('chunk', chunk)
     formData.append('fileId', info.fileId)

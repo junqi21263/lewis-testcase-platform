@@ -201,7 +201,12 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
               onTaskUpdate(task.id, { progress: overall })
             },
             controller.signal,
-          )
+          ).then((r) => {
+            if (!r || r.uploaded !== true) {
+              throw new Error(`分片上传失败：chunkIndex=${i}`)
+            }
+            return r
+          })
         }
 
         // 所有分片上传完毕，通知服务端合并
