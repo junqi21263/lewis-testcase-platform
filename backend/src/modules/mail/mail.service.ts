@@ -148,7 +148,10 @@ export class MailService {
     return { host: hostname }
   }
 
-  private async createTransport() {
+  private async createTransport(): Promise<{
+    transport: ReturnType<typeof nodemailer.createTransport>
+    peer: string
+  } | null> {
     const host = this.smtpHost()
     const port = this.smtpPort()
     const user = this.smtpUser()
@@ -173,7 +176,9 @@ export class MailService {
     const manualServername = envStr(this.config, 'MAIL_TLS_SERVERNAME')
     const servername = manualServername || tlsExtra?.servername
 
-    return nodemailer.createTransport({
+    const peer = `${connectHost}:${port} ${secure ? 'SMTPS' : 'STARTTLS'}${servername ? ` SNI=${servername}` : ''} conn=${connectionTimeout}ms sock=${socketTimeout}ms`
+
+    const transport = nodemailer.createTransport({
       host: connectHost,
       port,
       secure,
@@ -183,14 +188,16 @@ export class MailService {
       socketTimeout,
       ...(servername ? { tls: { servername } } : {}),
     })
+    return { transport, peer }
   }
 
   async sendMail(payload: MailPayload): Promise<SendMailResult> {
-    const transport = await this.createTransport()
-    if (!transport) {
+    const built = await this.createTransport()
+    if (!built) {
       this.logger.warn('邮件未配置（MAIL_* 或 SMTP_*），跳过发送')
       return { skipped: true }
     }
+    const { transport, peer } = built
 
     const from = this.buildFrom()
 
@@ -211,7 +218,7 @@ export class MailService {
       this.logger.error(`SMTP 发送失败: ${msg}`)
       if (/timeout/i.test(msg)) {
         this.logger.warn(
-          'SMTP 连接/握手超时：可设置 SMTP_CONNECTION_TIMEOUT_MS（默认 60000）、SMTP_SOCKET_TIMEOUT_MS（默认 120000）；或试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl。若仍失败，多为机房到 QQ SMTP 链路或对数据中心 IP 限制，需改用 Resend/SendGrid 等中继或国内可出站 SMTP。',
+          `SMTP 连接/握手超时（本次 ${peer}）。再大超时往往无效：请试 MAIL_PORT=465 + MAIL_ENCRYPTION=ssl，或换 Resend/SendGrid 等 HTTPS发信；直连 QQ 从海外机房常被限速/丢弃。采集日志可设 NO_COLOR=1 去掉 ANSI。`,
         )
       }
       return { skipped: true, sendFailed: true }
