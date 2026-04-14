@@ -134,8 +134,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             onClick={async () => {
               if (!suiteId) return
               try {
-                const { downloadUrl } = await testcasesApi.exportSuite(suiteId, 'EXCEL')
-                window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+                const url = testcasesApi.exportSuiteUrl(suiteId, 'EXCEL')
+                window.open(url, '_blank', 'noopener,noreferrer')
               } catch {
                 toast.error('导出失败')
               }

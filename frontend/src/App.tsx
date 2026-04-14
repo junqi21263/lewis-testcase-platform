@@ -8,6 +8,7 @@ import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import GeneratePage from '@/pages/GeneratePage'
 import RecordsPage from '@/pages/RecordsPage'
+import ResultPage from '@/pages/ResultPage'
 import TemplatesPage from '@/pages/TemplatesPage'
 import TeamsPage from '@/pages/TeamsPage'
 import ProfilePage from '@/pages/ProfilePage'
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/generate" element={<GeneratePage />} />
           <Route path="/records" element={<RecordsPage />} />
+          <Route path="/records/:id" element={<ResultPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/profile" element={<ProfilePage />} />

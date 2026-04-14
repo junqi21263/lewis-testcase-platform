@@ -1,5 +1,6 @@
 import { request } from '@/utils/request'
 import type { TestSuite, TestCase, PaginatedData, PaginationParams, ExportFormat } from '@/types'
+import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 export interface TestcasesSummary {
   totalSuites: number
@@ -37,8 +38,12 @@ export const testcasesApi = {
     request.delete<void>(`/testcases/cases/${id}`),
 
   // ---- 导出 ----
-  exportSuite: (suiteId: string, format: ExportFormat) =>
-    request.get<{ downloadUrl: string }>(`/testcases/suites/${suiteId}/export`, {
-      params: { format },
-    }),
+  /**
+   * 导出用例集：后端是二进制下载（非 JSON），不要走 axios 的统一拦截
+   * 直接返回可打开的 URL（浏览器会下载）
+   */
+  exportSuiteUrl: (suiteId: string, format: ExportFormat) => {
+    const base = getApiBaseUrl()
+    return `${base}/testcases/suites/${suiteId}/export?format=${encodeURIComponent(format)}`
+  },
 }

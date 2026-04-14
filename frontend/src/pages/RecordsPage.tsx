@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Search, Trash2, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +15,7 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function RecordsPage() {
+  const navigate = useNavigate()
   const [records, setRecords] = useState<GenerationRecord[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -129,7 +131,12 @@ export default function RecordsPage() {
                   <span className="text-sm">{record.caseCount}</span>
                   <span className="text-xs text-muted-foreground">{formatDate(record.createdAt, 'MM-dd HH:mm')}</span>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="w-7 h-7">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-7 h-7"
+                      onClick={() => navigate(`/records/${record.id}`)}
+                    >
                       <Eye className="w-3.5 h-3.5" />
                     </Button>
                     <Button
