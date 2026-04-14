@@ -8,8 +8,9 @@ import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import * as path from 'path'
 import { pipeline } from 'stream/promises'
-import { FileStatus, FileType } from '@prisma/client'
+import { FileStatus, FileType, FileStorageProvider } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
+import { CosService } from './cos.service'
 
 @Injectable()
 export class FilesService {
@@ -20,6 +21,7 @@ export class FilesService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private cos: CosService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     this.chunkRootDir = path.join(this.uploadDir, '.chunks')
@@ -46,6 +48,7 @@ export class FilesService {
         fileType,
         status: FileStatus.PENDING,
         uploaderId,
+        storageProvider: FileStorageProvider.LOCAL,
       },
     })
 
@@ -54,7 +57,36 @@ export class FilesService {
       this.logger.error(`文件解析失败: ${record.id}`, err),
     )
 
+    // 异步上传到 COS（启用时）
+    this.uploadToCosAsync(record.id).catch((err) =>
+      this.logger.warn(`上传 COS 失败: ${record.id} ${(err as Error)?.message || err}`),
+    )
+
     return record
+  }
+
+  private async uploadToCosAsync(fileId: string) {
+    if (!this.cos.isEnabled()) return
+    const file = await this.prisma.uploadedFile.findUnique({ where: { id: fileId } })
+    if (!file) return
+    if (!file.path) return
+    if (file.storageProvider === FileStorageProvider.COS && file.storageKey) return
+    if (!fs.existsSync(file.path)) return
+
+    const key = this.cos.buildObjectKey(file.id, file.originalName)
+    const { bucket, region } = await this.cos.uploadLocalFile(file.path, key)
+    const signedUrl = this.cos.getSignedUrl(key, 3600)
+
+    await this.prisma.uploadedFile.update({
+      where: { id: fileId },
+      data: {
+        storageProvider: FileStorageProvider.COS,
+        storageBucket: bucket,
+        storageRegion: region,
+        storageKey: key,
+        storageUrl: signedUrl,
+      },
+    })
   }
 
   /**
@@ -263,6 +295,13 @@ export class FilesService {
   async deleteFile(id: string, userId: string) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
+
+    // 删除 COS 对象（如有）
+    if (file.storageProvider === FileStorageProvider.COS && file.storageKey) {
+      await this.cos.deleteObject(file.storageKey).catch((err) => {
+        this.logger.warn(`删除 COS 对象失败: ${file.id} ${(err as Error)?.message || err}`)
+      })
+    }
 
     // 删除物理文件
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path)

@@ -1,0 +1,107 @@
+import { Injectable, Logger } from '@nestjs/common'
+import COS from 'cos-nodejs-sdk-v5'
+import * as path from 'path'
+
+function envStr(name: string, defaultValue = ''): string {
+  const v = process.env[name]
+  return (v == null ? defaultValue : String(v)).trim()
+}
+
+function envBool(name: string, defaultValue = false): boolean {
+  const v = envStr(name, '')
+  if (!v) return defaultValue
+  return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase())
+}
+
+@Injectable()
+export class CosService {
+  private readonly logger = new Logger(CosService.name)
+  private readonly enabled: boolean
+  private readonly bucket: string
+  private readonly region: string
+  private readonly prefix: string
+  private readonly cos?: COS
+
+  constructor() {
+    this.enabled = envStr('FILE_STORAGE', 'local').toLowerCase() === 'cos'
+    this.bucket = envStr('COS_BUCKET')
+    this.region = envStr('COS_REGION')
+    this.prefix = envStr('COS_PREFIX', 'uploads').replace(/^\/+|\/+$/g, '')
+
+    if (!this.enabled) return
+
+    const secretId = envStr('COS_SECRET_ID')
+    const secretKey = envStr('COS_SECRET_KEY')
+    if (!secretId || !secretKey || !this.bucket || !this.region) {
+      this.logger.warn('COS 未启用：缺少 COS_SECRET_ID/COS_SECRET_KEY/COS_BUCKET/COS_REGION')
+      this.enabled = false
+      return
+    }
+
+    this.cos = new COS({ SecretId: secretId, SecretKey: secretKey })
+  }
+
+  isEnabled() {
+    return this.enabled
+  }
+
+  buildObjectKey(fileId: string, originalName: string) {
+    const ext = path.extname(originalName || '').slice(0, 16)
+    const safeExt = ext && ext.startsWith('.') ? ext : ''
+    const date = new Date()
+    const y = String(date.getUTCFullYear())
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(date.getUTCDate()).padStart(2, '0')
+    const prefix = this.prefix ? `${this.prefix}/` : ''
+    return `${prefix}${y}/${m}/${d}/${fileId}${safeExt}`
+  }
+
+  async uploadLocalFile(localPath: string, key: string) {
+    if (!this.enabled || !this.cos) throw new Error('COS not enabled')
+    await new Promise<void>((resolve, reject) => {
+      this.cos!.uploadFile(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Key: key,
+          FilePath: localPath,
+          SliceSize: 5 * 1024 * 1024,
+        } as any,
+        (err) => {
+          if (err) reject(err)
+          else resolve()
+        },
+      )
+    })
+    return { bucket: this.bucket, region: this.region, key }
+  }
+
+  getSignedUrl(key: string, expiresSeconds = 3600) {
+    if (!this.enabled || !this.cos) throw new Error('COS not enabled')
+    return this.cos.getObjectUrl({
+      Bucket: this.bucket,
+      Region: this.region,
+      Key: key,
+      Sign: true,
+      Expires: expiresSeconds,
+    })
+  }
+
+  async deleteObject(key: string) {
+    if (!this.enabled || !this.cos) return
+    await new Promise<void>((resolve, reject) => {
+      this.cos!.deleteObject(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Key: key,
+        },
+        (err) => {
+          if (err) reject(err)
+          else resolve()
+        },
+      )
+    })
+  }
+}
+
