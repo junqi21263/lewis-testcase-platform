@@ -9,6 +9,11 @@ export type MailPayload = {
   html?: string
 }
 
+/** skipped=true：未配置 SMTP，或发送过程抛错（sendFailed 区分） */
+export type SendMailResult =
+  | { skipped: true; sendFailed?: true }
+  | { skipped: false; messageId: string }
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name)
@@ -32,7 +37,7 @@ export class MailService {
     })
   }
 
-  async sendMail(payload: MailPayload) {
+  async sendMail(payload: MailPayload): Promise<SendMailResult> {
     const transport = this.buildTransport()
     if (!transport) {
       this.logger.warn('SMTP 未配置，跳过发送邮件')
@@ -44,15 +49,20 @@ export class MailService {
       this.config.get<string>('SMTP_USER')?.trim() ||
       'no-reply@example.com'
 
-    const info = await transport.sendMail({
-      from,
-      to: payload.to,
-      subject: payload.subject,
-      text: payload.text,
-      html: payload.html,
-    })
-
-    return { skipped: false, messageId: info.messageId }
+    try {
+      const info = await transport.sendMail({
+        from,
+        to: payload.to,
+        subject: payload.subject,
+        text: payload.text,
+        html: payload.html,
+      })
+      return { skipped: false, messageId: info.messageId }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger.error(`SMTP 发送失败: ${msg}`)
+      return { skipped: true, sendFailed: true }
+    }
   }
 }
 

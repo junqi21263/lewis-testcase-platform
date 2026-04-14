@@ -175,9 +175,9 @@ export class AuthService {
         )
       }
 
-      // 邮件发送（若 SMTP 未配置则跳过；开发环境仍会输出 token 便于调试）
+      // 邮件发送（若 SMTP 未配置则跳过；发送失败不抛错，避免 502；开发环境仍会输出 token）
       if (resetUrl) {
-        await this.mail.sendMail({
+        const sent = await this.mail.sendMail({
           to: user.email,
           subject: '重置密码（邮箱验证）',
           text: `我们收到你的重置密码请求。打开下方链接即表示你确认该邮箱可接收本操作。\n\n请在 1 小时内打开链接设置新密码：\n${resetUrl}\n\n若非本人操作请忽略此邮件。`,
@@ -188,6 +188,9 @@ export class AuthService {
             <p>若非本人操作请忽略此邮件。</p>
           `,
         })
+        if ('sendFailed' in sent && sent.sendFailed) {
+          this.logger.warn(`重置密码邮件未能送达 ${user.email}，请检查 SMTP 日志`)
+        }
       }
 
       if (process.env.NODE_ENV !== 'production') {
@@ -319,7 +322,7 @@ export class AuthService {
         'FRONTEND_URL 未设置，无法生成邮箱验证链接，已跳过发送验证邮件（需同时配置 SMTP_HOST / SMTP_USER / SMTP_PASS）',
       )
     } else {
-      await this.mail.sendMail({
+      const sent = await this.mail.sendMail({
         to: email,
         subject: '验证你的邮箱',
         text: `感谢注册。请在 24 小时内打开链接完成邮箱验证：\n${verifyUrl}\n\n若非本人注册请忽略。`,
@@ -330,6 +333,9 @@ export class AuthService {
           <p>若非本人注册请忽略。</p>
         `,
       })
+      if ('sendFailed' in sent && sent.sendFailed) {
+        this.logger.warn(`注册验证邮件未能送达 ${email}，用户可使用「重发验证邮件」或检查 SMTP`)
+      }
     }
 
     if (process.env.NODE_ENV !== 'production') {
