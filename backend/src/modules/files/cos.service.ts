@@ -76,6 +76,65 @@ export class CosService {
     return { bucket: this.bucket, region: this.region, key }
   }
 
+  async uploadLocalChunk(localPath: string, key: string) {
+    // chunk 也是普通对象上传
+    return this.uploadLocalFile(localPath, key)
+  }
+
+  async getObjectStream(key: string): Promise<NodeJS.ReadableStream> {
+    if (!this.enabled || !this.cos) throw new Error('COS not enabled')
+    const res = await new Promise<any>((resolve, reject) => {
+      this.cos!.getObject(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Key: key,
+        },
+        (err, data) => {
+          if (err) reject(err)
+          else resolve(data)
+        },
+      )
+    })
+    if (!res?.Body) throw new Error('COS getObject missing body')
+    return res.Body as NodeJS.ReadableStream
+  }
+
+  async deletePrefix(prefix: string) {
+    if (!this.enabled || !this.cos) return
+    const cleanPrefix = prefix.replace(/^\/+/, '')
+    const listed = await new Promise<any>((resolve, reject) => {
+      this.cos!.getBucket(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Prefix: cleanPrefix,
+          MaxKeys: 1000,
+        },
+        (err, data) => {
+          if (err) reject(err)
+          else resolve(data)
+        },
+      )
+    })
+    const contents: Array<{ Key: string }> = listed?.Contents || []
+    if (!contents.length) return
+    await new Promise<void>((resolve, reject) => {
+      this.cos!.deleteMultipleObject(
+        {
+          Bucket: this.bucket,
+          Region: this.region,
+          Objects: contents.map((c) => ({ Key: c.Key })),
+          Quiet: true,
+        },
+        (err) => {
+          if (err) reject(err)
+          else resolve()
+        },
+      )
+    })
+  }
+
   getSignedUrl(key: string, expiresSeconds = 3600) {
     if (!this.enabled || !this.cos) throw new Error('COS not enabled')
     return this.cos.getObjectUrl({

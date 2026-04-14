@@ -106,8 +106,19 @@ export class FilesService {
     const dir = path.join(this.chunkRootDir, fileId)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 
+    // 如果启用 COS，则分片临时对象也写 COS，避免多实例本地磁盘不一致
+    if (this.cos.isEnabled()) {
+      const key = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks/${chunkIndex}.part`
+      await this.cos.uploadLocalChunk(chunkFile.path, key)
+      try {
+        fs.unlinkSync(chunkFile.path)
+      } catch {
+        // ignore
+      }
+      return { uploaded: true }
+    }
+
     const dest = path.join(dir, `${chunkIndex}.part`)
-    // multer diskStorage 已经写盘；这里直接移动/覆盖即可
     fs.copyFileSync(chunkFile.path, dest)
     try {
       fs.unlinkSync(chunkFile.path)
@@ -130,6 +141,52 @@ export class FilesService {
     if (!originalName) throw new BadRequestException('originalName 不能为空')
     if (!mimeType) throw new BadRequestException('mimeType 不能为空')
 
+    const expectedTotal =
+      typeof payload.chunkTotal === 'number' && payload.chunkTotal > 0 ? payload.chunkTotal : undefined
+    if (!expectedTotal) throw new BadRequestException('chunkTotal 不能为空')
+
+    const ext = path.extname(originalName)
+    const finalName = `${fileId}${ext || ''}`
+    const finalPath = path.join(this.uploadDir, finalName)
+
+    // 合并写入（COS 优先）
+    const ws = fs.createWriteStream(finalPath)
+    if (this.cos.isEnabled()) {
+      try {
+        const baseKey = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks`
+        for (let i = 0; i < expectedTotal; i++) {
+          const key = `${baseKey}/${i}.part`
+          const rs = await this.cos.getObjectStream(key)
+          await pipeline(rs as any, ws, { end: false } as any)
+        }
+      } catch (e) {
+        try { ws.end() } catch {}
+        throw new BadRequestException(`分片合并失败（COS）：${(e as Error)?.message || e}`)
+      } finally {
+        try { ws.end() } catch {}
+      }
+
+      // 清理 COS 临时分片
+      const baseKey = this.cos.buildObjectKey(fileId, `${fileId}.chunks`) + `/chunks/`
+      this.cos.deletePrefix(baseKey).catch(() => {})
+
+      const stat = fs.statSync(finalPath)
+      const mergedFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: originalName,
+        encoding: '7bit',
+        mimetype: mimeType,
+        destination: this.uploadDir,
+        filename: finalName,
+        path: finalPath,
+        size: stat.size,
+        buffer: undefined as any,
+        stream: undefined as any,
+      } as any
+      return this.saveUploadedFile(mergedFile, uploaderId)
+    }
+
+    // LOCAL 模式：从本地分片目录合并
     const dir = path.join(this.chunkRootDir, fileId)
     if (!fs.existsSync(dir)) throw new NotFoundException('分片不存在或已过期')
 
@@ -138,39 +195,11 @@ export class FilesService {
       .filter((f) => f.endsWith('.part'))
       .sort((a, b) => Number(a.replace('.part', '')) - Number(b.replace('.part', '')))
 
-    const expectedTotal =
-      typeof payload.chunkTotal === 'number' && payload.chunkTotal > 0 ? payload.chunkTotal : partFiles.length
-
     if (partFiles.length === 0) throw new BadRequestException('未找到任何分片')
     if (partFiles.length !== expectedTotal) {
       throw new BadRequestException(`分片数量不完整：已收到 ${partFiles.length}/${expectedTotal}`)
     }
 
-    const indices = partFiles
-      .map((f) => Number(f.replace('.part', '')))
-      .filter((n) => Number.isFinite(n))
-      .sort((a, b) => a - b)
-    if (indices.length !== partFiles.length) {
-      throw new BadRequestException('分片文件名不合法')
-    }
-    const minIdx = indices[0]
-    const maxIdx = indices[indices.length - 1]
-    const missing: number[] = []
-    for (let i = 0; i < expectedTotal; i++) {
-      if (!fs.existsSync(path.join(dir, `${i}.part`))) missing.push(i)
-    }
-    if (missing.length) {
-      throw new BadRequestException(
-        `分片缺失：缺少 ${missing.slice(0, 20).join(', ')}（已收到 ${indices.join(', ')}；范围 ${minIdx}-${maxIdx}）`,
-      )
-    }
-
-    const ext = path.extname(originalName)
-    const finalName = `${fileId}${ext || ''}`
-    const finalPath = path.join(this.uploadDir, finalName)
-
-    // 合并写入
-    const ws = fs.createWriteStream(finalPath)
     try {
       for (let i = 0; i < expectedTotal; i++) {
         const p = path.join(dir, `${i}.part`)
