@@ -171,7 +171,9 @@ export default function DropZone({
           ))}
         </div>
 
-        <p className="text-xs text-muted-foreground/70 pb-1">单文件最大 10 MB · 与当前服务端上传限制一致</p>
+        <p className="text-xs text-muted-foreground/70 pb-1">
+          单文件最大 100 MB · 大于 5 MB 自动分片上传（与后端 `MAX_FILE_SIZE` 一致）
+        </p>
       </div>
 
       {busy && activeTransfer?.phase === 'parsing' && (

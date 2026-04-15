@@ -19,8 +19,8 @@ const SUPPORTED_EXTS = new Set<string>([
   'doc', 'docx', 'pdf', 'txt', 'md', 'xlsx', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg',
 ])
 
-/** 与后端 `ParseFilePipe` / `MAX_FILE_SIZE`（默认 10MB）一致 */
-const MAX_FILE_SIZE = 10 * 1024 * 1024
+/** 与后端 `MAX_FILE_SIZE` 默认 100MB 一致（部署可通过环境变量调整） */
+const MAX_FILE_SIZE = 100 * 1024 * 1024
 const POLL_INTERVAL_MS = 2000
 const POLL_MAX_ROUNDS = 90
 
@@ -92,7 +92,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
       return `不支持的文件格式 .${ext}，请上传 DOC/DOCX/PDF/TXT/MD/XLSX/JSON/YAML/PNG/JPG`
     }
     if (file.size > MAX_FILE_SIZE) {
-      return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 10 MB`
+      return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 100 MB`
     }
     return null
   }, [])
@@ -192,7 +192,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
             controller.signal,
           )
         }
-        const merged = await filesApi.mergeChunks(fileId, file.name, file.type)
+        const merged = await filesApi.mergeChunks(fileId, file.name, file.type, chunkTotal)
         controllersRef.current.delete(task.id)
         onTaskUpdate(task.id, { serverFileId: merged.id, progress: 99, status: 'parsing' })
         const parsed = await pollUntilParsed(merged.id)

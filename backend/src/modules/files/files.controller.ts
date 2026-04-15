@@ -10,15 +10,25 @@ import {
   UploadedFile,
   ParseFilePipe,
   MaxFileSizeValidator,
+  BadRequestException,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
-import { diskStorage } from 'multer'
+import { diskStorage, memoryStorage } from 'multer'
 import { extname } from 'path'
 import { v4 as uuid } from 'uuid'
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger'
 import { FilesService } from './files.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { RestructureFileDto } from './dto/restructure-file.dto'
+import { UploadChunkFieldsDto } from './dto/upload-chunk-fields.dto'
+import { MergeChunksDto } from './dto/merge-chunks.dto'
+
+const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
+const maxUploadBytes = parseInt(process.env.MAX_FILE_SIZE || String(DEFAULT_MAX_FILE_BYTES), 10)
+const effectiveMaxUpload =
+  Number.isFinite(maxUploadBytes) && maxUploadBytes > 0 ? maxUploadBytes : DEFAULT_MAX_FILE_BYTES
+/** 单个分片请求体上限（略大于常见 2MB 分片） */
+const chunkRequestBodyMax = Math.min(8 * 1024 * 1024, effectiveMaxUpload)
 
 @ApiTags('文件管理')
 @ApiBearerAuth()
@@ -27,7 +37,7 @@ export class FilesController {
   constructor(private filesService: FilesService) {}
 
   @Post('upload')
-  @ApiOperation({ summary: '上传文件' })
+  @ApiOperation({ summary: '上传文件（单请求，适合不超过上限的小文件）' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -38,15 +48,55 @@ export class FilesController {
           cb(null, uniqueName)
         },
       }),
-      limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') },
+      limits: { fileSize: effectiveMaxUpload },
     }),
   )
   upload(
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })] }))
+    @UploadedFile(
+      new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: effectiveMaxUpload })] }),
+    )
     file: Express.Multer.File,
     @CurrentUser('id') userId: string,
   ) {
     return this.filesService.saveUploadedFile(file, userId)
+  }
+
+  @Post('upload/chunk')
+  @ApiOperation({ summary: '分片上传（单分片）' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: memoryStorage(),
+      limits: { fileSize: chunkRequestBodyMax },
+    }),
+  )
+  uploadChunk(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: chunkRequestBodyMax })],
+      }),
+    )
+    chunk: Express.Multer.File,
+    @Body() body: UploadChunkFieldsDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    if (!chunk.buffer?.length) {
+      throw new BadRequestException('分片数据为空')
+    }
+    return this.filesService.saveUploadedChunk(
+      userId,
+      body.fileId,
+      body.chunkIndex,
+      body.chunkTotal,
+      body.chunkSize,
+      chunk.buffer,
+    )
+  }
+
+  @Post('upload/merge')
+  @ApiOperation({ summary: '合并分片并完成上传与解析排队' })
+  mergeChunks(@Body() dto: MergeChunksDto, @CurrentUser('id') userId: string) {
+    return this.filesService.mergeChunkedUpload(userId, dto)
   }
 
   @Get()

@@ -5,20 +5,15 @@ import type { UploadedFile, PaginatedData, PaginationParams } from '@/types'
 import type { ChunkInfo } from '@/types/upload'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
-/**
- * 超过此大小才走分片上传。当前后端仅实现 `POST /files/upload`，无分片合并接口，
- * 故设为极大值，统一走单次 multipart 上传，避免 5～10MB 文件误走分片导致 404。
- */
-export const CHUNK_THRESHOLD = Number.MAX_SAFE_INTEGER
-/** 预留：后端若实现 `/files/upload/chunk` + `/files/upload/merge` 时可与阈值一并调整 */
+/** 超过此大小走 `upload/chunk` + `upload/merge`（须与后端一致） */
+export const CHUNK_THRESHOLD = 5 * 1024 * 1024
+/** 每片大小（须 ≤ 后端单分片校验上限） */
 export const CHUNK_SIZE = 2 * 1024 * 1024
 
 const BASE_URL = getApiBaseUrl()
 
 export const filesApi = {
-  /**
-   * Multipart 单请求上传（与当前后端 `POST /files/upload` 一致）
-   */
+  /** 单请求上传（不超过 `MAX_FILE_SIZE` 时可直接使用） */
   upload(
     file: File,
     onProgress?: (percent: number) => void,
@@ -83,11 +78,17 @@ export const filesApi = {
   /**
    * 合并分片，触发服务端合并 + 解析
    */
-  mergeChunks(fileId: string, originalName: string, mimeType: string): Promise<UploadedFile> {
+  mergeChunks(
+    fileId: string,
+    originalName: string,
+    mimeType: string,
+    chunkTotal: number,
+  ): Promise<UploadedFile> {
     return request.post<UploadedFile>('/files/upload/merge', {
       fileId,
       originalName,
       mimeType,
+      chunkTotal,
     })
   },
 

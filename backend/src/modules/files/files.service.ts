@@ -12,6 +12,8 @@ import { PrismaService } from '@/prisma/prisma.service'
 import { DocumentVisionService } from './document-vision.service'
 import { RequirementStructureService } from './requirement-structure.service'
 import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
+import { v4 as uuid } from 'uuid'
+import type { MergeChunksDto } from './dto/merge-chunks.dto'
 
 @Injectable()
 export class FilesService {
@@ -291,5 +293,117 @@ export class FilesService {
     })
 
     return this.getFileById(id)
+  }
+
+  private maxUploadBytes(): number {
+    const n = parseInt(this.config.get<string>('MAX_FILE_SIZE') || '104857600', 10)
+    return Number.isFinite(n) && n > 0 ? n : 104857600
+  }
+
+  private chunkSessionDir(uploaderId: string, fileId: string): string {
+    return path.join(this.uploadDir, 'chunks', uploaderId, fileId)
+  }
+
+  /** 分片上传：写入临时目录，合并阶段再落盘为正式文件 */
+  async saveUploadedChunk(
+    uploaderId: string,
+    fileId: string,
+    chunkIndex: number,
+    chunkTotal: number,
+    chunkSize: number,
+    buffer: Buffer,
+  ): Promise<{ uploaded: boolean }> {
+    if (chunkTotal < 1 || chunkTotal > 256) {
+      throw new BadRequestException('无效的分片数量')
+    }
+    if (chunkIndex < 0 || chunkIndex >= chunkTotal) {
+      throw new BadRequestException('无效的分片序号')
+    }
+    if (chunkIndex < chunkTotal - 1) {
+      if (buffer.length !== chunkSize) {
+        throw new BadRequestException('非末分片大小须等于 chunkSize')
+      }
+    } else if (buffer.length < 1 || buffer.length > chunkSize) {
+      throw new BadRequestException('末分片大小无效')
+    }
+
+    const maxBytes = this.maxUploadBytes()
+    const upperBound = chunkTotal * chunkSize
+    if (upperBound > maxBytes) {
+      throw new BadRequestException(`分片总规模超过单文件限制（${Math.round(maxBytes / 1024 / 1024)} MB）`)
+    }
+
+    const dir = this.chunkSessionDir(uploaderId, fileId)
+    fs.mkdirSync(dir, { recursive: true })
+    const metaPath = path.join(dir, '.meta.json')
+    if (fs.existsSync(metaPath)) {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as {
+        chunkTotal: number
+        chunkSize: number
+      }
+      if (meta.chunkTotal !== chunkTotal || meta.chunkSize !== chunkSize) {
+        throw new BadRequestException('分片元信息与首次上传不一致')
+      }
+    } else {
+      fs.writeFileSync(metaPath, JSON.stringify({ chunkTotal, chunkSize }))
+    }
+
+    fs.writeFileSync(path.join(dir, `part-${chunkIndex}`), buffer)
+    return { uploaded: true }
+  }
+
+  /** 合并分片为正式上传文件并进入解析队列 */
+  async mergeChunkedUpload(uploaderId: string, dto: MergeChunksDto) {
+    const dir = this.chunkSessionDir(uploaderId, dto.fileId)
+    const metaPath = path.join(dir, '.meta.json')
+    if (!fs.existsSync(metaPath)) {
+      throw new BadRequestException('分片会话不存在或已合并')
+    }
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as {
+      chunkTotal: number
+      chunkSize: number
+    }
+    if (meta.chunkTotal !== dto.chunkTotal) {
+      throw new BadRequestException('chunkTotal 与会话不一致')
+    }
+
+    const buffers: Buffer[] = []
+    for (let i = 0; i < dto.chunkTotal; i++) {
+      const p = path.join(dir, `part-${i}`)
+      if (!fs.existsSync(p)) {
+        throw new BadRequestException(`缺少分片 ${i + 1}/${dto.chunkTotal}`)
+      }
+      buffers.push(fs.readFileSync(p))
+    }
+
+    const final = Buffer.concat(buffers)
+    const maxBytes = this.maxUploadBytes()
+    if (final.length > maxBytes) {
+      throw new BadRequestException(`合并后超过单文件限制（${Math.round(maxBytes / 1024 / 1024)} MB）`)
+    }
+    if (final.length < 1) {
+      throw new BadRequestException('合并后文件为空')
+    }
+
+    const ext = path.extname(dto.originalName) || '.bin'
+    const filename = `${uuid()}${ext}`
+    const destPath = path.join(this.uploadDir, filename)
+    fs.writeFileSync(destPath, final)
+
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch (e) {
+      this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
+    }
+
+    const multerLike = {
+      path: destPath,
+      filename,
+      originalname: dto.originalName,
+      mimetype: dto.mimeType,
+      size: final.length,
+    } as Express.Multer.File
+
+    return this.saveUploadedFile(multerLike, uploaderId)
   }
 }
