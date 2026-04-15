@@ -160,14 +160,20 @@ export const request = {
   },
 }
 
+/** 流式结束元信息（后端在 [DONE] 前下发） */
+export type StreamDoneMeta = {
+  recordId?: string
+  suiteId?: string
+  caseCount?: number
+}
+
 /** 流式请求（SSE），用于 AI 生成流式响应 */
 export async function streamRequest(
   url: string,
   data: unknown,
   onChunk: (chunk: string) => void,
-  onDone?: () => void,
+  onDone?: (meta?: StreamDoneMeta) => void,
   onError?: (error: Error) => void,
-  signal?: AbortSignal,
 ): Promise<void> {
   const token = useAuthStore.getState().token
   const baseURL = getApiBaseUrl()
@@ -179,7 +185,6 @@ export async function streamRequest(
       Authorization: token ? `Bearer ${token}` : '',
     },
     body: JSON.stringify(data),
-    signal,
   })
 
   if (!response.ok) {
@@ -192,23 +197,59 @@ export async function streamRequest(
   if (!reader) return
 
   const decoder = new TextDecoder()
+  let sseBuffer = ''
+  let doneMeta: StreamDoneMeta | undefined
+  let finished = false
+
+  const finish = (meta?: StreamDoneMeta) => {
+    if (finished) return
+    finished = true
+    onDone?.(meta ?? doneMeta)
+  }
+
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) {
-        onDone?.()
+        finish()
         break
       }
-      const chunk = decoder.decode(value, { stream: true })
-      // 解析 SSE 格式：data: {...}
-      const lines = chunk.split('\n').filter((line) => line.startsWith('data: '))
+      sseBuffer += decoder.decode(value, { stream: true })
+      const lines = sseBuffer.split('\n')
+      sseBuffer = lines.pop() ?? ''
+
       for (const line of lines) {
-        const jsonStr = line.slice(6).trim()
+        const trimmed = line.replace(/\r$/, '').trim()
+        if (!trimmed.startsWith('data: ')) continue
+        const jsonStr = trimmed.slice(6).trim()
         if (jsonStr === '[DONE]') {
-          onDone?.()
+          finish(doneMeta)
           return
         }
-        onChunk(jsonStr)
+        let obj: unknown
+        try {
+          obj = JSON.parse(jsonStr)
+        } catch {
+          continue
+        }
+        if (!obj || typeof obj !== 'object') continue
+        const rec = obj as Record<string, unknown>
+        if (typeof rec.content === 'string' && rec.content.length > 0) {
+          onChunk(rec.content)
+        }
+        if (typeof rec.error === 'string') {
+          onError?.(new Error(rec.error))
+          return
+        }
+        if (typeof rec.recordId === 'string') {
+          doneMeta = { ...doneMeta, recordId: rec.recordId }
+        }
+        if (typeof rec.suiteId === 'string') {
+          doneMeta = { ...doneMeta, suiteId: rec.suiteId }
+        }
+        if (typeof rec.caseCount === 'number') {
+          doneMeta = { ...doneMeta, caseCount: rec.caseCount }
+        }
       }
     }
   } catch (err) {

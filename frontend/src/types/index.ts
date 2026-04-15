@@ -115,7 +115,6 @@ export interface AIModel {
 }
 
 export interface AIGenerateParams {
-  /** 后端使用 AIModelConfig.id */
   modelId?: string
   temperature?: number
   maxTokens?: number
@@ -151,16 +150,8 @@ export interface TemplateVariable {
 // ==================== 用例集 ====================
 
 export type TestCaseStatus = 'DRAFT' | 'REVIEWING' | 'APPROVED' | 'ARCHIVED'
-export type TestCasePriority = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
-export type TestCaseType =
-  | 'FUNCTIONAL'
-  | 'API'
-  | 'UI'
-  | 'AUTOMATION'
-  | 'PERFORMANCE'
-  | 'SECURITY'
-  | 'COMPATIBILITY'
-  | 'REGRESSION'
+export type TestCasePriority = 'P0' | 'P1' | 'P2' | 'P3'
+export type TestCaseType = 'FUNCTIONAL' | 'PERFORMANCE' | 'SECURITY' | 'COMPATIBILITY' | 'REGRESSION'
 
 /** 生成页偏好（与后端 generation options 对齐） */
 export interface GenerationOptions {
@@ -171,11 +162,6 @@ export interface GenerationOptions {
   sceneNormal: number
   sceneAbnormal: number
   sceneBoundary: number
-  /** 自动化脚本生成 */
-  programmingLanguage?: string
-  testFramework?: string
-  testTarget?: string
-  extraRequirements?: string
 }
 
 export interface TestCase {

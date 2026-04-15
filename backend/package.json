@@ -30,7 +30,6 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
-    "cos-nodejs-sdk-v5": "^2.15.4",
     "js-yaml": "^4.1.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.8.0",

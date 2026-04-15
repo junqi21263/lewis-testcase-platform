@@ -51,7 +51,7 @@ export const filesApi = {
     info: ChunkInfo,
     onProgress?: (percent: number) => void,
     signal?: AbortSignal,
-  ): Promise<{ uploaded: boolean; provider?: 'COS' | 'LOCAL'; key?: string; chunkIndex?: number; chunkTotal?: number }> {
+  ): Promise<{ uploaded: boolean }> {
     const formData = new FormData()
     formData.append('chunk', chunk)
     formData.append('fileId', info.fileId)
@@ -81,12 +81,11 @@ export const filesApi = {
   /**
    * 合并分片，触发服务端合并 + 解析
    */
-  mergeChunks(fileId: string, originalName: string, mimeType: string, chunkTotal?: number): Promise<UploadedFile> {
+  mergeChunks(fileId: string, originalName: string, mimeType: string): Promise<UploadedFile> {
     return request.post<UploadedFile>('/files/upload/merge', {
       fileId,
       originalName,
       mimeType,
-      chunkTotal,
     })
   },
 

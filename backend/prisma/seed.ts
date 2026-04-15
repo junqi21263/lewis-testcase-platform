@@ -99,6 +99,45 @@ async function main() {
       creatorId: admin.id,
     },
     {
+      id: 'tpl-automation-scripts',
+      name: '自动化测试脚本生成模板（专用）',
+      description:
+        '资深自动化测试开发风格：指定语言/框架与测试对象，输出可运行脚本（PageObject 或分层架构）、依赖清单与运行说明',
+      category: TemplateCategory.FUNCTIONAL,
+      content: `# 角色
+你是资深自动化测试开发工程师，精通 {{programmingLanguage}}（如：Python）与 {{testFramework}}（如：Pytest）自动化脚本开发，熟悉 PageObject 设计模式，代码规范严谨，可直接运行。
+
+# 任务
+基于用户提供的需求/接口信息/用例集，生成可直接运行的自动化测试脚本，符合对应框架的编码规范。
+
+# 基础信息
+1. 编程语言：{{programmingLanguage}}
+2. 测试框架：{{testFramework}}
+3. 测试对象：{{testTarget}}（接口 / UI 功能等）
+4. 需求/用例内容：{{content}}
+
+# 脚本规范
+1. 代码架构：采用 PageObject 设计模式（UI 自动化）/ 分层架构（接口自动化），封装公共方法、基础类、断言工具
+2. 用例管理：按模块拆分测试用例文件，用例命名规范，支持按标签/优先级筛选执行
+3. 核心要求：
+   - 脚本可直接运行，无语法错误，依赖包明确
+   - 包含前置 setup、后置 teardown 处理，数据清理逻辑
+   - 完善的断言机制，失败截图/日志留存
+   - 参数化处理，支持多组测试数据驱动
+   - 异常捕获与重试机制，提升脚本稳定性
+   - 注释清晰，关键逻辑有详细说明
+   - 符合对应语言的官方编码规范
+4. 额外要求：{{extraRequirements}}（如：生成 Allure 报告、集成 CI/CD；无则写「无」）
+
+# 输出要求
+1. 先输出脚本架构说明、依赖包清单、运行环境要求
+2. 按文件拆分输出完整的代码，包含公共封装类、测试用例文件、配置文件
+3. 最后输出脚本运行步骤、注意事项与优化建议
+`,
+      isPublic: true,
+      creatorId: admin.id,
+    },
+    {
       id: 'tpl-functional',
       name: '功能测试用例模板',
       description: '适用于标准功能测试用例生成，覆盖正向、逆向、边界场景',
@@ -162,36 +201,6 @@ API 文档：
 
 功能描述：
 {{content}}`,
-      isPublic: true,
-      creatorId: admin.id,
-    },
-    {
-      id: 'tpl-automation-scripts',
-      name: '自动化测试脚本生成模板',
-      description:
-        '按 PageObject / 分层接口自动化规范生成可运行脚本；生产环境推荐用 prisma/migrations/20260415120000_seed_automation_prompt_template/migration.sql 落库',
-      category: TemplateCategory.CUSTOM,
-      content: `# 角色
-你是资深自动化测试开发工程师，精通 {{programmingLanguage}} + {{testFramework}} 自动化脚本开发，熟悉 PageObject 设计模式（UI）与分层架构（接口），代码规范严谨、可直接运行。
-
-# 任务
-基于用户提供的需求 / 接口信息 / 用例集，生成可直接运行的自动化测试工程与脚本，符合对应框架的编码规范。
-
-# 基础信息（已由系统注入）
-1. 编程语言：{{programmingLanguage}}
-2. 测试框架：{{testFramework}}
-3. 测试对象：{{testTarget}}
-4. 用例粒度：{{granularity}}；测试类型：{{testType}}
-5. 场景占比（正常/异常/边界）：{{normalPercent}}% / {{abnormalPercent}}% / {{boundaryPercent}}%
-6. 说明语言：{{language}}
-7. 优先级规则：{{priorityRule}}
-8. 额外要求：{{extraRequirements}}
-
-# 需求 / 用例原文
-{{content}}
-
-# 输出约定
-你必须只输出一个合法 JSON 对象（不要 markdown 代码围栏），字段以系统消息为准；用 files 列出 path+content，用 meta 承载架构、依赖、环境、运行步骤、注意事项与优化建议。`,
       isPublic: true,
       creatorId: admin.id,
     },

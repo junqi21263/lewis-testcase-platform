@@ -36,11 +36,6 @@ enum FileStatus {
   FAILED
 }
 
-enum FileStorageProvider {
-  LOCAL
-  COS
-}
-
 enum TemplateCategory {
   FUNCTIONAL
   PERFORMANCE
@@ -62,14 +57,10 @@ enum TestCasePriority {
   P1
   P2
   P3
-  P4
 }
 
 enum TestCaseType {
   FUNCTIONAL
-  API
-  UI
-  AUTOMATION
   PERFORMANCE
   SECURITY
   COMPATIBILITY
@@ -184,12 +175,6 @@ model UploadedFile {
   status        FileStatus @default(PENDING)
   parsedContent String?    @db.Text
   uploaderId    String
-
-  storageProvider FileStorageProvider @default(LOCAL)
-  storageBucket   String?            @db.VarChar(255)
-  storageRegion   String?            @db.VarChar(64)
-  storageKey      String?            @db.VarChar(500)
-  storageUrl      String?            @db.VarChar(1000)
 
   uploader         User               @relation(fields: [uploaderId], references: [id])
   generationRecords GenerationRecord[]

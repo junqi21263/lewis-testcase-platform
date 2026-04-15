@@ -14,10 +14,6 @@ const defaultGenerationOptions: GenerationOptions = {
   sceneNormal: 40,
   sceneAbnormal: 30,
   sceneBoundary: 30,
-  programmingLanguage: 'Python',
-  testFramework: 'Pytest',
-  testTarget: '接口 / UI 功能',
-  extraRequirements: '',
 }
 
 interface GenerateState {
@@ -183,8 +179,6 @@ export const useGenerateStore = create<GenerateState>()(
         generationOptions: s.generationOptions,
         aiParams: s.aiParams,
         generatedCases: s.generatedCases,
-        streamContent: s.streamContent,
-        isGenerating: s.isGenerating,
         lastRecordId: s.lastRecordId,
         qualityScore: s.qualityScore,
         qualitySuggestions: s.qualitySuggestions,

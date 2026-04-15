@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common'
 import { AiService } from './ai.service'
 import { AiController } from './ai.controller'
-import { PromptBuilderService } from './prompt-builder.service'
 
 @Module({
-  providers: [AiService, PromptBuilderService],
+  providers: [AiService],
   controllers: [AiController],
   exports: [AiService],
 })
