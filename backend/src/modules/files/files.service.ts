@@ -280,9 +280,14 @@ export class FilesService {
 
   private async parseImageOCR(filePath: string): Promise<string> {
     const Tesseract = require('tesseract.js')
+    // 繁体图片仅用 chi_sim 容易乱码；默认同时启用 chi_sim + chi_tra + eng
+    // 可在部署环境通过 OCR_LANGS 覆盖，例如：OCR_LANGS=chi_tra+eng
+    const langs =
+      (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
+      'chi_sim+chi_tra+eng'
     const {
       data: { text },
-    } = await Tesseract.recognize(filePath, 'chi_sim+eng')
+    } = await Tesseract.recognize(filePath, langs)
     return text
   }
 
