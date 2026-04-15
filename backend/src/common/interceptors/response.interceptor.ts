@@ -4,7 +4,7 @@ import {
   ExecutionContext,
   CallHandler,
 } from '@nestjs/common'
-import { Request } from 'express'
+import { Request, Response } from 'express'
 import { Observable } from 'rxjs'
 import { map } from 'rxjs/operators'
 
@@ -51,8 +51,14 @@ function getSuccessMessage(method: string, path: string): string {
 export class ResponseInterceptor<T> implements NestInterceptor<T, ApiResponse<T>> {
   intercept(context: ExecutionContext, next: CallHandler): Observable<ApiResponse<T>> {
     const request = context.switchToHttp().getRequest<Request>()
+    const response = context.switchToHttp().getResponse<Response>()
     return next.handle().pipe(
       map((rawData) => {
+        /** @Res() 已直接写出流/文件时跳过统一包装，避免二次写入 */
+        if (response.headersSent || response.writableEnded) {
+          return rawData as ApiResponse<T>
+        }
+
         let message = getSuccessMessage(request.method, request.url)
         let data = rawData ?? null
 

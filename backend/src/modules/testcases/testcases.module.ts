@@ -5,5 +5,6 @@ import { TestcasesController } from './testcases.controller'
 @Module({
   providers: [TestcasesService],
   controllers: [TestcasesController],
+  exports: [TestcasesService],
 })
 export class TestcasesModule {}

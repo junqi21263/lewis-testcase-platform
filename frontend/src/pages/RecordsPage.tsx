@@ -27,9 +27,10 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { recordsApi, type RecordsListQuery, type RecordsSummary } from '@/api/records'
+import { settingsApi } from '@/api/settings'
 import { formatDate, generationRecordStatusClass } from '@/utils/format'
 import type { GenerationRecord, GenerationStatus } from '@/types'
-import { useGenerateStore } from '@/store/generateStore'
+import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
   loadRecordsSort,
@@ -359,17 +360,33 @@ export default function RecordsPage() {
     toast.success('已导出 JSON')
   }
 
-  const openReuse = (r: GenerationRecord) => {
+  const openReuse = async (r: GenerationRecord) => {
+    let modelConfigId: string | undefined
+    try {
+      const models = await settingsApi.listModelsAdmin()
+      modelConfigId = models.find((m) => m.modelId === r.modelId)?.id
+    } catch {
+      /* 无管理员权限时跳过 */
+    }
+    const gp = r.generateParams as { temperature?: number; maxTokens?: number } | undefined
     useGenerateStore.setState({
-      sourceType: 'text',
+      sourceType: r.fileId ? 'file' : 'text',
       customPrompt: r.prompt || '',
       selectedTemplateId: r.templateId ?? null,
+      userNotes: r.notes ?? '',
       uploadedFile: null,
       inputText: '',
       currentStep: 'prompt',
+      generationOptions: { ...defaultGenerationOptions },
+      aiParams: {
+        ...useGenerateStore.getState().aiParams,
+        modelConfigId,
+        ...(gp?.temperature != null ? { temperature: Number(gp.temperature) } : {}),
+        ...(gp?.maxTokens != null ? { maxTokens: Number(gp.maxTokens) } : {}),
+      },
     })
     navigate('/generate')
-    toast.success('已带入生成页')
+    toast.success('已带入生成页（含参数快照）')
   }
 
   const copyShare = async (r: GenerationRecord) => {
@@ -956,7 +973,7 @@ export default function RecordsPage() {
                                   size="icon"
                                   className="h-8 w-8"
                                   title="一键复用"
-                                  onClick={() => openReuse(r)}
+                                  onClick={() => void openReuse(r)}
                                 >
                                   <Copy className="w-3.5 h-3.5" />
                                 </Button>
@@ -974,7 +991,7 @@ export default function RecordsPage() {
                                   size="icon"
                                   className="h-8 w-8"
                                   title="编辑（带入生成页）"
-                                  onClick={() => openReuse(r)}
+                                  onClick={() => void openReuse(r)}
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </Button>

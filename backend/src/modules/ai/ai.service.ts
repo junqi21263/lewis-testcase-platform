@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
-import { GenerationStatus } from '@prisma/client'
+import { GenerationSource, GenerationStatus, Prisma } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
 
 @Injectable()
@@ -151,6 +151,37 @@ export class AiService {
     private config: ConfigService,
   ) {}
 
+  /** 落库时的团队、来源枚举、参数快照与模板全文 */
+  private async buildRecordPersistExtras(dto: GenerateDto, userId: string) {
+    const [u, tpl] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { teamId: true } }),
+      dto.templateId
+        ? this.prisma.promptTemplate.findUnique({
+            where: { id: dto.templateId },
+            select: { content: true },
+          })
+        : Promise.resolve(null),
+    ])
+    const generationSource = dto.templateId
+      ? GenerationSource.TEMPLATE
+      : dto.fileId
+        ? GenerationSource.FILE_PARSE
+        : GenerationSource.MANUAL_INPUT
+    const demand = dto.customPrompt || ''
+    const generateParams: Prisma.InputJsonValue = {
+      sourceType: dto.sourceType,
+      temperature: dto.temperature ?? null,
+      maxTokens: dto.maxTokens ?? null,
+    }
+    return {
+      teamId: u?.teamId ?? null,
+      generationSource,
+      demandContent: demand,
+      generateParams,
+      promptTemplateSnapshot: tpl?.content ?? null,
+    }
+  }
+
   /** 根据配置获取 OpenAI 客户端（兼容多模型） */
   private async getOpenAIClient(modelConfigId?: string): Promise<{ client: OpenAI; modelId: string; modelName: string }> {
     let baseUrl = this.config.get<string>('OPENAI_BASE_URL', 'https://api.openai.com/v1')
@@ -247,13 +278,18 @@ export class AiService {
       fileContent = file.parsedContent
     }
 
-    // 创建生成记录
+    const extras = await this.buildRecordPersistExtras(dto, userId)
     const record = await this.prisma.generationRecord.create({
       data: {
         title: `生成记录 ${new Date().toLocaleString('zh-CN')}`,
         status: GenerationStatus.PROCESSING,
         sourceType: dto.sourceType,
         prompt: dto.customPrompt || '',
+        demandContent: extras.demandContent,
+        generationSource: extras.generationSource,
+        generateParams: extras.generateParams,
+        promptTemplateSnapshot: extras.promptTemplateSnapshot ?? undefined,
+        teamId: extras.teamId ?? undefined,
         modelId,
         modelName,
         creatorId: userId,
@@ -326,12 +362,18 @@ export class AiService {
       fileContent = file.parsedContent
     }
 
+    const extras = await this.buildRecordPersistExtras(dto, userId)
     const record = await this.prisma.generationRecord.create({
       data: {
         title: `流式生成记录 ${new Date().toLocaleString('zh-CN')}`,
         status: GenerationStatus.PROCESSING,
         sourceType: dto.sourceType,
         prompt: dto.customPrompt || '',
+        demandContent: extras.demandContent,
+        generationSource: extras.generationSource,
+        generateParams: extras.generateParams,
+        promptTemplateSnapshot: extras.promptTemplateSnapshot ?? undefined,
+        teamId: extras.teamId ?? undefined,
         modelId,
         modelName,
         creatorId: userId,

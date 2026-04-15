@@ -76,6 +76,13 @@ enum GenerationStatus {
   CANCELLED
 }
 
+/// 生成来源（业务枚举，与 sourceType 字段互补）
+enum GenerationSource {
+  FILE_PARSE
+  MANUAL_INPUT
+  TEMPLATE
+}
+
 enum ExportFormat {
   EXCEL
   CSV
@@ -100,6 +107,7 @@ model Team {
 
   members     TeamMember[]
   testSuites  TestSuite[]
+  generationRecords GenerationRecord[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -125,6 +133,9 @@ model User {
   promptTemplates  PromptTemplate[]
   testSuites       TestSuite[]
   documentParseRecords DocumentParseRecord[]
+  generationRecordAuditLogs GenerationRecordAuditLog[]
+  generationRecordShares    GenerationRecordShare[]
+  generationRecordExports   GenerationRecordExport[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,6 +240,7 @@ model DocumentParseRecord {
 
   creator  User             @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   template PromptTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  generationRecords GenerationRecord[]
 
   @@index([creatorId, createdAt])
   @@map("document_parse_records")
@@ -249,6 +261,7 @@ model TestSuite {
   cases            TestCase[]
   generationRecords GenerationRecord[]
   downloadRecords  DownloadRecord[]
+  generationRecordExports GenerationRecordExport[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -285,29 +298,108 @@ model GenerationRecord {
   title        String           @db.VarChar(200)
   status       GenerationStatus @default(PENDING)
   sourceType   String           @db.VarChar(20) // file | text | url
+  /// 需求原文（与 prompt 同步维护，便于检索与对外字段命名）
   prompt       String           @db.Text
+  demandContent String?         @db.Text
+  generationSource GenerationSource @default(MANUAL_INPUT)
   modelId      String           @db.VarChar(100)
   modelName    String           @db.VarChar(100)
   caseCount    Int              @default(0)
   errorMessage String?          @db.Text
   duration     Int?             // 耗时（毫秒）
   tokensUsed   Int?             // token 消耗
+  /// 生成时的选项快照（粒度、场景占比、温度等）
+  generateParams Json?
+  /// 所用提示词模板全文快照
+  promptTemplateSnapshot String? @db.Text
   suiteId      String?
   fileId       String?
   templateId   String?
+  teamId       String?
+  documentParseRecordId String?
   creatorId    String
   deletedAt    DateTime?
+  isDeleted    Boolean          @default(false)
+  tags         String[]         @default([])
+  notes        String?          @db.Text
+  remark       String?          @db.Text
 
   creator  User            @relation(fields: [creatorId], references: [id])
+  team     Team?           @relation(fields: [teamId], references: [id])
   suite    TestSuite?      @relation(fields: [suiteId], references: [id])
   file     UploadedFile?   @relation(fields: [fileId], references: [id])
   template PromptTemplate? @relation(fields: [templateId], references: [id])
+  documentParseRecord DocumentParseRecord? @relation(fields: [documentParseRecordId], references: [id], onDelete: SetNull)
+
+  auditLogs GenerationRecordAuditLog[]
+  shares    GenerationRecordShare[]
+  exports   GenerationRecordExport[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([creatorId, deletedAt])
+  @@index([teamId, createdAt])
   @@map("generation_records")
+}
+
+/// 生成记录操作审计
+model GenerationRecordAuditLog {
+  id         String   @id @default(cuid())
+  recordId   String
+  operatorId String
+  action     String   @db.VarChar(64)
+  detail     Json?
+  ip         String?  @db.VarChar(64)
+
+  record   GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  operator User             @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([recordId, createdAt])
+  @@map("generation_record_audit_logs")
+}
+
+/// 生成记录分享（临时链接）
+model GenerationRecordShare {
+  id         String    @id @default(cuid())
+  recordId   String
+  sharerId   String
+  token      String    @unique @db.VarChar(64)
+  expiresAt  DateTime?
+  permission Json      @default("{}")
+  revoked    Boolean   @default(false)
+
+  record GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  sharer User             @relation(fields: [sharerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([recordId])
+  @@index([token])
+  @@map("generation_record_shares")
+}
+
+/// 以生成记录为维度的导出/下载流水（补充 suite 级 DownloadRecord）
+model GenerationRecordExport {
+  id            String       @id @default(cuid())
+  recordId      String
+  suiteId       String?
+  operatorId    String
+  format        ExportFormat
+  fileSize      Int?
+  downloadCount Int          @default(1)
+  storagePath   String?      @db.VarChar(500)
+
+  record   GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  suite    TestSuite?       @relation(fields: [suiteId], references: [id], onDelete: SetNull)
+  operator User             @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([recordId, createdAt])
+  @@map("generation_record_exports")
 }
 
 /// 下载记录表

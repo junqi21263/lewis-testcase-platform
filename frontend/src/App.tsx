@@ -9,6 +9,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import GeneratePage from '@/pages/GeneratePage'
 import RecordsPage from '@/pages/RecordsPage'
 import RecordDetailPage from '@/pages/RecordDetailPage'
+import RecordSharePublicPage from '@/pages/RecordSharePublicPage'
 import TemplatesPage from '@/pages/TemplatesPage'
 import TeamsPage from '@/pages/TeamsPage'
 import ProfilePage from '@/pages/ProfilePage'
@@ -43,6 +44,8 @@ export default function App() {
           <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
           <Route path="/reset-password" element={<Navigate to="/login" replace />} />
         </Route>
+
+        <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />
 
         {/* 受保护路由 */}
         <Route

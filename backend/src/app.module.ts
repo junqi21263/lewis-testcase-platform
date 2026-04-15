@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
 import { ThrottlerModule } from '@nestjs/throttler'
+import { ScheduleModule } from '@nestjs/schedule'
 
 // 公共模块
 import { PrismaModule } from './prisma/prisma.module'
@@ -42,6 +43,8 @@ import { DocumentParseModule } from './modules/document-parse/document-parse.mod
 
     // 数据库
     PrismaModule,
+
+    ScheduleModule.forRoot(),
 
     // 业务模块
     AuthModule,

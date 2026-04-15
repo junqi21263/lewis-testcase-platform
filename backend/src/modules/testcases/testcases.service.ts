@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { PrismaService } from '@/prisma/prisma.service'
-import { TestCaseStatus } from '@prisma/client'
+import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
+import type { CreateTestCaseDto } from './dto/create-test-case.dto'
 
 @Injectable()
 export class TestcasesService {
@@ -91,6 +92,31 @@ export class TestcasesService {
     await this.prisma.testCase.delete({ where: { id } })
   }
 
+  async createCase(suiteId: string, userId: string, dto: CreateTestCaseDto) {
+    const suite = await this.prisma.testSuite.findUnique({ where: { id: suiteId } })
+    if (!suite) throw new NotFoundException('用例集不存在')
+    if (suite.creatorId !== userId) throw new ForbiddenException('无权在该用例集下新增用例')
+
+    const steps =
+      dto.steps && dto.steps.length > 0
+        ? dto.steps.map((s) => ({ order: s.order, action: s.action, expected: s.expected ?? '' }))
+        : [{ order: 1, action: '请编辑测试步骤', expected: '' }]
+
+    return this.prisma.testCase.create({
+      data: {
+        suiteId,
+        title: dto.title,
+        description: dto.description,
+        precondition: dto.precondition,
+        expectedResult: dto.expectedResult,
+        priority: dto.priority ?? 'P2',
+        type: dto.type ?? 'FUNCTIONAL',
+        steps: steps as unknown as Prisma.InputJsonValue,
+        tags: [],
+      },
+    })
+  }
+
   // ---- 导出 ----
 
   async exportSuite(suiteId: string, format: string, userId: string) {
@@ -117,11 +143,28 @@ export class TestcasesService {
     await this.prisma.downloadRecord.create({
       data: {
         suiteId,
-        format: format as any,
+        format: format as ExportFormat,
         downloadUrl: `/downloads/${filename}`,
         downloaderId: userId,
       },
     })
+
+    const genRec = await this.prisma.generationRecord.findFirst({
+      where: { suiteId },
+    })
+    if (genRec) {
+      await this.prisma.generationRecordExport.create({
+        data: {
+          recordId: genRec.id,
+          suiteId,
+          operatorId: userId,
+          format: format.toUpperCase() as ExportFormat,
+          fileSize: content.length,
+          downloadCount: 1,
+          storagePath: `/downloads/${filename}`,
+        },
+      })
+    }
 
     return { content, filename, mimeType }
   }

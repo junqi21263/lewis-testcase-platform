@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { Response } from 'express'
 import { TestcasesService } from './testcases.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { CreateTestCaseDto } from './dto/create-test-case.dto'
 
 @ApiTags('测试用例')
 @ApiBearerAuth()
@@ -57,6 +58,16 @@ export class TestcasesController {
   @ApiOperation({ summary: '获取用例集下的所有用例' })
   getCases(@Param('id') suiteId: string) {
     return this.service.getCasesBySuiteId(suiteId)
+  }
+
+  @Post('suites/:id/cases')
+  @ApiOperation({ summary: '在用例集下新增用例' })
+  createCase(
+    @Param('id') suiteId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateTestCaseDto,
+  ) {
+    return this.service.createCase(suiteId, userId, dto)
   }
 
   @Patch('cases/:id')

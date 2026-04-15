@@ -218,27 +218,92 @@ export type GenerationStatus =
   | 'ARCHIVED'
   | 'CANCELLED'
 
+/** 与后端 GenerationSource 一致 */
+export type GenerationSource = 'FILE_PARSE' | 'MANUAL_INPUT' | 'TEMPLATE'
+
+export interface RecordAuditLogEntry {
+  id: string
+  recordId: string
+  operatorId: string
+  action: string
+  detail?: unknown
+  ip?: string | null
+  createdAt: string
+  operator?: { id: string; username: string; email?: string }
+}
+
+/** 列表/详情合并后的导出流水（suite + record 维度） */
+export interface RecordDownloadEntry {
+  id: string
+  source: 'suite' | 'record'
+  suiteId: string | null
+  format: string
+  fileSize?: number | null
+  downloadUrl?: string | null
+  createdAt: string
+  downloader?: { id: string; username: string }
+  downloadCount?: number
+}
+
+/** 公开分享接口返回（无需登录） */
+export interface PublicShareCase {
+  id: string
+  title: string
+  priority: string
+  precondition?: string | null
+  steps: unknown
+  expectedResult: string
+}
+
+export interface PublicSharePayload {
+  record: {
+    id: string
+    title: string
+    status: GenerationStatus
+    caseCount: number
+    createdAt: string
+    demandContent: string
+    generateParams?: unknown
+    promptTemplateSnapshot?: string | null
+  }
+  cases: PublicShareCase[]
+}
+
 export interface GenerationRecord {
   id: string
   title: string
   status: GenerationStatus
   sourceType: string
+  generationSource?: GenerationSource
   prompt: string
+  demandContent?: string | null
+  generateParams?: Record<string, unknown> | null
+  promptTemplateSnapshot?: string | null
   modelId: string
   modelName: string
   caseCount: number
   suiteId?: string
   fileId?: string
   templateId?: string | null
+  teamId?: string | null
+  documentParseRecordId?: string | null
   creatorId: string
   creator?: User
   errorMessage?: string
   duration?: number
   tokensUsed?: number
   deletedAt?: string | null
+  isDeleted?: boolean
+  tags?: string[]
+  notes?: string | null
+  remark?: string | null
   createdAt: string
   updatedAt: string
-  suite?: { id: string; name: string }
+  suite?: { id: string; name: string; description?: string | null }
+  template?: { id: string; name: string; content: string }
+  file?: { id: string; originalName: string; status: string }
+  documentParseRecord?: { id: string; title: string; createdAt: string }
+  auditLogs?: RecordAuditLogEntry[]
 }
 
 // ==================== 下载记录 ====================
@@ -248,10 +313,11 @@ export type ExportFormat = 'EXCEL' | 'CSV' | 'JSON' | 'MARKDOWN' | 'YAML'
 export interface DownloadRecord {
   id: string
   suiteId: string
-  suiteName: string
+  suiteName?: string
   format: ExportFormat
   fileSize?: number
   downloadUrl: string
   downloaderId: string
   createdAt: string
+  downloader?: { id: string; username: string }
 }
