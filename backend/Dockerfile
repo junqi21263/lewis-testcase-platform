@@ -6,7 +6,20 @@ WORKDIR /app
 # Railway / 容器边缘转发需要监听所有接口（勿在平台 Variables 里设 HOST=localhost）
 ENV HOST=0.0.0.0
 
-RUN apk add --no-cache openssl
+# openssl：Prisma；cairo/pango 等：node-canvas（pdf-to-img 将扫描版 PDF 首页渲成图再走视觉模型）
+RUN apk add --no-cache \
+  openssl \
+  python3 \
+  build-base \
+  cairo-dev \
+  jpeg-dev \
+  pango-dev \
+  musl-dev \
+  giflib-dev \
+  pixman-dev \
+  pangomm-dev \
+  libjpeg-turbo-dev \
+  freetype-dev
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 

@@ -176,8 +176,13 @@ export class FilesService {
     if (visionBlock) return visionBlock
     if (text.trim()) return `【PDF 文本提取】\n${text.trim()}`
 
+    if (!hasVision) {
+      return (
+        '【解析失败】PDF 几乎无可选中文本层（多为扫描件）。请在「系统设置 → AI 模型」中配置支持视觉的模型并勾选「文档视觉解析」，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID；服务器部署还需成功编译 node-canvas（Dockerfile 已含 cairo 等依赖）。'
+      )
+    }
     return (
-      '【解析失败】PDF 未提取到文本，且视觉理解未返回内容（扫描件需配置视觉模型；若部署未构建 canvas，PDF 转图会失败，见部署说明）。'
+      '【解析失败】已配置视觉模型，但 PDF 首页转图失败或视觉接口未返回有效内容。请查看服务日志中的「PDF 转图」/ 视觉调用错误；确认镜像构建时允许编译 canvas（package.json 中 pnpm.onlyBuiltDependencies 含 canvas）。'
     )
   }
 

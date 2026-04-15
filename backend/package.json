@@ -49,6 +49,9 @@
     "xlsx": "^0.18.5"
   },
   "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["canvas", "prisma", "@prisma/engines"]
+  },
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
   },
