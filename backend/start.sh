@@ -14,10 +14,15 @@ if [ "${NODE_ENV:-}" = "production" ] && [ -z "${JWT_SECRET:-}" ]; then
 fi
 
 # 启动时执行 prisma migrate deploy（幂等；与 preDeploy 重复执行无害）。
-# 此前仅在非 Railway 或 RAILWAY_MIGRATE_ON_START=1 时执行，若平台未配置 preDeployCommand 会导致新列未落库（如 emailVerified）。
+# Railway 上建议通过 preDeployCommand 运行 `migrate-release.sh`，避免启动阶段长时间不监听 PORT → edge 502/connection refused。
+# 如需在 Railway 启动阶段也执行迁移（不推荐，除非未配置 preDeployCommand），显式设置：RAILWAY_MIGRATE_ON_START=1
 # 完全跳过迁移：SKIP_PRISMA_MIGRATE_ON_START=1
 
 RUN_MIGRATE_AT_START=1
+if [ -n "${RAILWAY_ENVIRONMENT:-}" ] && [ "${RAILWAY_MIGRATE_ON_START:-}" != "1" ]; then
+  RUN_MIGRATE_AT_START=0
+  echo "[start] Railway: 默认跳过启动时 migrate（请在 preDeployCommand 运行 migrate-release.sh；必要时设 RAILWAY_MIGRATE_ON_START=1）"
+fi
 if [ "${SKIP_PRISMA_MIGRATE_ON_START:-}" = "1" ]; then
   RUN_MIGRATE_AT_START=0
   echo "[start] WARN: SKIP_PRISMA_MIGRATE_ON_START=1，跳过 migrate"
