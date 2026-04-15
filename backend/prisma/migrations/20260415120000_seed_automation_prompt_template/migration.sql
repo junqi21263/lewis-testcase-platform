@@ -1,9 +1,29 @@
 -- 内置：自动化测试脚本生成提示词模板（可通过 migrate deploy 落库，也可单独在 psql 中执行本文件）
--- 依赖：至少一名 SUPER_ADMIN 用户作为 creatorId
+-- creatorId 固定为 '0'：需存在对应 users 行以满足外键（下方自动插入占位用户，若已存在则跳过）
+
+INSERT INTO "users" (
+  "id",
+  "email",
+  "username",
+  "password",
+  "role",
+  "emailVerified",
+  "createdAt",
+  "updatedAt"
+) VALUES (
+  '0',
+  'built-in-template-creator@system.local',
+  'system-template',
+  '$2a$10$BuiltInTemplateCreatorNoLogin',
+  'SUPER_ADMIN'::"UserRole",
+  true,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+)
+ON CONFLICT ("id") DO NOTHING;
 
 DO $$
 DECLARE
-  admin_id TEXT;
   tmpl_name TEXT := '自动化测试脚本生成模板';
   tmpl_id TEXT := 'tpl-automation-scripts';
   tmpl_desc TEXT := '按 PageObject / 分层接口自动化规范生成可运行脚本：架构说明、依赖、分文件代码、运行步骤（输出由系统约定为 JSON，后端再落为用例集）';
@@ -47,12 +67,6 @@ DECLARE
 你必须只输出**一个合法 JSON 对象**（不要 markdown 代码围栏），顶层字段由系统消息定义；其中用 `files` 列出每个源码文件的 `path` 与 `content`，用 `meta` 承载架构说明、依赖清单、环境要求、运行步骤、注意事项与优化建议。
 $tpl$;
 BEGIN
-  SELECT "id" INTO admin_id FROM "users" WHERE "role" = 'SUPER_ADMIN' ORDER BY "createdAt" ASC LIMIT 1;
-  IF admin_id IS NULL THEN
-    RAISE NOTICE 'seed_automation_prompt_template: no SUPER_ADMIN user, skip';
-    RETURN;
-  END IF;
-
   INSERT INTO "prompt_templates" (
     "id",
     "name",
@@ -74,7 +88,7 @@ BEGIN
     tmpl_variables,
     true,
     0,
-    admin_id,
+    '0',
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
   )
@@ -85,5 +99,6 @@ BEGIN
     "content" = EXCLUDED."content",
     "variables" = EXCLUDED."variables",
     "isPublic" = EXCLUDED."isPublic",
+    "creatorId" = '0',
     "updatedAt" = CURRENT_TIMESTAMP;
 END $$;
