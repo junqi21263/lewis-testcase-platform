@@ -39,6 +39,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true })
     }
+    this.logger.log('FilesService initialized')
   }
 
   onModuleInit() {
