@@ -312,6 +312,26 @@ export class FilesService {
   async getFileById(id: string) {
     const file = await this.prisma.uploadedFile.findUnique({ where: { id } })
     if (!file) throw new NotFoundException('文件不存在')
+
+    // 若进程重启导致异步解析丢失，文件可能长期停留在 PARSING；这里做兜底超时标记，避免前端无限轮询。
+    if (file.status === FileStatus.PARSING) {
+      const timeoutMin = parseInt(this.config.get<string>('FILE_PARSE_TIMEOUT_MINUTES') || '15', 10)
+      const min = Number.isFinite(timeoutMin) && timeoutMin > 0 ? timeoutMin : 15
+      const deadline = Date.now() - min * 60_000
+      if (file.updatedAt && file.updatedAt.getTime() < deadline) {
+        const msg = `【解析失败】解析超时（超过 ${min} 分钟未完成）。可能是服务重启导致解析任务丢失，可点击「重试解析」。`
+        try {
+          const updated = await this.prisma.uploadedFile.update({
+            where: { id },
+            data: { status: FileStatus.FAILED, parseError: msg },
+          })
+          return updated
+        } catch (e) {
+          // 若并发下被删除或已更新，返回原值即可
+        }
+      }
+    }
+
     return file
   }
 
