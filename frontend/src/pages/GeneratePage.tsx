@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Upload, FileText, Type, Wand2, Loader2, ChevronRight, X, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -6,11 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { useGenerateStore } from '@/store/generateStore'
 import { filesApi } from '@/api/files'
 import { aiApi } from '@/api/ai'
+import { templatesApi } from '@/api/templates'
 import { testcasesApi } from '@/api/testcases'
 import { parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
 import { formatFileSize, priorityColorMap } from '@/utils/format'
 import toast from 'react-hot-toast'
-import type { TestCase } from '@/types'
+import type { TestCase, PromptTemplate } from '@/types'
 
 /** 文件上传区域组件 */
 function FileUploadZone() {
@@ -156,12 +157,30 @@ export default function GeneratePage() {
     uploadedFile,
     inputText, setInputText,
     customPrompt, setCustomPrompt,
+    selectedTemplateId, setSelectedTemplateId,
     aiParams, setAiParams,
     generatedCases, setGeneratedCases,
     setLastRecordId,
     isGenerating, setIsGenerating,
     streamContent, appendStreamContent, clearStreamContent,
   } = useGenerateStore()
+
+  const [templateOptions, setTemplateOptions] = useState<PromptTemplate[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await templatesApi.getTemplates({ page: 1, pageSize: 100 })
+        if (!cancelled) setTemplateOptions(res.list)
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleGenerate = async () => {
     if (sourceType === 'file' && !uploadedFile) {
@@ -190,6 +209,7 @@ export default function GeneratePage() {
             fileId: uploadedFile?.id,
             text: inputText,
             customPrompt,
+            templateId: selectedTemplateId ?? undefined,
             ...aiParams,
           },
           (chunk) => appendStreamContent(chunk),
@@ -229,6 +249,7 @@ export default function GeneratePage() {
           fileId: uploadedFile?.id,
           text: inputText,
           customPrompt,
+          templateId: selectedTemplateId ?? undefined,
           ...aiParams,
         })
         setGeneratedCases(result.cases)
@@ -311,8 +332,49 @@ export default function GeneratePage() {
               <CardDescription>自定义 AI 生成用例的方向和格式要求</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">插入平台模板</label>
+                <select
+                  className="flex-1 h-10 px-3 rounded-md border border-input bg-background text-sm min-w-0"
+                  value={selectedTemplateId ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value
+                    if (!id) {
+                      setSelectedTemplateId(null)
+                      return
+                    }
+                    const t = templateOptions.find((x) => x.id === id)
+                    if (t) {
+                      setSelectedTemplateId(id)
+                      setCustomPrompt(t.content)
+                      toast.success(`已载入模板：${t.name}`)
+                    }
+                  }}
+                >
+                  <option value="">— 不关联模板（不累计使用次数）—</option>
+                  {templateOptions.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedTemplateId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs shrink-0"
+                    onClick={() => setSelectedTemplateId(null)}
+                  >
+                    清除模板关联
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                从下拉选择或从「模板管理」点击「去生成」会带上模板 ID，生成成功后「使用次数」+1。
+              </p>
               <textarea
-                className="w-full h-28 p-3 text-sm border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full h-28 p-3 text-sm border rounded-lg bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring select-text"
                 placeholder="例如：请根据以上需求生成完整的功能测试用例，包含正向、逆向和边界测试，优先级分 P0-P3 四级..."
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}

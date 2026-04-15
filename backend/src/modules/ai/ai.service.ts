@@ -104,6 +104,23 @@ export class AiService {
     return this.fallbackCasesFromRawOutput(fullText)
   }
 
+  /** 生成成功且指定了模板时，增加模板使用次数 */
+  private async bumpTemplateUsage(templateId?: string) {
+    const id = templateId?.trim()
+    if (!id) return
+    try {
+      const n = await this.prisma.promptTemplate.updateMany({
+        where: { id },
+        data: { usageCount: { increment: 1 } },
+      })
+      if (n.count === 0) {
+        this.logger.warn(`模板使用计数跳过：模板 id 不存在 ${id}`)
+      }
+    } catch (e) {
+      this.logger.warn(`模板使用计数更新失败: ${id}`, e as Error)
+    }
+  }
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
@@ -249,6 +266,8 @@ export class AiService {
         },
       })
 
+      await this.bumpTemplateUsage(dto.templateId)
+
       return { recordId: record.id, cases: suite.cases, tokensUsed: completion.usage?.total_tokens, duration }
     } catch (err) {
       await this.prisma.generationRecord.update({
@@ -331,6 +350,8 @@ export class AiService {
         where: { id: record.id },
         data: { status: GenerationStatus.SUCCESS, caseCount: suite.cases.length, suiteId: suite.id, duration: Date.now() - startTime },
       })
+
+      await this.bumpTemplateUsage(dto.templateId)
 
       res.write(
         `data: ${JSON.stringify({

@@ -37,17 +37,21 @@ export class TemplatesService {
     })
   }
 
-  async update(id: string, userId: string, data: any) {
+  async update(id: string, userId: string, data: any, role?: string) {
     const tpl = await this.prisma.promptTemplate.findUnique({ where: { id } })
     if (!tpl) throw new NotFoundException('模板不存在')
-    if (tpl.creatorId !== userId) throw new ForbiddenException('无权修改该模板')
+    const isOwner = tpl.creatorId === userId
+    const isSuper = role === 'SUPER_ADMIN'
+    if (!isOwner && !isSuper) throw new ForbiddenException('无权修改该模板')
     return this.prisma.promptTemplate.update({ where: { id }, data })
   }
 
-  async delete(id: string, userId: string) {
+  async delete(id: string, userId: string, role?: string) {
     const tpl = await this.prisma.promptTemplate.findUnique({ where: { id } })
     if (!tpl) throw new NotFoundException('模板不存在')
-    if (tpl.creatorId !== userId) throw new ForbiddenException('无权删除该模板')
+    const isOwner = tpl.creatorId === userId
+    const isSuper = role === 'SUPER_ADMIN'
+    if (!isOwner && !isSuper) throw new ForbiddenException('无权删除该模板')
     await this.prisma.promptTemplate.delete({ where: { id } })
   }
 }

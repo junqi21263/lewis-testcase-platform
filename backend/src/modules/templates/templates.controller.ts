@@ -35,13 +35,18 @@ export class TemplatesController {
 
   @Patch(':id')
   @ApiOperation({ summary: '更新模板' })
-  update(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: any) {
-    return this.service.update(id, userId, data)
+  update(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+    @Body() data: any,
+  ) {
+    return this.service.update(id, userId, data, role)
   }
 
   @Delete(':id')
   @ApiOperation({ summary: '删除模板' })
-  delete(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.service.delete(id, userId)
+  delete(@Param('id') id: string, @CurrentUser('id') userId: string, @CurrentUser('role') role: string) {
+    return this.service.delete(id, userId, role)
   }
 }
