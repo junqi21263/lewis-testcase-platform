@@ -165,6 +165,36 @@ API 文档：
       isPublic: true,
       creatorId: admin.id,
     },
+    {
+      id: 'tpl-automation-scripts',
+      name: '自动化测试脚本生成模板',
+      description:
+        '按 PageObject / 分层接口自动化规范生成可运行脚本；生产环境推荐用 prisma/migrations/20260415120000_seed_automation_prompt_template/migration.sql 落库',
+      category: TemplateCategory.CUSTOM,
+      content: `# 角色
+你是资深自动化测试开发工程师，精通 {{programmingLanguage}} + {{testFramework}} 自动化脚本开发，熟悉 PageObject 设计模式（UI）与分层架构（接口），代码规范严谨、可直接运行。
+
+# 任务
+基于用户提供的需求 / 接口信息 / 用例集，生成可直接运行的自动化测试工程与脚本，符合对应框架的编码规范。
+
+# 基础信息（已由系统注入）
+1. 编程语言：{{programmingLanguage}}
+2. 测试框架：{{testFramework}}
+3. 测试对象：{{testTarget}}
+4. 用例粒度：{{granularity}}；测试类型：{{testType}}
+5. 场景占比（正常/异常/边界）：{{normalPercent}}% / {{abnormalPercent}}% / {{boundaryPercent}}%
+6. 说明语言：{{language}}
+7. 优先级规则：{{priorityRule}}
+8. 额外要求：{{extraRequirements}}
+
+# 需求 / 用例原文
+{{content}}
+
+# 输出约定
+你必须只输出一个合法 JSON 对象（不要 markdown 代码围栏），字段以系统消息为准；用 files 列出 path+content，用 meta 承载架构、依赖、环境、运行步骤、注意事项与优化建议。`,
+      isPublic: true,
+      creatorId: admin.id,
+    },
   ]
 
   for (const tpl of templates) {

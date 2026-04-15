@@ -26,6 +26,26 @@ class GenerationOptionsDto {
   @IsOptional()
   @IsNumber()
   sceneBoundary?: number
+
+  /** 自动化脚本：编程语言，如 Python */
+  @IsOptional()
+  @IsString()
+  programmingLanguage?: string
+
+  /** 自动化脚本：测试框架，如 Pytest */
+  @IsOptional()
+  @IsString()
+  testFramework?: string
+
+  /** 自动化脚本：测试对象描述，如 接口 / 登录 UI */
+  @IsOptional()
+  @IsString()
+  testTarget?: string
+
+  /** 自动化脚本：额外要求，如 Allure、CI/CD */
+  @IsOptional()
+  @IsString()
+  extraRequirements?: string
 }
 
 export class GenerateDto {

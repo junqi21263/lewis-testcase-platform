@@ -171,6 +171,11 @@ export interface GenerationOptions {
   sceneNormal: number
   sceneAbnormal: number
   sceneBoundary: number
+  /** 自动化脚本生成 */
+  programmingLanguage?: string
+  testFramework?: string
+  testTarget?: string
+  extraRequirements?: string
 }
 
 export interface TestCase {

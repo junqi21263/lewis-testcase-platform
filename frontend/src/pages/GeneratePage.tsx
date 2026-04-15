@@ -272,6 +272,7 @@ export default function GeneratePage() {
     if (generationOptions.testType === 'UI') return 'UI'
     if (generationOptions.testType === 'SECURITY') return 'SECURITY'
     if (generationOptions.testType === 'PERFORMANCE') return 'PERFORMANCE'
+    if (generationOptions.testType === 'AUTOMATION') return 'CUSTOM'
     return 'FUNCTIONAL'
   }, [generationOptions.testType])
 
@@ -316,6 +317,19 @@ export default function GeneratePage() {
     }
   }, [])
 
+  /** 自动化类型：若尚未选择模板，则默认选中迁移/SQL 写入的 tpl-automation-scripts */
+  useEffect(() => {
+    if (generationOptions.testType !== 'AUTOMATION') return
+    const tpl = templates.find((t) => t.id === 'tpl-automation-scripts')
+    if (!tpl) return
+    const { selectedTemplateId: sid, setSelectedTemplateId: setTplId, setCustomPrompt: setPrompt } =
+      useGenerateStore.getState()
+    if (!sid) {
+      setTplId(tpl.id)
+      setPrompt(tpl.content)
+    }
+  }, [generationOptions.testType, templates])
+
   const sceneSum = generationOptions.sceneNormal + generationOptions.sceneAbnormal + generationOptions.sceneBoundary
   const adjustScenes = (key: 'sceneNormal' | 'sceneAbnormal' | 'sceneBoundary', value: number) => {
     const v = Math.max(0, Math.min(100, Math.round(value)))
@@ -348,7 +362,7 @@ export default function GeneratePage() {
       toast.error('请输入需求文本')
       return
     }
-    if (sceneSum !== 100) {
+    if (generationOptions.testType !== 'AUTOMATION' && sceneSum !== 100) {
       toast.error('场景占比需合计 100%（正常/异常/边界）')
       return
     }
@@ -554,10 +568,56 @@ export default function GeneratePage() {
                 </div>
               </div>
 
+              {generationOptions.testType === 'AUTOMATION' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg border bg-muted/30">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">编程语言</label>
+                    <input
+                      className="w-full border rounded px-3 py-2 bg-background text-sm"
+                      value={generationOptions.programmingLanguage ?? ''}
+                      onChange={(e) => setGenerationOptions({ programmingLanguage: e.target.value })}
+                      placeholder="如 Python"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">测试框架</label>
+                    <input
+                      className="w-full border rounded px-3 py-2 bg-background text-sm"
+                      value={generationOptions.testFramework ?? ''}
+                      onChange={(e) => setGenerationOptions({ testFramework: e.target.value })}
+                      placeholder="如 Pytest / Playwright"
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-sm font-medium">测试对象</label>
+                    <input
+                      className="w-full border rounded px-3 py-2 bg-background text-sm"
+                      value={generationOptions.testTarget ?? ''}
+                      onChange={(e) => setGenerationOptions({ testTarget: e.target.value })}
+                      placeholder="接口自动化 / 某 UI 模块 等"
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-sm font-medium">额外要求</label>
+                    <textarea
+                      className="w-full h-16 p-3 text-sm border rounded-lg bg-background resize-none"
+                      value={generationOptions.extraRequirements ?? ''}
+                      onChange={(e) => setGenerationOptions({ extraRequirements: e.target.value })}
+                      placeholder="如：生成 Allure 报告、CI/CD 示例、Dockerfile…"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* 场景覆盖 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">场景覆盖比例（合计需 100%）</label>
+                  <label className="text-sm font-medium">
+                    场景覆盖比例（合计需 100%）
+                    {generationOptions.testType === 'AUTOMATION' && (
+                      <span className="text-muted-foreground font-normal"> · 自动化脚本模式不强制校验合计</span>
+                    )}
+                  </label>
                   <span className={`text-xs ${sceneSum === 100 ? 'text-muted-foreground' : 'text-destructive'}`}>
                     当前合计：{sceneSum}%
                   </span>

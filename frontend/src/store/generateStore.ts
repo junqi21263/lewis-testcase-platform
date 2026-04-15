@@ -14,6 +14,10 @@ const defaultGenerationOptions: GenerationOptions = {
   sceneNormal: 40,
   sceneAbnormal: 30,
   sceneBoundary: 30,
+  programmingLanguage: 'Python',
+  testFramework: 'Pytest',
+  testTarget: '接口 / UI 功能',
+  extraRequirements: '',
 }
 
 interface GenerateState {

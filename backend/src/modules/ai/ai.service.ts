@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service'
 import { GenerationStatus } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
 import { PromptBuilderService } from './prompt-builder.service'
+import { buildSuiteCaseRows } from './ai-case-mapper'
 
 @Injectable()
 export class AiService {
@@ -125,27 +126,26 @@ export class AiService {
 
       const content = completion.choices[0]?.message?.content || '{}'
       const parsed = JSON.parse(content)
-      const cases = parsed.cases || []
       const quality = parsed.quality || null
+      const caseRows = buildSuiteCaseRows(dto, parsed, content)
+      const isAutomation = dto.generationOptions?.testType === 'AUTOMATION'
 
       // 创建用例集和用例
       const suite = await this.prisma.testSuite.create({
         data: {
-          name: `AI 生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+          name: isAutomation
+            ? `AI 自动化脚本 - ${new Date().toLocaleString('zh-CN')}`
+            : `AI 生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
           creatorId: userId,
           cases: {
-            create: cases.map((c: any) => ({
-              title: c.title || c.name || '未命名用例',
+            create: caseRows.map((c) => ({
+              title: c.title,
               precondition: c.precondition || '',
-              steps: (Array.isArray(c.steps) ? c.steps : []).map((s: any, idx: number) => ({
-                order: idx + 1,
-                action: typeof s === 'string' ? s : (s?.action || ''),
-                expected: typeof s === 'string' ? '' : (s?.expected || ''),
-              })),
-              expectedResult: c.expected || c.expectedResult || '',
-              priority: (c.priority || 'P2') as any,
-              type: (dto.generationOptions?.testType || c.type || 'FUNCTIONAL') as any,
-              tags: Array.isArray(c.tags) ? c.tags : [],
+              steps: c.steps,
+              expectedResult: c.expectedResult || '',
+              priority: c.priority as any,
+              type: c.type as any,
+              tags: c.tags,
             })),
           },
         },
@@ -238,21 +238,35 @@ export class AiService {
       }
 
       // 解析最终内容，保存用例
-      let cases: any[] = []
+      let parsed: any = {}
       let quality: any = null
       try {
-        const parsed = JSON.parse(fullContent)
-        cases = parsed.cases || []
+        parsed = JSON.parse(fullContent)
         quality = parsed.quality || null
       } catch {
         this.logger.warn('流式响应内容解析 JSON 失败')
       }
 
+      const caseRows = buildSuiteCaseRows(dto, parsed, fullContent)
+      const isAutomation = dto.generationOptions?.testType === 'AUTOMATION'
+
       const suite = await this.prisma.testSuite.create({
         data: {
-          name: `AI 流式生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+          name: isAutomation
+            ? `AI 流式自动化脚本 - ${new Date().toLocaleString('zh-CN')}`
+            : `AI 流式生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
           creatorId: userId,
-          cases: { create: cases.map((c: any) => ({ title: c.title, steps: c.steps || [], expectedResult: c.expectedResult || '', priority: c.priority || 'P2', type: c.type || 'FUNCTIONAL', tags: c.tags || [] })) },
+          cases: {
+            create: caseRows.map((c) => ({
+              title: c.title,
+              precondition: c.precondition || '',
+              steps: c.steps,
+              expectedResult: c.expectedResult || '',
+              priority: (c.priority || 'P2') as any,
+              type: (c.type || 'FUNCTIONAL') as any,
+              tags: c.tags || [],
+            })),
+          },
         },
         include: { cases: true },
       })
