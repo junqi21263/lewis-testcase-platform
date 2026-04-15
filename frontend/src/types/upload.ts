@@ -31,6 +31,8 @@ export interface RequirementPoint {
   originalContent: string
   /** 所在来源文件名 */
   sourceFile: string
+  /** 是否带入提示词 / 生成页（默认勾选） */
+  selected: boolean
 }
 
 /** 检测到的敏感信息片段 */

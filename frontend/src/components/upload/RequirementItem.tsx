@@ -8,7 +8,7 @@
  */
 
 import { useState, useRef, useEffect, memo } from 'react'
-import { Pencil, Check, X, RotateCcw } from 'lucide-react'
+import { Pencil, Check, X, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import type { RequirementPoint } from '@/types/upload'
 
@@ -17,10 +17,23 @@ interface RequirementItemProps {
   index: number
   onUpdate: (id: string, content: string) => void
   onDelete: (id: string) => void
+  onToggleSelected?: (id: string, selected: boolean) => void
+  onMoveUp?: (id: string) => void
+  onMoveDown?: (id: string) => void
+  disableMoveUp?: boolean
+  disableMoveDown?: boolean
 }
 
 const RequirementItem = memo(function RequirementItem({
-  point, index, onUpdate, onDelete,
+  point,
+  index,
+  onUpdate,
+  onDelete,
+  onToggleSelected,
+  onMoveUp,
+  onMoveDown,
+  disableMoveUp,
+  disableMoveDown,
 }: RequirementItemProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(point.content)
@@ -58,6 +71,14 @@ const RequirementItem = memo(function RequirementItem({
       handleSave()
     }
     if (e.key === 'Escape') handleCancel()
+    if (e.altKey && e.key === 'ArrowUp' && onMoveUp) {
+      e.preventDefault()
+      onMoveUp(point.id)
+    }
+    if (e.altKey && e.key === 'ArrowDown' && onMoveDown) {
+      e.preventDefault()
+      onMoveDown(point.id)
+    }
   }
 
   return (
@@ -69,6 +90,15 @@ const RequirementItem = memo(function RequirementItem({
           : 'hover:bg-muted/60 border border-transparent',
       )}
     >
+      {onToggleSelected && (
+        <input
+          type="checkbox"
+          className="mt-1.5 h-4 w-4 rounded border-border accent-primary cursor-pointer"
+          checked={point.selected}
+          onChange={(e) => onToggleSelected(point.id, e.target.checked)}
+          title="带入生成页时包含此项"
+        />
+      )}
       {/* 序号 */}
       <span className="flex-shrink-0 w-5 h-5 mt-0.5 rounded text-xs font-bold flex items-center justify-center bg-muted text-muted-foreground">
         {index + 1}
@@ -137,6 +167,28 @@ const RequirementItem = memo(function RequirementItem({
           </>
         ) : (
           <>
+            {onMoveUp && (
+              <button
+                type="button"
+                disabled={disableMoveUp}
+                onClick={() => onMoveUp(point.id)}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
+                title="上移 (Alt+↑)"
+              >
+                <ChevronUp className="w-3 h-3" />
+              </button>
+            )}
+            {onMoveDown && (
+              <button
+                type="button"
+                disabled={disableMoveDown}
+                onClick={() => onMoveDown(point.id)}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
+                title="下移 (Alt+↓)"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            )}
             <button
               onClick={() => setEditing(true)}
               className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

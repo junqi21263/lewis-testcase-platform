@@ -122,6 +122,7 @@ model User {
   downloadRecords  DownloadRecord[]
   promptTemplates  PromptTemplate[]
   testSuites       TestSuite[]
+  documentParseRecords DocumentParseRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -174,6 +175,10 @@ model UploadedFile {
   fileType      FileType
   status        FileStatus @default(PENDING)
   parsedContent String?    @db.Text
+  /// 解析失败时的错误信息（成功时为 null）
+  parseError    String?    @db.Text
+  /// LLM 结构化后的需求条目（JSON 字符串数组），供前端需求清单优先展示
+  structuredRequirements Json?
   uploaderId    String
 
   uploader         User               @relation(fields: [uploaderId], references: [id])
@@ -199,11 +204,32 @@ model PromptTemplate {
 
   creator          User               @relation(fields: [creatorId], references: [id])
   generationRecords GenerationRecord[]
+  documentParseRecords DocumentParseRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("prompt_templates")
+}
+
+/// 文档解析页「带入生成」时落库的快照，便于历史复用与审计
+model DocumentParseRecord {
+  id           String   @id @default(cuid())
+  creatorId    String
+  teamId       String?
+  title        String   @db.VarChar(300)
+  rawText      String   @db.Text
+  requirements Json
+  filledPrompt String   @db.Text
+  templateId   String?
+  fileIds      Json     @default("[]")
+  createdAt    DateTime @default(now())
+
+  creator  User             @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  template PromptTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([creatorId, createdAt])
+  @@map("document_parse_records")
 }
 
 /// 用例集表

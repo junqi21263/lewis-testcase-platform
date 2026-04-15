@@ -95,6 +95,10 @@ export const filesApi = {
   /** 重新触发文件解析 */
   retryParse: (id: string) => request.post<UploadedFile>(`/files/${id}/parse`),
 
+  /** 根据用户编辑后的全文重新结构化（脱敏 + LLM） */
+  restructure: (id: string, text: string) =>
+    request.post<UploadedFile>(`/files/${id}/restructure`, { text }),
+
   getFileList: (params?: PaginationParams) =>
     request.get<PaginatedData<UploadedFile>>('/files', { params }),
 

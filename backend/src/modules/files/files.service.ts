@@ -7,9 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import * as path from 'path'
-import { FileStatus, FileType } from '@prisma/client'
+import { FileStatus, FileType, Prisma } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import { DocumentVisionService } from './document-vision.service'
+import { RequirementStructureService } from './requirement-structure.service'
+import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
 
 @Injectable()
 export class FilesService {
@@ -20,6 +22,7 @@ export class FilesService {
     private prisma: PrismaService,
     private config: ConfigService,
     private documentVision: DocumentVisionService,
+    private requirementStructure: RequirementStructureService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -86,17 +89,31 @@ export class FilesService {
           content = '不支持的文件格式'
       }
 
+      const trimmed = content.trim()
+      if (!trimmed || trimmed.startsWith('【解析失败】')) {
+        throw new Error(trimmed || '内容为空，无法完成解析')
+      }
+
+      const masked = maskSensitivePlainText(content)
+      const structured = await this.requirementStructure.structureRequirements(masked)
+
       await this.prisma.uploadedFile.update({
         where: { id: fileId },
-        data: { parsedContent: content, status: FileStatus.PARSED },
+        data: {
+          parsedContent: masked,
+          structuredRequirements: structured as Prisma.InputJsonValue,
+          status: FileStatus.PARSED,
+          parseError: null,
+        },
       })
       this.logger.log(`文件解析完成: ${fileId}`)
     } catch (err) {
+      const msg = ((err as Error).message || '解析失败').slice(0, 4000)
       await this.prisma.uploadedFile.update({
         where: { id: fileId },
-        data: { status: FileStatus.FAILED },
+        data: { status: FileStatus.FAILED, parseError: msg },
       })
-      throw err
+      this.logger.error(`文件解析失败: ${fileId}`, err as Error)
     }
   }
 
@@ -228,5 +245,51 @@ export class FilesService {
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
 
     await this.prisma.uploadedFile.delete({ where: { id } })
+  }
+
+  /** 重新排队解析（上传页「重试」） */
+  async retryParse(id: string, userId: string) {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+    if (!fs.existsSync(file.path)) throw new BadRequestException('本地文件已不存在，请重新上传')
+
+    await this.prisma.uploadedFile.update({
+      where: { id },
+      data: {
+        status: FileStatus.PENDING,
+        parseError: null,
+        parsedContent: null,
+        structuredRequirements: Prisma.DbNull,
+      },
+    })
+
+    this.parseFileAsync(file.id, file.path, file.fileType, file.mimeType).catch((e) =>
+      this.logger.error(`重试解析失败: ${id}`, e),
+    )
+
+    return this.getFileById(id)
+  }
+
+  /**
+   * 用户在前端编辑「原始文本」后，重新脱敏 + 结构化（不重新跑 OCR/视觉）
+   */
+  async restructureFromEditedText(id: string, userId: string, text: string) {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+
+    const masked = maskSensitivePlainText(text)
+    const structured = await this.requirementStructure.structureRequirements(masked)
+
+    await this.prisma.uploadedFile.update({
+      where: { id },
+      data: {
+        parsedContent: masked,
+        structuredRequirements: structured as Prisma.InputJsonValue,
+        status: FileStatus.PARSED,
+        parseError: null,
+      },
+    })
+
+    return this.getFileById(id)
   }
 }

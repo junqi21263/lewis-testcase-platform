@@ -63,5 +63,6 @@ export function extractRequirements(
     originalContent: content,
     edited: false,
     sourceFile,
+    selected: true,
   }))
 }

@@ -203,7 +203,7 @@ export default function GeneratePage() {
   const {
     currentStep, setStep,
     sourceType, setSourceType,
-    uploadedFile,
+    uploadedFile, setUploadedFile,
     inputText, setInputText,
     customPrompt, setCustomPrompt,
     selectedTemplateId, setSelectedTemplateId,
@@ -215,6 +215,21 @@ export default function GeneratePage() {
   } = useGenerateStore()
 
   const [templateOptions, setTemplateOptions] = useState<PromptTemplate[]>([])
+
+  /** 进入生成页时消费文档解析投递（仅处理一次，避免依赖链重复触发） */
+  useEffect(() => {
+    const h = useGenerateStore.getState().pendingGenerateHandoff
+    if (!h) return
+    setCustomPrompt(h.filledPrompt)
+    setSelectedTemplateId(h.templateId)
+    setSourceType('text')
+    setInputText('')
+    setUploadedFile(null)
+    setStep('prompt')
+    useGenerateStore.getState().setPendingGenerateHandoff(null)
+    toast.success('已从文档解析载入需求与提示词，可直接生成')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时消费 handoff
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -253,8 +268,8 @@ export default function GeneratePage() {
       toast.error('请先上传文件')
       return
     }
-    if (sourceType === 'text' && !inputText.trim()) {
-      toast.error('请输入需求文本')
+    if (sourceType === 'text' && !inputText.trim() && !customPrompt.trim()) {
+      toast.error('请输入需求文本，或确保提示词中已包含完整需求描述')
       return
     }
     if (!customPrompt.trim()) {

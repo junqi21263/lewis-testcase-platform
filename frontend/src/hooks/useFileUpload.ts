@@ -1,51 +1,81 @@
 /**
- * useFileUpload
- *
- * 封装多文件批量上传的核心逻辑：
- * - 文件校验（格式、大小）
- * - 普通上传 / 大文件分片上传
- * - 暂停 / 继续 / 取消 / 删除
- * - 上传完成后自动轮询解析状态，触发 useFileParser
+ * useFileUpload —— 多文件上传与解析
+ * - 校验格式与大小
+ * - 队列串行：逐个完成「上传 → 解析」再处理下一个
+ * - 图片自动压缩后上传
+ * - 解析结果优先使用后端 structuredRequirements
  */
 
 import { useCallback, useRef } from 'react'
 import { filesApi, CHUNK_THRESHOLD, CHUNK_SIZE } from '@/api/files'
 import { detectSensitive, maskText } from '@/utils/sensitiveDetector'
 import { extractRequirements } from '@/utils/requirementExtractor'
-import type { UploadTask, SupportedExtension } from '@/types/upload'
+import { compressImageIfNeeded } from '@/utils/imageCompress'
+import type { UploadTask, SupportedExtension, RequirementPoint } from '@/types/upload'
+import type { UploadedFile } from '@/types'
 
-/** 支持的扩展名集合 */
 const SUPPORTED_EXTS = new Set<string>([
   'doc', 'docx', 'pdf', 'txt', 'md', 'xlsx', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg',
 ])
 
-/** 单文件最大大小：100 MB */
 const MAX_FILE_SIZE = 100 * 1024 * 1024
+const POLL_INTERVAL_MS = 2000
+const POLL_MAX_ROUNDS = 90
 
-/** 轮询解析状态的间隔 ms */
-const POLL_INTERVAL = 2000
-/** 轮询最大次数（超时后置 error） */
-const POLL_MAX_TIMES = 30
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+function normalizeStructured(raw: unknown): string[] {
+  if (!raw || !Array.isArray(raw)) return []
+  return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+}
+
+function serverFileToRequirementPoints(file: UploadedFile, sourceName: string): RequirementPoint[] {
+  const text = file.parsedContent ?? ''
+  const structured = normalizeStructured(file.structuredRequirements)
+  const sensitiveMatches = detectSensitive(text)
+  const maskedText = maskText(text, sensitiveMatches)
+
+  if (structured.length > 0) {
+    return structured.map((content) => ({
+      id: crypto.randomUUID(),
+      content: content.trim(),
+      originalContent: content.trim(),
+      edited: false,
+      sourceFile: sourceName,
+      selected: true,
+    }))
+  }
+
+  return extractRequirements(maskedText, sourceName)
+}
+
+async function pollUntilParsed(serverFileId: string): Promise<UploadedFile> {
+  for (let i = 0; i < POLL_MAX_ROUNDS; i++) {
+    await sleep(POLL_INTERVAL_MS)
+    const file = await filesApi.getFileById(serverFileId)
+    if (file.status === 'PARSED' && (file.parsedContent?.trim() || normalizeStructured(file.structuredRequirements).length > 0)) {
+      return file
+    }
+    if (file.status === 'FAILED') {
+      throw new Error(file.parseError?.trim() || '服务端解析失败')
+    }
+  }
+  throw new Error('解析超时，请稍后重试')
+}
 
 type UpdateTaskFn = (id: string, patch: Partial<UploadTask>) => void
 
 interface UseFileUploadOptions {
-  /** 当某个 task 状态发生变化时调用（用于 setState） */
   onTaskUpdate: UpdateTaskFn
-  /** 新增 task（文件刚选中/拖入时） */
   onTaskAdd: (task: UploadTask) => void
-  /** 删除 task */
   onTaskRemove: (id: string) => void
 }
 
 export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFileUploadOptions) {
-  /**
-   * 存储每个 task 的 AbortController，用于取消/暂停请求
-   * key: taskId
-   */
   const controllersRef = useRef<Map<string, AbortController>>(new Map())
+  /** 串行管道：保证多文件按队列逐个完成上传+解析 */
+  const pipelineTailRef = useRef<Promise<void>>(Promise.resolve())
 
-  /** 校验文件并返回错误消息，合法返回 null */
   const validateFile = useCallback((file: File): string | null => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (!SUPPORTED_EXTS.has(ext as SupportedExtension)) {
@@ -57,7 +87,6 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
     return null
   }, [])
 
-  /** 初始化并添加一个 UploadTask（还未开始上传） */
   const initTask = useCallback(
     (file: File): UploadTask => {
       const task: UploadTask = {
@@ -74,72 +103,26 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
     [onTaskAdd],
   )
 
-  /**
-   * 轮询服务端解析状态
-   * 解析完成后提取需求点 + 敏感信息
-   */
-  const startPolling = useCallback(
-    (taskId: string, serverFileId: string) => {
-      let times = 0
-
-      const timer = setInterval(async () => {
-        times++
-        try {
-          const file = await filesApi.getFileById(serverFileId)
-
-          if (file.status === 'PARSED' && file.parsedContent) {
-            clearInterval(timer)
-            const text = file.parsedContent
-            const sensitiveMatches = detectSensitive(text)
-            const maskedText = maskText(text, sensitiveMatches)
-            const requirementPoints = extractRequirements(maskedText, file.originalName)
-
-            onTaskUpdate(taskId, {
-              status: 'parsed',
-              parsedText: text,
-              maskedText,
-              sensitiveMatches,
-              requirementPoints,
-              progress: 100,
-              pollingTimer: undefined,
-            })
-          } else if (file.status === 'FAILED') {
-            clearInterval(timer)
-            onTaskUpdate(taskId, {
-              status: 'error',
-              errorMessage: '服务端解析失败，请重试',
-              pollingTimer: undefined,
-            })
-          } else if (times >= POLL_MAX_TIMES) {
-            clearInterval(timer)
-            onTaskUpdate(taskId, {
-              status: 'error',
-              errorMessage: '解析超时，请稍后重试',
-              pollingTimer: undefined,
-            })
-          }
-        } catch {
-          if (times >= POLL_MAX_TIMES) {
-            clearInterval(timer)
-            onTaskUpdate(taskId, {
-              status: 'error',
-              errorMessage: '解析状态查询失败',
-              pollingTimer: undefined,
-            })
-          }
-        }
-      }, POLL_INTERVAL)
-
-      // 将 timer id 写入 task，以便外部取消
-      onTaskUpdate(taskId, { pollingTimer: timer, status: 'parsing' })
+  const applyParsed = useCallback(
+    (taskId: string, server: UploadedFile, displayFile: File) => {
+      const points = serverFileToRequirementPoints(server, displayFile.name)
+      const text = server.parsedContent ?? ''
+      const sensitiveMatches = detectSensitive(text)
+      const maskedText = maskText(text, sensitiveMatches)
+      onTaskUpdate(taskId, {
+        status: 'parsed',
+        parsedText: text,
+        maskedText,
+        sensitiveMatches,
+        requirementPoints: points,
+        progress: 100,
+        pollingTimer: undefined,
+      })
     },
     [onTaskUpdate],
   )
 
-  /**
-   * 执行普通上传（单文件 ≤ CHUNK_THRESHOLD）
-   */
-  const uploadNormal = useCallback(
+  const uploadNormalAsync = useCallback(
     async (task: UploadTask): Promise<void> => {
       const controller = new AbortController()
       controllersRef.current.set(task.id, controller)
@@ -152,32 +135,29 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
           controller.signal,
         )
         controllersRef.current.delete(task.id)
-        onTaskUpdate(task.id, { serverFileId: result.id, progress: 99 })
-        startPolling(task.id, result.id)
+        onTaskUpdate(task.id, { serverFileId: result.id, progress: 99, status: 'parsing' })
+        const parsed = await pollUntilParsed(result.id)
+        applyParsed(task.id, parsed, task.file)
       } catch (err: unknown) {
         controllersRef.current.delete(task.id)
-        if ((err as { name?: string }).name === 'CanceledError' ||
-            (err as { name?: string }).name === 'AbortError') {
-          // 用户主动取消，保持 paused 状态（外部已设置）
+        if ((err as { name?: string }).name === 'CanceledError' || (err as { name?: string }).name === 'AbortError') {
           return
         }
         onTaskUpdate(task.id, {
           status: 'error',
-          errorMessage: (err as Error).message || '上传失败，请重试',
+          errorMessage: (err as Error).message || '上传或解析失败',
+          pollingTimer: undefined,
         })
       }
     },
-    [onTaskUpdate, startPolling],
+    [onTaskUpdate, applyParsed],
   )
 
-  /**
-   * 执行分片上传（大文件 > CHUNK_THRESHOLD）
-   */
-  const uploadChunked = useCallback(
+  const uploadChunkedAsync = useCallback(
     async (task: UploadTask): Promise<void> => {
       const { file } = task
       const chunkTotal = Math.ceil(file.size / CHUNK_SIZE)
-      const fileId = task.id // 复用 task id 作为前端临时文件 id
+      const fileId = task.id
 
       const controller = new AbortController()
       controllersRef.current.set(task.id, controller)
@@ -185,58 +165,65 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
 
       try {
         for (let i = 0; i < chunkTotal; i++) {
-          // 检查是否被暂停/取消
           if (controller.signal.aborted) return
-
           const start = i * CHUNK_SIZE
           const end = Math.min(start + CHUNK_SIZE, file.size)
           const chunk = file.slice(start, end)
-
           await filesApi.uploadChunk(
             chunk,
             { fileId, chunkIndex: i, chunkTotal, chunkSize: CHUNK_SIZE, start, end },
             (percent) => {
-              // 当前分片进度 → 整体进度
               const overall = Math.round(((i + percent / 100) / chunkTotal) * 95)
               onTaskUpdate(task.id, { progress: overall })
             },
             controller.signal,
           )
         }
-
-        // 所有分片上传完毕，通知服务端合并
         const merged = await filesApi.mergeChunks(fileId, file.name, file.type)
         controllersRef.current.delete(task.id)
-        onTaskUpdate(task.id, { serverFileId: merged.id, progress: 99 })
-        startPolling(task.id, merged.id)
+        onTaskUpdate(task.id, { serverFileId: merged.id, progress: 99, status: 'parsing' })
+        const parsed = await pollUntilParsed(merged.id)
+        applyParsed(task.id, parsed, task.file)
       } catch (err: unknown) {
         controllersRef.current.delete(task.id)
-        if ((err as { name?: string }).name === 'CanceledError' ||
-            (err as { name?: string }).name === 'AbortError') {
+        if ((err as { name?: string }).name === 'CanceledError' || (err as { name?: string }).name === 'AbortError') {
           return
         }
         onTaskUpdate(task.id, {
           status: 'error',
-          errorMessage: (err as Error).message || '分片上传失败，请重试',
+          errorMessage: (err as Error).message || '分片上传失败',
+          pollingTimer: undefined,
         })
       }
     },
-    [onTaskUpdate, startPolling],
+    [onTaskUpdate, applyParsed],
   )
 
-  /** 开始上传（自动选择普通/分片模式） */
-  const startUpload = useCallback(
-    (task: UploadTask) => {
-      if (task.file.size > CHUNK_THRESHOLD) {
-        uploadChunked(task)
+  const prepareFile = useCallback(async (file: File): Promise<File> => {
+    if (!file.type.startsWith('image/')) return file
+    try {
+      return await compressImageIfNeeded(file)
+    } catch {
+      return file
+    }
+  }, [])
+
+  const runPipelineForTask = useCallback(
+    async (task: UploadTask) => {
+      const compressed = await prepareFile(task.file)
+      if (compressed !== task.file) {
+        onTaskUpdate(task.id, { file: compressed })
+      }
+      const t = compressed !== task.file ? { ...task, file: compressed } : task
+      if (t.file.size > CHUNK_THRESHOLD) {
+        await uploadChunkedAsync(t)
       } else {
-        uploadNormal(task)
+        await uploadNormalAsync(t)
       }
     },
-    [uploadNormal, uploadChunked],
+    [prepareFile, onTaskUpdate, uploadChunkedAsync, uploadNormalAsync],
   )
 
-  /** 暂停上传（中断当前请求，进度保留） */
   const pauseUpload = useCallback(
     (taskId: string) => {
       const ctrl = controllersRef.current.get(taskId)
@@ -249,26 +236,23 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
     [onTaskUpdate],
   )
 
-  /** 继续上传（从头重传，分片断点续传依赖服务端实现） */
   const resumeUpload = useCallback(
     (task: UploadTask) => {
-      startUpload(task)
+      pipelineTailRef.current = pipelineTailRef.current
+        .then(() => runPipelineForTask(task))
+        .catch(() => {})
     },
-    [startUpload],
+    [runPipelineForTask],
   )
 
-  /** 取消并删除 task */
   const cancelUpload = useCallback(
     (task: UploadTask) => {
-      // 中断进行中的请求
       const ctrl = controllersRef.current.get(task.id)
       if (ctrl) {
         ctrl.abort()
         controllersRef.current.delete(task.id)
       }
-      // 清除解析轮询
       if (task.pollingTimer) clearInterval(task.pollingTimer)
-      // 若已上传到服务端，删除远程文件
       if (task.serverFileId) {
         filesApi.deleteFile(task.serverFileId).catch(() => {})
       }
@@ -277,53 +261,55 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
     [onTaskRemove],
   )
 
-  /** 重试（仅限 error 状态） */
   const retryUpload = useCallback(
     (task: UploadTask) => {
-      // 如果已经上传但解析失败，直接重试解析
       if (task.serverFileId && task.status === 'error') {
-        onTaskUpdate(task.id, { status: 'parsing', errorMessage: undefined })
-        filesApi
-          .retryParse(task.serverFileId)
-          .then(() => startPolling(task.id, task.serverFileId!))
-          .catch((e) =>
-            onTaskUpdate(task.id, { status: 'error', errorMessage: e.message }),
-          )
+        onTaskUpdate(task.id, { status: 'parsing', errorMessage: undefined, progress: 99 })
+        pipelineTailRef.current = pipelineTailRef.current
+          .then(async () => {
+            await filesApi.retryParse(task.serverFileId!)
+            const parsed = await pollUntilParsed(task.serverFileId!)
+            applyParsed(task.id, parsed, task.file)
+          })
+          .catch((e) => {
+            onTaskUpdate(task.id, {
+              status: 'error',
+              errorMessage: (e as Error).message || '重试失败',
+            })
+          })
       } else {
-        // 上传就失败了，重新上传
         onTaskUpdate(task.id, {
           status: 'idle',
           progress: 0,
           errorMessage: undefined,
         })
-        startUpload(task)
+        pipelineTailRef.current = pipelineTailRef.current
+          .then(() => runPipelineForTask(task))
+          .catch(() => {})
       }
     },
-    [onTaskUpdate, startPolling, startUpload],
+    [onTaskUpdate, runPipelineForTask, applyParsed],
   )
 
-  /**
-   * 批量添加文件并立即开始上传
-   * @returns 被过滤掉的无效文件列表（及原因）
-   */
   const addFiles = useCallback(
     (files: File[]): Array<{ file: File; reason: string }> => {
       const rejected: Array<{ file: File; reason: string }> = []
 
-      files.forEach((file) => {
+      for (const file of files) {
         const err = validateFile(file)
         if (err) {
           rejected.push({ file, reason: err })
-          return
+          continue
         }
         const task = initTask(file)
-        // 微任务中启动上传，避免 React state 批次问题
-        setTimeout(() => startUpload(task), 0)
-      })
+        pipelineTailRef.current = pipelineTailRef.current
+          .then(() => runPipelineForTask(task))
+          .catch(() => {})
+      }
 
       return rejected
     },
-    [validateFile, initTask, startUpload],
+    [validateFile, initTask, runPipelineForTask],
   )
 
   return {

@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Query,
+  Body,
   UseInterceptors,
   UploadedFile,
   ParseFilePipe,
@@ -17,6 +18,7 @@ import { v4 as uuid } from 'uuid'
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger'
 import { FilesService } from './files.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { RestructureFileDto } from './dto/restructure-file.dto'
 
 @ApiTags('文件管理')
 @ApiBearerAuth()
@@ -55,6 +57,23 @@ export class FilesController {
     @Query('pageSize') pageSize = 10,
   ) {
     return this.filesService.getFileList(userId, +page, +pageSize)
+  }
+
+  /** 须放在 @Get(':id') 之前，避免被误匹配 */
+  @Post(':id/parse')
+  @ApiOperation({ summary: '重新解析文件' })
+  retryParse(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.retryParse(id, userId)
+  }
+
+  @Post(':id/restructure')
+  @ApiOperation({ summary: '根据编辑后的全文重新结构化需求' })
+  restructure(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: RestructureFileDto,
+  ) {
+    return this.filesService.restructureFromEditedText(id, userId, dto.text)
   }
 
   @Get(':id')

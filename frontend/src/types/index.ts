@@ -97,6 +97,10 @@ export interface UploadedFile {
   fileType: FileType
   status: FileStatus
   parsedContent?: string
+  /** 服务端解析失败原因 */
+  parseError?: string | null
+  /** 后端 LLM 结构化后的需求条目 */
+  structuredRequirements?: string[] | null
   uploaderId: string
   createdAt: string
 }

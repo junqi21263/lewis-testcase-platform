@@ -6,6 +6,15 @@ import { loadGenPrefs } from '@/utils/genPrefs'
 type GenerateStep = 'upload' | 'prompt' | 'generating' | 'result'
 type SourceType = 'file' | 'text' | 'url'
 
+/** 文档解析页「带入用例生成」一次性投递的数据（不在 localStorage 持久化） */
+export interface PendingGenerateHandoff {
+  filledPrompt: string
+  templateId: string | null
+  parseRecordId: string | null
+  fileIds: string[]
+  rawText: string
+}
+
 const defaultGenerationOptions: GenerationOptions = {
   testType: 'FUNCTIONAL',
   granularity: 'DETAILED',
@@ -61,6 +70,10 @@ interface GenerateState {
 
   updateCaseLocal: (id: string, patch: Partial<TestCase>) => void
 
+  /** 解析页设置、生成页首屏消费后清空 */
+  pendingGenerateHandoff: PendingGenerateHandoff | null
+  setPendingGenerateHandoff: (v: PendingGenerateHandoff | null) => void
+
   reset: () => void
 }
 
@@ -92,6 +105,7 @@ const buildInitial = (): Omit<
   | 'setQualityMeta'
   | 'setLastRecordId'
   | 'updateCaseLocal'
+  | 'setPendingGenerateHandoff'
   | 'reset'
 > => ({
   currentStep: 'upload',
@@ -110,6 +124,7 @@ const buildInitial = (): Omit<
   qualitySuggestions: null,
   isGenerating: false,
   streamContent: '',
+  pendingGenerateHandoff: null,
 })
 
 export const useGenerateStore = create<GenerateState>()(
@@ -148,6 +163,8 @@ export const useGenerateStore = create<GenerateState>()(
           ),
         })),
 
+      setPendingGenerateHandoff: (v) => set({ pendingGenerateHandoff: v }),
+
       reset: () =>
         set({
           ...buildInitial(),
@@ -182,6 +199,7 @@ export const useGenerateStore = create<GenerateState>()(
         lastRecordId: s.lastRecordId,
         qualityScore: s.qualityScore,
         qualitySuggestions: s.qualitySuggestions,
+        // pendingGenerateHandoff 故意不持久化
       }),
     },
   ),
