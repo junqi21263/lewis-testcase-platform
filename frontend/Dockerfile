@@ -1,5 +1,5 @@
-# 构建阶段
-FROM node:20-alpine AS build
+# 构建阶段（与 backend 一致：优先 Public ECR，减少 Docker Hub 拉取失败）
+FROM public.ecr.aws/docker/library/node:20-alpine AS build
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # 生产阶段
-FROM nginx:alpine
+FROM public.ecr.aws/docker/library/nginx:alpine
 
 # 复制构建产物
 COPY --from=build /app/dist /usr/share/nginx/html
