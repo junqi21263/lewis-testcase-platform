@@ -30,6 +30,10 @@ if [ "$RUN_MIGRATE_AT_START" = "1" ]; then
   echo "[start] Running prisma migrate deploy... ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
   if ! pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma; then
     echo "[start] ERROR: prisma migrate deploy 失败。请检查 DATABASE_URL 与迁移历史。"
+    echo "[start] 若日志为 P3009：在 Railway Variables 临时设置其一（无空格逗号列表），重部署后删除变量："
+    echo "[start]   PRISMA_RESOLVE_ROLLED_BACK=20260415193000_generation_record_extended_audit_share_export  （需让 Prisma 再跑一次该迁移）"
+    echo "[start]   或 PRISMA_RESOLVE_APPLIED=同上迁移名  （库结构已对齐，仅修正迁移状态）"
+    echo "[start] 详见 https://pris.ly/d/migrate-resolve 与 backend/prisma-resolve-stuck-migrations.sh"
     exit 1
   fi
   echo "[start] prisma migrate deploy 完成 ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
