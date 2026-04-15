@@ -10,15 +10,26 @@ export const DEFAULT_BROWSER_ORIGINS = [
   'https://lewis-testcase-platform-xyqvs7bh.edgeone.cool',
 ] as const
 
+function normalizeOrigin(origin: string): string {
+  const trimmed = origin.trim().replace(/\/+$/, '')
+  try {
+    const u = new URL(trimmed)
+    // keep protocol + host(:port); drop path/query/hash
+    return `${u.protocol}//${u.host}`
+  } catch {
+    return trimmed
+  }
+}
+
 export function buildCorsOrigins(): string[] {
-  const origins = new Set<string>([...DEFAULT_BROWSER_ORIGINS])
+  const origins = new Set<string>([...DEFAULT_BROWSER_ORIGINS].map(normalizeOrigin))
   const extra = process.env.FRONTEND_URL?.trim()
-  if (extra) origins.add(extra)
+  if (extra) origins.add(normalizeOrigin(extra))
   const csv = process.env.CORS_ORIGINS?.trim()
   if (csv) {
     for (const part of csv.split(',')) {
       const o = part.trim()
-      if (o) origins.add(o)
+      if (o) origins.add(normalizeOrigin(o))
     }
   }
   return [...origins]
@@ -35,19 +46,20 @@ export function corsOriginDelegate(): (
       callback(null, true)
       return
     }
-    if (staticList.includes(origin)) {
-      callback(null, origin)
+    const normalized = normalizeOrigin(origin)
+    if (staticList.includes(normalized)) {
+      callback(null, normalized)
       return
     }
     try {
-      const { hostname } = new URL(origin)
+      const { hostname, protocol, host } = new URL(normalized)
       const edgeOne =
         hostname.endsWith('.edgeone.cool') ||
         hostname.endsWith('.edgeone.site') ||
         hostname === 'edgeone.cool' ||
         hostname === 'edgeone.site'
       if (edgeOne) {
-        callback(null, origin)
+        callback(null, `${protocol}//${host}`)
         return
       }
     } catch {
