@@ -45,6 +45,12 @@ const VISION_STRUCTURE_SYSTEM = `# 角色
 const VISION_NO_RESULT_HINT =
   '未识别到有效业务需求，请检查上传内容或手动输入需求'
 
+/** PDF 首页走视觉链路时的结果（供上层区分转图失败与接口失败） */
+export type PdfFirstPageVisionOutcome =
+  | { outcome: 'success'; text: string; modelName: string }
+  | { outcome: 'pdf_render'; error: string }
+  | { outcome: 'vision_api'; error: string }
+
 @Injectable()
 export class DocumentVisionService {
   private readonly logger = new Logger(DocumentVisionService.name)
@@ -183,33 +189,46 @@ export class DocumentVisionService {
     }
   }
 
-  async renderPdfFirstPagePng(pdfPath: string): Promise<Buffer | null> {
+  /** 将 PDF 首页渲成 PNG；失败时返回 error 文案（会进入 parseError 便于排障） */
+  async renderPdfFirstPagePng(pdfPath: string): Promise<{ buffer: Buffer } | { error: string }> {
+    const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')
+    const scale = Math.min(Math.max(parseFloat(scaleRaw || '1.2') || 1.2, 0.5), 3)
     try {
       const { pdf } = await import('pdf-to-img')
-      const document = await pdf(pdfPath, { scale: 1.5 })
+      const document = await pdf(pdfPath, { scale })
       for await (const image of document) {
-        return Buffer.from(image)
+        return { buffer: Buffer.from(image) }
       }
+      return { error: 'PDF 无页面或渲染未产出图像' }
     } catch (e) {
-      this.logger.warn(
-        `PDF 转图失败（部署环境需允许安装/构建 canvas，见 README）: ${(e as Error).message}`,
-      )
+      const msg = e instanceof Error ? e.message : String(e)
+      this.logger.warn(`PDF 转图失败（canvas/pdfjs，scale=${scale}）: ${msg}`)
+      return { error: msg }
     }
-    return null
   }
 
-  async transcribePdfFirstPageVision(pdfPath: string): Promise<{ text: string; modelName: string } | null> {
+  async transcribePdfFirstPageVision(pdfPath: string): Promise<PdfFirstPageVisionOutcome> {
     const png = await this.renderPdfFirstPagePng(pdfPath)
-    if (!png) return null
+    if ('error' in png) {
+      return { outcome: 'pdf_render', error: png.error }
+    }
     const cfg = await this.resolveVisionModel()
-    if (!cfg) return null
+    if (!cfg) {
+      return {
+        outcome: 'vision_api',
+        error: '视觉模型在转图后不可用（请确认模型仍启用且已配置有效 API Key）',
+      }
+    }
     try {
-      const text = await this.transcribeImageBuffer(cfg, png, 'image/png')
-      if (!text) return null
-      return { text, modelName: cfg.name }
+      const text = await this.transcribeImageBuffer(cfg, png.buffer, 'image/png')
+      if (!text) {
+        return { outcome: 'vision_api', error: '视觉模型返回内容为空' }
+      }
+      return { text, modelName: cfg.name, outcome: 'success' }
     } catch (e) {
-      this.logger.warn(`PDF 首页视觉解析失败: ${(e as Error).message}`)
-      return null
+      const msg = e instanceof Error ? e.message : String(e)
+      this.logger.warn(`PDF 首页视觉解析失败: ${msg}`)
+      return { outcome: 'vision_api', error: msg }
     }
   }
 }

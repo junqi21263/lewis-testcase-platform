@@ -7,6 +7,7 @@ WORKDIR /app
 ENV HOST=0.0.0.0
 
 # openssl：Prisma；cairo/pango 等：node-canvas（pdf-to-img 将扫描版 PDF 首页渲成图再走视觉模型）
+# fontconfig + CJK：pdf.js + node-canvas 渲染含中文/繁体 PDF 时常需系统字体，否则可能空白或异常
 RUN apk add --no-cache \
   openssl \
   python3 \
@@ -19,7 +20,9 @@ RUN apk add --no-cache \
   pixman-dev \
   pangomm-dev \
   libjpeg-turbo-dev \
-  freetype-dev
+  freetype-dev \
+  fontconfig \
+  font-noto-cjk
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 

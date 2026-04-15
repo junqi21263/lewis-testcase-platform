@@ -162,11 +162,14 @@ export class FilesService {
     const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
 
     let visionBlock = ''
+    let pdfVisionOutcome: Awaited<
+      ReturnType<DocumentVisionService['transcribePdfFirstPageVision']>
+    > | null = null
     const hasVision = !!(await this.documentVision.resolveVisionModel())
     if (hasVision && (text.trim().length < minLen || forceVision)) {
-      const r = await this.documentVision.transcribePdfFirstPageVision(filePath)
-      if (r?.text) {
-        visionBlock = `【PDF 首页视觉理解｜${r.modelName}】\n${r.text.trim()}`
+      pdfVisionOutcome = await this.documentVision.transcribePdfFirstPageVision(filePath)
+      if (pdfVisionOutcome.outcome === 'success') {
+        visionBlock = `【PDF 首页视觉理解｜${pdfVisionOutcome.modelName}】\n${pdfVisionOutcome.text.trim()}`
       }
     }
 
@@ -181,8 +184,16 @@ export class FilesService {
         '【解析失败】PDF 几乎无可选中文本层（多为扫描件）。请在「系统设置 → AI 模型」中配置支持视觉的模型并勾选「文档视觉解析」，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID；服务器部署还需成功编译 node-canvas（Dockerfile 已含 cairo 等依赖）。'
       )
     }
+    if (pdfVisionOutcome?.outcome === 'pdf_render') {
+      const hint =
+        '容器内需中文字体与 cairo/pango 运行时库（镜像已尽量预装）；可尝试调低环境变量 VISION_PDF_RENDER_SCALE（如 1.0）或查看日志「PDF 转图失败」。'
+      return `【解析失败】PDF 首页转图失败：${pdfVisionOutcome.error}。${hint}`
+    }
+    if (pdfVisionOutcome?.outcome === 'vision_api') {
+      return `【解析失败】视觉模型调用失败：${pdfVisionOutcome.error}。请检查 baseUrl、modelId、Key 及多模态是否对该模型可用。`
+    }
     return (
-      '【解析失败】已配置视觉模型，但 PDF 首页转图失败或视觉接口未返回有效内容。请查看服务日志中的「PDF 转图」/ 视觉调用错误；确认镜像构建时允许编译 canvas（package.json 中 pnpm.onlyBuiltDependencies 含 canvas）。'
+      '【解析失败】已配置视觉模型，但未得到可用的首页理解结果。请查看服务日志中的「PDF 转图」/ 视觉调用详情；确认镜像已编译 canvas（pnpm.onlyBuiltDependencies 含 canvas）。'
     )
   }
 
