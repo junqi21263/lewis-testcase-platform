@@ -210,7 +210,13 @@ export interface TestSuite {
 
 // ==================== 生成记录 ====================
 
-export type GenerationStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED'
+export type GenerationStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'ARCHIVED'
+  | 'CANCELLED'
 
 export interface GenerationRecord {
   id: string
@@ -223,13 +229,16 @@ export interface GenerationRecord {
   caseCount: number
   suiteId?: string
   fileId?: string
+  templateId?: string | null
   creatorId: string
   creator?: User
   errorMessage?: string
   duration?: number
   tokensUsed?: number
+  deletedAt?: string | null
   createdAt: string
   updatedAt: string
+  suite?: { id: string; name: string }
 }
 
 // ==================== 下载记录 ====================

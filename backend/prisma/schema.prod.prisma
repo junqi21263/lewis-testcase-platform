@@ -72,6 +72,8 @@ enum GenerationStatus {
   PROCESSING
   SUCCESS
   FAILED
+  ARCHIVED
+  CANCELLED
 }
 
 enum ExportFormat {
@@ -294,6 +296,7 @@ model GenerationRecord {
   fileId       String?
   templateId   String?
   creatorId    String
+  deletedAt    DateTime?
 
   creator  User            @relation(fields: [creatorId], references: [id])
   suite    TestSuite?      @relation(fields: [suiteId], references: [id])
@@ -303,6 +306,7 @@ model GenerationRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([creatorId, deletedAt])
   @@map("generation_records")
 }
 
