@@ -309,6 +309,10 @@ model AIModelConfig {
   maxTokens   Int     @default(4096)
   temperature Float   @default(0.7)
   isActive    Boolean @default(true)
+  /// 是否支持多模态（image_url），用于文档视觉解析与说明
+  supportsVision Boolean @default(false)
+  /// 全局唯一：上传图片/PDF 走视觉理解时的专用模型（与生成用例模型可不同）
+  useForDocumentVisionParse Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

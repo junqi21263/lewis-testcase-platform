@@ -112,6 +112,8 @@ export interface AIModel {
   isDefault: boolean
   maxTokens: number
   temperature: number
+  supportsVision?: boolean
+  useForDocumentVisionParse?: boolean
 }
 
 export interface AIGenerateParams {

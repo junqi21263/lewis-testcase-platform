@@ -5,6 +5,8 @@ export interface RuntimeHints {
   maxFileSizeBytes: number
   throttleTtlSec: number
   throttleLimit: number
+  visionPdfMinTextChars?: number
+  visionPdfAlways?: boolean
 }
 
 export interface AIModelAdmin {
@@ -17,6 +19,8 @@ export interface AIModelAdmin {
   temperature: number
   isDefault: boolean
   isActive: boolean
+  supportsVision: boolean
+  useForDocumentVisionParse: boolean
   hasApiKey: boolean
   createdAt: string
   updatedAt: string
@@ -32,6 +36,8 @@ export interface CreateAiModelPayload {
   temperature?: number
   isDefault?: boolean
   isActive?: boolean
+  supportsVision?: boolean
+  useForDocumentVisionParse?: boolean
 }
 
 export type UpdateAiModelPayload = Partial<

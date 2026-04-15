@@ -22,6 +22,8 @@ export class SettingsService {
       temperature: r.temperature,
       isDefault: r.isDefault,
       isActive: r.isActive,
+      supportsVision: r.supportsVision,
+      useForDocumentVisionParse: r.useForDocumentVisionParse,
       hasApiKey: !!(r.apiKey && r.apiKey.length > 0 && r.apiKey !== 'placeholder'),
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -36,6 +38,8 @@ export class SettingsService {
       maxFileSizeBytes: raw,
       throttleTtlSec: parseInt(process.env.THROTTLE_TTL || '60', 10),
       throttleLimit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
+      visionPdfMinTextChars: parseInt(process.env.VISION_PDF_MIN_TEXT_CHARS || '120', 10),
+      visionPdfAlways: process.env.VISION_PDF_ALWAYS === '1',
     }
   }
 
@@ -53,6 +57,16 @@ export class SettingsService {
     })
   }
 
+  /** 全局仅允许一个「文档视觉解析」专用模型 */
+  private async ensureSingleVisionParse(exceptId?: string) {
+    await this.prisma.aIModelConfig.updateMany({
+      where: exceptId
+        ? { useForDocumentVisionParse: true, id: { not: exceptId } }
+        : { useForDocumentVisionParse: true },
+      data: { useForDocumentVisionParse: false },
+    })
+  }
+
   async createAiModel(dto: CreateAiModelSettingsDto) {
     const baseUrl = normalizeBaseUrl(dto.baseUrl)
     const activeDefaultCount = await this.prisma.aIModelConfig.count({
@@ -61,6 +75,7 @@ export class SettingsService {
     let isDefault = dto.isDefault ?? false
     if (!isDefault && activeDefaultCount === 0) isDefault = true
     if (isDefault) await this.ensureSingleDefault()
+    if (dto.useForDocumentVisionParse) await this.ensureSingleVisionParse()
     const row = await this.prisma.aIModelConfig.create({
       data: {
         name: dto.name.trim(),
@@ -72,6 +87,8 @@ export class SettingsService {
         temperature: dto.temperature ?? 0.7,
         isDefault,
         isActive: dto.isActive ?? true,
+        supportsVision: dto.supportsVision ?? false,
+        useForDocumentVisionParse: dto.useForDocumentVisionParse ?? false,
       },
     })
     return this.mapToAdminView(row)
@@ -85,6 +102,7 @@ export class SettingsService {
       throw new BadRequestException('无法将已停用模型设为默认')
     }
     if (dto.isDefault === true) await this.ensureSingleDefault(id)
+    if (dto.useForDocumentVisionParse === true) await this.ensureSingleVisionParse(id)
 
     const data: Record<string, unknown> = {}
     if (dto.name !== undefined) data.name = dto.name.trim()
@@ -98,6 +116,10 @@ export class SettingsService {
     if (dto.isActive === false && existing.isDefault) data.isDefault = false
     if (dto.apiKey !== undefined && dto.apiKey.trim() !== '') {
       data.apiKey = dto.apiKey.trim()
+    }
+    if (dto.supportsVision !== undefined) data.supportsVision = dto.supportsVision
+    if (dto.useForDocumentVisionParse !== undefined) {
+      data.useForDocumentVisionParse = dto.useForDocumentVisionParse
     }
 
     const result = await this.prisma.aIModelConfig.update({ where: { id }, data })

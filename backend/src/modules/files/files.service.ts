@@ -9,6 +9,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { FileStatus, FileType } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
+import { DocumentVisionService } from './document-vision.service'
 
 @Injectable()
 export class FilesService {
@@ -18,9 +19,9 @@ export class FilesService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private documentVision: DocumentVisionService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
-    // 确保上传目录存在
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true })
     }
@@ -43,16 +44,20 @@ export class FilesService {
       },
     })
 
-    // 异步解析文件内容
-    this.parseFileAsync(record.id, file.path, fileType).catch((err) =>
+    this.parseFileAsync(record.id, file.path, fileType, file.mimetype).catch((err) =>
       this.logger.error(`文件解析失败: ${record.id}`, err),
     )
 
     return record
   }
 
-  /** 异步解析文件内容 */
-  private async parseFileAsync(fileId: string, filePath: string, fileType: FileType) {
+  /** 异步解析文件内容（图片/PDF 优先多模态视觉理解，再 OCR/文本提取） */
+  private async parseFileAsync(
+    fileId: string,
+    filePath: string,
+    fileType: FileType,
+    mimeType: string,
+  ) {
     await this.prisma.uploadedFile.update({ where: { id: fileId }, data: { status: FileStatus.PARSING } })
 
     try {
@@ -60,7 +65,7 @@ export class FilesService {
 
       switch (fileType) {
         case FileType.PDF:
-          content = await this.parsePdf(filePath)
+          content = await this.parsePdfWithVisionFallback(filePath)
           break
         case FileType.WORD:
           content = await this.parseWord(filePath)
@@ -75,7 +80,7 @@ export class FilesService {
           content = fs.readFileSync(filePath, 'utf-8')
           break
         case FileType.IMAGE:
-          content = await this.parseImageOCR(filePath)
+          content = await this.parseImageVisionThenOcr(filePath, mimeType)
           break
         default:
           content = '不支持的文件格式'
@@ -93,6 +98,65 @@ export class FilesService {
       })
       throw err
     }
+  }
+
+  /** 图片：视觉模型理解 + Tesseract OCR 辅助 */
+  private async parseImageVisionThenOcr(filePath: string, mimeType: string): Promise<string> {
+    const vision = await this.documentVision.transcribeImageFileAuto(filePath, mimeType)
+    let ocr = ''
+    try {
+      ocr = await this.parseImageOCR(filePath)
+    } catch (e) {
+      this.logger.warn(`OCR 失败: ${(e as Error).message}`)
+    }
+
+    if (vision?.text) {
+      let body = `【多模态视觉理解｜${vision.modelName}】\n${vision.text.trim()}`
+      if (ocr.trim() && ocr.trim() !== vision.text.trim()) {
+        body += `\n\n【OCR 辅助（Tesseract）】\n${ocr.trim()}`
+      }
+      return body
+    }
+
+    if (ocr.trim()) {
+      return `【OCR｜Tesseract】\n${ocr.trim()}`
+    }
+
+    return (
+      '【解析失败】未配置可用的视觉解析模型，且 OCR 无结果。请在「系统设置」中为支持 image 的模型勾选「支持视觉」并指定「文档视觉解析」模型，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID。'
+    )
+  }
+
+  /** PDF：先文本提取；文本过少或强制开关时，对首页做视觉理解 */
+  private async parsePdfWithVisionFallback(filePath: string): Promise<string> {
+    let text = ''
+    try {
+      text = await this.parsePdf(filePath)
+    } catch (e) {
+      this.logger.warn(`pdf-parse 失败: ${(e as Error).message}`)
+    }
+
+    const minLen = parseInt(this.config.get<string>('VISION_PDF_MIN_TEXT_CHARS') || '120', 10)
+    const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
+
+    let visionBlock = ''
+    const hasVision = !!(await this.documentVision.resolveVisionModel())
+    if (hasVision && (text.trim().length < minLen || forceVision)) {
+      const r = await this.documentVision.transcribePdfFirstPageVision(filePath)
+      if (r?.text) {
+        visionBlock = `【PDF 首页视觉理解｜${r.modelName}】\n${r.text.trim()}`
+      }
+    }
+
+    if (visionBlock && text.trim()) {
+      return `${visionBlock}\n\n---\n【PDF 文本提取】\n${text.trim()}`
+    }
+    if (visionBlock) return visionBlock
+    if (text.trim()) return `【PDF 文本提取】\n${text.trim()}`
+
+    return (
+      '【解析失败】PDF 未提取到文本，且视觉理解未返回内容（扫描件需配置视觉模型；若部署未构建 canvas，PDF 转图会失败，见部署说明）。'
+    )
   }
 
   private async parsePdf(filePath: string): Promise<string> {
@@ -122,7 +186,9 @@ export class FilesService {
 
   private async parseImageOCR(filePath: string): Promise<string> {
     const Tesseract = require('tesseract.js')
-    const { data: { text } } = await Tesseract.recognize(filePath, 'chi_sim+eng')
+    const {
+      data: { text },
+    } = await Tesseract.recognize(filePath, 'chi_sim+eng')
     return text
   }
 
@@ -159,7 +225,6 @@ export class FilesService {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
 
-    // 删除物理文件
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
 
     await this.prisma.uploadedFile.delete({ where: { id } })

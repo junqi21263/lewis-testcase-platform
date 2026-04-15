@@ -67,6 +67,19 @@ export class CreateAiModelSettingsDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean
+
+  @ApiProperty({ required: false, description: '是否支持多模态（image_url），用于文档视觉解析' })
+  @IsOptional()
+  @IsBoolean()
+  supportsVision?: boolean
+
+  @ApiProperty({
+    required: false,
+    description: '作为上传图片/PDF 视觉理解的专用模型（全局仅可启用一个）',
+  })
+  @IsOptional()
+  @IsBoolean()
+  useForDocumentVisionParse?: boolean
 }
 
 export class UpdateAiModelSettingsDto {
@@ -129,4 +142,14 @@ export class UpdateAiModelSettingsDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  supportsVision?: boolean
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  useForDocumentVisionParse?: boolean
 }

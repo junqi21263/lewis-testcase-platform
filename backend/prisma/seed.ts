@@ -42,7 +42,10 @@ async function main() {
   // 创建内置 AI 模型配置
   await prisma.aIModelConfig.upsert({
     where: { id: 'gpt-4o-default' },
-    update: {},
+    update: {
+      supportsVision: true,
+      useForDocumentVisionParse: true,
+    },
     create: {
       id: 'gpt-4o-default',
       name: 'GPT-4o',
@@ -53,6 +56,8 @@ async function main() {
       isDefault: true,
       maxTokens: 4096,
       temperature: 0.7,
+      supportsVision: true,
+      useForDocumentVisionParse: true,
     },
   })
   console.log('✅ 默认 AI 模型配置创建成功')

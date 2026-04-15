@@ -50,6 +50,8 @@ const emptyCreateForm = {
   maxTokens: 4096,
   temperature: 0.7,
   isDefault: false,
+  supportsVision: false,
+  useForDocumentVisionParse: false,
 }
 
 export default function SettingsPage() {
@@ -197,6 +199,8 @@ export default function SettingsPage() {
         temperature: createForm.temperature,
         isDefault: createForm.isDefault,
         isActive: true,
+        supportsVision: createForm.supportsVision,
+        useForDocumentVisionParse: createForm.useForDocumentVisionParse,
       })
       toast.success('模型已添加')
       setCreateForm(emptyCreateForm)
@@ -218,6 +222,8 @@ export default function SettingsPage() {
       temperature: m.temperature,
       isActive: m.isActive,
       isDefault: m.isDefault,
+      supportsVision: m.supportsVision,
+      useForDocumentVisionParse: m.useForDocumentVisionParse,
       apiKey: '',
     })
   }
@@ -233,6 +239,8 @@ export default function SettingsPage() {
         temperature: editDraft.temperature,
         isActive: editDraft.isActive,
         isDefault: editDraft.isDefault,
+        supportsVision: editDraft.supportsVision,
+        useForDocumentVisionParse: editDraft.useForDocumentVisionParse,
         ...(editDraft.apiKey?.trim() ? { apiKey: editDraft.apiKey.trim() } : {}),
       })
       toast.success('已保存')
@@ -384,6 +392,15 @@ export default function SettingsPage() {
                     {runtime.throttleLimit} 次 / {runtime.throttleTtlSec} 秒
                   </p>
                 </div>
+                {typeof runtime.visionPdfMinTextChars === 'number' && (
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-muted-foreground mb-0.5">PDF 视觉补充阈值</p>
+                    <p className="font-medium text-xs">
+                      提取文本少于 {runtime.visionPdfMinTextChars} 字时尝试首页视觉
+                      {runtime.visionPdfAlways ? '（已强制对所有 PDF 尝试视觉）' : ''}
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -526,6 +543,24 @@ export default function SettingsPage() {
                 />
                 设为默认模型
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={createForm.supportsVision}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, supportsVision: e.target.checked }))}
+                />
+                支持视觉（多模态 image_url，用于上传图/PDF 解析）
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={createForm.useForDocumentVisionParse}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, useForDocumentVisionParse: e.target.checked }))
+                  }
+                />
+                作为「文档视觉解析」专用模型（全局仅选一个；与生成用例的默认模型可不同）
+              </label>
               <Button size="sm" onClick={submitCreate}>
                 创建
               </Button>
@@ -559,6 +594,16 @@ export default function SettingsPage() {
                     <Badge variant="outline" className="text-xs">
                       Key: {model.hasApiKey ? '已配置' : '未配置'}
                     </Badge>
+                    {model.supportsVision && (
+                      <Badge variant="secondary" className="text-xs">
+                        视觉
+                      </Badge>
+                    )}
+                    {model.useForDocumentVisionParse && (
+                      <Badge className="text-xs bg-violet-600 text-white hover:bg-violet-600">
+                        文档视觉解析
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     {admin && model.isActive && !model.isDefault && (
@@ -640,6 +685,29 @@ export default function SettingsPage() {
                         onChange={(e) => setEditDraft((d) => ({ ...d, isDefault: e.target.checked }))}
                       />
                       设为默认
+                    </label>
+                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={!!editDraft.supportsVision}
+                        onChange={(e) =>
+                          setEditDraft((d) => ({ ...d, supportsVision: e.target.checked }))
+                        }
+                      />
+                      支持视觉（多模态）
+                    </label>
+                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={!!editDraft.useForDocumentVisionParse}
+                        onChange={(e) =>
+                          setEditDraft((d) => ({
+                            ...d,
+                            useForDocumentVisionParse: e.target.checked,
+                          }))
+                        }
+                      />
+                      文档视觉解析专用（全局仅一个）
                     </label>
                     <div className="flex gap-2 sm:col-span-2">
                       <Button size="sm" onClick={() => saveEdit(model.id)}>

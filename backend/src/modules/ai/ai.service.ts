@@ -189,7 +189,18 @@ export class AiService {
   async getModels() {
     const models = await this.prisma.aIModelConfig.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, provider: true, modelId: true, baseUrl: true, isDefault: true, maxTokens: true, temperature: true },
+      select: {
+        id: true,
+        name: true,
+        provider: true,
+        modelId: true,
+        baseUrl: true,
+        isDefault: true,
+        maxTokens: true,
+        temperature: true,
+        supportsVision: true,
+        useForDocumentVisionParse: true,
+      },
     })
     return models
   }

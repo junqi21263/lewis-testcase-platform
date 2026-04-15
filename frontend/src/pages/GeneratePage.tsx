@@ -138,7 +138,9 @@ function FileUploadZone() {
         <>
           <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
           <p className="font-medium text-sm">拖拽文件到此处，或点击选择</p>
-          <p className="text-xs text-muted-foreground mt-1">支持 PDF、Word、Excel、YAML、图片（OCR）</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            支持 PDF、Word、Excel、YAML、图片；图片与「文本过少的 PDF」可在系统设置中配置多模态模型做视觉理解后再生成用例
+          </p>
         </>
       )}
     </div>
