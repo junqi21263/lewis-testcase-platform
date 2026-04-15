@@ -3,6 +3,8 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
@@ -17,9 +19,11 @@ import { v4 as uuid } from 'uuid'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
 
 @Injectable()
-export class FilesService {
+export class FilesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FilesService.name)
   private readonly uploadDir: string
+  private parseWorkerTimer?: NodeJS.Timeout
+  private parseWorkerRunning = false
 
   private isNotFoundUpdateError(err: unknown) {
     return err instanceof PrismaClientKnownRequestError && err.code === 'P2025'
@@ -35,6 +39,67 @@ export class FilesService {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true })
     }
+  }
+
+  onModuleInit() {
+    // 后台解析 worker：扫描 PENDING 文件并解析（避免进程重启导致 parseFileAsync 丢失）
+    const enabled = this.config.get<string>('FILE_PARSE_WORKER_ENABLED') !== '0'
+    if (!enabled) {
+      this.logger.warn('FILE_PARSE_WORKER_ENABLED=0，后台解析 worker 已关闭')
+      return
+    }
+    const intervalMs = parseInt(this.config.get<string>('FILE_PARSE_WORKER_INTERVAL_MS') || '1500', 10)
+    const ms = Number.isFinite(intervalMs) && intervalMs > 300 ? intervalMs : 1500
+    this.parseWorkerTimer = setInterval(() => void this.tickParseWorker(), ms)
+    this.logger.log(`后台解析 worker 已启动（interval=${ms}ms）`)
+  }
+
+  onModuleDestroy() {
+    if (this.parseWorkerTimer) clearInterval(this.parseWorkerTimer)
+  }
+
+  private async tickParseWorker() {
+    if (this.parseWorkerRunning) return
+    this.parseWorkerRunning = true
+    try {
+      const claimed = await this.claimNextPendingFile()
+      if (!claimed) return
+      await this.parseFileAsync(claimed.id, claimed.path, claimed.fileType, claimed.mimeType)
+    } catch (e) {
+      this.logger.error('后台解析 worker tick 失败', e as Error)
+    } finally {
+      this.parseWorkerRunning = false
+    }
+  }
+
+  private async claimNextPendingFile(): Promise<{
+    id: string
+    path: string
+    fileType: FileType
+    mimeType: string
+  } | null> {
+    // 只认领 PENDING；避免并发争抢，用 updateMany 做原子认领
+    const next = await this.prisma.uploadedFile.findFirst({
+      where: { status: FileStatus.PENDING },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, path: true, fileType: true, mimeType: true },
+    })
+    if (!next) return null
+
+    const now = new Date()
+    const updated = await this.prisma.uploadedFile.updateMany({
+      where: { id: next.id, status: FileStatus.PENDING },
+      data: {
+        status: FileStatus.PARSING,
+        parseStage: 'CLAIMED',
+        parseStartedAt: now,
+        lastHeartbeatAt: now,
+        parseAttempts: { increment: 1 },
+        parseError: null,
+      },
+    })
+    if (updated.count !== 1) return null
+    return next
   }
 
   /** 保存上传记录并触发异步解析 */
@@ -60,6 +125,7 @@ export class FilesService {
         mimeType: file.mimetype,
         fileType,
         status: FileStatus.PENDING,
+        parseStage: 'PENDING',
         uploaderId,
       },
     })
@@ -72,14 +138,10 @@ export class FilesService {
           : `【解析失败】上传文件为空（0 bytes）：${file.path}。请重试上传。`
       await this.prisma.uploadedFile.update({
         where: { id: record.id },
-        data: { status: FileStatus.FAILED, parseError: msg },
+        data: { status: FileStatus.FAILED, parseError: msg, parseStage: 'UPLOAD_CHECK' },
       })
       return this.getFileById(record.id)
     }
-
-    this.parseFileAsync(record.id, file.path, fileType, file.mimetype).catch((err) =>
-      this.logger.error(`文件解析失败: ${record.id}`, err),
-    )
 
     return record
   }
@@ -91,17 +153,16 @@ export class FilesService {
     fileType: FileType,
     mimeType: string,
   ) {
-    try {
-      await this.prisma.uploadedFile.update({
-        where: { id: fileId },
-        data: { status: FileStatus.PARSING },
-      })
-    } catch (e) {
-      if (this.isNotFoundUpdateError(e)) {
-        this.logger.warn(`文件记录已不存在，跳过解析: ${fileId}`)
-        return
+    const heartbeat = async (stage: string) => {
+      try {
+        await this.prisma.uploadedFile.update({
+          where: { id: fileId },
+          data: { lastHeartbeatAt: new Date(), parseStage: stage },
+        })
+      } catch (e) {
+        if (this.isNotFoundUpdateError(e)) return
+        throw e
       }
-      throw e
     }
 
     try {
@@ -115,24 +176,31 @@ export class FilesService {
       if (st.size < 1) {
         throw new Error(`【解析失败】本地文件为空（0 bytes）：${filePath}。请重新上传。`)
       }
+      await heartbeat('FILE_OK')
 
       switch (fileType) {
         case FileType.PDF:
+          await heartbeat('PDF')
           content = await this.parsePdfWithVisionFallback(filePath)
           break
         case FileType.WORD:
+          await heartbeat('WORD')
           content = await this.parseWord(filePath)
           break
         case FileType.EXCEL:
+          await heartbeat('EXCEL')
           content = await this.parseExcel(filePath)
           break
         case FileType.YAML:
+          await heartbeat('YAML')
           content = fs.readFileSync(filePath, 'utf-8')
           break
         case FileType.TEXT:
+          await heartbeat('TEXT')
           content = fs.readFileSync(filePath, 'utf-8')
           break
         case FileType.IMAGE:
+          await heartbeat('IMAGE')
           content = await this.parseImageVisionThenOcr(filePath, mimeType)
           break
         default:
@@ -144,6 +212,7 @@ export class FilesService {
         throw new Error(trimmed || '内容为空，无法完成解析')
       }
 
+      await heartbeat('STRUCTURE')
       const masked = maskSensitivePlainText(content)
       const { requirements: structured, cleanedText } =
         await this.requirementStructure.structureRequirements(masked)
@@ -157,6 +226,9 @@ export class FilesService {
           structuredRequirements: structured as Prisma.InputJsonValue,
           status: FileStatus.PARSED,
           parseError: null,
+          parseStage: 'DONE',
+          parseFinishedAt: new Date(),
+          lastHeartbeatAt: new Date(),
         },
       })
       this.logger.log(`文件解析完成: ${fileId}`)
@@ -165,7 +237,13 @@ export class FilesService {
       try {
         await this.prisma.uploadedFile.update({
           where: { id: fileId },
-          data: { status: FileStatus.FAILED, parseError: msg },
+          data: {
+            status: FileStatus.FAILED,
+            parseError: msg,
+            parseStage: 'FAILED',
+            parseFinishedAt: new Date(),
+            lastHeartbeatAt: new Date(),
+          },
         })
       } catch (e) {
         if (this.isNotFoundUpdateError(e)) {
@@ -359,15 +437,12 @@ export class FilesService {
       where: { id },
       data: {
         status: FileStatus.PENDING,
+        parseStage: 'PENDING',
         parseError: null,
         parsedContent: null,
         structuredRequirements: Prisma.DbNull,
       },
     })
-
-    this.parseFileAsync(file.id, file.path, file.fileType, file.mimeType).catch((e) =>
-      this.logger.error(`重试解析失败: ${id}`, e),
-    )
 
     return this.getFileById(id)
   }

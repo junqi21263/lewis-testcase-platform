@@ -187,6 +187,15 @@ model UploadedFile {
   mimeType      String     @db.VarChar(100)
   fileType      FileType
   status        FileStatus @default(PENDING)
+  /// 解析后台队列：当前阶段（用于前端展示/排障），例如 CLAIMED/PDF_TEXT/PDF_RENDER/VISION/OCR/STRUCTURE/DONE
+  parseStage    String?    @db.VarChar(64)
+  /// 解析尝试次数（含重试）
+  parseAttempts Int        @default(0)
+  /// 解析任务开始/结束时间（后台 worker 写入）
+  parseStartedAt  DateTime?
+  parseFinishedAt DateTime?
+  /// 解析过程中定期更新，便于判断卡死/重启
+  lastHeartbeatAt DateTime?
   parsedContent String?    @db.Text
   /// 解析失败时的错误信息（成功时为 null）
   parseError    String?    @db.Text
