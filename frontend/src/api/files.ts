@@ -17,8 +17,7 @@ const BASE_URL = getApiBaseUrl()
 
 export const filesApi = {
   /**
-   * 普通上传（≤ CHUNK_THRESHOLD）
-   * 返回取消函数，调用后终止请求
+   * Multipart 单请求上传（与当前后端 `POST /files/upload` 一致）
    */
   upload(
     file: File,
