@@ -5,9 +5,12 @@ import type { UploadedFile, PaginatedData, PaginationParams } from '@/types'
 import type { ChunkInfo } from '@/types/upload'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
-/** 单次上传大于此字节时启用分片（5 MB） */
-export const CHUNK_THRESHOLD = 5 * 1024 * 1024
-/** 每个分片大小（2 MB） */
+/**
+ * 超过此大小才走分片上传。当前后端仅实现 `POST /files/upload`，无分片合并接口，
+ * 故设为极大值，统一走单次 multipart 上传，避免 5～10MB 文件误走分片导致 404。
+ */
+export const CHUNK_THRESHOLD = Number.MAX_SAFE_INTEGER
+/** 预留：后端若实现 `/files/upload/chunk` + `/files/upload/merge` 时可与阈值一并调整 */
 export const CHUNK_SIZE = 2 * 1024 * 1024
 
 const BASE_URL = getApiBaseUrl()

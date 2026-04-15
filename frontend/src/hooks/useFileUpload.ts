@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useRef } from 'react'
+import toast from 'react-hot-toast'
 import { filesApi, CHUNK_THRESHOLD, CHUNK_SIZE } from '@/api/files'
 import { detectSensitive, maskText } from '@/utils/sensitiveDetector'
 import { extractRequirements } from '@/utils/requirementExtractor'
@@ -18,7 +19,8 @@ const SUPPORTED_EXTS = new Set<string>([
   'doc', 'docx', 'pdf', 'txt', 'md', 'xlsx', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg',
 ])
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024
+/** 与后端 `ParseFilePipe` / `MAX_FILE_SIZE`（默认 10MB）一致 */
+const MAX_FILE_SIZE = 10 * 1024 * 1024
 const POLL_INTERVAL_MS = 2000
 const POLL_MAX_ROUNDS = 90
 
@@ -47,6 +49,14 @@ function serverFileToRequirementPoints(file: UploadedFile, sourceName: string): 
   }
 
   return extractRequirements(maskedText, sourceName)
+}
+
+function parseErrorHint(msg: string): string {
+  if (/超时/i.test(msg)) return '可稍后点击「重试」，或尝试较小文件。'
+  if (/分片|merge|上传失败/i.test(msg)) return '大文件分片上传可能未配置服务端，请使用较小文件或联系管理员。'
+  if (/解析失败|损坏|无法|为空/i.test(msg)) return '请检查文件是否加密/损坏，或更换格式后重试。'
+  if (/视觉|OCR|未配置/i.test(msg)) return '请在系统设置中配置支持视觉的模型，或改用文本需求。'
+  return '请检查网络、默认模型与 API Key；仍失败可更换文件重试。'
 }
 
 async function pollUntilParsed(serverFileId: string): Promise<UploadedFile> {
@@ -82,7 +92,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
       return `不支持的文件格式 .${ext}，请上传 DOC/DOCX/PDF/TXT/MD/XLSX/JSON/YAML/PNG/JPG`
     }
     if (file.size > MAX_FILE_SIZE) {
-      return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 100 MB`
+      return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 10 MB`
     }
     return null
   }, [])
@@ -118,6 +128,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
         progress: 100,
         pollingTimer: undefined,
       })
+      toast.success(`「${displayFile.name}」解析完成`, { duration: 2800 })
     },
     [onTaskUpdate],
   )
@@ -143,11 +154,13 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
         if ((err as { name?: string }).name === 'CanceledError' || (err as { name?: string }).name === 'AbortError') {
           return
         }
+        const msg = (err as Error).message || '上传或解析失败'
         onTaskUpdate(task.id, {
           status: 'error',
-          errorMessage: (err as Error).message || '上传或解析失败',
+          errorMessage: msg,
           pollingTimer: undefined,
         })
+        toast.error(`${msg}\n${parseErrorHint(msg)}`, { duration: 6500 })
       }
     },
     [onTaskUpdate, applyParsed],
@@ -189,11 +202,13 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
         if ((err as { name?: string }).name === 'CanceledError' || (err as { name?: string }).name === 'AbortError') {
           return
         }
+        const msg = (err as Error).message || '分片上传失败'
         onTaskUpdate(task.id, {
           status: 'error',
-          errorMessage: (err as Error).message || '分片上传失败',
+          errorMessage: msg,
           pollingTimer: undefined,
         })
+        toast.error(`${msg}\n${parseErrorHint(msg)}`, { duration: 6500 })
       }
     },
     [onTaskUpdate, applyParsed],
@@ -272,10 +287,12 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
             applyParsed(task.id, parsed, task.file)
           })
           .catch((e) => {
+            const msg = (e as Error).message || '重试失败'
             onTaskUpdate(task.id, {
               status: 'error',
-              errorMessage: (e as Error).message || '重试失败',
+              errorMessage: msg,
             })
+            toast.error(`${msg}\n${parseErrorHint(msg)}`, { duration: 6500 })
           })
       } else {
         onTaskUpdate(task.id, {

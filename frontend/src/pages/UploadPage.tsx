@@ -327,6 +327,56 @@ export default function UploadPage() {
     )
   }, [])
 
+  const handlePasteAfterRequirement = useCallback((taskId: string, afterPointId: string, text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t
+        const idx = t.requirementPoints.findIndex((p) => p.id === afterPointId)
+        const newPoint: RequirementPoint = {
+          id: crypto.randomUUID(),
+          content: trimmed,
+          originalContent: trimmed,
+          edited: false,
+          sourceFile: t.file.name,
+          selected: true,
+        }
+        const next = [...t.requirementPoints]
+        const insertAt = idx >= 0 ? idx + 1 : next.length
+        next.splice(insertAt, 0, newPoint)
+        return { ...t, requirementPoints: next, maskedText: rebuildMaskedFromPoints(next) }
+      }),
+    )
+  }, [])
+
+  const handleMergeRequirementWithNext = useCallback((taskId: string, pointId: string) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId) return t
+        const idx = t.requirementPoints.findIndex((p) => p.id === pointId)
+        if (idx < 0 || idx >= t.requirementPoints.length - 1) {
+          toast.error('没有下一条可合并')
+          return t
+        }
+        const a = t.requirementPoints[idx]!
+        const b = t.requirementPoints[idx + 1]!
+        const mergedContent = `${a.content}；${b.content}`
+        const newPoint: RequirementPoint = {
+          id: crypto.randomUUID(),
+          content: mergedContent,
+          originalContent: mergedContent,
+          edited: true,
+          sourceFile: t.file.name,
+          selected: true,
+        }
+        const next = [...t.requirementPoints]
+        next.splice(idx, 2, newPoint)
+        return { ...t, requirementPoints: next, maskedText: rebuildMaskedFromPoints(next) }
+      }),
+    )
+  }, [])
+
   const handleMaskedTextChange = useCallback((taskId: string, text: string) => {
     const sens = detectSensitive(text)
     const maskedText = maskText(text, sens)
@@ -395,6 +445,16 @@ export default function UploadPage() {
 
   const parsedTasks = useMemo(() => tasks.filter((t) => t.status === 'parsed'), [tasks])
   const pendingTasks = useMemo(() => tasks.filter((t) => t.status !== 'parsed'), [tasks])
+
+  const activeTransfer = useMemo(() => {
+    const t = tasks.find((x) => x.status === 'uploading' || x.status === 'parsing')
+    if (!t) return null
+    return {
+      fileName: t.file.name,
+      progress: t.progress,
+      phase: t.status === 'uploading' ? ('uploading' as const) : ('parsing' as const),
+    }
+  }, [tasks])
 
   const tplBody = parseTemplateContent.trim() || DEFAULT_TEMPLATE
 
@@ -487,7 +547,7 @@ export default function UploadPage() {
 
   return (
     <UploadErrorBoundary>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="w-full min-w-0 max-w-4xl mx-auto px-3 sm:px-4 md:px-6 pb-8 space-y-6 md:space-y-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -575,7 +635,12 @@ export default function UploadPage() {
           </div>
         )}
 
-        <DropZone onFilesSelected={handleFilesSelected} fileCount={tasks.length} disabled={false} />
+        <DropZone
+          onFilesSelected={handleFilesSelected}
+          fileCount={tasks.length}
+          disabled={false}
+          activeTransfer={activeTransfer}
+        />
 
         <UploadStatsBar stats={stats} onClearAll={handleClearAll} onClearDone={handleClearDone} />
 
@@ -624,6 +689,8 @@ export default function UploadPage() {
                     onSelectAllRequirements={handleSelectAllRequirements}
                     onBatchDeleteSelected={handleBatchDeleteSelected}
                     onMergeSelectedRequirements={handleMergeSelectedRequirements}
+                    onPasteAfterRequirement={handlePasteAfterRequirement}
+                    onMergeRequirementWithNext={handleMergeRequirementWithNext}
                     onMaskedTextChange={handleMaskedTextChange}
                     onRestructureFromRaw={handleRestructureFromRaw}
                     onClearPanel={handleClearPanel}

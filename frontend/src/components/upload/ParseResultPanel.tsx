@@ -1,18 +1,29 @@
 /**
- * ParseResultPanel —— 单文件解析结果：需求清单 / 原始文本 双 Tab、模板预览、带入生成
+ * ParseResultPanel —— 解析结果：需求清单（统计/快捷键/右键）、原始文本（行号/字数/关键词）
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
-  ChevronDown, ChevronUp, Copy, Wand2, ShieldAlert,
-  List, Eye, EyeOff, Plus, RefreshCw, Trash2, Combine,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Wand2,
+  ShieldAlert,
+  List,
+  Eye,
+  EyeOff,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Combine,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/utils/cn'
-import RequirementItem from './RequirementItem'
+import RequirementItem, { type RequirementContextHandlers } from './RequirementItem'
 import { highlightSensitive } from '@/utils/sensitiveDetector'
 import { fillPromptTemplate } from '@/utils/fillPromptTemplate'
-import type { UploadTask } from '@/types/upload'
+import RawTextEditor from './RawTextEditor'
+import type { UploadTask, RequirementPoint } from '@/types/upload'
 import toast from 'react-hot-toast'
 
 type Tab = 'requirements' | 'rawText'
@@ -21,7 +32,6 @@ const DEFAULT_TEMPLATE = `请根据以下「结构化需求」设计全面测试
 
 interface ParseResultPanelProps {
   task: UploadTask
-  /** 当前选中的提示词模板正文（解析页下拉框） */
   templateBody: string
   onUpdateRequirement: (taskId: string, pointId: string, content: string) => void
   onDeleteRequirement: (taskId: string, pointId: string) => void
@@ -31,8 +41,9 @@ interface ParseResultPanelProps {
   onSelectAllRequirements: (taskId: string, selected: boolean) => void
   onBatchDeleteSelected: (taskId: string) => void
   onMergeSelectedRequirements: (taskId: string) => void
+  onPasteAfterRequirement: (taskId: string, afterPointId: string, text: string) => void
+  onMergeRequirementWithNext: (taskId: string, pointId: string) => void
   onMaskedTextChange: (taskId: string, text: string) => void
-  /** 调用后端 /files/:id/restructure */
   onRestructureFromRaw: (taskId: string, text: string) => Promise<void>
   onClearPanel: (taskId: string) => void
   onSendToGenerate: (task: UploadTask) => void
@@ -50,6 +61,8 @@ export default function ParseResultPanel({
   onSelectAllRequirements,
   onBatchDeleteSelected,
   onMergeSelectedRequirements,
+  onPasteAfterRequirement,
+  onMergeRequirementWithNext,
   onMaskedTextChange,
   onRestructureFromRaw,
   onClearPanel,
@@ -61,7 +74,9 @@ export default function ParseResultPanel({
   const [showRaw, setShowRaw] = useState(false)
   const [autoSyncFromRaw, setAutoSyncFromRaw] = useState(true)
   const [rawDraft, setRawDraft] = useState(task.maskedText ?? task.parsedText ?? '')
+  const [internalClip, setInternalClip] = useState<string | null>(null)
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>()
+  const listRegionRef = useRef<HTMLDivElement>(null)
 
   const { requirementPoints, sensitiveMatches, maskedText, file } = task
   const hasSensitive = sensitiveMatches.length > 0
@@ -72,6 +87,11 @@ export default function ParseResultPanel({
 
   const selectedLines = useMemo(
     () => requirementPoints.filter((p) => p.selected && p.content.trim()).map((p) => p.content),
+    [requirementPoints],
+  )
+
+  const selectedCount = useMemo(
+    () => requirementPoints.filter((p) => p.selected && p.content.trim()).length,
     [requirementPoints],
   )
 
@@ -92,9 +112,7 @@ export default function ParseResultPanel({
 
   const requirementsText = requirementPoints.map((p, i) => `${i + 1}. ${p.content}`).join('\n')
 
-  const highlightedHtml = maskedText
-    ? highlightSensitive(maskedText, sensitiveMatches)
-    : ''
+  const highlightedHtml = maskedText ? highlightSensitive(maskedText, sensitiveMatches) : ''
 
   const scheduleAutoRestructure = useCallback(
     (text: string) => {
@@ -115,6 +133,77 @@ export default function ParseResultPanel({
     scheduleAutoRestructure(v)
   }
 
+  const makeContext = useCallback(
+    (point: RequirementPoint, index: number): RequirementContextHandlers => {
+      const pid = point.id
+      return {
+        onCopy: () => {
+          if (point.content) void navigator.clipboard.writeText(point.content).then(() => toast.success('已复制到剪贴板'))
+        },
+        onCut: () => {
+          setInternalClip(point.content)
+          onDeleteRequirement(task.id, pid)
+          toast.success('已剪切', { duration: 1500 })
+        },
+        onPasteAfter: () => {
+          const text = internalClip?.trim() ?? ''
+          if (!text) {
+            toast.error('内部剪贴板为空，请先用右键复制或剪切')
+            return
+          }
+          onPasteAfterRequirement(task.id, pid, text)
+          toast.success('已粘贴', { duration: 1500 })
+        },
+        onMergeWithNext: () => {
+          onMergeRequirementWithNext(task.id, pid)
+          toast.success('已合并', { duration: 1500 })
+        },
+        onDelete: () => onDeleteRequirement(task.id, pid),
+        canPaste: !!internalClip?.trim(),
+        hasNext: index < requirementPoints.length - 1,
+      }
+    },
+    [requirementPoints, task.id, internalClip, onDeleteRequirement, onPasteAfterRequirement, onMergeRequirementWithNext],
+  )
+
+  const handleListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const el = e.target as HTMLElement
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault()
+      onSelectAllRequirements(task.id, true)
+      toast.success('已全选需求', { duration: 1200 })
+      return
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+      e.preventDefault()
+      const txt = requirementPoints.filter((p) => p.selected).map((p) => p.content).join('\n')
+      if (!txt) {
+        toast.error('请先勾选要复制的需求')
+        return
+      }
+      void navigator.clipboard.writeText(txt).then(() => toast.success('已复制选中需求'))
+      return
+    }
+    if (e.key === 'Delete') {
+      e.preventDefault()
+      const n = requirementPoints.filter((p) => p.selected).length
+      if (n === 0) {
+        toast.error('请先勾选要删除的需求')
+        return
+      }
+      onBatchDeleteSelected(task.id)
+      toast.success(`已删除 ${n} 条`, { duration: 1500 })
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      onAddRequirement(task.id)
+      toast.success('已新增空白条目', { duration: 1200 })
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -126,14 +215,14 @@ export default function ParseResultPanel({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors active:bg-muted/50"
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="font-semibold text-sm text-foreground truncate max-w-[260px]" title={file.name}>
+        <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+          <span className="font-semibold text-sm text-foreground truncate max-w-[min(100%,260px)]" title={file.name}>
             {file.name}
           </span>
           <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full flex-shrink-0">
-            {requirementPoints.length} 条需求
+            共 {requirementPoints.length} 条 · 已勾选 {selectedCount} 条
           </span>
           {hasSensitive && (
             <span className="inline-flex items-center gap-1 text-xs text-orange-600 flex-shrink-0">
@@ -142,21 +231,24 @@ export default function ParseResultPanel({
             </span>
           )}
         </div>
-        <div className="flex-shrink-0 text-muted-foreground">
+        <div className="flex-shrink-0 text-muted-foreground transition-transform duration-200">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
       </button>
 
-      <div className={cn('overflow-hidden transition-all duration-300', expanded ? 'max-h-[1200px]' : 'max-h-0')}>
+      <div className={cn('overflow-hidden transition-all duration-300', expanded ? 'max-h-[1400px]' : 'max-h-0')}>
         <div className="flex items-center gap-0.5 px-4 pt-1 pb-0 border-t border-border/50">
           <button
             type="button"
-            onClick={() => setActiveTab('requirements')}
+            onClick={() => {
+              setActiveTab('requirements')
+              requestAnimationFrame(() => listRegionRef.current?.focus())
+            }}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-md transition-colors',
+              'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-md transition-all duration-150',
               activeTab === 'requirements'
                 ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted-foreground hover:text-foreground',
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
             )}
           >
             <List className="w-3.5 h-3.5" />
@@ -166,10 +258,10 @@ export default function ParseResultPanel({
             type="button"
             onClick={() => setActiveTab('rawText')}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-md transition-colors',
+              'flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-md transition-all duration-150',
               activeTab === 'rawText'
                 ? 'text-primary border-b-2 border-primary bg-primary/5'
-                : 'text-muted-foreground hover:text-foreground',
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
             )}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -177,15 +269,23 @@ export default function ParseResultPanel({
           </button>
         </div>
 
-        <div className="px-4 pb-4">
+        <div className="px-3 sm:px-4 pb-4 min-w-0">
           {activeTab === 'requirements' && (
-            <div className="space-y-1 pt-2">
-              <div className="flex flex-wrap items-center gap-2 pb-2">
+            <div className="space-y-2 pt-3 min-w-0">
+              <p className="text-[11px] text-muted-foreground">
+                提示：点击下列区域后可用{' '}
+                <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Ctrl+A</kbd> 全选、
+                <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Ctrl+C</kbd> 复制选中、
+                <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Delete</kbd> 删除选中、
+                <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Enter</kbd> 新增条目；右键单条更多操作。
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-8 text-xs transition-transform active:scale-95"
                   onClick={() => onSelectAllRequirements(task.id, true)}
                 >
                   全选需求
@@ -194,7 +294,7 @@ export default function ParseResultPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-8 text-xs transition-transform active:scale-95"
                   onClick={() => onSelectAllRequirements(task.id, false)}
                 >
                   全不选
@@ -203,7 +303,7 @@ export default function ParseResultPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs text-destructive"
+                  className="h-8 text-xs text-destructive transition-transform active:scale-95"
                   onClick={() => onBatchDeleteSelected(task.id)}
                 >
                   删除已选
@@ -212,7 +312,7 @@ export default function ParseResultPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs gap-1"
+                  className="h-8 text-xs gap-1 transition-transform active:scale-95"
                   onClick={() => onMergeSelectedRequirements(task.id)}
                 >
                   <Combine className="w-3 h-3" />
@@ -220,34 +320,40 @@ export default function ParseResultPanel({
                 </Button>
               </div>
 
-              {requirementPoints.length === 0 ? (
-                <div className="text-center py-8 text-sm text-muted-foreground">
-                  <p>未提取到结构化需求点</p>
-                  <p className="text-xs mt-1">可在「原始文本」中编辑并重新提取</p>
-                </div>
-              ) : (
-                requirementPoints.map((point, i) => (
-                  <RequirementItem
-                    key={point.id}
-                    point={point}
-                    index={i}
-                    onUpdate={(pointId, content) => onUpdateRequirement(task.id, pointId, content)}
-                    onDelete={(pointId) => onDeleteRequirement(task.id, pointId)}
-                    onToggleSelected={(pointId, sel) =>
-                      onToggleRequirementSelected(task.id, pointId, sel)
-                    }
-                    onMoveUp={(pointId) => onMoveRequirement(task.id, pointId, 'up')}
-                    onMoveDown={(pointId) => onMoveRequirement(task.id, pointId, 'down')}
-                    disableMoveUp={i === 0}
-                    disableMoveDown={i === requirementPoints.length - 1}
-                  />
-                ))
-              )}
+              <div
+                ref={listRegionRef}
+                tabIndex={0}
+                onKeyDown={handleListKeyDown}
+                className="rounded-lg border border-border/60 bg-muted/20 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background space-y-1 min-h-[120px] max-h-[min(60vh,480px)] overflow-y-auto"
+              >
+                {requirementPoints.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    <p>未提取到结构化需求点</p>
+                    <p className="text-xs mt-1">可在「原始文本」中编辑并重新提取</p>
+                  </div>
+                ) : (
+                  requirementPoints.map((point, i) => (
+                    <RequirementItem
+                      key={point.id}
+                      point={point}
+                      index={i}
+                      onUpdate={(pointId, content) => onUpdateRequirement(task.id, pointId, content)}
+                      onDelete={(pointId) => onDeleteRequirement(task.id, pointId)}
+                      onToggleSelected={(pointId, sel) => onToggleRequirementSelected(task.id, pointId, sel)}
+                      onMoveUp={(pointId) => onMoveRequirement(task.id, pointId, 'up')}
+                      onMoveDown={(pointId) => onMoveRequirement(task.id, pointId, 'down')}
+                      disableMoveUp={i === 0}
+                      disableMoveDown={i === requirementPoints.length - 1}
+                      context={makeContext(point, i)}
+                    />
+                  ))
+                )}
+              </div>
 
               <button
                 type="button"
                 onClick={() => onAddRequirement(task.id)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-md border border-dashed border-border hover:border-primary/40 transition-all mt-2"
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg border border-dashed border-border hover:border-primary/40 transition-all active:scale-[0.99]"
               >
                 <Plus className="w-3.5 h-3.5" />
                 添加需求点
@@ -256,13 +362,13 @@ export default function ParseResultPanel({
           )}
 
           {activeTab === 'rawText' && (
-            <div className="pt-2 space-y-2">
+            <div className="pt-3 space-y-3 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs gap-1"
+                  className="h-8 text-xs gap-1 transition-transform active:scale-95"
                   onClick={() => setShowRaw(!showRaw)}
                 >
                   {showRaw ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
@@ -279,12 +385,11 @@ export default function ParseResultPanel({
                 </label>
               </div>
 
-              <textarea
-                className="w-full min-h-[200px] text-xs leading-relaxed bg-muted/40 p-3 rounded-lg border font-mono text-foreground resize-y"
+              <RawTextEditor
                 value={rawDraft}
-                onChange={(e) => handleRawInput(e.target.value)}
+                onChange={handleRawInput}
                 placeholder="可粘贴或编辑全文，点击「重新提取需求」更新清单…"
-                spellCheck={false}
+                disabled={restructureLoading}
               />
 
               {hasSensitive && !showRaw ? (
@@ -300,7 +405,7 @@ export default function ParseResultPanel({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 text-xs gap-1"
+                  className="h-8 text-xs gap-1 transition-transform active:scale-95"
                   disabled={restructureLoading || !task.serverFileId}
                   onClick={() =>
                     void onRestructureFromRaw(task.id, rawDraft).then(() => toast.success('已重新提取需求'))
@@ -313,7 +418,7 @@ export default function ParseResultPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs gap-1 text-destructive"
+                  className="h-8 text-xs gap-1 text-destructive transition-transform active:scale-95"
                   onClick={() => {
                     if (confirm('清空本文件的解析文本与需求清单？')) onClearPanel(task.id)
                   }}
@@ -325,19 +430,19 @@ export default function ParseResultPanel({
             </div>
           )}
 
-          <div className="mt-3 p-3 rounded-lg border border-dashed border-border/80 bg-muted/20">
-            <p className="text-[10px] font-medium text-muted-foreground mb-1">提示词填充预览（随勾选与编辑实时更新）</p>
+          <div className="mt-4 p-3 rounded-lg border border-dashed border-border/80 bg-muted/20">
+            <p className="text-[10px] font-medium text-muted-foreground mb-1">提示词填充预览（仅含已勾选需求）</p>
             <pre className="text-[10px] leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto text-muted-foreground">
               {filledPreview.slice(0, 4000)}
               {filledPreview.length > 4000 ? '\n…' : ''}
             </pre>
           </div>
 
-          <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border/50 flex-wrap">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-3 mt-3 border-t border-border/50">
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5"
+              className="h-9 text-xs gap-1.5 transition-transform active:scale-95"
               onClick={() => copyText(requirementsText, '需求清单')}
               disabled={requirementPoints.length === 0}
             >
@@ -347,7 +452,7 @@ export default function ParseResultPanel({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5"
+              className="h-9 text-xs gap-1.5 transition-transform active:scale-95"
               onClick={() => copyText(maskedText ?? '', '文件内容')}
               disabled={!maskedText}
             >
@@ -356,7 +461,7 @@ export default function ParseResultPanel({
             </Button>
             <Button
               size="sm"
-              className="h-8 text-xs gap-1.5 ml-auto"
+              className="h-9 text-xs gap-1.5 sm:ml-auto transition-transform active:scale-95"
               onClick={() => onSendToGenerate(task)}
               disabled={selectedLines.length === 0}
             >
