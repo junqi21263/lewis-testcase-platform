@@ -52,6 +52,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const ms = Number.isFinite(intervalMs) && intervalMs > 300 ? intervalMs : 1500
     this.parseWorkerTimer = setInterval(() => void this.tickParseWorker(), ms)
     this.logger.log(`后台解析 worker 已启动（interval=${ms}ms）`)
+    // 启动后立即跑一次（避免新上传文件等待 1 个 interval）
+    void this.tickParseWorker()
   }
 
   onModuleDestroy() {
@@ -62,8 +64,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (this.parseWorkerRunning) return
     this.parseWorkerRunning = true
     try {
+      this.logger.debug('后台解析 worker tick...')
       const claimed = await this.claimNextPendingFile()
-      if (!claimed) return
+      if (!claimed) {
+        this.logger.debug('后台解析 worker: 无待处理 PENDING 文件')
+        return
+      }
+      this.logger.log(`后台解析 worker: 已认领文件 ${claimed.id} (${claimed.fileType})`)
       await this.parseFileAsync(claimed.id, claimed.path, claimed.fileType, claimed.mimeType)
     } catch (e) {
       this.logger.error('后台解析 worker tick 失败', e as Error)
