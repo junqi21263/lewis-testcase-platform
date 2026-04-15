@@ -7,7 +7,7 @@ ENV HOST=0.0.0.0
 
 RUN apk add --no-cache openssl
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY backend/package.json backend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
