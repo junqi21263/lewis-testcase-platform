@@ -41,18 +41,41 @@ export class FilesService {
   async saveUploadedFile(file: Express.Multer.File, uploaderId: string) {
     const fileType = this.detectFileType(file.mimetype, file.originalname)
 
+    // 以落盘文件为准（部分平台/代理可能导致 file.size 与实际不一致）
+    let diskSize = file.size
+    try {
+      if (file.path && fs.existsSync(file.path)) {
+        diskSize = fs.statSync(file.path).size
+      }
+    } catch (e) {
+      this.logger.warn(`读取上传文件大小失败: ${file.path}`, e as Error)
+    }
+
     const record = await this.prisma.uploadedFile.create({
       data: {
         name: file.filename,
         originalName: file.originalname,
         path: file.path,
-        size: file.size,
+        size: diskSize,
         mimeType: file.mimetype,
         fileType,
         status: FileStatus.PENDING,
         uploaderId,
       },
     })
+
+    if (!file.path || !fs.existsSync(file.path) || diskSize < 1) {
+      const msg = !file.path
+        ? '【解析失败】上传文件路径为空（服务端未落盘）。请重试上传。'
+        : !fs.existsSync(file.path)
+          ? `【解析失败】上传文件未落盘或已丢失：${file.path}。请重试上传。`
+          : `【解析失败】上传文件为空（0 bytes）：${file.path}。请重试上传。`
+      await this.prisma.uploadedFile.update({
+        where: { id: record.id },
+        data: { status: FileStatus.FAILED, parseError: msg },
+      })
+      return this.getFileById(record.id)
+    }
 
     this.parseFileAsync(record.id, file.path, fileType, file.mimetype).catch((err) =>
       this.logger.error(`文件解析失败: ${record.id}`, err),
@@ -83,6 +106,15 @@ export class FilesService {
 
     try {
       let content = ''
+
+      // 再次确认文件存在且非空（避免零字节文件进入 pdf-to-img 等链路）
+      if (!filePath || !fs.existsSync(filePath)) {
+        throw new Error(`【解析失败】本地文件不存在：${filePath || '(empty path)'}。请重新上传。`)
+      }
+      const st = fs.statSync(filePath)
+      if (st.size < 1) {
+        throw new Error(`【解析失败】本地文件为空（0 bytes）：${filePath}。请重新上传。`)
+      }
 
       switch (fileType) {
         case FileType.PDF:
