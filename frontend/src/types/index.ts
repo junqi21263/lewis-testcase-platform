@@ -115,6 +115,8 @@ export interface AIModel {
 }
 
 export interface AIGenerateParams {
+  /** 对应后端 AIModelConfig.id */
+  modelConfigId?: string
   modelId?: string
   temperature?: number
   maxTokens?: number

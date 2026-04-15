@@ -76,6 +76,29 @@ export class AiService {
     ]
   }
 
+  /** 模型完全无输出时仍落库一条说明用例，避免「成功但 0 条」 */
+  private emptyModelOutputPlaceholder(): any[] {
+    return [
+      {
+        title: '模型未返回任何可展示内容',
+        precondition: '',
+        steps: [
+          {
+            order: 1,
+            action:
+              '请排查：① 系统设置里默认模型与 API Key、Base URL 是否正确；② 上传图片是否已解析出文字（解析完成前勿生成）；③ 适当提高 maxTokens；④ 智谱等兼容接口是否返回了 choices[0].message.content。',
+            expected: '',
+          },
+        ],
+        expectedResult:
+          '本次流式/非流式响应中未收到模型文本。若仅上传无字图片且未写文本需求，模型可能没有可依据的需求。',
+        priority: 'P2',
+        type: 'FUNCTIONAL',
+        tags: ['ai-empty-output'],
+      },
+    ]
+  }
+
   private mapRowToCaseInput(c: any) {
     const title =
       c?.title != null && String(c.title).trim()
@@ -101,7 +124,9 @@ export class AiService {
   private resolveCasesForPersistence(fullText: string): any[] {
     const rows = this.extractCaseRows(fullText)
     if (rows.length > 0) return rows
-    return this.fallbackCasesFromRawOutput(fullText)
+    const fallback = this.fallbackCasesFromRawOutput(fullText)
+    if (fallback.length > 0) return fallback
+    return this.emptyModelOutputPlaceholder()
   }
 
   /** 生成成功且指定了模板时，增加模板使用次数 */
@@ -200,7 +225,7 @@ export class AiService {
 
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
-    const { client, modelId, modelName } = await this.getOpenAIClient()
+    const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
     // 获取文件内容
@@ -280,7 +305,7 @@ export class AiService {
 
   /** 流式生成（SSE） */
   async generateStream(dto: GenerateDto, userId: string, res: Response) {
-    const { client, modelId, modelName } = await this.getOpenAIClient()
+    const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
     let fileContent: string | undefined

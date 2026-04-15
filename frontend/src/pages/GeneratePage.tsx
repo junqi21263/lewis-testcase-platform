@@ -11,7 +11,40 @@ import { testcasesApi } from '@/api/testcases'
 import { parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
 import { formatFileSize, priorityColorMap } from '@/utils/format'
 import toast from 'react-hot-toast'
-import type { TestCase, PromptTemplate } from '@/types'
+import type { TestCase, PromptTemplate, FileStatus } from '@/types'
+
+const fileStatusLabels: Record<FileStatus, string> = {
+  PENDING: '等待解析',
+  PARSING: '解析中…',
+  PARSED: '解析完成',
+  FAILED: '解析失败',
+}
+
+/** 上传后轮询解析状态（图片 OCR 可能需数十秒） */
+async function pollFileUntilParsed(fileId: string) {
+  for (let i = 0; i < 120; i++) {
+    await new Promise((r) => setTimeout(r, 1000))
+    try {
+      const f = await filesApi.getFileById(fileId)
+      useGenerateStore.getState().setUploadedFile(f)
+      if (f.status === 'PARSED') {
+        if (f.fileType === 'IMAGE' && !f.parsedContent?.trim()) {
+          toast.error('图片未识别出文字，请在下方用文本补充需求，或换更清晰的截图')
+        } else {
+          toast.success('文档解析完成，可以开始生成')
+        }
+        return
+      }
+      if (f.status === 'FAILED') {
+        toast.error('文件解析失败，无法用于生成，请换文件重试')
+        return
+      }
+    } catch {
+      return
+    }
+  }
+  toast.error('解析超时，请刷新页面或重新上传')
+}
 
 /** 文件上传区域组件 */
 function FileUploadZone() {
@@ -42,7 +75,8 @@ function FileUploadZone() {
     try {
       const result = await filesApi.upload(file, setProgress)
       setUploadedFile(result)
-      toast.success('文件上传成功')
+      toast.success('上传成功，正在解析文档…')
+      void pollFileUntilParsed(result.id)
     } catch {
       toast.error('文件上传失败')
     } finally {
@@ -51,12 +85,25 @@ function FileUploadZone() {
   }
 
   if (uploadedFile) {
+    const parsing = uploadedFile.status === 'PENDING' || uploadedFile.status === 'PARSING'
     return (
       <div className="flex items-center gap-3 p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
         <FileText className="w-8 h-8 text-green-600 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{uploadedFile.originalName}</p>
-          <p className="text-xs text-muted-foreground">{formatFileSize(uploadedFile.size)} · {uploadedFile.fileType}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatFileSize(uploadedFile.size)} · {uploadedFile.fileType}
+            {' · '}
+            <span className={uploadedFile.status === 'FAILED' ? 'text-destructive' : ''}>
+              {fileStatusLabels[uploadedFile.status]}
+            </span>
+          </p>
+          {parsing && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              图片 OCR 或文档提取可能需要一段时间，请等待「解析完成」后再点生成
+            </p>
+          )}
         </div>
         <Button variant="ghost" size="icon" className="flex-shrink-0" onClick={() => setUploadedFile(null)}>
           <X className="w-4 h-4" />
@@ -182,6 +229,23 @@ export default function GeneratePage() {
     }
   }, [])
 
+  /** 拉取默认模型配置 id，与系统设置中的「默认模型」一致 */
+  useEffect(() => {
+    if (useGenerateStore.getState().aiParams.modelConfigId) return
+    let cancelled = false
+    aiApi
+      .getModels()
+      .then((list) => {
+        if (cancelled) return
+        const def = list.find((m) => m.isDefault) ?? list[0]
+        if (def?.id) setAiParams({ modelConfigId: def.id })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [setAiParams])
+
   const handleGenerate = async () => {
     if (sourceType === 'file' && !uploadedFile) {
       toast.error('请先上传文件')
@@ -194,6 +258,25 @@ export default function GeneratePage() {
     if (!customPrompt.trim()) {
       toast.error('请输入或选择提示词模板')
       return
+    }
+
+    if (sourceType === 'file' && uploadedFile) {
+      let file = uploadedFile
+      try {
+        file = await filesApi.getFileById(uploadedFile.id)
+        useGenerateStore.getState().setUploadedFile(file)
+      } catch {
+        toast.error('无法获取文件状态，请重试')
+        return
+      }
+      if (file.status !== 'PARSED') {
+        toast.error('请等待文件解析完成（须显示「解析完成」）后再生成')
+        return
+      }
+      if (!file.parsedContent?.trim()) {
+        toast.error('文件没有可用文本（如无字截图）。请改用「文本输入」补充需求，或换一份文档。')
+        return
+      }
     }
 
     setIsGenerating(true)
@@ -230,11 +313,12 @@ export default function GeneratePage() {
             }
             setGeneratedCases(cases)
             setStep('result')
-            toast.success(
-              cases.length > 0
-                ? `用例生成完成，共 ${cases.length} 条`
-                : '生成已结束，但未得到可展示内容',
-            )
+            const isEmptyHint = cases.some((c) => c.tags?.includes('ai-empty-output'))
+            if (isEmptyHint) {
+              toast.error('模型未返回内容或文件无可用文本，请查看结果中的说明')
+            } else {
+              toast.success(`用例生成完成，共 ${cases.length} 条`)
+            }
           },
           (err) => {
             setIsGenerating(false)
