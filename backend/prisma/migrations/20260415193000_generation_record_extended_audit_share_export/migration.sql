@@ -7,7 +7,15 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 
--- AlterTable generation_records
+-- 下列列在后续 UPDATE / GIN 索引中会用到，但按迁移目录名排序时
+-- `20260416103000_*`（deletedAt）与 `20260416140000_*`（tags/notes）晚于本文件；
+-- 若不在此先创建，本迁移会在 Railway 上因「列不存在」失败（P3018）。
+-- 后续迁移中的 ADD COLUMN IF NOT EXISTS 与之兼容，等价于空操作。
+ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "tags" TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "notes" TEXT;
+
+-- AlterTable generation_records（扩展字段）
 ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "demandContent" TEXT;
 ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "generationSource" "GenerationSource";
 ALTER TABLE "generation_records" ADD COLUMN IF NOT EXISTS "generateParams" JSONB;
