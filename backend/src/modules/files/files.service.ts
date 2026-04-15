@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import * as path from 'path'
 import { FileStatus, FileType, Prisma } from '@prisma/client'
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 import { PrismaService } from '@/prisma/prisma.service'
 import { DocumentVisionService } from './document-vision.service'
 import { RequirementStructureService } from './requirement-structure.service'
@@ -19,6 +20,10 @@ import type { MergeChunksDto } from './dto/merge-chunks.dto'
 export class FilesService {
   private readonly logger = new Logger(FilesService.name)
   private readonly uploadDir: string
+
+  private isNotFoundUpdateError(err: unknown) {
+    return err instanceof PrismaClientKnownRequestError && err.code === 'P2025'
+  }
 
   constructor(
     private prisma: PrismaService,
@@ -63,7 +68,18 @@ export class FilesService {
     fileType: FileType,
     mimeType: string,
   ) {
-    await this.prisma.uploadedFile.update({ where: { id: fileId }, data: { status: FileStatus.PARSING } })
+    try {
+      await this.prisma.uploadedFile.update({
+        where: { id: fileId },
+        data: { status: FileStatus.PARSING },
+      })
+    } catch (e) {
+      if (this.isNotFoundUpdateError(e)) {
+        this.logger.warn(`文件记录已不存在，跳过解析: ${fileId}`)
+        return
+      }
+      throw e
+    }
 
     try {
       let content = ''
@@ -114,10 +130,18 @@ export class FilesService {
       this.logger.log(`文件解析完成: ${fileId}`)
     } catch (err) {
       const msg = ((err as Error).message || '解析失败').slice(0, 4000)
-      await this.prisma.uploadedFile.update({
-        where: { id: fileId },
-        data: { status: FileStatus.FAILED, parseError: msg },
-      })
+      try {
+        await this.prisma.uploadedFile.update({
+          where: { id: fileId },
+          data: { status: FileStatus.FAILED, parseError: msg },
+        })
+      } catch (e) {
+        if (this.isNotFoundUpdateError(e)) {
+          this.logger.warn(`文件记录已不存在，无法写入失败状态: ${fileId}`)
+          return
+        }
+        throw e
+      }
       this.logger.error(`文件解析失败: ${fileId}`, err as Error)
     }
   }
