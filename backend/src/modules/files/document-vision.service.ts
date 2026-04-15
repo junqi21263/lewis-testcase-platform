@@ -189,12 +189,25 @@ export class DocumentVisionService {
     }
   }
 
+  /**
+   * pdf-to-img 为纯 ESM 且依赖链含 top-level await。
+   * 项目在 tsconfig 使用 module=commonjs 时，TypeScript 会把 `import()` 编成 `require()`，运行时报：
+   * "require() cannot be used on an ESM graph with top-level await"。
+   * 通过间接 import 避免被 downlevel。
+   */
+  private importPdfToImg(): Promise<typeof import('pdf-to-img')> {
+    const runImport = new Function('specifier', 'return import(specifier)') as (
+      specifier: string,
+    ) => Promise<typeof import('pdf-to-img')>
+    return runImport('pdf-to-img')
+  }
+
   /** 将 PDF 首页渲成 PNG；失败时返回 error 文案（会进入 parseError 便于排障） */
   async renderPdfFirstPagePng(pdfPath: string): Promise<{ buffer: Buffer } | { error: string }> {
     const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')
     const scale = Math.min(Math.max(parseFloat(scaleRaw || '1.2') || 1.2, 0.5), 3)
     try {
-      const { pdf } = await import('pdf-to-img')
+      const { pdf } = await this.importPdfToImg()
       const document = await pdf(pdfPath, { scale })
       for await (const image of document) {
         return { buffer: Buffer.from(image) }
