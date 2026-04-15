@@ -2,15 +2,39 @@ import { Injectable, Logger } from '@nestjs/common'
 import OpenAI from 'openai'
 import { PrismaService } from '@/prisma/prisma.service'
 
-const STRUCTURE_SYSTEM = `你是软件测试领域的需求分析助手。用户将提供一段从文档/截图 OCR/多模态解析得到的文本（可能含噪声）。
-请输出一个 JSON 对象，格式严格为：{"requirements":["…","…"]}。
+/** 文档类全文 → 结构化需求（与下游测试用例生成衔接）；输入可能含 OCR/多模态解析噪声 */
+const STRUCTURE_SYSTEM = `# 角色
+你是专业的软件测试需求分析师，精通需求文档结构化处理，能从长文本需求文档中，精准提炼出可测试的业务需求点，拆分结构化条目，过滤冗余信息，保障需求的完整性与可执行性。
 
-规则：
-1. requirements 为数组，每一项是一条独立、完整、无歧义的中文业务需求描述（一句或一小段）。
-2. 剔除：OCR 乱码行、无意义符号串、页码/页眉页脚、水印文案、引擎标签行（如含「OCR」「Tesseract」「多模态视觉理解」等标记的整行）、明显无关标识。
-3. 不要输出完整手机号、身份证号、银行卡号；若文中已脱敏（含 ****）可保留脱敏形式。
-4. 不要编造文中没有的需求；若无可提取的有效需求，返回空数组。
-5. 仅输出 JSON，不要 Markdown 代码块或其它说明文字。`
+# 核心任务
+基于用户提供的需求文档全文本，完成结构化需求提取，严格按照输出格式返回结果，用于测试用例生成。输入可能来自 Word/PDF/文本提取或 OCR，允许含噪声，须按「处理规则」净化后再输出。
+
+# 处理规则
+1. 过滤无效内容：目录、前言、修订记录、排版符号、页眉页脚、页码、与业务需求无关的冗余描述；OCR 乱码行、无意义符号串、水印文案、引擎标签整行（如含「OCR」「Tesseract」「多模态视觉理解」等）。
+2. 结构化拆分：按业务模块、功能点拆分独立的需求条目，每条需求对应一个独立的功能点/业务规则。
+3. 需求标准化：每条需求必须完整、通顺、无歧义，包含业务操作、规则约束、预期效果，可直接用于编写测试用例。
+4. 保留核心信息：不遗漏业务规则、前置条件、权限要求、异常处理规则、边界条件、兼容要求等核心测试相关内容。
+5. 去重合并：重复的需求点自动合并，相似的需求点按业务逻辑归类，避免冗余。
+6. 安全与真实：不要编造文中没有的需求；不要输出完整手机号、身份证号、银行卡号；若原文已脱敏（含 ****）可保留脱敏形式。
+7. 若经判定几乎无可提取的有效需求，设 is_valid 为 false，demand_list 可为空数组，并在 msg 中简要说明原因。
+
+# 输出格式（必须严格遵循 JSON，键名使用英文；禁止输出 JSON 以外的任何字符、不要 Markdown 代码块）
+{
+  "is_valid": true,
+  "demand_list": [
+    "这里是第一条结构化需求点",
+    "这里是第二条结构化需求点"
+  ],
+  "original_text": "这里是过滤无效内容后的完整需求原文，保留核心段落结构，与 demand_list 语义对应",
+  "msg": "解析成功或解析失败的提示信息"
+}`
+
+export type StructureRequirementsResult = {
+  /** 入库到 structuredRequirements 的条目 */
+  requirements: string[]
+  /** 模型清洗后的正文；有值时优先作为 parsedContent 存储 */
+  cleanedText?: string
+}
 
 @Injectable()
 export class RequirementStructureService {
@@ -21,16 +45,16 @@ export class RequirementStructureService {
   /**
    * 将脱敏后的文档全文转为结构化需求条目；LLM 不可用时走规则兜底。
    */
-  async structureRequirements(maskedDocumentText: string): Promise<string[]> {
+  async structureRequirements(maskedDocumentText: string): Promise<StructureRequirementsResult> {
     const text = maskedDocumentText.trim()
-    if (!text) return []
+    if (!text) return { requirements: [] }
 
     const cfg = await this.prisma.aIModelConfig.findFirst({
       where: { isDefault: true, isActive: true },
     })
 
     if (!cfg?.apiKey || cfg.apiKey === 'placeholder') {
-      return this.fallbackStructure(text)
+      return { requirements: this.fallbackStructure(text) }
     }
 
     try {
@@ -50,16 +74,49 @@ export class RequirementStructureService {
         response_format: { type: 'json_object' },
       })
       const raw = completion.choices[0]?.message?.content?.trim() ?? ''
-      const parsed = JSON.parse(raw) as { requirements?: unknown }
-      const arr = parsed.requirements
-      if (!Array.isArray(arr)) return this.fallbackStructure(text)
-      return arr
+      const parsed = JSON.parse(raw) as {
+        is_valid?: boolean
+        demand_list?: unknown
+        original_text?: unknown
+        msg?: unknown
+        requirements?: unknown
+      }
+
+      const rawList = Array.isArray(parsed.demand_list)
+        ? parsed.demand_list
+        : Array.isArray(parsed.requirements)
+          ? parsed.requirements
+          : null
+
+      if (!Array.isArray(rawList)) {
+        this.logger.warn('需求结构化：模型未返回 demand_list，使用规则兜底')
+        return { requirements: this.fallbackStructure(text) }
+      }
+
+      const requirements = rawList
         .map((x) => (typeof x === 'string' ? x.trim() : String(x)))
         .filter((s) => s.length > 2 && !this.isNoiseLine(s))
         .slice(0, 80)
+
+      if (parsed.is_valid === false && requirements.length === 0) {
+        const hint = typeof parsed.msg === 'string' ? parsed.msg : '模型判定无有效需求'
+        this.logger.warn(`需求结构化：is_valid=false，${hint}`)
+      }
+
+      let cleanedText: string | undefined
+      if (typeof parsed.original_text === 'string') {
+        const o = parsed.original_text.trim()
+        if (o.length > 0) cleanedText = o
+      }
+
+      if (typeof parsed.msg === 'string' && parsed.msg.trim() && requirements.length === 0 && !cleanedText) {
+        this.logger.debug(`需求结构化 msg: ${parsed.msg.trim()}`)
+      }
+
+      return { requirements, cleanedText }
     } catch (e) {
       this.logger.warn(`需求结构化 LLM 失败，使用规则兜底: ${(e as Error).message}`)
-      return this.fallbackStructure(text)
+      return { requirements: this.fallbackStructure(text) }
     }
   }
 

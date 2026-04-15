@@ -97,12 +97,15 @@ export class FilesService {
       }
 
       const masked = maskSensitivePlainText(content)
-      const structured = await this.requirementStructure.structureRequirements(masked)
+      const { requirements: structured, cleanedText } =
+        await this.requirementStructure.structureRequirements(masked)
+      const parsedBody =
+        cleanedText && cleanedText.trim().length > 0 ? cleanedText.trim() : masked
 
       await this.prisma.uploadedFile.update({
         where: { id: fileId },
         data: {
-          parsedContent: masked,
+          parsedContent: parsedBody,
           structuredRequirements: structured as Prisma.InputJsonValue,
           status: FileStatus.PARSED,
           parseError: null,
@@ -280,12 +283,15 @@ export class FilesService {
     if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
 
     const masked = maskSensitivePlainText(text)
-    const structured = await this.requirementStructure.structureRequirements(masked)
+    const { requirements: structured, cleanedText } =
+      await this.requirementStructure.structureRequirements(masked)
+    const parsedBody =
+      cleanedText && cleanedText.trim().length > 0 ? cleanedText.trim() : masked
 
     await this.prisma.uploadedFile.update({
       where: { id },
       data: {
-        parsedContent: masked,
+        parsedContent: parsedBody,
         structuredRequirements: structured as Prisma.InputJsonValue,
         status: FileStatus.PARSED,
         parseError: null,
