@@ -1,0 +1,58 @@
+# Deploy to your own VPS over SSH when pushing to main.
+#
+# GitHub → Repository → Settings → Secrets and variables → Actions
+#   Secrets (required):
+#     SSH_HOST      — server IP or domain
+#     SSH_USER      — e.g. ubuntu
+#     SSH_KEY       — private key (PEM), full text including BEGIN/END lines
+#   Secrets (optional):
+#     SSH_PORT      — default 22 if omitted
+#
+#   Variables (optional): Repository → Variables
+#     DEPLOY_PATH   — absolute path to the cloned repo on the server (default below)
+#
+# Server prerequisites:
+#   - Same repo cloned once at DEPLOY_PATH, remote origin can pull (SSH key or HTTPS).
+#   - Docker Engine + docker compose plugin; user in docker group OR script uses sudo (see script).
+#
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          command_timeout: 25m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}"
+            cd "$DEPLOY_PATH"
+            git config --global --add safe.directory "$DEPLOY_PATH" || true
+            export GIT_TERMINAL_PROMPT=0
+            git fetch origin main
+            git checkout main
+            git pull origin main
+            if sudo docker compose version >/dev/null 2>&1; then
+              sudo docker compose -f docker-compose.full.yml pull || true
+              sudo docker compose -f docker-compose.full.yml up -d --build
+            else
+              sudo docker-compose -f docker-compose.full.yml pull || true
+              sudo docker-compose -f docker-compose.full.yml up -d --build
+            fi
