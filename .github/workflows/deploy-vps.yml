@@ -12,8 +12,9 @@
 #     DEPLOY_PATH   — absolute path to the cloned repo on the server (default below)
 #
 # Server prerequisites:
-#   - Same repo cloned once at DEPLOY_PATH, remote origin can pull (SSH key or HTTPS).
+#   - No need for git clone on server (workflow rsyncs code).
 #   - Docker Engine + docker compose plugin; user in docker group OR script uses sudo (see script).
+#   - rsync installed on server (Ubuntu: sudo apt-get install -y rsync)
 #
 name: Deploy to VPS
 
@@ -31,7 +32,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: SSH deploy
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "${{ secrets.SSH_PORT || '22' }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Rsync code to server
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}
+        run: |
+          set -euo pipefail
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
+          ssh -i /tmp/deploy_key -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "mkdir -p \"$DEPLOY_PATH\""
+
+          rsync -az --delete \
+            -e "ssh -i /tmp/deploy_key -p $SSH_PORT -o StrictHostKeyChecking=yes" \
+            --exclude ".git/" \
+            --exclude "node_modules/" \
+            --exclude "frontend/node_modules/" \
+            --exclude "backend/node_modules/" \
+            --exclude "backend/uploads/" \
+            ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Deploy on server (docker compose)
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -43,15 +79,8 @@ jobs:
             set -euo pipefail
             DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}"
             cd "$DEPLOY_PATH"
-            git config --global --add safe.directory "$DEPLOY_PATH" || true
-            export GIT_TERMINAL_PROMPT=0
-            git fetch origin main
-            git checkout main
-            git pull origin main
             if sudo docker compose version >/dev/null 2>&1; then
-              sudo docker compose -f docker-compose.full.yml pull || true
               sudo docker compose -f docker-compose.full.yml up -d --build
             else
-              sudo docker-compose -f docker-compose.full.yml pull || true
               sudo docker-compose -f docker-compose.full.yml up -d --build
             fi
