@@ -4,8 +4,8 @@ services:
   # 前端服务
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: testcase_frontend_dev
     restart: unless-stopped
     ports:
