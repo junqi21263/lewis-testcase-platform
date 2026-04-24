@@ -39,7 +39,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           command_timeout: 25m
-          script_stop: true
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}"
