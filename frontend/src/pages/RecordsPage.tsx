@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { recordsApi, type RecordsListQuery, type RecordsSummary } from '@/api/records'
 import { settingsApi } from '@/api/settings'
+import { filesApi } from '@/api/files'
 import { formatDate, generationRecordStatusClass } from '@/utils/format'
 import type { GenerationRecord, GenerationStatus } from '@/types'
 import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
@@ -361,6 +362,14 @@ export default function RecordsPage() {
   }
 
   const openReuse = async (r: GenerationRecord) => {
+    let uploadedFile = null as GenerationRecord['file'] | null
+    if (r.fileId) {
+      try {
+        uploadedFile = await filesApi.getFileById(r.fileId)
+      } catch {
+        toast.error('无法获取关联文件信息（请确认文件仍存在）')
+      }
+    }
     let modelConfigId: string | undefined
     try {
       const models = await settingsApi.listModelsAdmin()
@@ -374,7 +383,7 @@ export default function RecordsPage() {
       customPrompt: r.prompt || '',
       selectedTemplateId: r.templateId ?? null,
       userNotes: r.notes ?? '',
-      uploadedFile: null,
+      uploadedFile: uploadedFile as any,
       inputText: '',
       currentStep: 'prompt',
       generationOptions: { ...defaultGenerationOptions },
