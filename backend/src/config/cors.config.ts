@@ -66,6 +66,10 @@ export function corsOriginDelegate(): (
       callback(new Error('Not allowed by CORS'))
       return
     }
-    callback(new Error('Not allowed by CORS'))
+    callback(
+      new Error(
+        `Not allowed by CORS (origin=${normalized}). Set CORS_ORIGINS (comma-separated) or FRONTEND_URL to allow it.`,
+      ),
+    )
   }
 }
