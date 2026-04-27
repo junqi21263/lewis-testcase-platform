@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
 import { recordsApi } from '@/api/records'
 import { testcasesApi } from '@/api/testcases'
+import { healthApi, type HealthStatus } from '@/api/health'
 import { formatDate, statusColorMap, timeAgo } from '@/utils/format'
 import type { GenerationRecord, TestSuite } from '@/types'
 
@@ -34,15 +35,17 @@ export default function DashboardPage() {
   const [recentSuites, setRecentSuites] = useState<TestSuite[]>([])
   const [stats, setStats] = useState<Stats>({ totalCases: 0, totalRecords: 0, totalSuites: 0, successRate: 0 })
   const [loading, setLoading] = useState(true)
+  const [health, setHealth] = useState<HealthStatus | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [recordsRes, suitesRes, recordsSummary, tcSummary] = await Promise.all([
+        const [recordsRes, suitesRes, recordsSummary, tcSummary, h] = await Promise.all([
           recordsApi.getRecords({ page: 1, pageSize: 5 }),
           testcasesApi.getSuites({ page: 1, pageSize: 4 }),
           recordsApi.getSummary(),
           testcasesApi.getSummary(),
+          healthApi.getHealth().catch(() => null),
         ])
         setRecentRecords(recordsRes.list)
         setRecentSuites(suitesRes.list)
@@ -52,6 +55,7 @@ export default function DashboardPage() {
           totalCases: tcSummary.totalCases,
           successRate: recordsSummary.successRate,
         })
+        setHealth(h)
       } catch {
         // 请求失败静默处理，显示空数据
       } finally {
@@ -132,6 +136,41 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* 运行状态（可观测性：解析队列/worker 是否启用） */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-base font-semibold">运行状态</CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-xs"
+            onClick={async () => setHealth(await healthApi.getHealth().catch(() => null))}
+          >
+            刷新 <ArrowRight className="w-3 h-3 rotate-180" />
+          </Button>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          {health ? (
+            <>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className="text-xs">
+                  后端：OK
+                </Badge>
+                <Badge variant={health.workerEnabled ? 'secondary' : 'destructive'} className="text-xs">
+                  解析 Worker：{health.workerEnabled ? '已启用' : '已关闭'}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                <span>待处理：{health.pending}</span>
+                <span>解析中：{health.parsing}</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground">暂无法获取运行状态（请稍后重试）</div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 最近生成记录 */}
