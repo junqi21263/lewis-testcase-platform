@@ -19,6 +19,7 @@ import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
 import { settingsApi, type AIModelAdmin, type RuntimeHints } from '@/api/settings'
 import { authApi } from '@/api/auth'
+import { adminApi, type AdminUserItem } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { AIModel, UserRole } from '@/types'
@@ -84,6 +85,14 @@ export default function SettingsPage() {
   const [prefsSaving, setPrefsSaving] = useState(false)
 
   const admin = isAdminRole(user?.role)
+  const superAdmin = user?.role === 'SUPER_ADMIN'
+
+  const [adminKeyword, setAdminKeyword] = useState('')
+  const [adminUsers, setAdminUsers] = useState<AdminUserItem[]>([])
+  const [adminLoadingUsers, setAdminLoadingUsers] = useState(false)
+  const [adminSelectedUser, setAdminSelectedUser] = useState<AdminUserItem | null>(null)
+  const [adminNewPwd, setAdminNewPwd] = useState('')
+  const [adminOpLoading, setAdminOpLoading] = useState(false)
 
   const refreshModels = useCallback(async () => {
     setLoadingModels(true)
@@ -282,6 +291,60 @@ export default function SettingsPage() {
       /* toast by interceptor */
     } finally {
       setTestingModelId(null)
+    }
+  }
+
+  const refreshAdminUsers = useCallback(async () => {
+    if (!superAdmin) return
+    setAdminLoadingUsers(true)
+    try {
+      const res = await adminApi.listUsers({ keyword: adminKeyword.trim() || undefined, page: 1, pageSize: 20 })
+      setAdminUsers(res.list)
+      if (adminSelectedUser) {
+        const next = res.list.find((u) => u.id === adminSelectedUser.id) ?? null
+        setAdminSelectedUser(next)
+      }
+    } catch {
+      toast.error('加载用户列表失败')
+    } finally {
+      setAdminLoadingUsers(false)
+    }
+  }, [adminKeyword, adminSelectedUser, superAdmin])
+
+  const resetSelectedUserPassword = async () => {
+    if (!superAdmin) return
+    if (!adminSelectedUser) {
+      toast.error('请先选择用户')
+      return
+    }
+    if (!adminNewPwd.trim()) {
+      toast.error('请输入新密码')
+      return
+    }
+    setAdminOpLoading(true)
+    try {
+      await adminApi.resetUserPassword(adminSelectedUser.id, { newPassword: adminNewPwd })
+      toast.success('密码已重置')
+      setAdminNewPwd('')
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setAdminOpLoading(false)
+    }
+  }
+
+  const updateSelectedUserRole = async (role: UserRole) => {
+    if (!superAdmin) return
+    if (!adminSelectedUser) return
+    setAdminOpLoading(true)
+    try {
+      await adminApi.updateUserRole(adminSelectedUser.id, { role })
+      toast.success('角色已更新')
+      await refreshAdminUsers()
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setAdminOpLoading(false)
     }
   }
 
@@ -782,6 +845,114 @@ export default function SettingsPage() {
             ))}
         </CardContent>
       </Card>
+
+      {/* 超级管理员：用户运维 */}
+      {superAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <KeyRound className="w-4 h-4" />
+              超级管理员工具
+            </CardTitle>
+            <CardDescription>用户查询、重置密码、修改角色（仅超级管理员可见）</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="搜索邮箱或用户名（最多展示 20 条）"
+                value={adminKeyword}
+                onChange={(e) => setAdminKeyword(e.target.value)}
+              />
+              <Button variant="outline" onClick={refreshAdminUsers} disabled={adminLoadingUsers}>
+                <RefreshCw className={`w-4 h-4 ${adminLoadingUsers ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="border rounded-lg p-3 max-h-72 overflow-y-auto">
+                {adminUsers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">暂无数据，请搜索或刷新</p>
+                ) : (
+                  <div className="space-y-2">
+                    {adminUsers.map((u) => {
+                      const active = adminSelectedUser?.id === u.id
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => setAdminSelectedUser(u)}
+                          className={`w-full text-left p-2 rounded border transition-colors ${active ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{u.username}</p>
+                              <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                            </div>
+                            <Badge variant="secondary" className="text-xs">{roleLabel(u.role)}</Badge>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="border rounded-lg p-3 space-y-3">
+                {!adminSelectedUser ? (
+                  <p className="text-sm text-muted-foreground">选择左侧用户后，可重置密码或修改角色</p>
+                ) : (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{adminSelectedUser.username}</p>
+                      <p className="text-xs text-muted-foreground">{adminSelectedUser.email}</p>
+                    </div>
+                    <Separator />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">修改角色</label>
+                      <div className="flex gap-2">
+                        <select
+                          className="flex-1 h-10 px-3 rounded-md border border-input bg-background text-sm"
+                          value={adminSelectedUser.role}
+                          onChange={(e) => updateSelectedUserRole(e.target.value as UserRole)}
+                          disabled={adminOpLoading}
+                        >
+                          {(['SUPER_ADMIN', 'ADMIN', 'MEMBER', 'VIEWER'] as UserRole[]).map((r) => (
+                            <option key={r} value={r}>
+                              {roleLabel(r)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        角色有层级：SUPER_ADMIN {'>'} ADMIN {'>'} MEMBER {'>'} VIEWER
+                      </p>
+                    </div>
+                    <Separator />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">重置密码</label>
+                      <Input
+                        type="password"
+                        placeholder="新密码（建议至少 8 位）"
+                        value={adminNewPwd}
+                        onChange={(e) => setAdminNewPwd(e.target.value)}
+                        disabled={adminOpLoading}
+                      />
+                      <Button onClick={resetSelectedUserPassword} disabled={adminOpLoading}>
+                        重置密码
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        {passwordPolicyMessage(adminNewPwd || '') === true
+                          ? '密码强度 OK'
+                          : passwordPolicyMessage(adminNewPwd || '')}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
