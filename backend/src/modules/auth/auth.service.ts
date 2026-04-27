@@ -92,10 +92,13 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const username = dto.username.trim()
-    // username 在历史库中未必有唯一约束；若存在重复用户名，允许匹配任意一条密码正确的记录。
+    const rawLogin = dto.username.trim()
+    const asEmail = rawLogin.includes('@') ? this.normalizeEmail(rawLogin) : null
+    // 登录框可填「用户名」或「邮箱」；username 在历史库中未必有唯一约束时，允许匹配任意一条密码正确的记录。
     const users = await this.prisma.user.findMany({
-      where: { username },
+      where: asEmail
+        ? { OR: [{ username: rawLogin }, { email: asEmail }] }
+        : { username: rawLogin },
       orderBy: { updatedAt: 'desc' },
       take: 10,
     })
