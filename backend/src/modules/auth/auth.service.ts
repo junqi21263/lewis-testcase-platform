@@ -92,22 +92,12 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    if (this.adminOnly()) {
-      const u = dto.username.trim()
-      if (u.toLowerCase() !== 'admin') {
-        throw new UnauthorizedException('当前仅允许管理员账号登录')
-      }
-    }
     const username = dto.username.trim()
     const user = await this.prisma.user.findFirst({ where: { username } })
     if (!user) throw new UnauthorizedException('用户名或密码错误')
 
     const isMatch = await bcrypt.compare(dto.password, user.password)
     if (!isMatch) throw new UnauthorizedException('用户名或密码错误')
-
-    if (!this.adminOnly() && !user.emailVerified) {
-      throw new UnauthorizedException('该账号邮箱尚未完成验证，请完成注册验证流程或联系管理员')
-    }
 
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
     const { password: _, ...userInfo } = user
