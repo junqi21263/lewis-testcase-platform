@@ -61,6 +61,10 @@ jobs:
           rsync -az --delete \
             -e "ssh -i /tmp/deploy_key -p $SSH_PORT -o StrictHostKeyChecking=yes" \
             --exclude ".git/" \
+            --exclude ".env" \
+            --exclude ".env.*" \
+            --exclude "backend/.env" \
+            --exclude "frontend/.env" \
             --exclude "node_modules/" \
             --exclude "frontend/node_modules/" \
             --exclude "backend/node_modules/" \
