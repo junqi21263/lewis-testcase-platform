@@ -93,14 +93,32 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const username = dto.username.trim()
-    const user = await this.prisma.user.findFirst({ where: { username } })
-    if (!user) throw new UnauthorizedException('用户名或密码错误')
+    // username 在历史库中未必有唯一约束；若存在重复用户名，允许匹配任意一条密码正确的记录。
+    const users = await this.prisma.user.findMany({
+      where: { username },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+    })
+    if (users.length === 0) throw new UnauthorizedException('用户名或密码错误')
 
-    const isMatch = await bcrypt.compare(dto.password, user.password)
-    if (!isMatch) throw new UnauthorizedException('用户名或密码错误')
+    let matched = null as (typeof users)[number] | null
+    for (const u of users) {
+      // bcryptjs compare 为 CPU 密集，用户量很小时可接受；这里最多检查 10 条
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await bcrypt.compare(dto.password, u.password)
+      if (ok) {
+        matched = u
+        break
+      }
+    }
+    if (!matched) throw new UnauthorizedException('用户名或密码错误')
 
-    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role })
-    const { password: _, ...userInfo } = user
+    const token = this.jwtService.sign({
+      sub: matched.id,
+      email: matched.email,
+      role: matched.role,
+    })
+    const { password: _, ...userInfo } = matched
 
     return { accessToken: token, user: userInfo }
   }
