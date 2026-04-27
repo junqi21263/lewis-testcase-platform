@@ -10,6 +10,7 @@ import { templatesApi } from '@/api/templates'
 import { testcasesApi } from '@/api/testcases'
 import { parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
 import { formatFileSize, priorityColorMap } from '@/utils/format'
+import { loadRecentTemplateIds, pushRecentTemplateId } from '@/utils/recentTemplates'
 import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus } from '@/types'
 
@@ -215,6 +216,7 @@ export default function GeneratePage() {
   } = useGenerateStore()
 
   const [templateOptions, setTemplateOptions] = useState<PromptTemplate[]>([])
+  const [recentTplIds, setRecentTplIds] = useState<string[]>(() => loadRecentTemplateIds())
 
   /** 进入生成页时消费文档解析投递（仅处理一次，避免依赖链重复触发） */
   useEffect(() => {
@@ -448,6 +450,8 @@ export default function GeneratePage() {
                     if (t) {
                       setSelectedTemplateId(id)
                       setCustomPrompt(t.content)
+                      pushRecentTemplateId(id)
+                      setRecentTplIds(loadRecentTemplateIds())
                       toast.success(`已载入模板：${t.name}`)
                     }
                   }}
@@ -471,6 +475,34 @@ export default function GeneratePage() {
                   </Button>
                 )}
               </div>
+              {recentTplIds.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-muted-foreground">最近：</span>
+                  {recentTplIds
+                    .map((id) => templateOptions.find((t) => t.id === id))
+                    .filter(Boolean)
+                    .slice(0, 6)
+                    .map((t) => (
+                      <Button
+                        key={(t as PromptTemplate).id}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const tpl = t as PromptTemplate
+                          setSelectedTemplateId(tpl.id)
+                          setCustomPrompt(tpl.content)
+                          pushRecentTemplateId(tpl.id)
+                          setRecentTplIds(loadRecentTemplateIds())
+                          toast.success(`已载入模板：${tpl.name}`)
+                        }}
+                      >
+                        {(t as PromptTemplate).name}
+                      </Button>
+                    ))}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 从下拉选择或从「模板管理」点击「去生成」会带上模板 ID，生成成功后「使用次数」+1。
               </p>

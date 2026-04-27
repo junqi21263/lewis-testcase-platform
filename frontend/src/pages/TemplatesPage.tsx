@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { PromptTemplate, TemplateCategory } from '@/types'
 import toast from 'react-hot-toast'
+import { pushRecentTemplateId } from '@/utils/recentTemplates'
 
 const categoryLabels: Record<TemplateCategory, string> = {
   FUNCTIONAL: '功能测试',
@@ -153,6 +154,7 @@ export default function TemplatesPage() {
   const applyToGenerate = (tpl: PromptTemplate) => {
     useGenerateStore.getState().setCustomPrompt(tpl.content)
     useGenerateStore.getState().setSelectedTemplateId(tpl.id)
+    pushRecentTemplateId(tpl.id)
     toast.success('已应用到生成页，请前往「生成用例」开始生成')
     navigate('/generate')
   }
