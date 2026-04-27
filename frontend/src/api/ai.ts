@@ -17,6 +17,19 @@ export interface GenerateResult {
   duration: number
 }
 
+export type TestModelPayload = {
+  modelConfigId?: string
+  prompt?: string
+}
+
+export type TestModelResult = {
+  ok: boolean
+  modelId: string
+  modelName: string
+  latencyMs: number
+  sample: string
+}
+
 export const aiApi = {
   /** 获取可用模型列表 */
   getModels: () =>
@@ -35,4 +48,8 @@ export const aiApi = {
   ) => {
     return streamRequest('/ai/generate/stream', payload, onChunk, onDone, onError)
   },
+
+  /** 管理用途：测试模型连通性（需要管理员权限） */
+  testModel: (payload: TestModelPayload) =>
+    request.post<TestModelResult>('/ai/test', payload),
 }

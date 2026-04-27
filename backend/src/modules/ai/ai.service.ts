@@ -236,6 +236,34 @@ export class AiService {
     return models
   }
 
+  /** 管理用途：测试指定模型连通性（小请求，返回延迟与回包片段） */
+  async testModelConnectivity(opts?: { modelConfigId?: string; prompt?: string }) {
+    const { client, modelId, modelName } = await this.getOpenAIClient(opts?.modelConfigId)
+    const prompt =
+      (opts?.prompt || '').trim() ||
+      '请回复一个单词：ok'
+
+    const start = Date.now()
+    const completion = await client.chat.completions.create({
+      model: modelId,
+      messages: [
+        { role: 'system', content: 'You are a concise assistant.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0,
+      max_tokens: 16,
+    })
+    const latencyMs = Date.now() - start
+    const content = completion.choices?.[0]?.message?.content ?? ''
+    return {
+      ok: true,
+      modelId,
+      modelName,
+      latencyMs,
+      sample: String(content).slice(0, 200),
+    }
+  }
+
   /** 构建提示词 */
   private buildPrompt(dto: GenerateDto, fileContent?: string): string {
     const systemPrompt = `你是一名专业的软件测试工程师，精通各类测试方法和测试用例编写规范。

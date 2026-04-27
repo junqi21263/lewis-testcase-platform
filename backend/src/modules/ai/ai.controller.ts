@@ -4,6 +4,8 @@ import { Response } from 'express'
 import { AiService } from './ai.service'
 import { GenerateDto } from './dto/generate.dto'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { Roles } from '@/common/decorators/roles.decorator'
+import { UserRole } from '@prisma/client'
 
 @ApiTags('AI 生成')
 @ApiBearerAuth()
@@ -31,5 +33,12 @@ export class AiController {
     @Res() res: Response,
   ) {
     return this.aiService.generateStream(dto, userId, res)
+  }
+
+  @Post('test')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: '管理员：测试模型连通性（小请求）' })
+  testModel(@Body() body: { modelConfigId?: string; prompt?: string }) {
+    return this.aiService.testModelConnectivity(body)
   }
 }

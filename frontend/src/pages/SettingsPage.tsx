@@ -63,6 +63,7 @@ export default function SettingsPage() {
   const [adminModels, setAdminModels] = useState<AIModelAdmin[]>([])
   const [publicModels, setPublicModels] = useState<AIModel[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
+  const [testingModelId, setTestingModelId] = useState<string | null>(null)
 
   const [username, setUsername] = useState('')
   const [avatar, setAvatar] = useState('')
@@ -269,6 +270,18 @@ export default function SettingsPage() {
       refreshModels()
     } catch {
       /* */
+    }
+  }
+
+  const testModel = async (id: string) => {
+    setTestingModelId(id)
+    try {
+      const res = await aiApi.testModel({ modelConfigId: id })
+      toast.success(`连通性 OK：${res.modelName}（${res.latencyMs}ms）`)
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setTestingModelId(null)
     }
   }
 
@@ -609,6 +622,18 @@ export default function SettingsPage() {
                     {admin && model.isActive && !model.isDefault && (
                       <Button variant="ghost" size="sm" className="h-8" onClick={() => setDefault(model.id)}>
                         设默认
+                      </Button>
+                    )}
+                    {admin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => testModel(model.id)}
+                        disabled={!model.hasApiKey || testingModelId === model.id}
+                        title={!model.hasApiKey ? '请先配置 API Key' : '发送一个小请求测试连通性'}
+                      >
+                        {testingModelId === model.id ? '测试中…' : '测试'}
                       </Button>
                     )}
                     {admin && (
