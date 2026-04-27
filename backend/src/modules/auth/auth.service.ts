@@ -10,7 +10,7 @@ import {
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
 import { randomInt } from 'node:crypto'
-import { EmailOtpPurpose } from '@prisma/client'
+import { EmailOtpPurpose, type Prisma } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import {
   LoginDto,
@@ -59,6 +59,42 @@ export class AuthService {
     return raw.trim().toLowerCase()
   }
 
+  private passwordLooksBcrypt(stored: string): boolean {
+    const s = (stored || '').trim()
+    return s.startsWith('$2a$') || s.startsWith('$2b$') || s.startsWith('$2y$')
+  }
+
+  /**
+   * 校验密码：优先 bcrypt；若库中不是 bcrypt 形态且开启 AUTH_ALLOW_PLAINTEXT_PASSWORD，
+   * 则允许明文比对并在成功后写回 bcrypt（便于从错误数据恢复）。
+   */
+  private async verifyUserPassword(userId: string, plain: string, storedRaw: string): Promise<boolean> {
+    const stored = (storedRaw || '').trim()
+    if (!stored) return false
+
+    if (this.passwordLooksBcrypt(stored)) {
+      return bcrypt.compare(plain, stored)
+    }
+
+    const allowPlain =
+      process.env.AUTH_ALLOW_PLAINTEXT_PASSWORD?.trim() === '1' ||
+      process.env.AUTH_ALLOW_PLAINTEXT_PASSWORD?.trim().toLowerCase() === 'true'
+
+    if (allowPlain && plain === stored) {
+      try {
+        const hashed = await bcrypt.hash(plain, 10)
+        await this.prisma.user.update({ where: { id: userId }, data: { password: hashed } })
+      } catch (e) {
+        this.logger.warn(
+          `登录成功但明文密码升级为 bcrypt 失败 userId=${userId}: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
+      return true
+    }
+
+    return false
+  }
+
   private generateOtp(): string {
     return randomInt(0, 1_000_000).toString().padStart(6, '0')
   }
@@ -93,22 +129,34 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const rawLogin = dto.username.trim()
+    const plainPwd = (dto.password ?? '').trim()
+    if (!rawLogin || !plainPwd) {
+      throw new UnauthorizedException('用户名或密码错误')
+    }
+
     const asEmail = rawLogin.includes('@') ? this.normalizeEmail(rawLogin) : null
-    // 登录框可填「用户名」或「邮箱」；username 在历史库中未必有唯一约束时，允许匹配任意一条密码正确的记录。
+
+    const orFilters: Prisma.UserWhereInput[] = [
+      { username: rawLogin },
+      { username: { equals: rawLogin, mode: 'insensitive' } },
+    ]
+    if (asEmail) {
+      orFilters.push({ email: asEmail })
+      orFilters.push({ email: { equals: asEmail, mode: 'insensitive' } })
+    }
+
+    // 登录框可填「用户名」或「邮箱」；username 可能重复时，匹配任意一条密码正确的记录。
     const users = await this.prisma.user.findMany({
-      where: asEmail
-        ? { OR: [{ username: rawLogin }, { email: asEmail }] }
-        : { username: rawLogin },
+      where: { OR: orFilters },
       orderBy: { updatedAt: 'desc' },
-      take: 10,
+      take: 50,
     })
     if (users.length === 0) throw new UnauthorizedException('用户名或密码错误')
 
     let matched = null as (typeof users)[number] | null
     for (const u of users) {
-      // bcryptjs compare 为 CPU 密集，用户量很小时可接受；这里最多检查 10 条
       // eslint-disable-next-line no-await-in-loop
-      const ok = await bcrypt.compare(dto.password, u.password)
+      const ok = await this.verifyUserPassword(u.id, plainPwd, u.password)
       if (ok) {
         matched = u
         break
