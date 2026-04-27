@@ -100,39 +100,39 @@ enum EmailOtpPurpose {
 
 /// 团队表
 model Team {
-  id          String   @id @default(cuid())
-  name        String   @db.VarChar(100)
-  description String?  @db.Text
+  id          String  @id @default(cuid())
+  name        String  @db.VarChar(100)
+  description String? @db.Text
   ownerId     String
 
-  members     TeamMember[]
-  testSuites  TestSuite[]
+  members           TeamMember[]
+  testSuites        TestSuite[]
   generationRecords GenerationRecord[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@map("teams")
 }
 
 /// 用户表
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique @db.VarChar(255)
-  username       String   @db.VarChar(50)
-  password       String   @db.VarChar(255)
-  avatar         String?  @db.VarChar(500)
-  role           UserRole @default(MEMBER)
-  teamId         String?
-  emailVerified  Boolean  @default(false)
+  id            String   @id @default(cuid())
+  email         String   @unique @db.VarChar(255)
+  username      String   @unique @db.VarChar(50)
+  password      String   @db.VarChar(255)
+  avatar        String?  @db.VarChar(500)
+  role          UserRole @default(MEMBER)
+  teamId        String?
+  emailVerified Boolean  @default(false)
 
   // 关联
-  teamMembers      TeamMember[]
-  uploadedFiles    UploadedFile[]
-  generationRecords GenerationRecord[]
-  downloadRecords  DownloadRecord[]
-  promptTemplates  PromptTemplate[]
-  testSuites       TestSuite[]
-  documentParseRecords DocumentParseRecord[]
+  teamMembers               TeamMember[]
+  uploadedFiles             UploadedFile[]
+  generationRecords         GenerationRecord[]
+  downloadRecords           DownloadRecord[]
+  promptTemplates           PromptTemplate[]
+  testSuites                TestSuite[]
+  documentParseRecords      DocumentParseRecord[]
   generationRecordAuditLogs GenerationRecordAuditLog[]
   generationRecordShares    GenerationRecordShare[]
   generationRecordExports   GenerationRecordExport[]
@@ -145,14 +145,14 @@ model User {
 
 /// 邮箱验证码（注册 / 重置密码），验证通过前不落 users 表（注册场景）
 model EmailOtpChallenge {
-  id           String           @id @default(cuid())
-  email        String           @db.VarChar(255)
+  id           String          @id @default(cuid())
+  email        String          @db.VarChar(255)
   purpose      EmailOtpPurpose
-  codeHash     String           @db.VarChar(255)
+  codeHash     String          @db.VarChar(255)
   expiresAt    DateTime
-  username     String?          @db.VarChar(50)
-  passwordHash String?          @db.VarChar(255)
-  avatar       String?          @db.VarChar(500)
+  username     String?         @db.VarChar(50)
+  passwordHash String?         @db.VarChar(255)
+  avatar       String?         @db.VarChar(500)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -163,13 +163,13 @@ model EmailOtpChallenge {
 
 /// 团队成员表（多对多关系）
 model TeamMember {
-  id       String   @id @default(cuid())
-  userId   String
-  teamId   String
-  role     UserRole @default(MEMBER)
+  id     String   @id @default(cuid())
+  userId String
+  teamId String
+  role   UserRole @default(MEMBER)
 
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   joinedAt DateTime @default(now())
 
@@ -179,31 +179,31 @@ model TeamMember {
 
 /// 上传文件表
 model UploadedFile {
-  id            String     @id @default(cuid())
-  name          String     @db.VarChar(255)
-  originalName  String     @db.VarChar(255)
-  path          String     @db.VarChar(500)
-  size          Int
-  mimeType      String     @db.VarChar(100)
-  fileType      FileType
-  status        FileStatus @default(PENDING)
+  id                     String     @id @default(cuid())
+  name                   String     @db.VarChar(255)
+  originalName           String     @db.VarChar(255)
+  path                   String     @db.VarChar(500)
+  size                   Int
+  mimeType               String     @db.VarChar(100)
+  fileType               FileType
+  status                 FileStatus @default(PENDING)
   /// 解析后台队列：当前阶段（用于前端展示/排障），例如 CLAIMED/PDF_TEXT/PDF_RENDER/VISION/OCR/STRUCTURE/DONE
-  parseStage    String?    @db.VarChar(64)
+  parseStage             String?    @db.VarChar(64)
   /// 解析尝试次数（含重试）
-  parseAttempts Int        @default(0)
+  parseAttempts          Int        @default(0)
   /// 解析任务开始/结束时间（后台 worker 写入）
-  parseStartedAt  DateTime?
-  parseFinishedAt DateTime?
+  parseStartedAt         DateTime?
+  parseFinishedAt        DateTime?
   /// 解析过程中定期更新，便于判断卡死/重启
-  lastHeartbeatAt DateTime?
-  parsedContent String?    @db.Text
+  lastHeartbeatAt        DateTime?
+  parsedContent          String?    @db.Text
   /// 解析失败时的错误信息（成功时为 null）
-  parseError    String?    @db.Text
+  parseError             String?    @db.Text
   /// LLM 结构化后的需求条目（JSON 字符串数组），供前端需求清单优先展示
   structuredRequirements Json?
-  uploaderId    String
+  uploaderId             String
 
-  uploader         User               @relation(fields: [uploaderId], references: [id])
+  uploader          User               @relation(fields: [uploaderId], references: [id])
   generationRecords GenerationRecord[]
 
   createdAt DateTime @default(now())
@@ -224,8 +224,8 @@ model PromptTemplate {
   usageCount  Int              @default(0)
   creatorId   String
 
-  creator          User               @relation(fields: [creatorId], references: [id])
-  generationRecords GenerationRecord[]
+  creator              User                  @relation(fields: [creatorId], references: [id])
+  generationRecords    GenerationRecord[]
   documentParseRecords DocumentParseRecord[]
 
   createdAt DateTime @default(now())
@@ -247,8 +247,8 @@ model DocumentParseRecord {
   fileIds      Json     @default("[]")
   createdAt    DateTime @default(now())
 
-  creator  User             @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  template PromptTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  creator           User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  template          PromptTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
   generationRecords GenerationRecord[]
 
   @@index([creatorId, createdAt])
@@ -265,11 +265,11 @@ model TestSuite {
   creatorId   String
   teamId      String?
 
-  creator          User               @relation(fields: [creatorId], references: [id])
-  team             Team?              @relation(fields: [teamId], references: [id])
-  cases            TestCase[]
-  generationRecords GenerationRecord[]
-  downloadRecords  DownloadRecord[]
+  creator                 User                     @relation(fields: [creatorId], references: [id])
+  team                    Team?                    @relation(fields: [teamId], references: [id])
+  cases                   TestCase[]
+  generationRecords       GenerationRecord[]
+  downloadRecords         DownloadRecord[]
   generationRecordExports GenerationRecordExport[]
 
   createdAt DateTime @default(now())
@@ -303,41 +303,41 @@ model TestCase {
 
 /// 生成记录表
 model GenerationRecord {
-  id           String           @id @default(cuid())
-  title        String           @db.VarChar(200)
-  status       GenerationStatus @default(PENDING)
-  sourceType   String           @db.VarChar(20) // file | text | url
+  id                     String           @id @default(cuid())
+  title                  String           @db.VarChar(200)
+  status                 GenerationStatus @default(PENDING)
+  sourceType             String           @db.VarChar(20) // file | text | url
   /// 需求原文（与 prompt 同步维护，便于检索与对外字段命名）
-  prompt       String           @db.Text
-  demandContent String?         @db.Text
-  generationSource GenerationSource @default(MANUAL_INPUT)
-  modelId      String           @db.VarChar(100)
-  modelName    String           @db.VarChar(100)
-  caseCount    Int              @default(0)
-  errorMessage String?          @db.Text
-  duration     Int?             // 耗时（毫秒）
-  tokensUsed   Int?             // token 消耗
+  prompt                 String           @db.Text
+  demandContent          String?          @db.Text
+  generationSource       GenerationSource @default(MANUAL_INPUT)
+  modelId                String           @db.VarChar(100)
+  modelName              String           @db.VarChar(100)
+  caseCount              Int              @default(0)
+  errorMessage           String?          @db.Text
+  duration               Int? // 耗时（毫秒）
+  tokensUsed             Int? // token 消耗
   /// 生成时的选项快照（粒度、场景占比、温度等）
-  generateParams Json?
+  generateParams         Json?
   /// 所用提示词模板全文快照
-  promptTemplateSnapshot String? @db.Text
-  suiteId      String?
-  fileId       String?
-  templateId   String?
-  teamId       String?
-  documentParseRecordId String?
-  creatorId    String
-  deletedAt    DateTime?
-  isDeleted    Boolean          @default(false)
-  tags         String[]         @default([])
-  notes        String?          @db.Text
-  remark       String?          @db.Text
+  promptTemplateSnapshot String?          @db.Text
+  suiteId                String?
+  fileId                 String?
+  templateId             String?
+  teamId                 String?
+  documentParseRecordId  String?
+  creatorId              String
+  deletedAt              DateTime?
+  isDeleted              Boolean          @default(false)
+  tags                   String[]         @default([])
+  notes                  String?          @db.Text
+  remark                 String?          @db.Text
 
-  creator  User            @relation(fields: [creatorId], references: [id])
-  team     Team?           @relation(fields: [teamId], references: [id])
-  suite    TestSuite?      @relation(fields: [suiteId], references: [id])
-  file     UploadedFile?   @relation(fields: [fileId], references: [id])
-  template PromptTemplate? @relation(fields: [templateId], references: [id])
+  creator             User                 @relation(fields: [creatorId], references: [id])
+  team                Team?                @relation(fields: [teamId], references: [id])
+  suite               TestSuite?           @relation(fields: [suiteId], references: [id])
+  file                UploadedFile?        @relation(fields: [fileId], references: [id])
+  template            PromptTemplate?      @relation(fields: [templateId], references: [id])
   documentParseRecord DocumentParseRecord? @relation(fields: [documentParseRecordId], references: [id], onDelete: SetNull)
 
   auditLogs GenerationRecordAuditLog[]
@@ -354,12 +354,12 @@ model GenerationRecord {
 
 /// 生成记录操作审计
 model GenerationRecordAuditLog {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   recordId   String
   operatorId String
-  action     String   @db.VarChar(64)
+  action     String  @db.VarChar(64)
   detail     Json?
-  ip         String?  @db.VarChar(64)
+  ip         String? @db.VarChar(64)
 
   record   GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   operator User             @relation(fields: [operatorId], references: [id], onDelete: Cascade)
@@ -413,11 +413,11 @@ model GenerationRecordExport {
 
 /// 下载记录表
 model DownloadRecord {
-  id          String       @id @default(cuid())
-  suiteId     String
-  format      ExportFormat
-  fileSize    Int?
-  downloadUrl String       @db.VarChar(500)
+  id           String       @id @default(cuid())
+  suiteId      String
+  format       ExportFormat
+  fileSize     Int?
+  downloadUrl  String       @db.VarChar(500)
   downloaderId String
 
   suite      TestSuite @relation(fields: [suiteId], references: [id])
@@ -430,18 +430,18 @@ model DownloadRecord {
 
 /// AI 模型配置表
 model AIModelConfig {
-  id          String  @id @default(cuid())
-  name        String  @db.VarChar(100)
-  provider    String  @db.VarChar(50)
-  modelId     String  @db.VarChar(100)
-  baseUrl     String  @db.VarChar(500)
-  apiKey      String  @db.VarChar(500) // 加密存储
-  isDefault   Boolean @default(false)
-  maxTokens   Int     @default(4096)
-  temperature Float   @default(0.7)
-  isActive    Boolean @default(true)
+  id                        String  @id @default(cuid())
+  name                      String  @db.VarChar(100)
+  provider                  String  @db.VarChar(50)
+  modelId                   String  @db.VarChar(100)
+  baseUrl                   String  @db.VarChar(500)
+  apiKey                    String  @db.VarChar(500) // 加密存储
+  isDefault                 Boolean @default(false)
+  maxTokens                 Int     @default(4096)
+  temperature               Float   @default(0.7)
+  isActive                  Boolean @default(true)
   /// 是否支持多模态（image_url），用于文档视觉解析与说明
-  supportsVision Boolean @default(false)
+  supportsVision            Boolean @default(false)
   /// 全局唯一：上传图片/PDF 走视觉理解时的专用模型（与生成用例模型可不同）
   useForDocumentVisionParse Boolean @default(false)
 
