@@ -1,16 +1,28 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator'
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  MaxLength,
+  IsOptional,
+  Matches,
+  ValidateIf,
+} from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin_user' })
+  @ApiProperty({ example: 'admin_user 或 user@example.com' })
   @IsString()
-  @MinLength(2, { message: '用户名至少2个字符' })
-  @MaxLength(50, { message: '用户名最多50个字符' })
+  @MinLength(2, { message: '用户名或邮箱至少2个字符' })
+  @MaxLength(255, { message: '用户名或邮箱过长' })
+  /** 含 @ 时按邮箱校验，否则按用户名规则 */
+  @ValidateIf((o: LoginDto) => !String(o.username || '').includes('@'))
   @Matches(USERNAME_RE, {
     message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
   })
+  @ValidateIf((o: LoginDto) => String(o.username || '').includes('@'))
+  @IsEmail({}, { message: '邮箱格式不正确' })
   username: string
 
   @ApiProperty({ example: 'Admin@123456' })

@@ -10,6 +10,15 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
 const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
+/** 简单邮箱格式（与后端 LoginDto 的邮箱分支一致） */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function isValidLoginId(value: string): boolean {
+  const v = value.trim()
+  if (!v) return false
+  if (v.includes('@')) return EMAIL_RE.test(v)
+  return USERNAME_RE.test(v)
+}
 
 interface LoginForm {
   username: string
@@ -62,19 +71,20 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">用户名</label>
+            <label className="text-sm font-medium text-foreground">用户名或邮箱</label>
             <Input
               type="text"
               autoComplete="username"
-              placeholder="请输入用户名"
+              placeholder="请输入用户名或邮箱"
               {...register('username', {
-                required: '请输入用户名',
-                minLength: { value: 2, message: '用户名至少2个字符' },
-                maxLength: { value: 50, message: '用户名最多50个字符' },
-                pattern: {
-                  value: USERNAME_RE,
-                  message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
-                },
+                required: '请输入用户名或邮箱',
+                minLength: { value: 2, message: '至少2个字符' },
+                maxLength: { value: 255, message: '过长' },
+                validate: (v) =>
+                  isValidLoginId(v) ||
+                  (v.includes('@')
+                    ? '邮箱格式不正确'
+                    : '用户名仅支持字母、数字、下划线、中文、点与短横线'),
               })}
               className={errors.username ? 'border-destructive' : ''}
             />
