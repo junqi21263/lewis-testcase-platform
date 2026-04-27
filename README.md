@@ -77,27 +77,30 @@ pnpm dev
 
 ## 环境变量说明
 
+> 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。
+> 本 README 中所有示例均为 **占位符**，请替换为你自己的值。
+
 ### 后端 `backend/.env`
 
 | 变量名 | 说明 | 示例 |
 |--------|------|------|
-| `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://user:pass@localhost:5432/db` |
-| `JWT_SECRET` | JWT 签名密钥 | 随机 32 位字符串 |
+| `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://<DB_USER>:<DB_PASS>@<DB_HOST>:5432/<DB_NAME>` |
+| `JWT_SECRET` | JWT 签名密钥 | `<RANDOM_32+_CHARS>` |
 | `JWT_EXPIRES_IN` | JWT 过期时间 | `7d` |
-| `OPENAI_API_KEY` | 模型 API Key（兼容 OpenAI 风格） | `sk-...` |
-| `OPENAI_BASE_URL` | 模型接口 Base URL（兼容其他供应商） | `https://api.openai.com/v1` |
-| `DEFAULT_AI_MODEL` | 默认模型 ID | `gpt-4o` |
+| `OPENAI_API_KEY` | 模型 API Key（兼容 OpenAI 风格） | `<YOUR_API_KEY>` |
+| `OPENAI_BASE_URL` | 模型接口 Base URL（兼容其他供应商） | `https://api.example.com/v1` |
+| `DEFAULT_AI_MODEL` | 默认模型 ID | `<MODEL_ID>` |
 | `UPLOAD_DIR` | 文件上传目录 | `./uploads` |
 | `MAX_FILE_SIZE` | 最大文件大小（字节） | `10485760` |
-| `CORS_ORIGINS` | 允许的前端 Origin（逗号分隔） | `http://localhost:5173,http://your-domain.com` |
-| `FRONTEND_URL` | 前端地址（部分场景用于回跳/链接） | `http://localhost:5173` |
-| `AUTH_ALLOW_PLAINTEXT_PASSWORD` | 允许明文密码救援（登录成功后自动升级为 bcrypt） | `1`（仅应急，建议关闭） |
+| `CORS_ORIGINS` | 允许的前端 Origin（逗号分隔） | `http://localhost:5173,https://<YOUR_DOMAIN>` |
+| `FRONTEND_URL` | 前端地址（部分场景用于回跳/链接） | `https://<YOUR_DOMAIN>` |
+| `AUTH_ALLOW_PLAINTEXT_PASSWORD` | 允许明文密码救援（登录成功后自动升级为 bcrypt） | **默认留空**；仅应急、短期开启，用完立刻关闭 |
 
 ### 前端 `frontend/.env`
 
 | 变量名 | 说明 | 示例 |
 |--------|------|------|
-| `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致） | `http://localhost:3000/api`（或生产用 `/api`） |
+| `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致） | `http://localhost:3000/api`（生产推荐 `/api`） |
 | `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
 ## 项目结构
