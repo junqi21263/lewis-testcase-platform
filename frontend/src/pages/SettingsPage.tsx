@@ -10,6 +10,7 @@ import {
   KeyRound,
   Star,
   RefreshCw,
+  ClipboardList,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,7 +20,7 @@ import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
 import { settingsApi, type AIModelAdmin, type RuntimeHints } from '@/api/settings'
 import { authApi } from '@/api/auth'
-import { adminApi, type AdminUserItem } from '@/api/admin'
+import { adminApi, type AdminAuditLogItem, type AdminUserItem } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { AIModel, UserRole } from '@/types'
@@ -27,6 +28,7 @@ import toast from 'react-hot-toast'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 import { loadGenPrefs, saveGenPrefs, type GenPrefs } from '@/utils/genPrefs'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
+import { format } from 'date-fns'
 
 function roleLabel(role: UserRole): string {
   const m: Record<UserRole, string> = {
@@ -40,6 +42,25 @@ function roleLabel(role: UserRole): string {
 
 function isAdminRole(role?: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'SUPER_ADMIN'
+}
+
+function auditActionLabel(action: string): string {
+  if (action === 'ADMIN_RESET_PASSWORD') return '重置密码'
+  if (action === 'ADMIN_UPDATE_ROLE') return '修改角色'
+  return action
+}
+
+function formatAuditExtra(action: string, detail: unknown): string {
+  if (!detail || typeof detail !== 'object') return ''
+  const d = detail as Record<string, unknown>
+  if (
+    action === 'ADMIN_UPDATE_ROLE' &&
+    typeof d.fromRole === 'string' &&
+    typeof d.toRole === 'string'
+  ) {
+    return `${roleLabel(d.fromRole as UserRole)} → ${roleLabel(d.toRole as UserRole)}`
+  }
+  return ''
 }
 
 const emptyCreateForm = {
@@ -93,6 +114,9 @@ export default function SettingsPage() {
   const [adminSelectedUser, setAdminSelectedUser] = useState<AdminUserItem | null>(null)
   const [adminNewPwd, setAdminNewPwd] = useState('')
   const [adminOpLoading, setAdminOpLoading] = useState(false)
+
+  const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogItem[]>([])
+  const [adminAuditLoading, setAdminAuditLoading] = useState(false)
 
   const refreshModels = useCallback(async () => {
     setLoadingModels(true)
@@ -311,6 +335,24 @@ export default function SettingsPage() {
     }
   }, [adminKeyword, adminSelectedUser, superAdmin])
 
+  const refreshAuditLogs = useCallback(async () => {
+    if (!superAdmin) return
+    setAdminAuditLoading(true)
+    try {
+      const res = await adminApi.listAuditLogs({ page: 1, pageSize: 30 })
+      setAdminAuditLogs(res.list)
+    } catch {
+      toast.error('加载运维审计日志失败')
+    } finally {
+      setAdminAuditLoading(false)
+    }
+  }, [superAdmin])
+
+  useEffect(() => {
+    if (!superAdmin) return
+    void refreshAuditLogs()
+  }, [superAdmin, refreshAuditLogs])
+
   const resetSelectedUserPassword = async () => {
     if (!superAdmin) return
     if (!adminSelectedUser) {
@@ -326,6 +368,7 @@ export default function SettingsPage() {
       await adminApi.resetUserPassword(adminSelectedUser.id, { newPassword: adminNewPwd })
       toast.success('密码已重置')
       setAdminNewPwd('')
+      await refreshAuditLogs()
     } catch {
       /* toast by interceptor */
     } finally {
@@ -341,6 +384,7 @@ export default function SettingsPage() {
       await adminApi.updateUserRole(adminSelectedUser.id, { role })
       toast.success('角色已更新')
       await refreshAdminUsers()
+      await refreshAuditLogs()
     } catch {
       /* toast by interceptor */
     } finally {
@@ -950,6 +994,56 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {superAdmin && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4" />
+                  运维审计日志
+                </CardTitle>
+                <CardDescription>仅记录操作类型与目标用户，不记录密码内容</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => void refreshAuditLogs()} disabled={adminAuditLoading}>
+                <RefreshCw className={`w-3.5 h-3.5 ${adminAuditLoading ? 'animate-spin' : ''}`} />
+                刷新
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {adminAuditLogs.length === 0 && !adminAuditLoading ? (
+              <p className="text-sm text-muted-foreground">暂无审计记录</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {adminAuditLogs.map((log) => {
+                  const extra = formatAuditExtra(log.action, log.detail)
+                  return (
+                    <div key={log.id} className="text-xs border rounded-md p-2 space-y-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')}
+                        </span>
+                        <Badge variant="outline">{auditActionLabel(log.action)}</Badge>
+                      </div>
+                      <p className="break-words">
+                        <span className="text-muted-foreground">操作者：</span>
+                        {log.operator.username}
+                        <span className="text-muted-foreground mx-1">→</span>
+                        <span className="text-muted-foreground">目标：</span>
+                        {log.targetUser.username}
+                        {extra ? <span className="ml-1 text-muted-foreground">（{extra}）</span> : null}
+                      </p>
+                      {log.ip ? <p className="text-muted-foreground">IP：{log.ip}</p> : null}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

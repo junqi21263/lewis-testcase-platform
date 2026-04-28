@@ -136,11 +136,33 @@ model User {
   generationRecordAuditLogs GenerationRecordAuditLog[]
   generationRecordShares    GenerationRecordShare[]
   generationRecordExports   GenerationRecordExport[]
+  adminAuditLogsAsOperator  AdminAuditLog[]             @relation("AdminAuditOperator")
+  adminAuditLogsAsTarget    AdminAuditLog[]             @relation("AdminAuditTarget")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+/// 超级管理员运维审计（重置密码 / 修改角色等，不记录密码明文）
+model AdminAuditLog {
+  id           String  @id @default(cuid())
+  operatorId   String
+  targetUserId String
+  action       String  @db.VarChar(64)
+  detail       Json?
+  ip           String? @db.VarChar(64)
+
+  operator   User @relation("AdminAuditOperator", fields: [operatorId], references: [id], onDelete: Cascade)
+  targetUser User @relation("AdminAuditTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetUserId])
+  @@index([operatorId])
+  @@map("admin_audit_logs")
 }
 
 /// 邮箱验证码（注册 / 重置密码），验证通过前不落 users 表（注册场景）
