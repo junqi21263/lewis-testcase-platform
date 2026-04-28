@@ -28,9 +28,10 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         // Prefer local browser to avoid large downloads in restricted networks.
-        ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+        // Playwright expects executablePath/channel under launchOptions.
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
           ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
-          : { channel: 'chrome' }),
+          : { channel: 'chrome' },
       },
     },
   ],
