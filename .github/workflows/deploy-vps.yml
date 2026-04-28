@@ -10,7 +10,7 @@
 #     SSH_PORT      — default 22 if omitted
 #
 #   Variables (optional): Repository → Variables
-#     DEPLOY_PATH   — absolute path to the cloned repo on the server (default below)
+#     DEPLOY_PATH   — absolute path to the repo on the server (default below)
 #
 # Server prerequisites:
 #   - No need for git clone on server (workflow rsyncs code).
@@ -76,7 +76,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/testcase-platform' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}
         run: |
           set -euo pipefail
           echo "$SSH_KEY" > /tmp/deploy_key
@@ -107,7 +107,7 @@ jobs:
           command_timeout: 25m
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/testcase-platform' }}"
+            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}"
             cd "$DEPLOY_PATH"
             if sudo docker compose version >/dev/null 2>&1; then
               sudo docker compose -f docker-compose.full.yml up -d --build
