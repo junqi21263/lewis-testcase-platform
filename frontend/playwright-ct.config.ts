@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/experimental-ct-react'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
+import react from '@vitejs/plugin-react'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -16,6 +17,7 @@ export default defineConfig({
   use: {
     viewport: { width: 1100, height: 720 },
     ctViteConfig: {
+      plugins: [react()],
       resolve: {
         alias: {
           '@': path.resolve(__dirname, './src'),
@@ -28,18 +30,16 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Prefer local browser to avoid large downloads in restricted networks.
-        // Playwright expects executablePath/channel under launchOptions.
+        // Prefer Playwright-managed browser for CT stability.
+        // If you want to override, set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.
         launchOptions: (() => {
           const p = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
           if (p) {
             if (fs.existsSync(p)) return { executablePath: p }
             // eslint-disable-next-line no-console
-            console.warn(
-              `[ct] PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH not found, fallback to channel=chrome: ${p}`,
-            )
+            console.warn(`[ct] PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH not found, fallback to bundled Chromium: ${p}`)
           }
-          return { channel: 'chrome' }
+          return {}
         })(),
       },
     },
