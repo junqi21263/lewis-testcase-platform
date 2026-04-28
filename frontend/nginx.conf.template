@@ -13,6 +13,15 @@ http {
         root /usr/share/nginx/html;
         index index.html index.htm;
 
+        # 与后端裸路由 GET /health 对齐（负载均衡 / 平台探活）
+        location = /health {
+            proxy_pass http://backend:3000/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
         location / {
             try_files $uri $uri/ /index.html;
         }

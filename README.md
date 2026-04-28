@@ -55,7 +55,7 @@ docker-compose up -d
 
 ### 4. 初始化数据库
 
-> 生产与 Railway 使用 **`prisma/schema.prod.prisma`** 与 `prisma/migrations/` 下迁移。本地请用 **同一套 schema** 生成 Client 与落库，避免与生产结构漂移。
+> 生产与云服务器 / 容器部署使用 **`prisma/schema.prod.prisma`** 与 `prisma/migrations/` 下迁移。本地请用 **同一套 schema** 生成 Client 与落库，避免与生产结构漂移。
 
 先确保 `docker-compose up -d` 已启动 Postgres，且 `backend/.env` 中 `DATABASE_URL` 与 compose 中库名/用户一致（见 `backend/.env.example`）。
 
@@ -126,27 +126,56 @@ bash scripts/dev-integration-check.sh
 | `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致） | `http://localhost:3000/api`（生产推荐 `/api`） |
 | `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
-### Railway：前端也由 Git 推送部署（同一仓库）
+### 生产部署：云服务器（推荐，不依赖 Railway）
 
-仓库根目录的 `railway.toml` 面向 **后端**（`backend/Dockerfile`）。前端作为 **第二个 Railway 服务**，仍绑定 **同一 GitHub 仓库**，推送 **`main`** 即可构建发布，无需手动上传 `dist`。
+默认推荐在 **自有云服务器（VPS）** 上用 **Docker Compose** 跑全栈：**前端 Nginx（80）+ 后端 + PostgreSQL + Redis**，**单公网入口**，前端将 **`/api`** 反代到后端，**无需**把数据库或 Redis 暴露到公网。
 
-1. Railway 项目中 **New Service** → 选择与本后端 **相同的仓库**。
-2. **Settings → Root Directory** 设为 **`frontend`**（会使用 `frontend/railway.toml` 与 `frontend/Dockerfile`）。
-3. **Build / Variables** 中为 **构建期** 设置 Vite 变量（`pnpm build` 时嵌入）：
-   - **`VITE_API_BASE_URL`**：前后端 **不同域名** 时填后端公网 API 基址，例如 `https://<your-backend>.up.railway.app/api`；并在后端 **`CORS_ORIGINS`** 中加入此前端页面的 Origin（如 `https://<your-frontend>.up.railway.app`）。
-   - **同源 / 反代场景**（如 VPS 上 `docker-compose.full` 仅一个公网入口）继续使用 **`/api`** 即可，与 `frontend/.env.example` 一致。
+#### 架构与端口
 
-> 注：腾讯云 EdgeOne 等静态托管若仍用手动上传 `dist.zip`，与「Git 自动部署」可并行；选一主流程即可。
+| 组件 | 说明 |
+|------|------|
+| **入口** | 宿主机 **80** → `frontend` 容器（静态资源 + 反代） |
+| **裸探活** | `GET http://<服务器>/health` → 经 Nginx 转发后端 **`GET /health`**（纯文本 `ok`） |
+| **业务探活** | `GET http://<服务器>/api/health` → JSON（队列状态等） |
+| **PostgreSQL** | 默认仅 **`127.0.0.1:5432`** 映射到宿主机，便于 SSH 隧道 / 本机客户端，**勿对 0.0.0.0 开放** |
+| **后端** | 不映射宿主机端口，仅容器网络内 `backend:3000` |
 
-**GitHub Actions → VPS（全栈已随 Git 更新前端）**  
-`.github/workflows/deploy-vps.yml` 推送 `main` 时会 rsync 仓库并在服务器执行 **`docker compose -f docker-compose.full.yml up -d --build`**，`frontend` 服务会从 **`frontend/Dockerfile`** 重新构建镜像，因此 **前端与后端同一套推送流程**。
+#### 首次在服务器上部署
+
+1. **安装** Docker Engine 与 **Docker Compose 插件**（或 `docker-compose` 独立二进制）；防火墙 / 安全组放行 **80**（若上 HTTPS 再开 **443**）。
+2. 将本仓库放到部署目录（例如 `/opt/lewis_testcase_platform`），可用 `git clone` 或下文 **GitHub Actions rsync**。
+3. 在**与 `docker-compose.full.yml` 同级**目录创建环境文件：  
+   `cp docker-compose.full.env.example .env`  
+   编辑 **`.env`**：`DB_PASSWORD`、`DATABASE_URL`（与 DB 账号一致）、**`JWT_SECRET`**、**`FRONTEND_URL`** / **`CORS_ORIGINS`**（填你的公网访问域名）、`OPENAI_*` 等。
+4. 启动并构建：  
+   `docker compose -f docker-compose.full.yml up -d --build`
+5. 冒烟（仓库根目录）：  
+   `bash scripts/smoke.sh`  
+   或手动：`curl -fsS http://127.0.0.1/api/health`
+
+数据库迁移由 **`backend/Dockerfile`** 构建阶段与 **`backend/start.sh`** 在容器启动时执行（与 Railway 无关）；确保 **`DATABASE_URL`** 指向 compose 内 **`postgres`** 服务。
+
+#### 用 Git 更新（CI 推送云服务器，可选）
+
+配置 GitHub **Actions Secrets**：`SSH_HOST`、`SSH_USER`、`SSH_KEY`（可选 `SSH_PORT`）；**Variables** 可选 `DEPLOY_PATH`（默认 `/opt/lewis_testcase_platform`）。  
+推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会 **rsync 代码**到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**，再跑 **`scripts/smoke.sh`** — **前后端同一套 Git 流程**，无需单独发布前端。
+
+#### 可选：Railway / 其他 PaaS
+
+若个别环境仍用 Railway：根目录 `railway.toml` 与 **`frontend/railway.toml`** 仅为 **可选** 配置；**云服务器部署不依赖** 这些文件。Railway 上前后端分服务时，需配置 **`VITE_API_BASE_URL`** 与后端 **`CORS_ORIGINS`**（详见 `frontend/railway.toml` 内注释）。
+
+#### 静态托管（EdgeOne 等）
+
+也可将 **`frontend/dist`** 或 **`frontend/dist.zip`** 上传到 CDN/静态托管，API 指向独立后端域名；与 Compose **二选一** 为主即可。
 
 ## 项目结构
 
 ```
 lewis_testcase_platform/
-├── frontend/                # React 前端（可单独作为 Railway 服务：Root Directory = frontend）
-│   ├── railway.toml         # Railway 前端服务配置（与根目录后端服务分离）
+├── docker-compose.full.yml   # 云服务器全栈（前端 Nginx + 后端 + Postgres + Redis）
+├── docker-compose.full.env.example  # 全栈 .env 模板（复制为 .env）
+├── frontend/                # React 前端（可选：Railway / 仅作镜像构建）
+│   ├── railway.toml         # 可选：仅在使用 Railway 时需要
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── api/             # API 请求层
@@ -179,7 +208,7 @@ lewis_testcase_platform/
 │   │   │   └── records/     # 生成记录模块（分享/对比/回收站等）
 │   │   └── prisma/          # Prisma 服务
 │   └── prisma/
-│       ├── schema.prod.prisma # 生产/Railway/本项目主 Schema（PostgreSQL）
+│       ├── schema.prod.prisma # 生产/云服务器主 Schema（PostgreSQL）
 │       ├── migrations/       # `migrate deploy` 使用的 SQL 迁移
 │       ├── schema.prisma      # 历史/本地 SQLite 演示（勿与 prod 混用）
 │       └── seed.ts
@@ -194,16 +223,16 @@ lewis_testcase_platform/
 出于安全考虑，本项目 **不在文档中提供默认账号/密码**。
 
 - 本地开发：请在首次启动后自行注册账号，或在数据库中手动创建/提升角色
-- 生产环境：请通过 Railway/运维流程初始化管理员账号与权限
+- 生产环境：请通过云服务器上的种子脚本 / 运维流程初始化管理员账号与权限（见 `backend/.env.example` 中 `ADMIN_*`）
 
 ## 前后端联调与自测清单（建议每次发布前跑一遍）
 
-> **部署路径二选一（或并存）：**
->
-> - **Railway**：仓库绑定 GitHub 后，推送 **`main`** 触发构建；**后端**见根目录 `railway.toml`；**前端**需在同一项目再建服务并将 **Root Directory** 设为 **`frontend`**（详见上文「Railway：前端也由 Git 推送部署」）。数据库迁移见 `backend/start.sh` / `backend/migrate-release.sh`（推荐 **Pre-deploy** 执行 `migrate-release.sh`）。
-> - **自托管 VPS**：推荐使用 `docker-compose.full.yml`（前端 Nginx + 后端 + Postgres + Redis），并可配合 GitHub Actions / `scripts/smoke.sh` 做部署后冒烟。
+> **生产推荐路径**：**云服务器 + `docker-compose.full.yml`**（见上文「生产部署：云服务器」）；可用 GitHub Actions 推送 **`main`** 自动 rsync 与 compose 重建。  
+> **可选**：Railway 等 PaaS 见同节「可选：Railway」。
 
 ### 1) 启动（全量栈）
+
+在已配置 **`.env`**（由 `docker-compose.full.env.example` 复制）的目录执行：
 
 ```bash
 docker compose -f docker-compose.full.yml up -d --build
@@ -211,13 +240,15 @@ docker compose -f docker-compose.full.yml up -d --build
 
 ### 2) 健康检查
 
-- 裸健康检查（给平台/负载均衡用）：
+经 **前端 Nginx（默认宿主机 80）**：
+
+- 裸健康检查（负载均衡 / 平台探活，纯文本 `ok`）：
 
 ```bash
 curl -fsS http://127.0.0.1/health && echo
 ```
 
-- API 健康检查（平台业务）：
+- API 健康检查（业务 JSON）：
 
 ```bash
 curl -fsS http://127.0.0.1/api/health && echo
@@ -394,16 +425,22 @@ bash scripts/smoke.sh
 ### 2026-04-28（文档）联调对齐、门禁脚本与部署路径
 
 - **README**
-  - 「初始化数据库」改为与生产一致：使用 **`prisma/schema.prod.prisma`** 执行 `migrate deploy` / `generate`，避免本地与 Railway 结构不一致。
+  - 「初始化数据库」改为与生产一致：使用 **`prisma/schema.prod.prisma`** 执行 `migrate deploy` / `generate`，避免本地与生产结构不一致。
   - 增补 **本地前后端对齐表**：Nest `globalPrefix`、`/health` 与 `/api/health`、前端 `VITE_API_BASE_URL` 与 Vite `/api` 代理。
   - **项目结构**中修正 `prisma/` 目录说明（`schema.prod.prisma`、`migrations/`、`seed.ts`）。
-  - 「联调与自测」开头并列 **Railway（推送 `main`）** 与 **VPS + `docker-compose.full.yml`** 两类部署路径。
+  - 「联调与自测」以 **云服务器全栈** 为主（后续 README 已进一步明确，见下方「云服务器为默认生产部署」）。
 - **门禁脚本**：新增 `scripts/dev-integration-check.sh` — 在本机执行 `prisma validate` / `generate`（`schema.prod.prisma`）与前后端 **`pnpm build`**（不启动服务，便于 CI/发布前自检）。
 - **推送与部署（摘要）**
   1. 可选：`bash scripts/dev-integration-check.sh`
   2. `git add` / `git commit` / **`git push origin main`**
-  3. **Railway**：在 Dashboard 查看 Deployment；确认 Variables 含 **`DATABASE_URL`**、**`JWT_SECRET`**；数据库迁移建议在 **Pre-deploy** 跑 `backend/migrate-release.sh`（或按服务内 `start.sh` 说明），避免启动阶段长时间未监听端口。
-  4. **自托管**：`docker compose -f docker-compose.full.yml up -d --build` 后执行 `bash scripts/smoke.sh`，或手动访问 `GET /api/health`。
+  3. **云服务器**：配置 **`.env`**（`docker-compose.full.env.example`）后 `docker compose -f docker-compose.full.yml up -d --build`，再 **`bash scripts/smoke.sh`**；若启用 GitHub Actions，推送 `main` 会自动 rsync 并 compose。
+  4. **Railway（可选）**：在 Dashboard 查看 Deployment；Variables 含 **`DATABASE_URL`**、**`JWT_SECRET`** 等；迁移见 `backend/migrate-release.sh` / `start.sh`。
+
+### 2026-04-28（云服务器为默认生产部署）
+
+- **README**：生产默认路径改为 **自有云服务器 + `docker-compose.full.yml`**，**不依赖 Railway**；Railway / EdgeOne 仅作可选说明。
+- **`docker-compose.full.env.example`**：全栈 **`.env`** 模板（数据库、JWT、CORS、`VITE_*` 等）。
+- **Nginx**：`nginx.conf.template` 增加 **`/health`** 反代至后端裸探活，与全栈 **80** 入口一致。
 
 ### 2026-04-28（Railway 前端 · Git 部署）
 

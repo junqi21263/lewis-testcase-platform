@@ -1,3 +1,4 @@
+# 云服务器生产部署：推送 main 时 rsync + docker compose 全栈（不依赖 Railway）。
 # Deploy to your own VPS over SSH when pushing to main.
 #
 # GitHub → Repository → Settings → Secrets and variables → Actions
