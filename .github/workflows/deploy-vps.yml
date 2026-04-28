@@ -82,10 +82,12 @@ jobs:
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
 
-          ssh -i /tmp/deploy_key -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "mkdir -p \"$DEPLOY_PATH\""
+          # NOTE: /opt/* 通常归 root 所有；使用 sudo mkdir + sudo rsync 写入，避免 Permission denied
+          ssh -i /tmp/deploy_key -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo mkdir -p \"$DEPLOY_PATH\""
 
           rsync -az --delete \
             -e "ssh -i /tmp/deploy_key -p $SSH_PORT -o StrictHostKeyChecking=yes" \
+            --rsync-path="sudo rsync" \
             --exclude ".git/" \
             --exclude ".env" \
             --exclude ".env.*" \
