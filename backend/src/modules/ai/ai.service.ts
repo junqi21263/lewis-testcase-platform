@@ -10,6 +10,13 @@ import { PrismaService } from '@/prisma/prisma.service'
 import { GenerationSource, GenerationStatus, Prisma } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
+import {
+  clampGenerationUserContent,
+  humanizeAiProviderError,
+  INPUT_CLAMPED_NOTICE_PREFIX,
+  OUTPUT_TRUNCATED_NOTICE,
+  roughTokenEstimateFromChars,
+} from './ai-generation-limits.util'
 
 @Injectable()
 export class AiService {
@@ -61,8 +68,8 @@ export class AiService {
     const t = (raw || '').trim()
     if (!t) return []
     const body =
-      t.length > 120_000
-        ? `${t.slice(0, 120_000)}\n\n…(内容过长已截断，完整文本请从生成流式输出中复制)`
+      t.length > 200_000
+        ? `${t.slice(0, 200_000)}\n\n…(内容过长已截断，完整文本请从生成流式输出中复制)`
         : t
     return [
       {
@@ -78,8 +85,23 @@ export class AiService {
   }
 
   /** 模型无可用文本 / 无法解析为 JSON 用例时，统一错误说明（不再落库「占位假用例」） */
-  private emptyOutputUserMessage(): string {
-    return '模型未返回可解析的 JSON 用例（输出为空或结构不符合约定）。请检查：系统设置中的模型 ID、API Key、Base URL；需求/文本是否为空；图片是否已解析出文字；适当提高 maxTokens；智谱等兼容接口流式是否仅返回在 delta 的其他字段。可在生成记录中查看详情。'
+  private emptyOutputUserMessage(opts?: { outputTruncated?: boolean }): string {
+    const base =
+      '模型未返回可解析的 JSON 用例（输出为空或结构不符合约定）。请检查：系统设置中的模型 ID、API Key、Base URL；需求/文本是否为空；图片是否已解析出文字；适当提高 maxTokens；智谱等兼容接口流式是否仅返回在 delta 的其他字段。可在生成记录中查看详情。'
+    if (opts?.outputTruncated) {
+      return `${base} 另外：本次回复可能因达到「最大 Token」被截断，请先调高 Token 上限或缩小生成范围后重试。`
+    }
+    return base
+  }
+
+  private effectiveMaxTokens(requested?: number): number {
+    const r = requested ?? 4096
+    return Math.min(Math.max(Math.floor(r), 256), 128_000)
+  }
+
+  private writeStreamNotice(res: Response, text: string) {
+    if (res.writableEnded) return
+    res.write(`data: ${JSON.stringify({ notice: text })}\n\n`)
   }
 
   private mapRowToCaseInput(c: any) {
@@ -305,8 +327,12 @@ export class AiService {
     }
   }
 
-  /** 构建提示词 */
-  private buildPrompt(dto: GenerateDto, fileContent?: string): string {
+  /** 构建 system / user 消息；过长用户内容自动首尾压缩，避免超出上下文 */
+  private buildPromptMessages(dto: GenerateDto, fileContent?: string): {
+    system: string
+    user: string
+    inputNotices: string[]
+  } {
     const systemPrompt = `你是一名专业的软件测试工程师，精通各类测试方法和测试用例编写规范。
 
 【输出硬性要求】
@@ -315,6 +341,7 @@ export class AiService {
 3. 每条用例字段：title（用例名称）、priority、type、precondition（前置条件）、steps（数组）、expectedResult（最终预期）、tags（标签数组，可含模块名）。
 4. 若需表示「所属模块」，请写入 tags，例如 "tags": ["登录模块"] 或使用 "模块:登录" 形式。
 5. 禁止用 Markdown（###、**用例** 等）代替 JSON。
+6. 若用户材料过长，请优先覆盖核心流程与高优先级（P0/P1）用例，避免单条字段内堆砌过多文字。
 
 约定结构示例：
 {
@@ -339,7 +366,18 @@ export class AiService {
       userContent += `\n\n需求描述：\n${dto.text}`
     }
 
-    return JSON.stringify({ system: systemPrompt, user: userContent })
+    const { text, truncated, omittedChars, originalLength } = clampGenerationUserContent(userContent)
+    const inputNotices: string[] = []
+    if (truncated) {
+      this.logger.warn(
+        `生成输入已压缩: 原 ${originalLength} 字符 (≈${roughTokenEstimateFromChars(originalLength)} tokens 粗估), 省略中间 ${omittedChars} 字`,
+      )
+      inputNotices.push(
+        `${INPUT_CLAMPED_NOTICE_PREFIX}原约 ${originalLength} 字，已省略中间 ${omittedChars} 字（保留首尾）。建议拆分需求、摘要后再生成。`,
+      )
+    }
+
+    return { system: systemPrompt, user: text, inputNotices }
   }
 
   /** 非流式生成 */
@@ -376,22 +414,31 @@ export class AiService {
     })
 
     try {
-      const messages = JSON.parse(this.buildPrompt(dto, fileContent))
+      const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
+      const maxOut = this.effectiveMaxTokens(dto.maxTokens)
       const completion = await client.chat.completions.create({
         model: modelId,
         messages: [
-          { role: 'system', content: messages.system },
-          { role: 'user', content: messages.user },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
         temperature: dto.temperature ?? 0.7,
-        max_tokens: dto.maxTokens ?? 4096,
+        max_tokens: maxOut,
         response_format: { type: 'json_object' },
       })
 
-      const content = completion.choices[0]?.message?.content || ''
+      const choice = completion.choices[0]
+      const content = choice?.message?.content || ''
+      const finishReason = choice?.finish_reason ?? null
+      const outputWarnings: string[] = []
+      if (finishReason === 'length') {
+        outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
+        this.logger.warn('非流式生成：模型输出因 max_tokens 被截断')
+      }
+
       const rows = this.resolveCasesForPersistence(content)
       if (rows.length === 0) {
-        const msg = this.emptyOutputUserMessage()
+        const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
         await this.prisma.generationRecord.update({
           where: { id: record.id },
           data: {
@@ -430,13 +477,21 @@ export class AiService {
 
       await this.bumpTemplateUsage(dto.templateId)
 
-      return { recordId: record.id, cases: suite.cases, tokensUsed: completion.usage?.total_tokens, duration }
-    } catch (err) {
+      const warnings = [...inputNotices, ...outputWarnings].filter(Boolean)
+      return {
+        recordId: record.id,
+        cases: suite.cases,
+        tokensUsed: completion.usage?.total_tokens,
+        duration,
+        ...(warnings.length ? { warnings } : {}),
+      }
+    } catch (err: unknown) {
+      const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
       await this.prisma.generationRecord.update({
         where: { id: record.id },
-        data: { status: GenerationStatus.FAILED, errorMessage: err.message },
+        data: { status: GenerationStatus.FAILED, errorMessage: message },
       })
-      throw err
+      throw new BadRequestException(message)
     }
   }
 
@@ -486,21 +541,30 @@ export class AiService {
     }, keepAliveMs)
 
     let fullContent = ''
+    let finishReason: string | null = null
     try {
-      const messages = JSON.parse(this.buildPrompt(dto, fileContent))
+      const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
+      for (const n of inputNotices) {
+        this.writeStreamNotice(res, n)
+      }
+
+      const maxOut = this.effectiveMaxTokens(dto.maxTokens)
       const stream = await client.chat.completions.create({
         model: modelId,
         messages: [
-          { role: 'system', content: messages.system },
-          { role: 'user', content: messages.user },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
         temperature: dto.temperature ?? 0.7,
-        max_tokens: dto.maxTokens ?? 4096,
+        max_tokens: maxOut,
         stream: true,
       })
 
       for await (const chunk of stream) {
-        const d = chunk.choices[0]?.delta as { content?: string; reasoning_content?: string } | undefined
+        const ch0 = chunk.choices[0]
+        const fr = ch0?.finish_reason
+        if (fr) finishReason = fr
+        const d = ch0?.delta as { content?: string; reasoning_content?: string } | undefined
         const delta =
           (typeof d?.content === 'string' ? d.content : '') ||
           (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
@@ -510,9 +574,14 @@ export class AiService {
         }
       }
 
+      if (finishReason === 'length') {
+        this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
+        this.logger.warn('流式生成：模型输出因 max_tokens 被截断')
+      }
+
       const rows = this.resolveCasesForPersistence(fullContent)
       if (rows.length === 0) {
-        const msg = this.emptyOutputUserMessage()
+        const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
         await this.prisma.generationRecord.update({
           where: { id: record.id },
           data: {
@@ -562,7 +631,7 @@ export class AiService {
       res.write(`data: [DONE]\n\n`)
       res.end()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
       await this.prisma.generationRecord.update({
         where: { id: record.id },
         data: { status: GenerationStatus.FAILED, errorMessage: message },

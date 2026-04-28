@@ -23,6 +23,9 @@ import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus } from '@/types'
 import { useNavigate } from 'react-router-dom'
 
+/** 与后端 MAX_GENERATION_USER_CHARS（约 10 万）对齐：接近时提示将自动首尾压缩 */
+const INPUT_LENGTH_SOFT_WARN_CHARS = 85_000
+
 const fileStatusLabels: Record<FileStatus, string> = {
   PENDING: '等待解析',
   PARSING: '解析中…',
@@ -535,6 +538,11 @@ export default function GeneratePage() {
         }
         setIsGenerating(false)
         setStep('result')
+        if (result.warnings?.length) {
+          for (const w of result.warnings) {
+            toast(w, { duration: 9000 })
+          }
+        }
         toast.success(`成功生成 ${result.cases.length} 条用例！`)
       }
     } catch {
@@ -689,6 +697,14 @@ export default function GeneratePage() {
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}
               />
+              {customPrompt.length + (sourceType === 'text' ? inputText.length : 0) >
+                INPUT_LENGTH_SOFT_WARN_CHARS && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  当前提示词与文本合计约{' '}
+                  {customPrompt.length + (sourceType === 'text' ? inputText.length : 0)} 字，已超过建议上限
+                  （约 {INPUT_LENGTH_SOFT_WARN_CHARS.toLocaleString()} 字）。超出约 10 万字的正文将在服务端自动压缩（保留首尾），或请主动拆分需求/摘要后再生成。
+                </p>
+              )}
 
               {/* AI 参数 */}
               <div className="flex items-center gap-6 text-sm">
@@ -708,7 +724,7 @@ export default function GeneratePage() {
                     onChange={(e) => setAiParams({ maxTokens: Number(e.target.value) })}
                     className="border rounded px-2 py-1 bg-background text-xs"
                   >
-                    {[2048, 4096, 8192, 16384].map((v) => (
+                    {[2048, 4096, 8192, 16384, 32768].map((v) => (
                       <option key={v} value={v}>{v}</option>
                     ))}
                   </select>

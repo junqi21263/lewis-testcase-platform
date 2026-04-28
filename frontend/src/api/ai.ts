@@ -15,6 +15,8 @@ export interface GenerateResult {
   cases: TestCase[]
   tokensUsed: number
   duration: number
+  /** 输入压缩、输出达 Token 上限等提示 */
+  warnings?: string[]
 }
 
 export type TestModelPayload = {

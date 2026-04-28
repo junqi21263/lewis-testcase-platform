@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsIn } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsBoolean, IsIn, Max, Min } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class GenerateDto {
@@ -36,6 +36,8 @@ export class GenerateDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(256)
+  @Max(128000)
   maxTokens?: number
 
   @IsOptional()

@@ -48,8 +48,8 @@ export function extractCaseRowsFromText(raw: string): unknown[] {
 
 function buildRawPlaceholderCase(content: string): TestCase {
   const body =
-    content.length > 120_000
-      ? `${content.slice(0, 120_000)}\n\n…(已截断)`
+    content.length > 200_000
+      ? `${content.slice(0, 200_000)}\n\n…(已截断)`
       : content
   return {
     id: `local-raw-${Date.now()}`,

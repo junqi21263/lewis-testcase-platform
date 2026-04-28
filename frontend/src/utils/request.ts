@@ -237,6 +237,9 @@ export async function streamRequest(
         if (typeof rec.content === 'string' && rec.content.length > 0) {
           onChunk(rec.content)
         }
+        if (typeof rec.notice === 'string' && rec.notice.trim()) {
+          toast(rec.notice, { duration: 9000 })
+        }
         if (typeof rec.error === 'string') {
           const rid = typeof rec.recordId === 'string' ? rec.recordId : ''
           onError?.(new Error(rid ? `${rec.error}（记录: ${rid}）` : rec.error))
