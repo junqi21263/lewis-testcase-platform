@@ -6,14 +6,45 @@ echo "[smoke] starting..."
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-COMPOSE_FILE="docker-compose.full.yml"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.full.yml}"
+
+die() {
+  echo "[smoke] ERROR: $*" >&2
+  exit 1
+}
+
+pick_compose_runner() {
+  # Prefer non-sudo (CI / local dev). Only fall back to sudo when:
+  # - docker is installed but user has no permission, AND
+  # - sudo is non-interactive (sudo -n).
+  if docker compose version >/dev/null 2>&1; then
+    echo "docker compose"
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    echo "docker-compose"
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo -n docker compose version >/dev/null 2>&1; then
+      echo "sudo -n docker compose"
+      return 0
+    fi
+    if sudo -n docker-compose version >/dev/null 2>&1; then
+      echo "sudo -n docker-compose"
+      return 0
+    fi
+  fi
+
+  die "docker compose not available (or requires interactive sudo). Install Docker/Compose, or ensure the user can run docker without password prompt."
+}
+
+COMPOSE_RUNNER="$(pick_compose_runner)"
 
 docker_compose() {
-  if sudo docker compose version >/dev/null 2>&1; then
-    sudo docker compose -f "$COMPOSE_FILE" "$@"
-  else
-    sudo docker-compose -f "$COMPOSE_FILE" "$@"
-  fi
+  # shellcheck disable=SC2086
+  $COMPOSE_RUNNER -f "$COMPOSE_FILE" "$@"
 }
 
 echo "[smoke] compose ps"
