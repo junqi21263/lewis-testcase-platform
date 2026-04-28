@@ -50,7 +50,7 @@ export function WeatherBadge() {
     }
   }, [prefs?.weatherCityId])
 
-  const onClick = () => navigate('/settings')
+  const onClick = () => navigate('/settings#appearance-weather')
 
   return (
     <button onClick={onClick} className="hidden md:block">

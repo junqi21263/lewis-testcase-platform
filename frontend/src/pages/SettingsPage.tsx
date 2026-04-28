@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Save,
   Plus,
@@ -83,6 +84,7 @@ const emptyCreateForm = {
 }
 
 export default function SettingsPage() {
+  const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const updateUser = useAuthStore((s) => s.updateUser)
   const setAiParams = useGenerateStore((s) => s.setAiParams)
@@ -176,6 +178,16 @@ export default function SettingsPage() {
       .then(setUserPrefs)
       .catch(() => setUserPrefs(null))
   }, [])
+
+  useEffect(() => {
+    if (location.hash !== '#appearance-weather') return
+    // Wait a tick for layout; then scroll into view.
+    const t = window.setTimeout(() => {
+      const el = document.getElementById('appearance-weather')
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [location.hash])
 
   const saveProfile = async () => {
     if (!username.trim()) {
@@ -647,7 +659,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* 外观与天气（云端偏好） */}
-      <Card>
+      <Card id="appearance-weather">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <ImageIcon className="w-4 h-4" />
