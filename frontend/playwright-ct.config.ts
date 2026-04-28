@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/experimental-ct-react'
 import { fileURLToPath } from 'url'
 import path from 'path'
+import fs from 'fs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -29,9 +30,17 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         // Prefer local browser to avoid large downloads in restricted networks.
         // Playwright expects executablePath/channel under launchOptions.
-        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
-          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
-          : { channel: 'chrome' },
+        launchOptions: (() => {
+          const p = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
+          if (p) {
+            if (fs.existsSync(p)) return { executablePath: p }
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[ct] PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH not found, fallback to channel=chrome: ${p}`,
+            )
+          }
+          return { channel: 'chrome' }
+        })(),
       },
     },
   ],
