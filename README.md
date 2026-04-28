@@ -140,7 +140,7 @@ bash scripts/dev-integration-check.sh
 | **PostgreSQL** | 默认仅 **`127.0.0.1:5432`** 映射到宿主机，便于 SSH 隧道 / 本机客户端，**勿对 0.0.0.0 开放** |
 | **后端** | 不映射宿主机端口，仅容器网络内 `backend:3000` |
 
-**流式生成（SSE）**：经前端 Nginx 反代时，`frontend/nginx.conf.template` 对 **`/api/ai/generate/stream`** 已配置 **`proxy_buffering off`**、关闭 gzip、延长读超时。若自建其它反代，需同样避免缓冲流式响应，否则浏览器可能报 **`ERR_INCOMPLETE_CHUNKED_ENCODING`**。
+**流式生成（SSE）**：经前端 Nginx 反代时，`frontend/nginx.conf.template` 对 **`/api/ai/generate/stream`** 已配置 **`proxy_buffering off`**、**`proxy_request_buffering off`**、关闭 gzip、延长读超时；后端会设置 **`X-Accel-Buffering: no`** 并定时发送 **SSE 注释心跳**（`: ping`），减轻中间层因空闲断开连接。若前面还有**云负载均衡 / CDN**，请把**空闲超时**调到 ≥ **60s**（或关闭对长连接的过早回收），否则仍可能出现 **`ERR_INCOMPLETE_CHUNKED_ENCODING`**。
 
 #### 首次在服务器上部署
 

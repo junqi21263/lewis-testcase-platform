@@ -253,7 +253,22 @@ export async function streamRequest(
       }
     }
   } catch (err) {
-    onError?.(err as Error)
+    const e = err as Error
+    const msg = e?.message || String(err)
+    if (
+      msg.includes('chunked') ||
+      msg.includes('network error') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('ERR_INCOMPLETE')
+    ) {
+      onError?.(
+        new Error(
+          '流式连接被中断（常见于反代缓冲或负载均衡空闲超时）。请确认 Nginx 已对 /api/ai/generate/stream 关闭 buffering，或暂时改用非流式生成。',
+        ),
+      )
+    } else {
+      onError?.(e)
+    }
   } finally {
     reader.releaseLock()
   }

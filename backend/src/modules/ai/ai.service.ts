@@ -447,11 +447,18 @@ export class AiService {
       },
     })
 
-    // 设置 SSE 响应头
+    // 设置 SSE 响应头（X-Accel-Buffering 供 Nginx 等反代关闭响应缓冲）
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
+
+    // 模型两次 token 间隔较长时，部分负载均衡会 idle 断连；SSE 注释行不触发客户端 data 事件
+    const keepAliveMs = 15000
+    const keepAlive = setInterval(() => {
+      if (!res.writableEnded) res.write(': ping\n\n')
+    }, keepAliveMs)
 
     let fullContent = ''
     try {
@@ -505,13 +512,18 @@ export class AiService {
       )
       res.write(`data: [DONE]\n\n`)
       res.end()
-    } catch (err) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
       await this.prisma.generationRecord.update({
         where: { id: record.id },
-        data: { status: GenerationStatus.FAILED, errorMessage: err.message },
+        data: { status: GenerationStatus.FAILED, errorMessage: message },
       })
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
-      res.end()
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ error: message })}\n\n`)
+        res.end()
+      }
+    } finally {
+      clearInterval(keepAlive)
     }
   }
 }
