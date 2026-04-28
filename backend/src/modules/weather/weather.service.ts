@@ -36,9 +36,8 @@ export class WeatherService {
   private cache = new Map<string, CacheEntry<any>>()
 
   private get apiKey(): string {
-    const k = process.env.QWEATHER_API_KEY || process.env.WEATHER_API_KEY || ''
-    if (!k) throw new BadRequestException('未配置天气 API Key（QWEATHER_API_KEY）')
-    return k
+    // 注意：未配置时需要“静默降级”，避免影响页面其它功能（尤其是 Header 轮询）
+    return (process.env.QWEATHER_API_KEY || process.env.WEATHER_API_KEY || '').trim()
   }
 
   private geoHost(): string {
@@ -70,6 +69,8 @@ export class WeatherService {
     const q = query.trim()
     if (!q) return []
 
+    if (!this.apiKey) return []
+
     const cacheKey = `city:${q}`
     const cached = this.cacheGet<any[]>(cacheKey)
     if (cached) return cached
@@ -100,6 +101,23 @@ export class WeatherService {
   async now(locationId: string) {
     const loc = locationId.trim()
     if (!loc) throw new BadRequestException('缺少 locationId')
+
+    if (!this.apiKey) {
+      // 静默降级：不抛错，避免前端 toast/轮询干扰
+      return {
+        locationId: loc,
+        updateTime: null,
+        obsTime: null,
+        temp: null,
+        feelsLike: null,
+        text: null,
+        icon: null,
+        windDir: null,
+        windScale: null,
+        humidity: null,
+        stale: true,
+      }
+    }
 
     const cacheKey = `now:${loc}`
     const cached = this.cacheGet<any>(cacheKey)
