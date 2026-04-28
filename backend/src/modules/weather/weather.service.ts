@@ -29,9 +29,29 @@ type OpenMeteoForecastResponse = {
 
 type CacheEntry<T> = { value: T; expiresAt: number }
 
+type NominatimSearchItem = {
+  lat: string
+  lon: string
+  display_name?: string
+  address?: {
+    city?: string
+    town?: string
+    village?: string
+    county?: string
+    state?: string
+    region?: string
+    province?: string
+    country?: string
+  }
+}
+
 @Injectable()
 export class WeatherService {
   private cache = new Map<string, CacheEntry<any>>()
+
+  private nominatimHost(): string {
+    return 'https://nominatim.openstreetmap.org'
+  }
 
   private geoHost(): string {
     return 'https://geocoding-api.open-meteo.com'
@@ -55,6 +75,35 @@ export class WeatherService {
     this.cache.set(key, { value, expiresAt: Date.now() + ttlMs })
   }
 
+  private normalizePlaceFromNominatim(it: NominatimSearchItem) {
+    const addr = it.address ?? {}
+    const name =
+      addr.city ??
+      addr.town ??
+      addr.village ??
+      addr.county ??
+      (typeof it.display_name === 'string' ? it.display_name.split(',')[0]?.trim() : '') ??
+      ''
+    const adm1 = addr.state ?? addr.province ?? addr.region ?? ''
+    const adm2 =
+      addr.county ??
+      (addr.city && addr.city !== name ? addr.city : '') ??
+      (addr.town && addr.town !== name ? addr.town : '') ??
+      ''
+    const country = addr.country ?? ''
+    const lat = it.lat ?? ''
+    const lon = it.lon ?? ''
+    return {
+      id: `${lat},${lon}`,
+      name,
+      adm1,
+      adm2,
+      country,
+      lat,
+      lon,
+    }
+  }
+
   async cityLookup(query: string) {
     const q = query.trim()
     if (!q) return []
@@ -63,6 +112,37 @@ export class WeatherService {
     const cached = this.cacheGet<any[]>(cacheKey)
     if (cached) return cached
 
+    // Open-Meteo geocoding 对中文地名（如“北京/大连”）匹配不稳定，优先用 Nominatim（OSM）提升全球城市命中率
+    try {
+      const url = `${this.nominatimHost()}/search`
+      const { data } = await axios.get<NominatimSearchItem[]>(url, {
+        timeout: 10_000,
+        headers: {
+          // Nominatim usage policy: identify your application
+          'User-Agent': 'lewis-testcase-platform/1.0',
+        },
+        params: {
+          q,
+          format: 'jsonv2',
+          addressdetails: 1,
+          limit: 10,
+          'accept-language': 'zh-CN',
+        },
+      })
+
+      const list = (Array.isArray(data) ? data : [])
+        .map((it) => this.normalizePlaceFromNominatim(it))
+        .filter((x) => x.lat && x.lon && x.name)
+
+      if (list.length > 0) {
+        this.cacheSet(cacheKey, list, 60_000)
+        return list
+      }
+    } catch {
+      // ignore and fallback
+    }
+
+    // fallback: Open-Meteo geocoding（若 Nominatim 不可用）
     const url = `${this.geoHost()}/v1/search`
     const { data } = await axios.get<OpenMeteoGeocodingResponse>(url, {
       timeout: 10_000,
@@ -71,21 +151,21 @@ export class WeatherService {
         count: 10,
         language: 'zh',
         format: 'json',
-        // 全球城市搜索：不限制国家，避免国外城市无结果
       },
     })
 
     const list =
-      data.results?.map((c) => ({
-        // 使用 "lat,lon" 作为 cityId，避免额外 /get?id=xxx 的依赖
-        id: `${c.latitude},${c.longitude}`,
-        name: c.name,
-        adm1: c.admin1 ?? '',
-        adm2: c.admin2 ?? '',
-        country: c.country ?? '',
-        lat: String(c.latitude ?? ''),
-        lon: String(c.longitude ?? ''),
-      })) ?? []
+      data.results
+        ?.map((c) => ({
+          id: `${c.latitude},${c.longitude}`,
+          name: c.name,
+          adm1: c.admin1 ?? '',
+          adm2: c.admin2 ?? '',
+          country: c.country ?? '',
+          lat: String(c.latitude ?? ''),
+          lon: String(c.longitude ?? ''),
+        }))
+        .filter((x) => x.lat && x.lon && x.name) ?? []
 
     this.cacheSet(cacheKey, list, 60_000)
     return list
