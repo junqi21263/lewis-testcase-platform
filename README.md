@@ -160,7 +160,7 @@ bash scripts/dev-integration-check.sh
 #### 用 Git 更新（CI 推送云服务器，可选）
 
 配置 GitHub **Actions Secrets**：`SSH_HOST`、`SSH_USER`、`SSH_KEY`（可选 `SSH_PORT`）；**Variables** 可选 `DEPLOY_PATH`（默认 `/opt/<your-deploy-path>`）。  
-推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会 **rsync 代码**到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**，再跑 **`scripts/smoke.sh`** — **前后端同一套 Git 流程**，无需单独发布前端。
+推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会：在 Runner 上 **`pnpm install && pnpm build`** 打包 **前端 `dist/`**，再 **rsync** 到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**（前端镜像会优先复用已同步的 **`dist/`**，见 `frontend/Dockerfile`），最后 **`scripts/smoke.sh`**。可选：在 GitHub **Repository → Variables** 设置 **`VITE_API_BASE_URL`**、**`VITE_APP_NAME`**（默认 **`/api`**，与同源 Nginx 反代一致）。
 
 #### 可选：Railway / 其他 PaaS
 

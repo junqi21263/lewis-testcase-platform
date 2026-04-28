@@ -18,7 +18,14 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ARG VITE_APP_NAME=
 ENV VITE_APP_NAME=${VITE_APP_NAME}
 
-RUN pnpm run build
+# GitHub Actions 等 CI 可先 pnpm build，rsync 到服务器后此处直接使用 dist，缩短云主机构建时间。
+# 本地无 dist 时仍执行完整构建。
+RUN if [ -f dist/index.html ]; then \
+      echo "[frontend-docker] using existing dist/ (from CI or host)"; \
+    else \
+      echo "[frontend-docker] running pnpm build in container"; \
+      pnpm run build; \
+    fi
 
 FROM public.ecr.aws/docker/library/nginx:alpine
 

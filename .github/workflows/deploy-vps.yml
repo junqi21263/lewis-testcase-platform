@@ -36,6 +36,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 与生产一致：在 Runner 上先打包前端，rsync 到云服务器后 Docker 可直接复用 dist/（见 frontend/Dockerfile）
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_APP_NAME: ${{ vars.VITE_APP_NAME }}
+        run: |
+          set -euo pipefail
+          export VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api}"
+          export VITE_APP_NAME="${VITE_APP_NAME:-}"
+          pnpm install --frozen-lockfile
+          pnpm run build
+
       - name: Prepare SSH known_hosts
         shell: bash
         run: |
