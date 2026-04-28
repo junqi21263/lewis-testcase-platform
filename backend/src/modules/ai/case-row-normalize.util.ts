@@ -61,6 +61,23 @@ function hasBracketEnumeration(s: string): boolean {
   return /\[\s*\d+\s*\]/.test(s)
 }
 
+function stripNoiseFromExpectedText(s: string): string {
+  const t = (s ?? '').trim()
+  if (!t) return ''
+  const lines = t
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => {
+      const x = l.replace(/^\*\*|\*\*$/g, '').trim()
+      if (!x) return false
+      if (/^(标签|tags)[：:]?/i.test(x)) return false
+      if (/^\"?(tags|steps|expectedResult|precondition|priority|type)\"?\s*[:：]/i.test(x)) return false
+      return true
+    })
+  return lines.join('\n')
+}
+
 /** steps 顺序编号、字段兜底（部分模型用 description / desc） */
 export function normalizeStepsShape(stepsRaw: unknown): { order: number; action: string; expected?: string }[] {
   if (typeof stepsRaw === 'string') {
@@ -94,7 +111,7 @@ export function ensureBracketExpectedResult(
   steps: { order: number; action: string; expected?: string }[],
   expectedResult: string,
 ): string {
-  const er0 = (expectedResult ?? '').trim()
+  const er0 = stripNoiseFromExpectedText(expectedResult ?? '')
   if (er0 && hasBracketEnumeration(er0)) return er0
 
   const n = steps.length

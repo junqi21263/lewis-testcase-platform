@@ -42,6 +42,23 @@ export type LooseCaseRow = {
   tags: string[]
 }
 
+function isMetaLineText(s: string): boolean {
+  const t = (s || '').trim().replace(/^\*\*|\*\*$/g, '')
+  if (!t) return true
+  if (/^(优先级|类型|前置条件|测试步骤|步骤描述|测试步骤|步骤|预期结果|期望结果|标签|tags)[：:]?/i.test(t)) return true
+  if (/^\"?(tags|steps|expectedResult|precondition|priority|type)\"?\s*[:：]/i.test(t)) return true
+  if (t.startsWith('{') || t.startsWith('[')) return true
+  return false
+}
+
+function stripMetaLines(block: string): string {
+  return block
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => !isMetaLineText(l))
+    .join('\n')
+}
+
 function parseStepsFromBlock(block: string): { order: number; action: string; expected?: string }[] {
   const lines = block
     .split('\n')
@@ -49,9 +66,11 @@ function parseStepsFromBlock(block: string): { order: number; action: string; ex
     .filter(Boolean)
   const out: { order: number; action: string; expected?: string }[] = []
   for (const line of lines) {
+    if (isMetaLineText(line)) continue
     const bracket = line.match(/^\[(\d+)\]\s*(.+)$/)
     if (bracket) {
       const rest = bracket[2]
+      if (isMetaLineText(rest)) continue
       const expIdx = rest.search(/(?:期望|预期)[：:]/)
       if (expIdx !== -1) {
         out.push({
@@ -67,6 +86,7 @@ function parseStepsFromBlock(block: string): { order: number; action: string; ex
     const num = line.match(/^(\d+)[\.\)、]\s*(.+)$/)
     if (num) {
       const rest = num[2]
+      if (isMetaLineText(rest)) continue
       const expIdx = rest.search(/(?:期望|预期)[：:]/)
       if (expIdx !== -1) {
         out.push({
@@ -81,6 +101,7 @@ function parseStepsFromBlock(block: string): { order: number; action: string; ex
     }
     const bullet = line.match(/^[-*]\s+(.+)$/)
     if (bullet) {
+      if (isMetaLineText(bullet[1])) continue
       out.push({ order: out.length + 1, action: bullet[1], expected: undefined })
     }
   }
@@ -146,19 +167,19 @@ function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | nu
   const expM = full.match(
     /(?:预期|期望)结果[：:\s]*([\s\S]*?)(?=\n#{2,4}\s|\n\*{0,2}用例\s*\d+|\n(?=\*\*[^*]+\*\*)|$)/i,
   )
-  if (expM) exp = expM[1].trim()
+  if (expM) exp = stripMetaLines(expM[1].trim())
 
   if (steps.length === 0) {
     const numbered = text.split('\n').filter((l) => {
       if (!/^\s*\d+[\.\)、]\s*\S/.test(l)) return false
       const rest = l.replace(/^\s*\d+[\.\)、]\s*/, '').trim()
-      if (/^(优先级|类型|前置条件|测试步骤|步骤|预期结果|期望结果)[：:]/i.test(rest)) return false
+      if (isMetaLineText(rest)) return false
       return true
     })
     if (numbered.length > 0) {
       steps = numbered.map((l, i) => ({
         order: i + 1,
-        action: l.replace(/^\s*\d+[\.\)、]\s*/, '').trim(),
+        action: l.replace(/^\s*\d+[\.\)、]\s*/, '').trim().replace(/^\*\*|\*\*$/g, ''),
         expected: undefined,
       }))
     }
