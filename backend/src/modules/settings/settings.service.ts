@@ -25,6 +25,10 @@ export class SettingsService {
       supportsVision: r.supportsVision,
       useForDocumentVisionParse: r.useForDocumentVisionParse,
       hasApiKey: !!(r.apiKey && r.apiKey.length > 0 && r.apiKey !== 'placeholder'),
+      lastTestAt: r.lastTestAt,
+      lastTestOk: r.lastTestOk,
+      lastTestLatencyMs: r.lastTestLatencyMs,
+      lastTestError: r.lastTestError,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     }

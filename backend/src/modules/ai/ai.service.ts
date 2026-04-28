@@ -182,16 +182,20 @@ export class AiService {
     }
   }
 
-  /** 根据配置获取 OpenAI 客户端（兼容多模型） */
-  private async getOpenAIClient(modelConfigId?: string): Promise<{ client: OpenAI; modelId: string; modelName: string }> {
+  /** 根据配置获取 OpenAI 客户端（兼容多模型）。configId 为库中记录 id，纯环境变量回退时为 null。 */
+  private async getOpenAIClient(
+    modelConfigId?: string,
+  ): Promise<{ client: OpenAI; modelId: string; modelName: string; configId: string | null }> {
     let baseUrl = this.config.get<string>('OPENAI_BASE_URL', 'https://api.openai.com/v1')
     let apiKey = this.config.get<string>('OPENAI_API_KEY', '')
     let modelId = this.config.get<string>('DEFAULT_AI_MODEL', 'gpt-4o')
     let modelName = modelId
+    let configId: string | null = null
 
     if (modelConfigId) {
       const config = await this.prisma.aIModelConfig.findUnique({ where: { id: modelConfigId } })
       if (config) {
+        configId = config.id
         baseUrl = config.baseUrl
         apiKey = config.apiKey
         modelId = config.modelId
@@ -201,6 +205,7 @@ export class AiService {
       // 使用默认模型
       const defaultModel = await this.prisma.aIModelConfig.findFirst({ where: { isDefault: true, isActive: true } })
       if (defaultModel) {
+        configId = defaultModel.id
         baseUrl = defaultModel.baseUrl
         apiKey = defaultModel.apiKey
         modelId = defaultModel.modelId
@@ -213,7 +218,7 @@ export class AiService {
     }
 
     const client = new OpenAI({ apiKey, baseURL: baseUrl })
-    return { client, modelId, modelName }
+    return { client, modelId, modelName, configId }
   }
 
   /** 获取可用模型列表 */
@@ -236,31 +241,63 @@ export class AiService {
     return models
   }
 
-  /** 管理用途：测试指定模型连通性（小请求，返回延迟与回包片段） */
+  /** 管理用途：测试指定模型连通性（小请求，返回延迟与回包片段）；成功/失败均写入 DB 观测字段（若有对应配置行） */
   async testModelConnectivity(opts?: { modelConfigId?: string; prompt?: string }) {
-    const { client, modelId, modelName } = await this.getOpenAIClient(opts?.modelConfigId)
+    const { client, modelId, modelName, configId } = await this.getOpenAIClient(opts?.modelConfigId)
     const prompt =
       (opts?.prompt || '').trim() ||
       '请回复一个单词：ok'
 
+    const persistFailure = async (message: string) => {
+      if (!configId) return
+      const lastTestError = message.slice(0, 500)
+      await this.prisma.aIModelConfig.update({
+        where: { id: configId },
+        data: {
+          lastTestAt: new Date(),
+          lastTestOk: false,
+          lastTestLatencyMs: null,
+          lastTestError,
+        },
+      })
+    }
+
     const start = Date.now()
-    const completion = await client.chat.completions.create({
-      model: modelId,
-      messages: [
-        { role: 'system', content: 'You are a concise assistant.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0,
-      max_tokens: 16,
-    })
-    const latencyMs = Date.now() - start
-    const content = completion.choices?.[0]?.message?.content ?? ''
-    return {
-      ok: true,
-      modelId,
-      modelName,
-      latencyMs,
-      sample: String(content).slice(0, 200),
+    try {
+      const completion = await client.chat.completions.create({
+        model: modelId,
+        messages: [
+          { role: 'system', content: 'You are a concise assistant.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0,
+        max_tokens: 16,
+      })
+      const latencyMs = Date.now() - start
+      const content = completion.choices?.[0]?.message?.content ?? ''
+      if (configId) {
+        await this.prisma.aIModelConfig.update({
+          where: { id: configId },
+          data: {
+            lastTestAt: new Date(),
+            lastTestOk: true,
+            lastTestLatencyMs: latencyMs,
+            lastTestError: null,
+          },
+        })
+      }
+      return {
+        ok: true,
+        modelId,
+        modelName,
+        latencyMs,
+        sample: String(content).slice(0, 200),
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err)
+      await persistFailure(message)
+      throw err
     }
   }
 

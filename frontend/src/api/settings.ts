@@ -22,6 +22,11 @@ export interface AIModelAdmin {
   supportsVision: boolean
   useForDocumentVisionParse: boolean
   hasApiKey: boolean
+  /** 最近一次连通性测试（管理员「测试」按钮）；旧后端可能无此字段 */
+  lastTestAt?: string | null
+  lastTestOk?: boolean | null
+  lastTestLatencyMs?: number | null
+  lastTestError?: string | null
   createdAt: string
   updatedAt: string
 }

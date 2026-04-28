@@ -311,7 +311,9 @@ export default function SettingsPage() {
     try {
       const res = await aiApi.testModel({ modelConfigId: id })
       toast.success(`连通性 OK：${res.modelName}（${res.latencyMs}ms）`)
+      await refreshModels()
     } catch {
+      await refreshModels()
       /* toast by interceptor */
     } finally {
       setTestingModelId(null)
@@ -722,6 +724,27 @@ export default function SettingsPage() {
                     {model.useForDocumentVisionParse && (
                       <Badge className="text-xs bg-violet-600 text-white hover:bg-violet-600">
                         文档视觉解析
+                      </Badge>
+                    )}
+                    {model.lastTestAt != null && (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs max-w-[min(100%,22rem)] truncate font-normal ${
+                          model.lastTestOk === false ? 'border-destructive/60 text-destructive' : ''
+                        }`}
+                        title={
+                          model.lastTestOk === false && model.lastTestError
+                            ? model.lastTestError
+                            : undefined
+                        }
+                      >
+                        上次测试{' '}
+                        {model.lastTestOk === true && model.lastTestLatencyMs != null
+                          ? `成功 ${model.lastTestLatencyMs}ms`
+                          : model.lastTestOk === false
+                            ? '失败'
+                            : '—'}{' '}
+                        · {format(new Date(model.lastTestAt), 'MM-dd HH:mm')}
                       </Badge>
                     )}
                   </div>

@@ -467,6 +467,12 @@ model AIModelConfig {
   /// 全局唯一：上传图片/PDF 走视觉理解时的专用模型（与生成用例模型可不同）
   useForDocumentVisionParse Boolean @default(false)
 
+  /// 最近一次「连通性测试」时间与结果（便于运维观测，不回显敏感信息）
+  lastTestAt        DateTime?
+  lastTestOk        Boolean?
+  lastTestLatencyMs Int?
+  lastTestError     String?   @db.VarChar(500)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
