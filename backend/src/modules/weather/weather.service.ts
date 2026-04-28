@@ -71,8 +71,7 @@ export class WeatherService {
         count: 10,
         language: 'zh',
         format: 'json',
-        // 手动城市选择主场景在国内，优先 CN；若要全球可移除此过滤
-        countryCode: 'CN',
+        // 全球城市搜索：不限制国家，避免国外城市无结果
       },
     })
 
