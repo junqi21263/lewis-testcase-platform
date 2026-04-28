@@ -64,6 +64,56 @@ export class AiService {
     return []
   }
 
+  /**
+   * 当模型未按约定输出 JSON 时，二次请求把“原文”修复为标准 JSON（仅失败时触发，避免常态额外成本）。
+   * 返回修复后的文本（应为 { cases: [...] }），失败则返回 null。
+   */
+  private async tryRepairToJsonObject(
+    client: OpenAI,
+    modelId: string,
+    rawText: string,
+  ): Promise<{ repairedText: string; finishReason: string | null } | null> {
+    const src = (rawText || '').trim()
+    if (!src) return null
+    // 太长时只给首尾，避免修复请求也超上下文
+    const slice =
+      src.length > 80_000
+        ? `${src.slice(0, 50_000)}\n\n…(中间省略)…\n\n${src.slice(-30_000)}`
+        : src
+
+    try {
+      const completion = await client.chat.completions.create({
+        model: modelId,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a converter. Convert user text into ONE valid JSON object. Output ONLY JSON. The first non-whitespace character must be {.',
+          },
+          {
+            role: 'user',
+            content:
+              `请把下面文本严格整理为平台约定的 JSON 结构，仅输出一个 JSON 对象：\n` +
+              `- 顶层必须是 { "cases": [...] }\n` +
+              `- 每条用例对象字段：title, priority, type, precondition, steps([{order,action,expected?}]), expectedResult, tags\n` +
+              `- 禁止 Markdown/解释文字/代码围栏\n\n` +
+              `待整理文本：\n\n${slice}`,
+          },
+        ],
+        temperature: 0,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' },
+      })
+      const choice = completion.choices?.[0]
+      const repairedText = String(choice?.message?.content ?? '').trim()
+      if (!repairedText) return null
+      return { repairedText, finishReason: (choice?.finish_reason as string | undefined) ?? null }
+    } catch (e) {
+      this.logger.warn('修复为 JSON 失败，继续走启发式解析', e as Error)
+      return null
+    }
+  }
+
   /** 无法解析为 JSON 用例时落库一条「原文」用例，避免成功状态却 0 条记录 */
   private fallbackCasesFromRawOutput(raw: string): any[] {
     const t = (raw || '').trim()
@@ -154,6 +204,32 @@ export class AiService {
     const fallback = this.fallbackCasesFromRawOutput(fullText)
     if (fallback.length > 0) return fallback
     return []
+  }
+
+  /**
+   * 带“修复”能力的解析：先尝试 JSON → 失败则二次修复 → 再启发式拆分 → 最后原文兜底。
+   */
+  private async resolveCasesForPersistenceWithRepair(
+    client: OpenAI,
+    modelId: string,
+    rawText: string,
+  ): Promise<{ rows: any[]; repaired: boolean; outputTruncated: boolean }> {
+    const direct = this.extractCaseRows(rawText)
+    if (direct.length > 0) return { rows: direct, repaired: false, outputTruncated: false }
+
+    const repaired = await this.tryRepairToJsonObject(client, modelId, rawText)
+    if (repaired?.repairedText) {
+      const fixed = this.extractCaseRows(repaired.repairedText)
+      if (fixed.length > 0) {
+        return { rows: fixed, repaired: true, outputTruncated: repaired.finishReason === 'length' }
+      }
+    }
+
+    const loose = parseLooseMarkdownToCaseRows(rawText)
+    if (this.shouldUseLooseParsedCases(loose, rawText)) return { rows: loose as any[], repaired: false, outputTruncated: false }
+
+    const fallback = this.fallbackCasesFromRawOutput(rawText)
+    return { rows: fallback, repaired: false, outputTruncated: false }
   }
 
   /** 生成成功且指定了模板时，增加模板使用次数 */
@@ -448,7 +524,14 @@ export class AiService {
         this.logger.warn('非流式生成：模型输出因 max_tokens 被截断')
       }
 
-      const rows = this.resolveCasesForPersistence(content)
+      const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, content)
+      const rows = resolved.rows
+      if (resolved.repaired) {
+        outputWarnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
+      }
+      if (resolved.outputTruncated) {
+        outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
+      }
       if (rows.length === 0) {
         const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
         await this.prisma.generationRecord.update({
@@ -591,7 +674,14 @@ export class AiService {
         this.logger.warn('流式生成：模型输出因 max_tokens 被截断')
       }
 
-      const rows = this.resolveCasesForPersistence(fullContent)
+      const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, fullContent)
+      const rows = resolved.rows
+      if (resolved.repaired) {
+        this.writeStreamNotice(res, '模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
+      }
+      if (resolved.outputTruncated) {
+        this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
+      }
       if (rows.length === 0) {
         const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
         await this.prisma.generationRecord.update({
