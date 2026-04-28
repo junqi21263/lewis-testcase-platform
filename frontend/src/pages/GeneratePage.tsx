@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Upload, FileText, Type, Wand2, Loader2, ChevronRight, X, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,11 @@ import { recordsApi } from '@/api/records'
 import { parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
 import { formatFileSize, priorityColorMap } from '@/utils/format'
 import { loadRecentTemplateIds, pushRecentTemplateId } from '@/utils/recentTemplates'
+import {
+  exportFilenameTimestamp,
+  testcaseDelimitedValues,
+  TESTCASE_EXPORT_COLUMNS_CN,
+} from '@/utils/testcaseExportFormat'
 import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus } from '@/types'
 import { useNavigate } from 'react-router-dom'
@@ -161,12 +166,6 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
 
   const canExport = Boolean(lastSuiteId) || cases.length > 0
 
-  const exportFilenameBase = useMemo(() => {
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `testcases_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
-  }, [])
-
   const downloadTextFile = (filename: string, content: string, mime = 'text/plain;charset=utf-8') => {
     const blob = new Blob([content], { type: mime })
     const url = URL.createObjectURL(blob)
@@ -200,16 +199,6 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
     return lines.join('\n')
   }
 
-  const toCsv = (arr: TestCase[]) => {
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const header = ['title', 'priority', 'type', 'precondition', 'steps', 'expectedResult'].map(esc).join(',')
-    const rows = arr.map((c) => {
-      const steps = (c.steps ?? []).map((s) => `${s.order}. ${s.action}${s.expected ? `(${s.expected})` : ''}`).join(' | ')
-      return [c.title, c.priority, c.type, c.precondition ?? '', steps, c.expectedResult].map(esc).join(',')
-    })
-    return [header, ...rows].join('\n')
-  }
-
   const handleExport = async (format: 'EXCEL' | 'CSV' | 'JSON' | 'MARKDOWN') => {
     if (!canExport) {
       toast.error('暂无可导出的用例')
@@ -225,23 +214,39 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       }
     }
 
+    const tsName = `${exportFilenameTimestamp()}`
+
     // fallback: client-side export (no suiteId / backend export failure)
     if (format === 'JSON') {
-      downloadTextFile(`${exportFilenameBase}.json`, JSON.stringify(cases, null, 2), 'application/json;charset=utf-8')
+      downloadTextFile(`${tsName}.json`, JSON.stringify(cases, null, 2), 'application/json;charset=utf-8')
       toast.success('已导出 JSON')
       return
     }
     if (format === 'MARKDOWN') {
-      downloadTextFile(`${exportFilenameBase}.md`, toMarkdown(cases), 'text/markdown;charset=utf-8')
+      downloadTextFile(`${tsName}.md`, toMarkdown(cases), 'text/markdown;charset=utf-8')
       toast.success('已导出 Markdown')
       return
     }
     if (format === 'CSV') {
-      downloadTextFile(`${exportFilenameBase}.csv`, toCsv(cases), 'text/csv;charset=utf-8')
+      let moduleLabel = ''
+      if (cases[0]?.suiteId) {
+        try {
+          const suite = await testcasesApi.getSuiteById(cases[0].suiteId)
+          moduleLabel = (suite.projectName && suite.projectName.trim()) || suite.name || ''
+        } catch {
+          /* ignore */
+        }
+      }
+      const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+      const header = TESTCASE_EXPORT_COLUMNS_CN.map((h) => esc(h)).join(',')
+      const rows = cases.map((c) => testcaseDelimitedValues(c, moduleLabel).map(esc).join(','))
+      downloadTextFile(`${tsName}.csv`, [header, ...rows].join('\n'), 'text/csv;charset=utf-8')
       toast.success('已导出 CSV')
       return
     }
-    toast.error('导出失败，请稍后重试')
+    toast.error(
+      'Excel 需服务端用例集。请确认生成已写入用例集，或到「生成记录」打开该条记录后导出。',
+    )
   }
 
   const handleCopyJson = async () => {

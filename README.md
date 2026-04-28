@@ -188,7 +188,8 @@ bash scripts/smoke.sh
   - 生成完成页：
     - **查看记录**（跳转记录详情）
     - **生成分享链接**（复制公开链接）
-    - **导出 Excel / Markdown / JSON**（优先后端 suite 导出；无 suiteId 自动降级前端导出）
+    - **导出 Excel / Markdown / JSON / CSV**（Excel 优先后端 `suite` 流式导出；无 suiteId 或失败时降级为浏览器端 JSON/Markdown/CSV；CSV 列顺序与后端 Excel 约定一致）
+    - Excel 下载文件名形如 **`YYYYMMDD_HHmm.xlsx`**（由服务端生成时间决定）
     - **复制 JSON**
 - **模板效率**：
   - 生成页显示“最近模板”快捷按钮
@@ -324,3 +325,19 @@ bash scripts/smoke.sh
   - 系统设置 → 在「超级管理员工具」下增加 **「运维审计日志」** 只读列表，并支持手动刷新
 - **自测建议**
   - 以 `SUPER_ADMIN` 登录后，在设置页完成一次改角色或重置密码，应能在审计区看到对应操作类型（**不**应出现密码内容）
+
+### 2026-04-29（测试用例 Excel / 降级导出对齐）
+
+- **后端 Excel（权威）**
+  - `GET /api/testcases/suites/:id/export?format=EXCEL`：表头顺序固定为  
+    **用例名称 → 所属模块 → 标签 → 前置条件 → 步骤描述 → 预期结果 → 编辑模式 → 备注 → 用例等级**
+  - 「所属模块」优先取用例集的 `projectName`，否则用用例集名称
+  - 「编辑模式」由用例 `status` 映射为草稿/评审中/已通过/已归档
+  - 文件名：**`YYYYMMDD_HHmm.xlsx`**（示例：`20260428_0951.xlsx`）
+- **前端（降级 CSV / 文件名）**
+  - 浏览器端 CSV 列顺序与含义与上表一致；必要时请求用例集信息补全「所属模块」
+  - 降级导出的 JSON/Markdown/CSV 文件名中的时间戳格式与后端 Excel 保持一致（`YYYYMMDD_HHmm`）
+  - 无服务端 `suiteId` 时点击 **Excel** 会提示改从「生成记录」导出或确认已落地用例集（Excel 依赖后端生成文件流）
+- **联调自检**
+  - 有一条已关联 `suiteId` 的生成记录时：在记录详情或生成页导出 Excel，打开表格核对表头顺序与文件名格式
+  - 去掉 `suiteId` 场景（仅前端内存用例）：导出 CSV，核对列与 Excel 约定一致
