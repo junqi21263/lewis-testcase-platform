@@ -238,7 +238,8 @@ export async function streamRequest(
           onChunk(rec.content)
         }
         if (typeof rec.error === 'string') {
-          onError?.(new Error(rec.error))
+          const rid = typeof rec.recordId === 'string' ? rec.recordId : ''
+          onError?.(new Error(rid ? `${rec.error}（记录: ${rid}）` : rec.error))
           return
         }
         if (typeof rec.recordId === 'string') {

@@ -482,9 +482,10 @@ export default function GeneratePage() {
             }
             setGeneratedCases(cases)
             setStep('result')
-            const isEmptyHint = cases.some((c) => c.tags?.includes('ai-empty-output'))
-            if (isEmptyHint) {
-              toast.error('模型未返回内容或文件无可用文本，请查看结果中的说明')
+            if (cases.length === 0) {
+              toast.error(
+                '未生成任何用例：模型输出为空或无法解析为 JSON。请检查模型与需求描述，或到生成记录查看失败原因。',
+              )
             } else {
               toast.success(`用例生成完成，共 ${cases.length} 条`)
             }

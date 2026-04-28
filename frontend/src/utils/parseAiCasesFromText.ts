@@ -41,28 +41,6 @@ export function extractCaseRowsFromText(raw: string): unknown[] {
   return []
 }
 
-function buildEmptyStreamPlaceholderCase(): TestCase {
-  return {
-    id: `local-empty-${Date.now()}`,
-    title: '未收到模型输出',
-    precondition: '',
-    steps: [
-      {
-        order: 1,
-        action:
-          '请检查：模型 API 与 Key、文件是否已解析完成、图片是否识别出文字；或改用非流式/提高 maxTokens。',
-        expected: '',
-      },
-    ],
-    expectedResult: '流式内容为空白且未从服务端拉取到用例，请查看生成记录或后端日志。',
-    priority: 'P2',
-    type: 'FUNCTIONAL',
-    tags: ['ai-empty-output'],
-    status: 'DRAFT',
-    suiteId: '',
-  }
-}
-
 function buildRawPlaceholderCase(content: string): TestCase {
   const body =
     content.length > 120_000
@@ -112,5 +90,5 @@ export function parseAiCasesFromText(raw: string): TestCase[] {
   const rows = extractCaseRowsFromText(raw)
   if (rows.length > 0) return rows.map((c, i) => normalizeToTestCase(c, i))
   if (raw.trim()) return [buildRawPlaceholderCase(raw)]
-  return [buildEmptyStreamPlaceholderCase()]
+  return []
 }

@@ -76,27 +76,9 @@ export class AiService {
     ]
   }
 
-  /** 模型完全无输出时仍落库一条说明用例，避免「成功但 0 条」 */
-  private emptyModelOutputPlaceholder(): any[] {
-    return [
-      {
-        title: '模型未返回任何可展示内容',
-        precondition: '',
-        steps: [
-          {
-            order: 1,
-            action:
-              '请排查：① 系统设置里默认模型与 API Key、Base URL 是否正确；② 上传图片是否已解析出文字（解析完成前勿生成）；③ 适当提高 maxTokens；④ 智谱等兼容接口是否返回了 choices[0].message.content。',
-            expected: '',
-          },
-        ],
-        expectedResult:
-          '本次流式/非流式响应中未收到模型文本。若仅上传无字图片且未写文本需求，模型可能没有可依据的需求。',
-        priority: 'P2',
-        type: 'FUNCTIONAL',
-        tags: ['ai-empty-output'],
-      },
-    ]
+  /** 模型无可用文本 / 无法解析为 JSON 用例时，统一错误说明（不再落库「占位假用例」） */
+  private emptyOutputUserMessage(): string {
+    return '模型未返回可解析的 JSON 用例（输出为空或结构不符合约定）。请检查：系统设置中的模型 ID、API Key、Base URL；需求/文本是否为空；图片是否已解析出文字；适当提高 maxTokens；智谱等兼容接口流式是否仅返回在 delta 的其他字段。可在生成记录中查看详情。'
   }
 
   private mapRowToCaseInput(c: any) {
@@ -126,7 +108,7 @@ export class AiService {
     if (rows.length > 0) return rows
     const fallback = this.fallbackCasesFromRawOutput(fullText)
     if (fallback.length > 0) return fallback
-    return this.emptyModelOutputPlaceholder()
+    return []
   }
 
   /** 生成成功且指定了模板时，增加模板使用次数 */
@@ -378,6 +360,19 @@ export class AiService {
 
       const content = completion.choices[0]?.message?.content || ''
       const rows = this.resolveCasesForPersistence(content)
+      if (rows.length === 0) {
+        const msg = this.emptyOutputUserMessage()
+        await this.prisma.generationRecord.update({
+          where: { id: record.id },
+          data: {
+            status: GenerationStatus.FAILED,
+            errorMessage: msg,
+            caseCount: 0,
+            duration: Date.now() - startTime,
+          },
+        })
+        throw new BadRequestException(msg)
+      }
 
       // 创建用例集和用例
       const suite = await this.prisma.testSuite.create({
@@ -475,7 +470,10 @@ export class AiService {
       })
 
       for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || ''
+        const d = chunk.choices[0]?.delta as { content?: string; reasoning_content?: string } | undefined
+        const delta =
+          (typeof d?.content === 'string' ? d.content : '') ||
+          (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
         if (delta) {
           fullContent += delta
           res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
@@ -483,6 +481,25 @@ export class AiService {
       }
 
       const rows = this.resolveCasesForPersistence(fullContent)
+      if (rows.length === 0) {
+        const msg = this.emptyOutputUserMessage()
+        await this.prisma.generationRecord.update({
+          where: { id: record.id },
+          data: {
+            status: GenerationStatus.FAILED,
+            errorMessage: msg,
+            caseCount: 0,
+            duration: Date.now() - startTime,
+          },
+        })
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: msg, recordId: record.id })}\n\n`)
+          res.write(`data: [DONE]\n\n`)
+          res.end()
+        }
+        return
+      }
+
       if (rows.length > 0 && rows[0]?.tags?.includes?.('ai-raw-output')) {
         this.logger.warn('流式输出未解析为 JSON 用例，已保存为单条原文占位用例')
       }
