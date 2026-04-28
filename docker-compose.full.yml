@@ -4,6 +4,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # 与 frontend/.env.production / Vite 约定一致；同源反代保持 /api 即可
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_APP_NAME: ${VITE_APP_NAME:-}
     container_name: testcase_frontend
     restart: unless-stopped
     ports:

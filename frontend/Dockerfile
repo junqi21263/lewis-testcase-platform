@@ -1,31 +1,34 @@
-# 构建阶段（与 backend 一致：优先 Public ECR，减少 Docker Hub 拉取失败）
+# 与仓库根目录 backend 服务分离部署时使用（Railway Root Directory = frontend，或 VPS compose 中的 frontend 服务）。
+# 构建期注入 Vite 环境变量（须以 VITE_ 前缀）；默认 /api 适用于同源反代（docker-compose.full / Nginx 同域）。
 FROM public.ecr.aws/docker/library/node:20-alpine AS build
 
 WORKDIR /app
 
-# 复制 package 文件
-COPY package*.json ./
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-# 安装依赖
-RUN npm install
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
-# 复制源代码
 COPY . .
 
-# 构建应用
-RUN npm run build
+# 生产环境 API 基址（与 Nest globalPrefix 一致须以 /api 结尾）
+# Railway 上前端与后端域名不同时，设为后端公网 + /api，并在后端 CORS_ORIGINS 中放行前端 Origin。
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ARG VITE_APP_NAME=
+ENV VITE_APP_NAME=${VITE_APP_NAME}
 
-# 生产阶段
+RUN pnpm run build
+
 FROM public.ecr.aws/docker/library/nginx:alpine
 
-# 复制构建产物
+RUN apk add --no-cache gettext
+
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-# 复制 nginx 配置
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# 暴露端口
 EXPOSE 80
 
-# 启动 nginx
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

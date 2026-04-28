@@ -126,11 +126,28 @@ bash scripts/dev-integration-check.sh
 | `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致） | `http://localhost:3000/api`（生产推荐 `/api`） |
 | `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
+### Railway：前端也由 Git 推送部署（同一仓库）
+
+仓库根目录的 `railway.toml` 面向 **后端**（`backend/Dockerfile`）。前端作为 **第二个 Railway 服务**，仍绑定 **同一 GitHub 仓库**，推送 **`main`** 即可构建发布，无需手动上传 `dist`。
+
+1. Railway 项目中 **New Service** → 选择与本后端 **相同的仓库**。
+2. **Settings → Root Directory** 设为 **`frontend`**（会使用 `frontend/railway.toml` 与 `frontend/Dockerfile`）。
+3. **Build / Variables** 中为 **构建期** 设置 Vite 变量（`pnpm build` 时嵌入）：
+   - **`VITE_API_BASE_URL`**：前后端 **不同域名** 时填后端公网 API 基址，例如 `https://<your-backend>.up.railway.app/api`；并在后端 **`CORS_ORIGINS`** 中加入此前端页面的 Origin（如 `https://<your-frontend>.up.railway.app`）。
+   - **同源 / 反代场景**（如 VPS 上 `docker-compose.full` 仅一个公网入口）继续使用 **`/api`** 即可，与 `frontend/.env.example` 一致。
+
+> 注：腾讯云 EdgeOne 等静态托管若仍用手动上传 `dist.zip`，与「Git 自动部署」可并行；选一主流程即可。
+
+**GitHub Actions → VPS（全栈已随 Git 更新前端）**  
+`.github/workflows/deploy-vps.yml` 推送 `main` 时会 rsync 仓库并在服务器执行 **`docker compose -f docker-compose.full.yml up -d --build`**，`frontend` 服务会从 **`frontend/Dockerfile`** 重新构建镜像，因此 **前端与后端同一套推送流程**。
+
 ## 项目结构
 
 ```
 lewis_testcase_platform/
-├── frontend/                # React 前端
+├── frontend/                # React 前端（可单独作为 Railway 服务：Root Directory = frontend）
+│   ├── railway.toml         # Railway 前端服务配置（与根目录后端服务分离）
+│   ├── Dockerfile
 │   ├── src/
 │   │   ├── api/             # API 请求层
 │   │   ├── assets/          # 静态资源
@@ -183,7 +200,7 @@ lewis_testcase_platform/
 
 > **部署路径二选一（或并存）：**
 >
-> - **Railway**：仓库绑定 GitHub 后，推送 **`main`** 触发后端构建与发布；数据库迁移见 `backend/start.sh` / `backend/migrate-release.sh`（推荐在 **Pre-deploy** 执行 `migrate-release.sh`，避免启动阶段长时间不监听端口）。
+> - **Railway**：仓库绑定 GitHub 后，推送 **`main`** 触发构建；**后端**见根目录 `railway.toml`；**前端**需在同一项目再建服务并将 **Root Directory** 设为 **`frontend`**（详见上文「Railway：前端也由 Git 推送部署」）。数据库迁移见 `backend/start.sh` / `backend/migrate-release.sh`（推荐 **Pre-deploy** 执行 `migrate-release.sh`）。
 > - **自托管 VPS**：推荐使用 `docker-compose.full.yml`（前端 Nginx + 后端 + Postgres + Redis），并可配合 GitHub Actions / `scripts/smoke.sh` 做部署后冒烟。
 
 ### 1) 启动（全量栈）
@@ -387,3 +404,9 @@ bash scripts/smoke.sh
   2. `git add` / `git commit` / **`git push origin main`**
   3. **Railway**：在 Dashboard 查看 Deployment；确认 Variables 含 **`DATABASE_URL`**、**`JWT_SECRET`**；数据库迁移建议在 **Pre-deploy** 跑 `backend/migrate-release.sh`（或按服务内 `start.sh` 说明），避免启动阶段长时间未监听端口。
   4. **自托管**：`docker compose -f docker-compose.full.yml up -d --build` 后执行 `bash scripts/smoke.sh`，或手动访问 `GET /api/health`。
+
+### 2026-04-28（Railway 前端 · Git 部署）
+
+- **`frontend/railway.toml`**：在同一 Railway 项目中新建服务，**Root Directory = `frontend`**，推送 `main` 即构建 **前端镜像**（与根目录后端服务共用仓库）。
+- **`frontend/Dockerfile`**：改为 **pnpm** 安装；支持构建参数 **`VITE_API_BASE_URL`** / **`VITE_APP_NAME`**（跨域部署后端时必填前者）；**`nginx.conf.template` + `docker-entrypoint.sh`** 支持平台注入的 **`PORT`**（Railway 必需）。
+- **`docker-compose.full.yml`**：为 `frontend` 构建传入可选 **`VITE_*`**，与 VPS 全栈 Git 部署一致。

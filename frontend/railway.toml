@@ -1,0 +1,17 @@
+# 在 Railway 中新建「Static / Web」服务并绑定同一 GitHub 仓库后：
+#   Settings → Service → Root Directory = frontend
+# 推送 main 即触发本 Dockerfile 构建与部署（与后端服务并行，同一套 Git 流程）。
+#
+# Build Variables（示例，按你的后端公网地址填写）：
+#   VITE_API_BASE_URL=https://<your-backend>.up.railway.app/api
+# 后端需在 CORS_ORIGINS 中包含此前端站点的 Origin。
+#
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
