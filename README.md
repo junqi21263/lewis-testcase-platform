@@ -140,6 +140,8 @@ bash scripts/dev-integration-check.sh
 | **PostgreSQL** | 默认仅 **`127.0.0.1:5432`** 映射到宿主机，便于 SSH 隧道 / 本机客户端，**勿对 0.0.0.0 开放** |
 | **后端** | 不映射宿主机端口，仅容器网络内 `backend:3000` |
 
+**流式生成（SSE）**：经前端 Nginx 反代时，`frontend/nginx.conf.template` 对 **`/api/ai/generate/stream`** 已配置 **`proxy_buffering off`**、关闭 gzip、延长读超时。若自建其它反代，需同样避免缓冲流式响应，否则浏览器可能报 **`ERR_INCOMPLETE_CHUNKED_ENCODING`**。
+
 #### 首次在服务器上部署
 
 1. **安装** Docker Engine 与 **Docker Compose 插件**（或 `docker-compose` 独立二进制）；防火墙 / 安全组放行 **80**（若上 HTTPS 再开 **443**）。
