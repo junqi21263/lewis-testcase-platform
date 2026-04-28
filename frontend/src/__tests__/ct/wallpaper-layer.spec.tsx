@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/experimental-ct-react'
-import { WallpaperLayer } from '@/components/wallpaper/WallpaperLayer'
+import { WallpaperLayerStory } from '@/__tests__/ct/stories/wallpaper-layer.story'
 
 const tinyPngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6X8Yb8AAAAASUVORK5CYII='
@@ -47,7 +47,7 @@ test.describe('WallpaperLayer', () => {
       })
     })
 
-    const component = await mount(<WallpaperLayer />)
+    const component = await mount(<WallpaperLayerStory />)
 
     const bg = component.locator('div.fixed.inset-0.-z-10')
     await expect(bg).toBeVisible()
@@ -68,7 +68,7 @@ test.describe('WallpaperLayer', () => {
       })
     })
 
-    const component = await mount(<WallpaperLayer />)
+    const component = await mount(<WallpaperLayerStory />)
     await expect(component.locator('div.fixed.inset-0.-z-10')).toHaveCount(0)
   })
 
@@ -91,7 +91,7 @@ test.describe('WallpaperLayer', () => {
       })
     })
 
-    const component = await mount(<WallpaperLayer />)
+    const component = await mount(<WallpaperLayerStory />)
     await expect(component.locator('div.fixed.inset-0.-z-10')).toHaveCount(0)
   })
 
@@ -110,7 +110,7 @@ test.describe('WallpaperLayer', () => {
       await route.fulfill({ status: 500, body: 'fail' })
     })
 
-    const component = await mount(<WallpaperLayer />)
+    const component = await mount(<WallpaperLayerStory />)
     await expect(component.locator('div.fixed.inset-0.-z-10')).toHaveCount(0)
   })
 })

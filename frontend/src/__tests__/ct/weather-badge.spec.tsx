@@ -1,17 +1,5 @@
 import { test, expect } from '@playwright/experimental-ct-react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { WeatherBadge } from '@/components/weather/WeatherBadge'
-
-function AppShell() {
-  return (
-    <MemoryRouter initialEntries={['/']}>
-      <Routes>
-        <Route path="/" element={<WeatherBadge />} />
-        <Route path="/settings" element={<div data-testid="settings-page">settings</div>} />
-      </Routes>
-    </MemoryRouter>
-  )
-}
+import { WeatherBadgeStory } from '@/__tests__/ct/stories/weather-badge.story'
 
 test.describe('WeatherBadge', () => {
   test('normal: shows city + temperature + text, and navigates on click', async ({
@@ -55,7 +43,7 @@ test.describe('WeatherBadge', () => {
       })
     })
 
-    const component = await mount(<AppShell />)
+    const component = await mount(<WeatherBadgeStory />)
 
     await expect(component.getByText('北京')).toBeVisible()
     await expect(component.getByText(/25°/)).toBeVisible()
@@ -81,7 +69,7 @@ test.describe('WeatherBadge', () => {
       })
     })
 
-    const component = await mount(<AppShell />)
+    const component = await mount(<WeatherBadgeStory />)
     await expect(component.getByText('未设置城市')).toBeVisible()
     await expect(component.getByText('点击设置')).toBeVisible()
   })
@@ -123,7 +111,7 @@ test.describe('WeatherBadge', () => {
       })
     })
 
-    const component = await mount(<AppShell />)
+    const component = await mount(<WeatherBadgeStory />)
     const textNode = component.getByText(/18°/)
     await expect(textNode).toHaveClass(/text-muted-foreground/)
   })
@@ -146,7 +134,7 @@ test.describe('WeatherBadge', () => {
       await route.fulfill({ status: 500, body: 'fail' })
     })
 
-    const component = await mount(<AppShell />)
+    const component = await mount(<WeatherBadgeStory />)
     await expect(component.getByText('北京')).toBeVisible()
     await expect(component.getByText('加载中')).toBeVisible()
   })
