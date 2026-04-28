@@ -17,21 +17,23 @@ pick_compose_runner() {
   # Prefer non-sudo (CI / local dev). Only fall back to sudo when:
   # - docker is installed but user has no permission, AND
   # - sudo is non-interactive (sudo -n).
-  if docker compose version >/dev/null 2>&1; then
+  # IMPORTANT: `docker compose version` may succeed even when the user cannot
+  # access the Docker daemon socket. Always probe the daemon (docker info).
+  if docker compose version >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     echo "docker compose"
     return 0
   fi
-  if command -v docker-compose >/dev/null 2>&1; then
+  if command -v docker-compose >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     echo "docker-compose"
     return 0
   fi
 
   if command -v sudo >/dev/null 2>&1; then
-    if sudo -n docker compose version >/dev/null 2>&1; then
+    if sudo -n docker compose version >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
       echo "sudo -n docker compose"
       return 0
     fi
-    if sudo -n docker-compose version >/dev/null 2>&1; then
+    if sudo -n docker-compose version >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
       echo "sudo -n docker-compose"
       return 0
     fi
