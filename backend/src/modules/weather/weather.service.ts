@@ -1,31 +1,29 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common'
 import axios from 'axios'
 
-type QWeatherCityLookupResponse = {
-  code: string
-  location?: Array<{
-    id: string
+type OpenMeteoGeocodingResponse = {
+  results?: Array<{
     name: string
-    adm1?: string
-    adm2?: string
+    latitude: number
+    longitude: number
     country?: string
-    lat?: string
-    lon?: string
+    country_code?: string
+    admin1?: string
+    admin2?: string
+    timezone?: string
   }>
 }
 
-type QWeatherNowResponse = {
-  code: string
-  updateTime?: string
-  now?: {
-    obsTime?: string
-    temp?: string
-    feelsLike?: string
-    text?: string
-    icon?: string
-    windDir?: string
-    windScale?: string
-    humidity?: string
+type OpenMeteoForecastResponse = {
+  current?: {
+    time?: string
+    interval?: number
+    temperature_2m?: number
+    apparent_temperature?: number
+    relative_humidity_2m?: number
+    wind_speed_10m?: number
+    wind_direction_10m?: number
+    weather_code?: number
   }
 }
 
@@ -35,20 +33,12 @@ type CacheEntry<T> = { value: T; expiresAt: number }
 export class WeatherService {
   private cache = new Map<string, CacheEntry<any>>()
 
-  private get apiKey(): string {
-    // 注意：未配置时需要“静默降级”，避免影响页面其它功能（尤其是 Header 轮询）
-    return (process.env.QWEATHER_API_KEY || process.env.WEATHER_API_KEY || '').trim()
-  }
-
   private geoHost(): string {
-    return (process.env.QWEATHER_GEO_HOST || 'https://geoapi.qweather.com').replace(/\/+$/, '')
+    return 'https://geocoding-api.open-meteo.com'
   }
 
   private weatherHost(): string {
-    return (process.env.QWEATHER_WEATHER_HOST || 'https://devapi.qweather.com').replace(
-      /\/+$/,
-      '',
-    )
+    return 'https://api.open-meteo.com'
   }
 
   private cacheGet<T>(key: string): T | null {
@@ -69,80 +59,116 @@ export class WeatherService {
     const q = query.trim()
     if (!q) return []
 
-    if (!this.apiKey) return []
-
     const cacheKey = `city:${q}`
     const cached = this.cacheGet<any[]>(cacheKey)
     if (cached) return cached
 
-    const url = `${this.geoHost()}/v2/city/lookup`
-    const { data } = await axios.get<QWeatherCityLookupResponse>(url, {
+    const url = `${this.geoHost()}/v1/search`
+    const { data } = await axios.get<OpenMeteoGeocodingResponse>(url, {
       timeout: 10_000,
-      headers: { 'X-QW-Api-Key': this.apiKey },
-      params: { location: q, range: 'cn', number: 10, lang: 'zh-hans' },
+      params: {
+        name: q,
+        count: 10,
+        language: 'zh',
+        format: 'json',
+        // 手动城市选择主场景在国内，优先 CN；若要全球可移除此过滤
+        countryCode: 'CN',
+      },
     })
-    if (data.code !== '200') throw new ServiceUnavailableException(`城市查询失败（code=${data.code}）`)
 
     const list =
-      data.location?.map((c) => ({
-        id: c.id,
+      data.results?.map((c) => ({
+        // 使用 "lat,lon" 作为 cityId，避免额外 /get?id=xxx 的依赖
+        id: `${c.latitude},${c.longitude}`,
         name: c.name,
-        adm1: c.adm1 ?? '',
-        adm2: c.adm2 ?? '',
+        adm1: c.admin1 ?? '',
+        adm2: c.admin2 ?? '',
         country: c.country ?? '',
-        lat: c.lat ?? '',
-        lon: c.lon ?? '',
+        lat: String(c.latitude ?? ''),
+        lon: String(c.longitude ?? ''),
       })) ?? []
 
     this.cacheSet(cacheKey, list, 60_000)
     return list
   }
 
+  private parseLatLon(cityId: string): { latitude: number; longitude: number } {
+    const parts = cityId.split(',').map((s) => s.trim())
+    if (parts.length !== 2) throw new BadRequestException('cityId 格式错误，应为 "lat,lon"')
+    const latitude = Number(parts[0])
+    const longitude = Number(parts[1])
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      throw new BadRequestException('cityId 坐标非法')
+    }
+    return { latitude, longitude }
+  }
+
+  private weatherCodeToText(code: number | null): { text: string; icon: string } {
+    // 参考 WMO Weather interpretation codes（Open-Meteo 使用）
+    const c = code ?? -1
+    if (c === 0) return { text: '晴', icon: 'sun' }
+    if (c === 1) return { text: '大部晴朗', icon: 'sun-cloud' }
+    if (c === 2) return { text: '局部多云', icon: 'cloud-sun' }
+    if (c === 3) return { text: '阴', icon: 'cloud' }
+    if (c === 45 || c === 48) return { text: '雾', icon: 'fog' }
+    if ([51, 53, 55, 56, 57].includes(c)) return { text: '毛毛雨', icon: 'drizzle' }
+    if ([61, 63, 65, 66, 67].includes(c)) return { text: '雨', icon: 'rain' }
+    if ([71, 73, 75, 77].includes(c)) return { text: '雪', icon: 'snow' }
+    if ([80, 81, 82].includes(c)) return { text: '阵雨', icon: 'shower' }
+    if ([85, 86].includes(c)) return { text: '阵雪', icon: 'snow' }
+    if (c === 95 || c === 96 || c === 99) return { text: '雷暴', icon: 'thunder' }
+    return { text: '未知', icon: 'unknown' }
+  }
+
   async now(locationId: string) {
     const loc = locationId.trim()
     if (!loc) throw new BadRequestException('缺少 locationId')
-
-    if (!this.apiKey) {
-      // 静默降级：不抛错，避免前端 toast/轮询干扰
-      return {
-        locationId: loc,
-        updateTime: null,
-        obsTime: null,
-        temp: null,
-        feelsLike: null,
-        text: null,
-        icon: null,
-        windDir: null,
-        windScale: null,
-        humidity: null,
-        stale: true,
-      }
-    }
 
     const cacheKey = `now:${loc}`
     const cached = this.cacheGet<any>(cacheKey)
     if (cached) return { ...cached, stale: false }
 
-    const url = `${this.weatherHost()}/v7/weather/now`
+    const { latitude, longitude } = this.parseLatLon(loc)
+    const url = `${this.weatherHost()}/v1/forecast`
     try {
-      const { data } = await axios.get<QWeatherNowResponse>(url, {
+      const { data } = await axios.get<OpenMeteoForecastResponse>(url, {
         timeout: 10_000,
-        headers: { 'X-QW-Api-Key': this.apiKey },
-        params: { location: loc, lang: 'zh-hans', unit: 'm' },
+        params: {
+          latitude,
+          longitude,
+          timezone: 'auto',
+          current: [
+            'temperature_2m',
+            'apparent_temperature',
+            'relative_humidity_2m',
+            'wind_speed_10m',
+            'wind_direction_10m',
+            'weather_code',
+          ].join(','),
+        },
       })
-      if (data.code !== '200') throw new ServiceUnavailableException(`天气查询失败（code=${data.code}）`)
+
+      const cur = data.current
+      if (!cur || typeof cur.time !== 'string') {
+        throw new ServiceUnavailableException('天气查询失败（返回缺少 current）')
+      }
+
+      const wx = this.weatherCodeToText(
+        typeof cur.weather_code === 'number' ? cur.weather_code : null,
+      )
 
       const result = {
         locationId: loc,
-        updateTime: data.updateTime ?? null,
-        obsTime: data.now?.obsTime ?? null,
-        temp: data.now?.temp ? Number(data.now.temp) : null,
-        feelsLike: data.now?.feelsLike ? Number(data.now.feelsLike) : null,
-        text: data.now?.text ?? null,
-        icon: data.now?.icon ?? null,
-        windDir: data.now?.windDir ?? null,
-        windScale: data.now?.windScale ?? null,
-        humidity: data.now?.humidity ? Number(data.now.humidity) : null,
+        updateTime: cur.time ?? null,
+        obsTime: cur.time ?? null,
+        temp: typeof cur.temperature_2m === 'number' ? cur.temperature_2m : null,
+        feelsLike: typeof cur.apparent_temperature === 'number' ? cur.apparent_temperature : null,
+        text: wx.text,
+        icon: wx.icon,
+        windDir:
+          typeof cur.wind_direction_10m === 'number' ? String(cur.wind_direction_10m) : null,
+        windScale: null,
+        humidity: typeof cur.relative_humidity_2m === 'number' ? cur.relative_humidity_2m : null,
       }
 
       this.cacheSet(cacheKey, result, 10 * 60_000)
