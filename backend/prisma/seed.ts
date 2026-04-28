@@ -10,12 +10,24 @@ async function main() {
 
   // 创建超级管理员
   const hashedPwd = await bcrypt.hash(adminPassword, 10)
+
+  const existingByEmail = await prisma.user.findUnique({ where: { email: adminEmail } })
+  let adminUsername = 'admin'
+  if (!existingByEmail) {
+    const usernameTaken = await prisma.user.findFirst({ where: { username: adminUsername } })
+    if (usernameTaken) {
+      const suffix = String(Date.now()).slice(-6)
+      adminUsername = `admin_${suffix}`
+    }
+  }
+
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { emailVerified: true, username: 'admin', role: UserRole.SUPER_ADMIN },
+    // 注意：不要强制覆盖 username，避免与已有用户冲突（username 唯一）
+    update: { emailVerified: true, role: UserRole.SUPER_ADMIN },
     create: {
       email: adminEmail,
-      username: 'admin',
+      username: adminUsername,
       password: hashedPwd,
       role: UserRole.SUPER_ADMIN,
       emailVerified: true,
