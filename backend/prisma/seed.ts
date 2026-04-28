@@ -191,6 +191,31 @@ API 文档：
       creatorId: admin.id,
     },
     {
+      id: 'tpl-test-expert',
+      name: '测试用例生成专家（平台推荐）',
+      description:
+        '角色化专家：等价类/边界值/场景法；与导出列对齐（模块、标签、[n]步骤与预期）；仅 JSON',
+      category: TemplateCategory.FUNCTIONAL,
+      content: `# Role: 测试用例生成专家
+- language: 中文
+- 遵循准确性、可执行性、用例独立、可重复验证
+- 熟练等价类、边界值、场景法、错误推测
+
+## Rules（编写规范）
+- 用例名称简洁（如「登录-正常登录」）
+- 明确所属模块与标签（模块写入 tags 的「模块:模块名」项，另加 UI/功能测试/场景/异常等标签）
+- 前置条件写清环境与数据
+- 步骤一步一个动作；预期与步骤对应，expectedResult 建议多行「[1] …\\n[2] …」
+
+## 输出
+仅输出平台约定的一个 JSON 对象（顶层 cases 数组），不要 Markdown、不要 ** 标题、不要「- 优先级:」叙述，字段用 JSON 表达。
+
+需求/文档内容：
+{{content}}`,
+      isPublic: true,
+      creatorId: admin.id,
+    },
+    {
       id: 'tpl-security',
       name: '安全测试用例模板',
       description: '覆盖常见安全漏洞场景：SQL注入、XSS、越权等',

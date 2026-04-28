@@ -43,5 +43,5 @@ export function normalizeSteps(raw: unknown): TestStep[] {
 }
 
 export function stepsToLines(steps: TestStep[]): string {
-  return steps.map((s) => `${s.order}. ${s.action}`).join('\n')
+  return steps.map((s) => `[${s.order}] ${s.action}`).join('\n')
 }

@@ -49,6 +49,21 @@ function parseStepsFromBlock(block: string): { order: number; action: string; ex
     .filter(Boolean)
   const out: { order: number; action: string; expected?: string }[] = []
   for (const line of lines) {
+    const bracket = line.match(/^\[(\d+)\]\s*(.+)$/)
+    if (bracket) {
+      const rest = bracket[2]
+      const expIdx = rest.search(/(?:期望|预期)[：:]/)
+      if (expIdx !== -1) {
+        out.push({
+          order: out.length + 1,
+          action: rest.slice(0, expIdx).trim(),
+          expected: rest.slice(expIdx).replace(/^(?:期望|预期)[：:]\s*/i, '').trim(),
+        })
+      } else {
+        out.push({ order: out.length + 1, action: rest, expected: undefined })
+      }
+      continue
+    }
     const num = line.match(/^(\d+)[\.\)、]\s*(.+)$/)
     if (num) {
       const rest = num[2]
@@ -72,7 +87,6 @@ function parseStepsFromBlock(block: string): { order: number; action: string; ex
   return out
 }
 
-/** 当前面标题行表示「模块 / 功能」分区时，作为子用例的默认所属模块 */
 function inferSectionModule(titleLine: string): string | undefined {
   const t = titleLine.replace(/^#{1,4}\s*/, '').replace(/\*\*/g, '').trim()
   const m = t.match(/^\d+[\.\)、]\s*(.+)$/)
@@ -90,7 +104,10 @@ function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | nu
     .replace(/^#{1,4}\s*/, '')
     .replace(/^\*\*\s*|\s*\*\*$/g, '')
     .trim()
-  titleLine = titleLine.replace(/^\*\*([^*]+)\*\*$/, '$1').trim()
+  const boldInline = lines[0].match(/^\*\*([^*]+)\*\*/)
+  if (boldInline) titleLine = boldInline[1].trim()
+  else titleLine = titleLine.replace(/^\*\*([^*]+)\*\*$/, '$1').trim()
+  titleLine = titleLine.replace(/\s*[-－]\s*优先级[：:].*$/i, '').trim()
   if (!titleLine) return null
   titleLine = titleLine.slice(0, 500)
 
@@ -111,22 +128,31 @@ function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | nu
 
   let pre = ''
   const preM = full.match(
-    /前置条件[：:\s]*([\s\S]*?)(?=\n\s*(?:测试)?步骤|\n#{1,4}\s|\n\*{0,2}用例|\n\*{2}|\n优先级|$)/i,
+    /前置条件[：:\s]*([\s\S]*?)(?=\n\s*(?:测试)?步骤|\n\s*\*\*[^*]|\n#{1,4}\s|\n\*{0,2}用例|\n优先级|$)/i,
   )
   if (preM) pre = preM[1].trim().replace(/^[-*]\s*/gm, '').trim()
 
   let stepsBlock = ''
-  const stM = full.match(/(?:测试)?步骤[（(]?\d*[）)]?[：:\s]*([\s\S]*?)(?=\n\s*预期结果|$)/i)
+  const stM = full.match(
+    /(?:测试)?步骤[（(]?\d*[）)]?[：:\s]*([\s\S]*?)(?=\n\s*(?:预期|期望)结果|$)/i,
+  )
   if (stM) stepsBlock = stM[1].trim()
 
   let steps = parseStepsFromBlock(stepsBlock)
 
   let exp = ''
-  const expM = full.match(/预期结果[：:\s]*([\s\S]*?)(?=\n#{2,4}\s|\n\*{0,2}用例\s*\d+|$)/i)
+  const expM = full.match(
+    /(?:预期|期望)结果[：:\s]*([\s\S]*?)(?=\n#{2,4}\s|\n\*{0,2}用例\s*\d+|\n(?=\*\*[^*]+\*\*)|$)/i,
+  )
   if (expM) exp = expM[1].trim()
 
   if (steps.length === 0) {
-    const numbered = text.split('\n').filter((l) => /^\s*\d+[\.\)、]\s*\S/.test(l))
+    const numbered = text.split('\n').filter((l) => {
+      if (!/^\s*\d+[\.\)、]\s*\S/.test(l)) return false
+      const rest = l.replace(/^\s*\d+[\.\)、]\s*/, '').trim()
+      if (/^(优先级|类型|前置条件|测试步骤|步骤|预期结果|期望结果)[：:]/i.test(rest)) return false
+      return true
+    })
     if (numbered.length > 0) {
       steps = numbered.map((l, i) => ({
         order: i + 1,
@@ -171,6 +197,7 @@ function splitIntoCaseChunks(text: string): string[] {
   if (!inner) return []
 
   const patterns: RegExp[] = [
+    /\n(?=\*\*[^*\n]{2,200}\*\*)/,
     /\n(?=\*{0,2}用例\s*\d+)/gi,
     /\n(?=####\s+)/,
     /\n(?=###\s*\d+[\.\)、])/,
@@ -188,9 +215,6 @@ function splitIntoCaseChunks(text: string): string[] {
   return [inner]
 }
 
-/**
- * 将非 JSON 或错误 JSON 包裹的正文拆成多条 case 行
- */
 export function parseLooseMarkdownToCaseRows(raw: string): LooseCaseRow[] {
   const base = unwrapWrongJsonWrapper((raw || '').trim())
   if (!base.trim()) return []
@@ -220,6 +244,23 @@ export function parseLooseMarkdownToCaseRows(raw: string): LooseCaseRow[] {
   if (out.length === 1 && (out[0].expectedResult.match(/\n###\s/g) || []).length >= 2) {
     const sub = parseLooseMarkdownToCaseRows(out[0].expectedResult)
     if (sub.length >= 2) return sub
+  }
+
+  if (out.length === 1 && (base.match(/\*\*[^*\n]{2,120}\*\*/g) || []).length >= 3) {
+    const alt = base.split(/\n(?=\*\*[^*\n]{2,200}\*\*)/).filter((s) => s.trim().length > 30)
+    if (alt.length >= 2) {
+      const out2: LooseCaseRow[] = []
+      const seen2 = new Set<string>()
+      for (const c of alt) {
+        const row = parseOneChunk(c.trim(), currentSectionModule)
+        if (!row) continue
+        const key = `${row.title}|${row.expectedResult.slice(0, 120)}`
+        if (seen2.has(key)) continue
+        seen2.add(key)
+        out2.push(row)
+      }
+      if (out2.length >= 2) return out2
+    }
   }
 
   if (out.length === 1 && (base.match(/用例\s*\d+/g) || []).length >= 3) {

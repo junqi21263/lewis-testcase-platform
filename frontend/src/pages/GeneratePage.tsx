@@ -194,7 +194,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       lines.push('')
       lines.push('### 步骤')
       for (const s of c.steps ?? []) {
-        lines.push(`${s.order}. ${s.action}${s.expected ? `（期望：${s.expected}）` : ''}`)
+        lines.push(`[${s.order}] ${s.action}${s.expected ? `（期望：${s.expected}）` : ''}`)
       }
       lines.push('')
       lines.push('### 预期结果')

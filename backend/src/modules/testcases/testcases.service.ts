@@ -34,7 +34,7 @@ function formatStepsForExcel(steps: unknown): string {
       const order = typeof s.order === 'number' ? s.order : ''
       const action = s.action ?? ''
       const exp = s.expected?.trim()
-      return exp ? `${order}. ${action}（期望：${exp}）` : `${order}. ${action}`
+      return exp ? `[${order}] ${action}（期望：${exp}）` : `[${order}] ${action}`
     })
     .join('\n')
 }
@@ -269,7 +269,7 @@ export class TestcasesService {
       if (c.precondition) md += `- **前置条件**: ${c.precondition}\n`
       md += `\n**测试步骤**:\n`
       if (Array.isArray(c.steps)) {
-        c.steps.forEach((s: any) => { md += `${s.order}. ${s.action}\n` })
+        c.steps.forEach((s: any) => { md += `[${s.order}] ${s.action}\n` })
       }
       md += `\n**预期结果**: ${c.expectedResult}\n\n---\n\n`
     })

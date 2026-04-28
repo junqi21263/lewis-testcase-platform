@@ -28,7 +28,7 @@ export function formatStepsForExport(steps: TestStep[] | undefined): string {
   return steps
     .map((s) => {
       const exp = s.expected?.trim()
-      return exp ? `${s.order}. ${s.action}（期望：${exp}）` : `${s.order}. ${s.action}`
+      return exp ? `[${s.order}] ${s.action}（期望：${exp}）` : `[${s.order}] ${s.action}`
     })
     .join('\n')
 }
