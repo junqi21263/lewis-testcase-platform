@@ -3,6 +3,52 @@ import { PrismaService } from '@/prisma/prisma.service'
 import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
 import type { CreateTestCaseDto } from './dto/create-test-case.dto'
 
+/** Excel 导出表头顺序（与业务约定一致） */
+const EXCEL_CASE_HEADERS = [
+  '用例名称',
+  '所属模块',
+  '标签',
+  '前置条件',
+  '步骤描述',
+  '预期结果',
+  '编辑模式',
+  '备注',
+  '用例等级',
+] as const
+
+function excelExportFilenameTimestamp(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const y = d.getFullYear()
+  const m = pad(d.getMonth() + 1)
+  const day = pad(d.getDate())
+  const h = pad(d.getHours())
+  const min = pad(d.getMinutes())
+  return `${y}${m}${day}_${h}${min}`
+}
+
+function formatStepsForExcel(steps: unknown): string {
+  if (!Array.isArray(steps)) return ''
+  return steps
+    .map((s: { order?: number; action?: string; expected?: string }) => {
+      const order = typeof s.order === 'number' ? s.order : ''
+      const action = s.action ?? ''
+      const exp = s.expected?.trim()
+      return exp ? `${order}. ${action}（期望：${exp}）` : `${order}. ${action}`
+    })
+    .join('\n')
+}
+
+/** 用例 status → Excel「编辑模式」展示文案 */
+function caseStatusToEditModeLabel(status: string): string {
+  const m: Record<string, string> = {
+    DRAFT: '草稿',
+    REVIEWING: '评审中',
+    APPROVED: '已通过',
+    ARCHIVED: '已归档',
+  }
+  return m[status] ?? status
+}
+
 @Injectable()
 export class TestcasesService {
   constructor(private prisma: PrismaService) {}
@@ -171,21 +217,32 @@ export class TestcasesService {
 
   private async exportToExcel(suite: any): Promise<{ content: Buffer; filename: string; mimeType: string }> {
     const XLSX = require('xlsx')
-    const data = suite.cases.map((c: any, i: number) => ({
-      序号: i + 1,
-      标题: c.title,
-      优先级: c.priority,
-      类型: c.type,
-      前置条件: c.precondition || '',
-      测试步骤: Array.isArray(c.steps) ? c.steps.map((s: any) => `${s.order}. ${s.action}`).join('\n') : '',
-      预期结果: c.expectedResult,
-      状态: c.status,
-    }))
+    const moduleLabel = (suite.projectName && String(suite.projectName).trim()) || suite.name || ''
+
+    const data = suite.cases.map((c: any) => {
+      const row: Record<(typeof EXCEL_CASE_HEADERS)[number], string> = {
+        用例名称: c.title ?? '',
+        所属模块: moduleLabel,
+        标签: Array.isArray(c.tags) ? c.tags.filter(Boolean).join(', ') : '',
+        前置条件: c.precondition ?? '',
+        步骤描述: formatStepsForExcel(c.steps),
+        预期结果: c.expectedResult ?? '',
+        编辑模式: caseStatusToEditModeLabel(String(c.status ?? '')),
+        备注: c.description ?? '',
+        用例等级: String(c.priority ?? ''),
+      }
+      return row
+    })
+
     const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(data)
+    const ws =
+      data.length > 0
+        ? XLSX.utils.json_to_sheet(data, { header: [...EXCEL_CASE_HEADERS] })
+        : XLSX.utils.aoa_to_sheet([EXCEL_CASE_HEADERS])
     XLSX.utils.book_append_sheet(wb, ws, '测试用例')
     const content = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
-    return { content, filename: `${suite.name}.xlsx`, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+    const filename = `${excelExportFilenameTimestamp()}.xlsx`
+    return { content, filename, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
   }
 
   private exportToJson(suite: any): { content: Buffer; filename: string; mimeType: string } {
