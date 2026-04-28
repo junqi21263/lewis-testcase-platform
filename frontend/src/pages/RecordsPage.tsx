@@ -135,6 +135,13 @@ export default function RecordsPage() {
   const [sourcePick, setSourcePick] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<{ modelId: string; modelName: string }[]>([])
 
+  const formatModelLabel = useCallback((name: string) => {
+    const t = String(name || '').trim()
+    if (!t) return '（未知模型）'
+    // 避免 select 选项过长撑破布局
+    return t.length > 22 ? `${t.slice(0, 22)}…` : t
+  }, [])
+
   const [sort, setSort] = useState<RecordsSortState>(() => loadRecordsSort())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(() => loadRecordsPageSize())
@@ -695,7 +702,7 @@ export default function RecordsPage() {
                 <span className="text-xs text-muted-foreground">模型</span>
                 <select
                   multiple
-                  className="bg-background border rounded-md text-xs min-h-[32px] max-w-[220px] px-1"
+                  className="bg-background border rounded-md text-xs min-h-[32px] w-[180px] max-w-[180px] px-1 overflow-hidden"
                   value={modelPick}
                   onChange={(e) => {
                     const v = [...e.target.selectedOptions].map((o) => o.value)
@@ -704,8 +711,8 @@ export default function RecordsPage() {
                   }}
                 >
                   {modelOptions.map((m) => (
-                    <option key={m.modelId} value={m.modelName}>
-                      {m.modelName}
+                    <option key={m.modelId} value={m.modelName} title={m.modelName}>
+                      {formatModelLabel(m.modelName)}
                     </option>
                   ))}
                 </select>
