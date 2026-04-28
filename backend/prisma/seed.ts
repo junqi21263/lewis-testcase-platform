@@ -68,37 +68,30 @@ async function main() {
       id: 'tpl-pro-testcases',
       name: '专业测试用例生成模板（规范版）',
       description:
-        '资深测试架构师风格：带覆盖度分析 + 标准化用例表格 + 优化建议/风险提示，适用于高可执行性用例集生成',
+        '资深测试架构师风格；与平台导出一致：仅 JSON、六列、等价类/边界/场景覆盖；占位符可手改',
       category: TemplateCategory.FUNCTIONAL,
       content: `# 角色
-你是资深测试架构师，拥有10年+软件测试经验，精通各类测试用例设计方法，熟悉主流行业业务规则，能编写高覆盖度、高可执行性、标准化的测试用例。
+你是资深测试架构师，10年+ 经验，精通等价类、边界值、场景法、错误推测，输出高覆盖、可执行、可评审的用例。
 
 # 任务
-基于用户提供的【需求内容】，严格按照指定的【用例规范】，生成专业的测试用例集。
+基于下方【需求内容】生成测试用例。**只输出一个 JSON 对象**（顶层键 "cases"），与平台系统提示一致；禁止 Markdown、表格、代码围栏、文前文末说明。
+
+# 参数（可替换占位符）
+- 测试类型：{{testType}}（默认：功能测试）
+- 粒度：{{granularity}}（默认：详细）
+- 语言：{{language}}（默认：中文）
+- 场景占比建议：正常 {{normalPercent}}% / 异常 {{abnormalPercent}}% / 边界 {{boundaryPercent}}%
+
+# 用例规范（映射 Excel 六列）
+- title：用例名称（简洁，如「模块-场景-结果」）
+- tags：须含「模块:所属模块名」；其余为 UI、功能、场景、异常 等短标签
+- precondition：多条用「1. …\\n2. …」
+- steps：order 从 1 递增，每步 action 仅一个操作
+- expectedResult：**必须与步骤条数一致**，格式「[1] …\\n[2] …」逐步对应
+- priority：P0–P3；type：FUNCTIONAL 等枚举
 
 # 需求内容
 {{content}}
-
-# 用例规范
-1. 测试类型：{{testType}}（如：功能测试）
-2. 用例粒度：{{granularity}}（如：详细级）
-3. 优先级划分：P0(核心流程必测)、P1(重要功能)、P2(次要功能)、P3(边缘场景)
-4. 用例结构：每条用例必须包含【用例ID、所属模块、前置条件、测试步骤、预期结果、优先级、测试数据】7个核心字段
-5. 覆盖要求：
-   - 必须覆盖100%的核心需求点
-   - 正常场景占比{{normalPercent}}%，异常场景占比{{abnormalPercent}}%，边界场景占比{{boundaryPercent}}%
-   - 必须包含等价类划分、边界值分析、错误推测法的用例设计逻辑
-6. 编写要求：
-   - 测试步骤清晰可执行，无歧义，每一步只做一个操作
-   - 预期结果明确可验证，无模糊描述，对应每一步操作
-   - 测试数据精准匹配对应场景，包含边界值、特殊字符、异常数据
-   - 用例无冗余、无重复，逻辑严谨，符合行业测试规范
-   - 语言：{{language}}（如：中文）
-
-# 输出要求
-1. 先输出需求覆盖度分析，说明覆盖的需求点、未覆盖的需求点（如有）、整体覆盖度
-2. 再输出结构化的测试用例表格，严格按照上述规范
-3. 最后输出用例优化建议与测试风险提示
 `,
       isPublic: true,
       creatorId: admin.id,
@@ -107,9 +100,12 @@ async function main() {
       id: 'tpl-automation-scripts',
       name: '自动化测试脚本生成模板（专用）',
       description:
-        '资深自动化测试开发风格：指定语言/框架与测试对象，输出可运行脚本（PageObject 或分层架构）、依赖清单与运行说明',
+        '输出可运行自动化脚本（非 JSON 用例）；若仅需用例导出请选「测试用例生成专家」或功能模板',
       category: TemplateCategory.FUNCTIONAL,
-      content: `# 角色
+      content: `# 说明
+本模板用于生成**自动化脚本与工程结构**，不是平台的 JSON 测试用例格式。若当前任务是用例集导出 Excel，请换用「测试用例生成专家」或「功能测试用例模板」。
+
+# 角色
 你是资深自动化测试开发工程师，精通 {{programmingLanguage}}（如：Python）与 {{testFramework}}（如：Pytest）自动化脚本开发，熟悉 PageObject 设计模式，代码规范严谨，可直接运行。
 
 # 任务
@@ -145,25 +141,29 @@ async function main() {
     {
       id: 'tpl-functional',
       name: '功能测试用例模板',
-      description: '适用于标准功能测试用例生成，覆盖正向、逆向、边界场景',
+      description: '标准功能测试；正向/逆向/边界；仅 JSON；六列导出（模块、标签、[n] 预期）',
       category: TemplateCategory.FUNCTIONAL,
-      content: `请根据以下需求文档，生成完整的功能测试用例。
+      content: `请根据以下需求生成功能测试用例。**仅输出 JSON**（无 Markdown），顶层 "cases" 数组。
 
 要求：
-1. 覆盖正向流程、逆向流程、边界条件
-2. 每条用例包含：标题、前置条件、测试步骤、预期结果
-3. 优先级分为 P0（核心功能）、P1（重要功能）、P2（一般功能）、P3（边缘场景）
-4. 输出 JSON 格式，结构如下：
+1. 覆盖正向、逆向、边界；步骤一步一动作；预期与步骤一一对应。
+2. tags 必须包含「模块:模块名」，可加 UI、功能、场景、异常 等。
+3. precondition 多条请用「1. …\\n2. …」；expectedResult 必须用「[1]…\\n[2]…」与 steps 条数一致。
+
+结构示例：
 {
   "cases": [
     {
-      "title": "用例标题",
+      "title": "登录-正确密码登录成功",
       "priority": "P0",
       "type": "FUNCTIONAL",
-      "precondition": "前置条件",
-      "steps": [{"order": 1, "action": "操作步骤", "expected": "中间预期"}],
-      "expectedResult": "最终预期结果",
-      "tags": ["标签"]
+      "precondition": "1. 用户已注册\\n2. 未登录",
+      "steps": [
+        {"order": 1, "action": "输入正确账号密码", "expected": ""},
+        {"order": 2, "action": "点击登录", "expected": ""}
+      ],
+      "expectedResult": "[1] 校验通过\\n[2] 登录成功进入首页",
+      "tags": ["模块:用户登录", "UI", "功能"]
     }
   ]
 }
@@ -176,14 +176,17 @@ async function main() {
     {
       id: 'tpl-api',
       name: 'API 接口测试用例模板',
-      description: '适用于 REST API 接口测试，包含请求参数、响应校验',
+      description: 'REST/API；正常/异常/鉴权/边界；仅 JSON；步骤可写请求要点，预期写状态码与响应要点',
       category: TemplateCategory.API,
-      content: `请根据以下 API 文档，生成 API 接口测试用例。
+      content: `请根据以下 API 文档生成接口测试用例。**仅输出 JSON**，顶层 "cases"。
 
 要求：
-1. 覆盖正常请求、异常参数、鉴权验证、边界值
-2. 包含请求方法、URL、Headers、Body、预期状态码、预期响应
-3. 输出 JSON 格式，结构参考功能测试模板
+1. 覆盖正常请求、异常参数、鉴权失败、边界值。
+2. 每条用例：title 体现接口与场景；tags 含「模块:服务或资源名」，可加 功能、异常、鉴权 等。
+3. steps 中 action 描述方法、路径、关键 Header/Body/参数；expectedResult 用 [1][2] 对应每步，写明状态码与关键响应字段。
+4. precondition 写明鉴权、测试数据、环境。
+
+字段与功能模板相同：title, priority, type, precondition, steps[], expectedResult, tags。
 
 API 文档：
 {{content}}`,
@@ -194,22 +197,28 @@ API 文档：
       id: 'tpl-test-expert',
       name: '测试用例生成专家（平台推荐）',
       description:
-        '角色化专家：等价类/边界值/场景法；与导出列对齐（模块、标签、[n]步骤与预期）；仅 JSON',
+        '专家角色 + Workflows；六列导出；强制 模块: 与 [n] 预期；流式/非流式均适用',
       category: TemplateCategory.FUNCTIONAL,
       content: `# Role: 测试用例生成专家
 - language: 中文
-- 遵循准确性、可执行性、用例独立、可重复验证
+- 细致严谨；准确性、可执行性、用例独立、可重复验证
 - 熟练等价类、边界值、场景法、错误推测
 
-## Rules（编写规范）
-- 用例名称简洁（如「登录-正常登录」）
-- 明确所属模块与标签（模块写入 tags 的「模块:模块名」项，另加 UI/功能测试/场景/异常等标签）
-- 前置条件写清环境与数据
-- 步骤一步一个动作；预期结果条数必须与步骤一致，格式强制「[1] …\\n[2] …」（与 Excel 步骤列/预期列一一对应）
-- 导出六列：用例名称、所属模块、标签、前置条件、步骤描述、预期结果 — 全部通过 JSON 字段表达，勿输出表格或 Markdown
+## Workflows
+1. 分析需求：功能点、主流程、异常与边界。
+2. 设计用例：正常 / 异常 / 边界；优先级 P0–P3。
+3. 按平台字段输出：**仅一个 JSON 对象**，键为 "cases" 的数组；每条对应 Excel 一行。
+
+## Rules（与导出六列对齐）
+- title → 用例名称（例：登录-正确邮箱密码登录成功）
+- tags → 必有「模块:xxx」；其余短标签：UI、功能、场景、异常（勿长句）
+- precondition → 多条用「1. …\\n2. …」
+- steps → order 连续；每步 action 单一动作
+- expectedResult → **条数必须与 steps 相同**；格式「[1] …\\n[2] …」逐步对应
+- 禁止 Markdown、加粗标题、代码围栏、「- 优先级:」类非 JSON 叙述
 
 ## 输出
-仅输出平台约定的一个 JSON 对象（顶层 cases 数组），不要 Markdown、不要 ** 标题、不要「- 优先级:」叙述，字段用 JSON 表达。
+只输出 JSON，第一个非空白字符为 { 。无任何前后说明文字。
 
 需求/文档内容：
 {{content}}`,
@@ -219,16 +228,18 @@ API 文档：
     {
       id: 'tpl-security',
       name: '安全测试用例模板',
-      description: '覆盖常见安全漏洞场景：SQL注入、XSS、越权等',
+      description: 'SQL 注入、XSS、越权、泄露、重放；仅 JSON；tags 建议含模块:与安全类型',
       category: TemplateCategory.SECURITY,
-      content: `请根据以下功能描述，生成安全测试用例。
+      content: `请根据以下功能描述生成**安全测试用例**。**仅输出 JSON**，顶层 "cases"。
 
-覆盖以下安全场景：
-1. SQL 注入攻击
-2. XSS 跨站脚本
-3. 越权访问（水平/垂直越权）
+尽量覆盖：
+1. SQL 注入
+2. XSS
+3. 越权（水平/垂直）
 4. 敏感信息泄露
-5. 接口重放攻击
+5. 接口重放 / 重放攻击
+
+每条用例：title 标明攻击面；tags 含「模块:业务模块」及 安全、注入、XSS 等；precondition 写明账号角色与工具假设；steps 为可复现操作；expectedResult 用 [1][2] 与步骤对应，描述阻断或修复表现。
 
 功能描述：
 {{content}}`,
@@ -238,9 +249,10 @@ API 文档：
   ]
 
   for (const tpl of templates) {
+    const { id, name, description, category, content, isPublic } = tpl
     await prisma.promptTemplate.upsert({
-      where: { id: tpl.id },
-      update: {},
+      where: { id },
+      update: { name, description, category, content, isPublic },
       create: { ...tpl, variables: [] },
     })
   }
