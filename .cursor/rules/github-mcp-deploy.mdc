@@ -1,5 +1,5 @@
 ---
-description: Prefer GitHub MCP for publishing code to GitHub (triggers Railway auto-deploy)
+description: Prefer GitHub MCP for publishing code to GitHub (triggers CI / connected deploy)
 alwaysApply: true
 ---
 
@@ -7,18 +7,18 @@ alwaysApply: true
 
 ## 目标
 
-将本地实现的变更同步到 GitHub 时，**优先使用 Cursor 已启用的 GitHub MCP**（`user-github`），以便与 **Railway 绑定 GitHub 后的自动部署**衔接（远程有新提交即触发构建）。
+将本地实现的变更同步到 GitHub 时，**优先使用 Cursor 已启用的 GitHub MCP**（`user-github`），以便与 **已绑定的自动部署**（如云服务器 GitHub Actions、或用户自选的 PaaS）衔接。
 
 ## 操作要求
 
 1. **调用前**：在 `mcps/user-github/tools/` 阅读对应工具的 JSON 描述（参数必填项、`sha` 规则等），再调用 `call_mcp_tool`。
 2. **新建或批量文件**：优先用 **`push_files`**（`owner`、`repo`、`branch`、`message`、`files[]`），`files[].content` 使用仓库内真实文件内容（与本地一致）。
 3. **只改单个已存在文件**：用 **`create_or_update_file`**；更新前用 **`get_file_contents`**（或本地 `git rev-parse origin/main:<path>`）取得 **`sha`**。
-4. **仓库坐标**：`owner` = `junqi21263`，`repo` = `lewis-testcase-platform`，默认分支 **`main`**（若用户指定其他分支则以用户为准）。
+4. **仓库坐标**：`owner`、`repo`、默认分支 **`main`** 以**当前打开的仓库远程**为准（勿在规则中写死个人账号或仓库名）；若用户指定其他分支则以用户为准。
 5. **范围**：把**本次会话中修改过的路径**纳入提交即可；不必用 MCP 重传整个仓库。若变更面极大，可拆成多次 `push_files` 或说明需用户在终端 `git push` 作为例外。
 6. **MCP 不可用**（如 `invalid session`）：说明需在 Cursor 中 **重新连接 / 登录 GitHub MCP**，修复后再用 MCP 发布；**不要**在未告知用户的情况下假定已改用 HTTPS/SSH `git push`。
 
-## 与 Railway 的关系
+## 与部署环境的关系
 
-- MCP 只负责把提交推到 **GitHub**；**Railway 是否部署**取决于项目是否仍绑定该仓库与分支。
-- 推送成功后可提醒用户在 Railway Dashboard 查看最新 Deployment。
+- MCP 只负责把提交推到 **GitHub**；是否自动部署取决于项目绑定的 **Actions / PaaS** 等配置。
+- 推送成功后可提醒用户在对应平台查看最新构建或部署状态。

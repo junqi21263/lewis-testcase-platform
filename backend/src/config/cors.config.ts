@@ -7,7 +7,6 @@ export const DEFAULT_BROWSER_ORIGINS = [
   'http://127.0.0.1:5173',
   'http://localhost:3001',
   'http://127.0.0.1:3001',
-  'https://lewis-testcase-platform-xyqvs7bh.edgeone.cool',
 ] as const
 
 function normalizeOrigin(origin: string): string {

@@ -65,7 +65,7 @@ docker-compose -f docker-compose.dev.yml up -d --build
 | `DATABASE_URL` | 数据库连接串 | `file:./dev.db` (SQLite) |
 | `JWT_SECRET` | JWT 签名密钥 | 随机字符串 |
 | `JWT_EXPIRES_IN` | JWT 过期时间 | `7d` |
-| `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
+| `OPENAI_API_KEY` | OpenAI API Key | `<YOUR_API_KEY>` |
 | `OPENAI_BASE_URL` | AI 接口地址 | `https://api.openai.com/v1` |
 | `DEFAULT_AI_MODEL` | 默认 AI 模型 | `gpt-4o` |
 
@@ -75,7 +75,7 @@ docker-compose -f docker-compose.dev.yml up -d --build
 |--------|------|------|
 | `DATABASE_URL` | PostgreSQL 连接串 | `postgresql://user:pass@localhost:5432/db` |
 | `JWT_SECRET` | JWT 签名密钥 | 随机32位字符串 |
-| `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
+| `OPENAI_API_KEY` | OpenAI API Key | `<YOUR_API_KEY>` |
 | `UPLOAD_DIR` | 文件上传目录 | `./uploads` |
 | `MAX_FILE_SIZE` | 最大文件大小 | `10485760` |
 

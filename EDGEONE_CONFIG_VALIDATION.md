@@ -8,10 +8,10 @@
 
 ### 方法 1：使用验证脚本
 
-运行之前创建的验证脚本：
+运行之前创建的验证脚本。**须先导出** `EDGEONE_TEST_DOMAIN`（前端主机名，无 `https://`），脚本内不写死任何真实域名：
 
 ```bash
-# 运行配置验证
+export EDGEONE_TEST_DOMAIN=<your-frontend-domain>
 ./verify-edgeone-config.sh
 ```
 
@@ -28,7 +28,7 @@
 ```bash
 # 测试 1：GET 请求应该被拦截
 echo "测试 GET 请求到登录接口..."
-curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" -v
+curl -X GET "https://<your-frontend-domain>/api/auth/login" -v
 
 # 预期输出：
 # HTTP/1.1 405 Method Not Allowed
@@ -37,9 +37,9 @@ curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/logi
 
 # 测试 2：POST 请求应该被允许
 echo "测试 POST 请求到登录接口..."
-curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+curl -X POST "https://<your-frontend-domain>/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}' \
+  -d '{"email":"user@example.invalid","password":"<占位-勿用真实口令>"}' \
   -v
 
 # 预期输出：
@@ -49,9 +49,9 @@ curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/log
 
 ### 方法 3：浏览器验证
 
-1. 在浏览器中访问 `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/login`
+1. 在浏览器中访问 `https://<your-frontend-domain>/login`
 2. 确认登录页面正常加载
-3. 尝试在地址栏直接访问 `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login?email=test@example.com&password=test123`
+3. 尝试在地址栏直接访问 `https://<your-frontend-domain>/api/auth/login?email=user@example.invalid&password=<占位>`
 4. 确认返回 405 错误，而不是显示登录表单
 
 ## 📊 验证检查清单

@@ -19,7 +19,7 @@
 
 | 字段 | 值 | 说明 |
 |------|-----|------|
-| **域名** | `lewis-testcase-platform-xyqvs7bh.edgeone.cool` | 选择您的项目域名 |
+| **域名** | `<your-frontend-domain>` | 选择您的项目域名 |
 | **规则名称** | `Block GET requests to auth endpoints` | 清晰的规则名称 |
 | **匹配条件** | `客户端 IP` | 选择匹配条件类型 |
 | **匹配类型** | `客户端 IP` | 确保选择正确的匹配类型 |
@@ -34,7 +34,7 @@
 
 | 字段 | 值 | 说明 |
 |------|-----|------|
-| **域名** | `lewis-testcase-platform-xyqvs7bh.edgeone.cool` | 同上 |
+| **域名** | `<your-frontend-domain>` | 同上 |
 | **规则名称** | `Allow only POST to login` | 清晰的规则名称 |
 | **匹配条件** | `客户端 IP` | 同上 |
 | **匹配类型** | `客户端 IP` | 同上 |
@@ -49,7 +49,7 @@
 
 | 字段 | 值 | 说明 |
 |------|-----|------|
-| **域名** | `lewis-testcase-platform-xyqvs7bh.edgeone.cool` | 同上 |
+| **域名** | `<your-frontend-domain>` | 同上 |
 | **规则名称** | `Allow only POST to register` | 清晰的规则名称 |
 | **匹配条件** | `客户端 IP` | 同上 |
 | **匹配类型** | `客户端 IP` | 同上 |
@@ -64,7 +64,7 @@
 
 | 字段 | 值 | 说明 |
 |------|-----|------|
-| **域名** | `lewis-testcase-platform-xyqvs7bh.edgeone.cool` | 同上 |
+| **域名** | `<your-frontend-domain>` | 同上 |
 | **规则名称** | `Allow auth API methods` | 清晰的规则名称 |
 | **匹配条件** | `客户端 IP` | 同上 |
 | **匹配类型** | `客户端 IP` | 同上 |
@@ -130,12 +130,12 @@ EdgeOne 提供规则测试功能：
 
 ```bash
 # 测试 GET 请求被拦截
-curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" -v
+curl -X GET "https://<your-frontend-domain>/api/auth/login" -v
 
 # 测试 POST 请求被允许
-curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+curl -X POST "https://<your-frontend-domain>/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}' \
+  -d '{"email":"user@example.invalid","password":"<占位-勿用真实口令>"}' \
   -v
 ```
 

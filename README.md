@@ -100,8 +100,8 @@ bash scripts/dev-integration-check.sh
 
 ## 环境变量说明
 
-> 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。
-> 本 README 中所有示例均为 **占位符**，请替换为你自己的值。
+> 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。  
+> 本 README 与 EdgeOne 相关文档中的域名、项目 ID、示例口令均为 **占位符**；验证脚本通过环境变量传入真实主机名（见 `verify-edgeone-config.sh`）。
 
 ### 后端 `backend/.env`
 
@@ -143,7 +143,7 @@ bash scripts/dev-integration-check.sh
 #### 首次在服务器上部署
 
 1. **安装** Docker Engine 与 **Docker Compose 插件**（或 `docker-compose` 独立二进制）；防火墙 / 安全组放行 **80**（若上 HTTPS 再开 **443**）。
-2. 将本仓库放到部署目录（例如 `/opt/lewis_testcase_platform`），可用 `git clone` 或下文 **GitHub Actions rsync**。
+2. 将本仓库放到部署目录（例如 `/opt/<your-deploy-path>`），可用 `git clone` 或下文 **GitHub Actions rsync**。
 3. 在**与 `docker-compose.full.yml` 同级**目录创建环境文件：  
    `cp docker-compose.full.env.example .env`  
    编辑 **`.env`**：`DB_PASSWORD`、`DATABASE_URL`（与 DB 账号一致）、**`JWT_SECRET`**、**`FRONTEND_URL`** / **`CORS_ORIGINS`**（填你的公网访问域名）、`OPENAI_*` 等。
@@ -157,7 +157,7 @@ bash scripts/dev-integration-check.sh
 
 #### 用 Git 更新（CI 推送云服务器，可选）
 
-配置 GitHub **Actions Secrets**：`SSH_HOST`、`SSH_USER`、`SSH_KEY`（可选 `SSH_PORT`）；**Variables** 可选 `DEPLOY_PATH`（默认 `/opt/lewis_testcase_platform`）。  
+配置 GitHub **Actions Secrets**：`SSH_HOST`、`SSH_USER`、`SSH_KEY`（可选 `SSH_PORT`）；**Variables** 可选 `DEPLOY_PATH`（默认 `/opt/<your-deploy-path>`）。  
 推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会 **rsync 代码**到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**，再跑 **`scripts/smoke.sh`** — **前后端同一套 Git 流程**，无需单独发布前端。
 
 #### 可选：Railway / 其他 PaaS
@@ -171,7 +171,7 @@ bash scripts/dev-integration-check.sh
 ## 项目结构
 
 ```
-lewis_testcase_platform/
+testcase-platform/
 ├── docker-compose.full.yml   # 云服务器全栈（前端 Nginx + 后端 + Postgres + Redis）
 ├── docker-compose.full.env.example  # 全栈 .env 模板（复制为 .env）
 ├── frontend/                # React 前端（可选：Railway / 仅作镜像构建）

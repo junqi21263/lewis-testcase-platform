@@ -1,1 +1,4 @@
-{"Name":"lewis-testcase-platform","ProjectId":"pages-volbofulwngl"}
+{
+  "Name": "<your-edgeone-project>",
+  "ProjectId": "<your-pages-project-id>"
+}

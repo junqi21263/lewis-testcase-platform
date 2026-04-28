@@ -5,6 +5,9 @@
 
 set -e
 
+# 在线校验与回显用；不设则跳过 curl 探测（避免脚本内写死域名）
+EDGEONE_FRONTEND_DOMAIN="${EDGEONE_FRONTEND_DOMAIN:-}"
+
 echo "🚀 开始部署到 EdgeOne Pages..."
 
 # 颜色定义
@@ -59,6 +62,13 @@ deploy_frontend() {
 # 验证部署
 verify_deployment() {
     echo "${YELLOW}🔍 验证部署...${NC}"
+
+    if [ -z "$EDGEONE_FRONTEND_DOMAIN" ]; then
+        echo "${YELLOW}未设置 EDGEONE_FRONTEND_DOMAIN，跳过在线 curl 校验（可 export 后再运行本函数）${NC}"
+        return 0
+    fi
+
+    BASE="https://${EDGEONE_FRONTEND_DOMAIN}"
     
     # 等待部署完成
     sleep 30
@@ -68,7 +78,7 @@ verify_deployment() {
     
     # 测试GET请求应该被拒绝
     echo "测试GET请求到登录接口..."
-    if curl -s -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" | grep -q '"code":405'; then
+    if curl -s -X GET "${BASE}/api/auth/login" | grep -q '"code":405'; then
         echo "${GREEN}✅ GET请求被正确拒绝${NC}"
     else
         echo "${RED}❌ GET请求未被正确拒绝${NC}"
@@ -76,9 +86,9 @@ verify_deployment() {
     
     # 测试POST请求应该被允许
     echo "测试POST请求到登录接口..."
-    if curl -s -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+    if curl -s -X POST "${BASE}/api/auth/login" \
         -H "Content-Type: application/json" \
-        -d '{"username":"test","password":"test123"}' | grep -q "code"; then
+        -d '{"username":"test","password":"<占位>"}' | grep -q "code"; then
         echo "${GREEN}✅ POST请求被正确处理${NC}"
     else
         echo "${RED}❌ POST请求处理异常${NC}"
@@ -91,9 +101,13 @@ show_deployment_info() {
     echo "${GREEN}🎉 部署完成！${NC}"
     echo ""
     echo "${YELLOW}📋 部署信息:${NC}"
-    echo "  • 前端URL: https://lewis-testcase-platform-xyqvs7bh.edgeone.cool"
-    echo "  • API端点: https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api"
-    echo "  • 登录页面: https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/login"
+    if [ -n "$EDGEONE_FRONTEND_DOMAIN" ]; then
+        echo "  • 前端URL: https://${EDGEONE_FRONTEND_DOMAIN}"
+        echo "  • API端点: https://${EDGEONE_FRONTEND_DOMAIN}/api"
+        echo "  • 登录页面: https://${EDGEONE_FRONTEND_DOMAIN}/login"
+    else
+        echo "  • （设置 EDGEONE_FRONTEND_DOMAIN 后可显示具体 URL）"
+    fi
     echo ""
     echo "${YELLOW}🔒 安全配置:${NC}"
     echo "  • 登录接口仅允许POST方法"

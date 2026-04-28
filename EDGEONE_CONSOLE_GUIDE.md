@@ -6,9 +6,9 @@
 
 ## 🔗 EdgeOne 控制台访问
 
-1. **访问地址**：https://console.cloud.tencent.com/edgeone
+1. **访问地址**：使用云服务商文档提供的 **EdgeOne / Pages 控制台入口**（勿在仓库中写死个人控制台 URL）
 2. **登录**：使用腾讯云账号登录
-3. **选择项目**：选择 "lewis-testcase-platform" 项目
+3. **选择项目**：选择 "<your-project-name>" 项目
 
 ## 🛠️ 路由规则配置步骤
 
@@ -162,7 +162,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 
 ```bash
 # 测试 GET 请求到登录接口
-curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" -v
+curl -X GET "https://<your-frontend-domain>/api/auth/login" -v
 
 # 预期响应：
 # HTTP/1.1 405 Method Not Allowed
@@ -173,9 +173,9 @@ curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/logi
 
 ```bash
 # 测试 POST 请求到登录接口
-curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+curl -X POST "https://<your-frontend-domain>/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}' \
+  -d '{"email":"user@example.invalid","password":"<占位-勿用真实口令>"}' \
   -v
 
 # 预期响应：
@@ -185,8 +185,8 @@ curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/log
 
 ### 步骤 4：测试浏览器访问
 
-1. 在浏览器中访问 `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/login`
-2. 尝试在浏览器地址栏直接访问 `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login?email=test@example.com&password=test123`
+1. 在浏览器中访问 `https://<your-frontend-domain>/login`
+2. 尝试在浏览器地址栏直接访问 `https://<your-frontend-domain>/api/auth/login?email=user@example.invalid&password=<占位>`
 3. 确认登录表单正常工作
 
 ## 🔧 故障排除
@@ -234,7 +234,7 @@ curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/log
 如果遇到问题，可以：
 1. 查看 EdgeOne 控制台的错误日志
 2. 联系腾讯云技术支持
-3. 参考官方文档：https://cloud.tencent.com/document/product/1552
+3. 参考云服务商 **EdgeOne 官方文档**（产品编号与链接以厂商为准）
 
 ## ⚡ 快速配置脚本
 
@@ -242,7 +242,7 @@ curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/log
 
 ```bash
 # 使用 curl 调用 EdgeOne API（需要 API 密钥）
-curl -X POST "https://edgeone.tencentcloudapi.com/v1/rules" \
+curl -X POST "https://<edgeone-openapi-host>/v1/rules" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d @edgeone-rules.json

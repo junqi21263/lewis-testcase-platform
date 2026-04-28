@@ -6,7 +6,7 @@
 
 ## 问题背景
 
-用户报告 `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/login` 接口不应该是 GET 请求，存在安全风险。GET 请求会将参数暴露在 URL 中，可能导致敏感信息泄露。
+用户报告 `https://<your-frontend-domain>/login` 接口不应该是 GET 请求，存在安全风险。GET 请求会将参数暴露在 URL 中，可能导致敏感信息泄露。
 
 ## 解决方案
 
@@ -133,7 +133,7 @@ export const Method = createParamDecorator(
 
 ### 1. 应用 EdgeOne 配置
 
-1. 登录 [EdgeOne 控制台](https://console.cloud.tencent.com/edgeone)
+1. 登录 EdgeOne / Pages **控制台**（入口见云服务商文档）
 2. 进入 "路由规则" 或 "边缘规则"
 3. 添加上述路由规则
 4. 进入 "安全设置" -> "HTTP 头"
@@ -155,15 +155,15 @@ npm run build
 
 #### 3.1 测试 GET 请求被拒绝
 ```bash
-curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login"
+curl -X GET "https://<your-frontend-domain>/api/auth/login"
 ```
 预期响应：405 Method Not Allowed
 
 #### 3.2 测试 POST 请求被允许
 ```bash
-curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+curl -X POST "https://<your-frontend-domain>/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}'
+  -d '{"email":"user@example.invalid","password":"<占位-勿用真实口令>"}'
 ```
 预期响应：正常处理（可能是错误信息，但不会是 405）
 

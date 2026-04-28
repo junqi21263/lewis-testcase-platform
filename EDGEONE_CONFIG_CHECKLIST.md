@@ -7,15 +7,15 @@
 ## 🔍 配置前准备
 
 ### 基本信息
-- [ ] 已登录 EdgeOne 控制台：https://console.cloud.tencent.com/edgeone
-- [ ] 确认项目名称：`lewis-testcase-platform`
-- [ ] 确认项目 ID：`pages-volbofulwngl`
+- [ ] 已登录 EdgeOne / Pages 控制台（入口以云服务商文档为准，勿在仓库记录个人控制台直达链）
+- [ ] 确认项目名称：`<your-project-name>`
+- [ ] 确认项目 ID：`<your-pages-project-id>`
 - [ ] 准备好管理员权限账号
 
 ### 环境检查
 - [ ] 确认前端已部署到 EdgeOne
 - [ ] 确认后端 API 正常运行
-- [ ] 确认域名 `lewis-testcase-platform-xyqvs7bh.edgeone.cool` 可访问
+- [ ] 确认域名 `<your-frontend-domain>` 可访问
 
 ## 🛠️ 路由规则配置检查
 
@@ -106,7 +106,7 @@
 ### GET 请求拦截测试
 - [ ] **测试命令**:
   ```bash
-  curl -X GET "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" -v
+  curl -X GET "https://<your-frontend-domain>/api/auth/login" -v
   ```
 - [ ] **预期响应**: HTTP 405 Method Not Allowed
 - [ ] **响应内容**: 包含 "Method Not Allowed"
@@ -115,21 +115,21 @@
 ### POST 请求允许测试
 - [ ] **测试命令**:
   ```bash
-  curl -X POST "https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login" \
+  curl -X POST "https://<your-frontend-domain>/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"email":"test@example.com","password":"test123"}' \
+    -d '{"email":"user@example.invalid","password":"<占位-勿用真实口令>"}' \
     -v
   ```
 - [ ] **预期响应**: HTTP 200 OK 或正常错误响应（非 405）
 - [ ] **测试时间**: 配置生效后 5-10 分钟
 
 ### 浏览器访问测试
-- [ ] **登录页面访问**: `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/login`
+- [ ] **登录页面访问**: `https://<your-frontend-domain>/login`
   - [ ] 页面正常加载
   - [ ] 登录表单正常显示
   - [ ] 提交按钮正常工作
 
-- [ ] **直接 URL 访问测试**: `https://lewis-testcase-platform-xyqvs7bh.edgeone.cool/api/auth/login?email=test@example.com&password=test123`
+- [ ] **直接 URL 访问测试**: `https://<your-frontend-domain>/api/auth/login?email=user@example.invalid&password=<占位>`
   - [ ] 返回 405 错误
   - [ ] 不显示登录表单
 
@@ -210,10 +210,7 @@
 
 ## 📞 紧急联系
 
-如果遇到严重问题，请立即联系：
-- **EdgeOne 技术支持**: 400-910-0100
-- **腾讯云客服**: https://cloud.tencent.com/service
-- **项目紧急联系人**: [请填写实际联系人]
+如果遇到严重问题，请通过 **云服务商控制台工单 / 官方文档** 联系支持（勿在仓库文档中记录具体客服电话或内部联系人）。
 
 ---
 

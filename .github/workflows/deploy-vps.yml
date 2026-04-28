@@ -51,7 +51,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/testcase-platform' }}
         run: |
           set -euo pipefail
           echo "$SSH_KEY" > /tmp/deploy_key
@@ -82,7 +82,7 @@ jobs:
           command_timeout: 25m
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}"
+            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/opt/testcase-platform' }}"
             cd "$DEPLOY_PATH"
             if sudo docker compose version >/dev/null 2>&1; then
               sudo docker compose -f docker-compose.full.yml up -d --build

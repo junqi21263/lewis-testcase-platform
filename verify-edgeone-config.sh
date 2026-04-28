@@ -12,12 +12,13 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 配置变量
-DOMAIN="lewis-testcase-platform-xyqvs7bh.edgeone.cool"
+# 配置变量（勿写死真实域名；运行前 export）
+: "${EDGEONE_TEST_DOMAIN:?请设置 EDGEONE_TEST_DOMAIN=前端主机名（无 https 前缀）}"
+DOMAIN="$EDGEONE_TEST_DOMAIN"
 API_BASE="https://$DOMAIN/api"
 LOGIN_URL="$API_BASE/auth/login"
-TEST_EMAIL="test@example.com"
-TEST_PASSWORD="test123"
+TEST_EMAIL="${TEST_EMAIL:-user@example.invalid}"
+TEST_PASSWORD="${TEST_PASSWORD:-<占位-勿用真实口令>}"
 
 echo -e "${BLUE}===========================================${NC}"
 echo -e "${BLUE}    EdgeOne 配置验证脚本                 ${NC}"
