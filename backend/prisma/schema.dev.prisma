@@ -131,8 +131,33 @@ model User {
   testCases     TestCase[]
   uploadedFiles UploadedFile[]
   records       GenerationRecord[]
+  preference    UserPreference?
   
   @@map("users")
+}
+
+/// 用户偏好（壁纸/天气等）
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  wallpaperEnabled     Boolean   @default(false)
+  wallpaperProvider    String    @default("bing")
+  wallpaperIntervalSec Int       @default(0)
+  wallpaperCurrentUrl  String?
+  wallpaperLastAt      DateTime?
+
+  weatherCityId      String?
+  weatherCityName    String?
+  weatherCityAdm1    String?
+  weatherCityCountry String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_preferences")
 }
 
 /// AI模型配置表

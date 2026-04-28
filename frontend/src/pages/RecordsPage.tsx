@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -499,6 +500,8 @@ export default function RecordsPage() {
       return n
     })
   }
+
+  const confirmCount = confirm.type === 'none' ? 0 : confirm.ids.length
 
   return (
     <div className="space-y-4 min-w-0 max-w-[1400px] mx-auto pb-24">
@@ -1144,48 +1147,37 @@ export default function RecordsPage() {
         </CardContent>
       </Card>
 
-      {confirm.type !== 'none' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-card border rounded-lg shadow-lg max-w-md w-full p-5 space-y-4">
-            <h3 className="font-semibold text-lg">
-              {confirm.type === 'hard_delete' ? '彻底删除确认' : '移入回收站确认'}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {confirm.type === 'hard_delete'
-                ? `将永久删除 ${confirm.ids.length} 条记录，无法恢复。`
-                : `将 ${confirm.ids.length} 条记录移入回收站，可在回收站恢复。`}
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setConfirm({ type: 'none' })}>
-                取消
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={async () => {
-                  const ids = [...confirm.ids]
-                  const kind = confirm.type
-                  setConfirm({ type: 'none' })
-                  try {
-                    if (kind === 'hard_delete') {
-                      await recordsApi.batch(ids, 'PERMANENT_DELETE')
-                      toast.success('已彻底删除')
-                    } else {
-                      await recordsApi.batch(ids, 'SOFT_DELETE')
-                      toast.success('已移入回收站')
-                    }
-                    void fetchList()
-                    void fetchSummary()
-                  } catch {
-                    toast.error('操作失败')
-                  }
-                }}
-              >
-                确认
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirm.type !== 'none'}
+        title={confirm.type === 'hard_delete' ? '彻底删除确认' : '移入回收站确认'}
+        description={
+          confirm.type === 'hard_delete'
+            ? `将永久删除 ${confirmCount} 条记录，无法恢复。`
+            : `将 ${confirmCount} 条记录移入回收站，可在回收站恢复。`
+        }
+        confirmText="确认"
+        confirmVariant="destructive"
+        onCancel={() => setConfirm({ type: 'none' })}
+        onConfirm={async () => {
+          const kind = confirm.type
+          if (kind === 'none') return
+          const ids = [...confirm.ids]
+          setConfirm({ type: 'none' })
+          try {
+            if (kind === 'hard_delete') {
+              await recordsApi.batch(ids, 'PERMANENT_DELETE')
+              toast.success('已彻底删除')
+            } else {
+              await recordsApi.batch(ids, 'SOFT_DELETE')
+              toast.success('已移入回收站')
+            }
+            void fetchList()
+            void fetchSummary()
+          } catch {
+            toast.error('操作失败')
+          }
+        }}
+      />
     </div>
   )
 }

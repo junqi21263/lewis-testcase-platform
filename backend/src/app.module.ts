@@ -26,6 +26,9 @@ import { SettingsModule } from './modules/settings/settings.module'
 import { MailModule } from './modules/mail/mail.module'
 import { DocumentParseModule } from './modules/document-parse/document-parse.module'
 import { AdminModule } from './modules/admin/admin.module'
+import { PreferencesModule } from './modules/preferences/preferences.module'
+import { WallpaperModule } from './modules/wallpaper/wallpaper.module'
+import { WeatherModule } from './modules/weather/weather.module'
 
 @Module({
   controllers: [HealthController],
@@ -59,6 +62,9 @@ import { AdminModule } from './modules/admin/admin.module'
     MailModule,
     DocumentParseModule,
     AdminModule,
+    PreferencesModule,
+    WallpaperModule,
+    WeatherModule,
 
     // 中间件配置
     MiddlewareConfiguration,

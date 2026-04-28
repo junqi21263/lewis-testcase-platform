@@ -11,6 +11,8 @@ import {
   Star,
   RefreshCw,
   ClipboardList,
+  Image as ImageIcon,
+  CloudSun,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,6 +31,10 @@ import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 import { loadGenPrefs, saveGenPrefs, type GenPrefs } from '@/utils/genPrefs'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
 import { format } from 'date-fns'
+import { preferencesApi, type UserPreferences } from '@/api/preferences'
+import { weatherApi, type WeatherCityItem } from '@/api/weather'
+import { wallpaperApi } from '@/api/wallpaper'
+import { notify } from '@/utils/notify'
 
 function roleLabel(role: UserRole): string {
   const m: Record<UserRole, string> = {
@@ -105,6 +111,12 @@ export default function SettingsPage() {
   const [genPrefs, setGenPrefs] = useState<GenPrefs>(() => loadGenPrefs())
   const [prefsSaving, setPrefsSaving] = useState(false)
 
+  const [userPrefs, setUserPrefs] = useState<UserPreferences | null>(null)
+  const [userPrefsSaving, setUserPrefsSaving] = useState(false)
+  const [cityQuery, setCityQuery] = useState('')
+  const [cityResults, setCityResults] = useState<WeatherCityItem[]>([])
+  const [citySearching, setCitySearching] = useState(false)
+
   const admin = isAdminRole(user?.role)
   const superAdmin = user?.role === 'SUPER_ADMIN'
 
@@ -156,6 +168,13 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setGenPrefs(loadGenPrefs())
+  }, [])
+
+  useEffect(() => {
+    preferencesApi
+      .getMy()
+      .then(setUserPrefs)
+      .catch(() => setUserPrefs(null))
   }, [])
 
   const saveProfile = async () => {
@@ -214,6 +233,56 @@ export default function SettingsPage() {
       toast.success('生成默认参数已保存（当前页「生成」步骤将使用该默认值）')
     } finally {
       setPrefsSaving(false)
+    }
+  }
+
+  const saveUserPreferences = async (patch: Partial<UserPreferences>) => {
+    setUserPrefsSaving(true)
+    try {
+      const next = await preferencesApi.updateMy(patch)
+      setUserPrefs(next)
+      notify.success('已保存')
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setUserPrefsSaving(false)
+    }
+  }
+
+  const searchCities = async (q: string) => {
+    const query = q.trim()
+    if (!query) {
+      setCityResults([])
+      return
+    }
+    setCitySearching(true)
+    try {
+      const list = await weatherApi.cities(query)
+      setCityResults(list)
+    } catch {
+      /* */
+    } finally {
+      setCitySearching(false)
+    }
+  }
+
+  const pickCity = async (c: WeatherCityItem) => {
+    await saveUserPreferences({
+      weatherCityId: c.id,
+      weatherCityName: c.name,
+      weatherCityAdm1: c.adm1,
+      weatherCityCountry: c.country,
+    })
+    setCityResults([])
+    setCityQuery('')
+  }
+
+  const rotateWallpaperNow = async () => {
+    try {
+      await wallpaperApi.next({ force: true })
+      notify.success('已请求更换壁纸（若已开启动态壁纸，将在页面背景生效）')
+    } catch {
+      /* */
     }
   }
 
@@ -574,6 +643,109 @@ export default function SettingsPage() {
             <Save className="w-4 h-4" />
             保存生成默认参数
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* 外观与天气（云端偏好） */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ImageIcon className="w-4 h-4" />
+            外观与天气
+          </CardTitle>
+          <CardDescription>保存在账号下，用于动态壁纸与 Header 天气展示（城市需手动选择）</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">动态壁纸（网页背景）</p>
+                <p className="text-xs text-muted-foreground">
+                  开启后会在页面背景加载 Bing 每日壁纸；默认每次进入换一张
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!userPrefs?.wallpaperEnabled}
+                  onChange={(e) => saveUserPreferences({ wallpaperEnabled: e.target.checked })}
+                  disabled={userPrefsSaving}
+                />
+                开启
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">更换频率</label>
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={String(userPrefs?.wallpaperIntervalSec ?? 0)}
+                  onChange={(e) => saveUserPreferences({ wallpaperIntervalSec: Number(e.target.value) })}
+                  disabled={userPrefsSaving}
+                >
+                  <option value="0">每次进入（手动触发）</option>
+                  <option value={String(3600)}>每小时</option>
+                  <option value={String(24 * 3600)}>每日</option>
+                </select>
+              </div>
+              <div className="flex items-end gap-2">
+                <Button variant="outline" onClick={rotateWallpaperNow} disabled={userPrefsSaving}>
+                  换一张
+                </Button>
+                {userPrefs?.wallpaperLastAt && (
+                  <span className="text-xs text-muted-foreground">
+                    上次：{format(new Date(userPrefs.wallpaperLastAt), 'yyyy-MM-dd HH:mm')}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <CloudSun className="w-4 h-4" />
+              天气（手动城市）
+            </div>
+            <div className="text-xs text-muted-foreground">
+              当前城市：{userPrefs?.weatherCityName ? `${userPrefs.weatherCityName}` : '未设置'}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                value={cityQuery}
+                onChange={(e) => setCityQuery(e.target.value)}
+                placeholder="搜索城市（如：北京、上海、深圳）"
+              />
+              <Button
+                variant="outline"
+                onClick={() => searchCities(cityQuery)}
+                disabled={citySearching || userPrefsSaving}
+              >
+                {citySearching ? '搜索中...' : '搜索'}
+              </Button>
+            </div>
+
+            {cityResults.length > 0 && (
+              <div className="border rounded-md divide-y overflow-hidden">
+                {cityResults.slice(0, 8).map((c) => (
+                  <button
+                    key={c.id}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center justify-between gap-2"
+                    onClick={() => pickCity(c)}
+                  >
+                    <span className="truncate">
+                      {c.name}
+                      {c.adm1 ? ` · ${c.adm1}` : ''}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{c.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

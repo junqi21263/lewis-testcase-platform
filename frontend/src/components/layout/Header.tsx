@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
+import { WeatherBadge } from '@/components/weather/WeatherBadge'
 
 export default function Header() {
   const navigate = useNavigate()
@@ -45,6 +46,8 @@ export default function Header() {
         <Button variant="ghost" size="icon" onClick={toggleTheme}>
           {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
         </Button>
+
+        <WeatherBadge />
 
         {/* 用户菜单 */}
         <DropdownMenu.Root>
