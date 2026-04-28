@@ -55,11 +55,18 @@ docker-compose up -d
 
 ### 4. 初始化数据库
 
+> 生产与 Railway 使用 **`prisma/schema.prod.prisma`** 与 `prisma/migrations/` 下迁移。本地请用 **同一套 schema** 生成 Client 与落库，避免与生产结构漂移。
+
+先确保 `docker-compose up -d` 已启动 Postgres，且 `backend/.env` 中 `DATABASE_URL` 与 compose 中库名/用户一致（见 `backend/.env.example`）。
+
 ```bash
 cd backend
-pnpm prisma migrate dev --name init
+pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma
+pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
 pnpm prisma db seed
 ```
+
+若需新建迁移（改 schema 后）：`pnpm exec prisma migrate dev --schema=./prisma/schema.prod.prisma`
 
 ### 5. 启动服务
 
@@ -74,6 +81,22 @@ pnpm dev
 ```
 
 访问 http://localhost:5173
+
+### 本地前后端联调要点（对齐）
+
+| 层级 | 约定 |
+|------|------|
+| 后端 | Nest 全局前缀 `api`，监听默认 `APP_PORT`（一般为 `3000`），业务接口形如 **`http://localhost:3000/api/...`** |
+| 裸健康检查 | **`GET http://localhost:3000/health`** → 纯文本 `ok`（不经 `globalPrefix`） |
+| 业务健康检查 | **`GET http://localhost:3000/api/health`** → JSON：`status`、`workerEnabled`、解析队列计数等 |
+| 前端 axios | `getApiBaseUrl()`：`VITE_API_BASE_URL` 为空时开发环境默认为 **`/api`**，由 Vite 代理到后端（见 `frontend/vite.config.ts`） |
+| 前端 `.env` | 推荐 **`VITE_API_BASE_URL=/api`**（同源代理）；也可设为 **`http://localhost:3000/api`**（直连后端，不使用 Vite 代理），二者择一即可 |
+
+一键门禁（**不拉起进程**，仅校验构建与 Prisma）：
+
+```bash
+bash scripts/dev-integration-check.sh
+```
 
 ## 环境变量说明
 
@@ -139,7 +162,13 @@ lewis_testcase_platform/
 │   │   │   └── records/     # 生成记录模块（分享/对比/回收站等）
 │   │   └── prisma/          # Prisma 服务
 │   └── prisma/
-│       └── schema.prisma    # 数据库 Schema
+│       ├── schema.prod.prisma # 生产/Railway/本项目主 Schema（PostgreSQL）
+│       ├── migrations/       # `migrate deploy` 使用的 SQL 迁移
+│       ├── schema.prisma      # 历史/本地 SQLite 演示（勿与 prod 混用）
+│       └── seed.ts
+├── scripts/
+│   ├── smoke.sh              # 全栈 compose 启动后的 `/api/health` 冒烟
+│   └── dev-integration-check.sh  # 本地构建 + Prisma 校验（联调门禁）
 └── docker-compose.yml
 ```
 
@@ -152,7 +181,10 @@ lewis_testcase_platform/
 
 ## 前后端联调与自测清单（建议每次发布前跑一遍）
 
-> 本项目生产部署推荐使用 `docker-compose.full.yml`（前端 Nginx + 后端 + Postgres + Redis），并通过 GitHub Actions 自动部署到 VPS。
+> **部署路径二选一（或并存）：**
+>
+> - **Railway**：仓库绑定 GitHub 后，推送 **`main`** 触发后端构建与发布；数据库迁移见 `backend/start.sh` / `backend/migrate-release.sh`（推荐在 **Pre-deploy** 执行 `migrate-release.sh`，避免启动阶段长时间不监听端口）。
+> - **自托管 VPS**：推荐使用 `docker-compose.full.yml`（前端 Nginx + 后端 + Postgres + Redis），并可配合 GitHub Actions / `scripts/smoke.sh` 做部署后冒烟。
 
 ### 1) 启动（全量栈）
 
@@ -341,3 +373,17 @@ bash scripts/smoke.sh
 - **联调自检**
   - 有一条已关联 `suiteId` 的生成记录时：在记录详情或生成页导出 Excel，打开表格核对表头顺序与文件名格式
   - 去掉 `suiteId` 场景（仅前端内存用例）：导出 CSV，核对列与 Excel 约定一致
+
+### 2026-04-28（文档）联调对齐、门禁脚本与部署路径
+
+- **README**
+  - 「初始化数据库」改为与生产一致：使用 **`prisma/schema.prod.prisma`** 执行 `migrate deploy` / `generate`，避免本地与 Railway 结构不一致。
+  - 增补 **本地前后端对齐表**：Nest `globalPrefix`、`/health` 与 `/api/health`、前端 `VITE_API_BASE_URL` 与 Vite `/api` 代理。
+  - **项目结构**中修正 `prisma/` 目录说明（`schema.prod.prisma`、`migrations/`、`seed.ts`）。
+  - 「联调与自测」开头并列 **Railway（推送 `main`）** 与 **VPS + `docker-compose.full.yml`** 两类部署路径。
+- **门禁脚本**：新增 `scripts/dev-integration-check.sh` — 在本机执行 `prisma validate` / `generate`（`schema.prod.prisma`）与前后端 **`pnpm build`**（不启动服务，便于 CI/发布前自检）。
+- **推送与部署（摘要）**
+  1. 可选：`bash scripts/dev-integration-check.sh`
+  2. `git add` / `git commit` / **`git push origin main`**
+  3. **Railway**：在 Dashboard 查看 Deployment；确认 Variables 含 **`DATABASE_URL`**、**`JWT_SECRET`**；数据库迁移建议在 **Pre-deploy** 跑 `backend/migrate-release.sh`（或按服务内 `start.sh` 说明），避免启动阶段长时间未监听端口。
+  4. **自托管**：`docker compose -f docker-compose.full.yml up -d --build` 后执行 `bash scripts/smoke.sh`，或手动访问 `GET /api/health`。
