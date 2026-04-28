@@ -18,15 +18,21 @@ export function WeatherBadge() {
 
   useEffect(() => {
     let mounted = true
-    preferencesApi
-      .getMy()
-      .then((p) => {
-        if (!mounted) return
-        setPrefs(p)
-      })
-      .catch(() => setPrefs(null))
+    const refreshPrefs = () =>
+      preferencesApi
+        .getMy()
+        .then((p) => {
+          if (!mounted) return
+          setPrefs(p)
+        })
+        .catch(() => setPrefs(null))
+
+    refreshPrefs()
+    const onUpdated = () => refreshPrefs()
+    window.addEventListener('user-preferences-updated', onUpdated)
     return () => {
       mounted = false
+      window.removeEventListener('user-preferences-updated', onUpdated)
     }
   }, [])
 

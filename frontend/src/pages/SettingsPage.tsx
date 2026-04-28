@@ -254,6 +254,7 @@ export default function SettingsPage() {
       const next = await preferencesApi.updateMy(patch)
       setUserPrefs(next)
       notify.success('已保存')
+      window.dispatchEvent(new Event('user-preferences-updated'))
     } catch {
       /* toast by interceptor */
     } finally {
