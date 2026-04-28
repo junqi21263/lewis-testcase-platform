@@ -9,6 +9,7 @@ import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
 import { GenerationSource, GenerationStatus, Prisma } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
+import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
 
 @Injectable()
 export class AiService {
@@ -91,6 +92,16 @@ export class AiService {
       c?.expectedResult != null && String(c.expectedResult).trim()
         ? String(c.expectedResult)
         : '（无）'
+    const tags = Array.isArray(c?.tags) ? [...c.tags.map((x: unknown) => String(x))] : []
+    const mod =
+      c?.module != null && String(c.module).trim()
+        ? String(c.module).trim()
+        : c?.所属模块 != null && String(c.所属模块).trim()
+          ? String(c.所属模块).trim()
+          : ''
+    if (mod && !tags.some((t) => t === `模块:${mod}` || t.startsWith('模块:'))) {
+      tags.push(`模块:${mod}`)
+    }
     return {
       title,
       precondition: c?.precondition != null ? String(c.precondition) : undefined,
@@ -99,13 +110,24 @@ export class AiService {
       expectedResult,
       priority: c?.priority || 'P2',
       type: c?.type || 'FUNCTIONAL',
-      tags: Array.isArray(c?.tags) ? c.tags : [],
+      tags,
     }
+  }
+
+  /** 启发式拆条结果若仍像「整段塞进一条」，则继续走原文兜底 */
+  private shouldUseLooseParsedCases(loose: { expectedResult: string }[], raw: string): boolean {
+    if (loose.length === 0) return false
+    if (loose.length >= 2) return true
+    const r = raw.trim()
+    if (r.length > 600 && loose[0].expectedResult.length > r.length * 0.88) return false
+    return true
   }
 
   private resolveCasesForPersistence(fullText: string): any[] {
     const rows = this.extractCaseRows(fullText)
     if (rows.length > 0) return rows
+    const loose = parseLooseMarkdownToCaseRows(fullText)
+    if (this.shouldUseLooseParsedCases(loose, fullText)) return loose as any[]
     const fallback = this.fallbackCasesFromRawOutput(fullText)
     if (fallback.length > 0) return fallback
     return []
@@ -286,7 +308,15 @@ export class AiService {
   /** 构建提示词 */
   private buildPrompt(dto: GenerateDto, fileContent?: string): string {
     const systemPrompt = `你是一名专业的软件测试工程师，精通各类测试方法和测试用例编写规范。
-请严格按照 JSON 格式输出测试用例，格式如下：
+
+【输出硬性要求】
+1. 只输出一个合法 JSON 对象，不要 Markdown 标题、不要代码围栏、不要在 JSON 前后写任何解释；第一个非空白字符必须是 {。
+2. 必须包含顶层键 "cases"，且为数组；每条业务用例对应 cases 里的一个对象，禁止把多条用例合并进同一条的 expectedResult 长文。
+3. 每条用例字段：title（用例名称）、priority、type、precondition（前置条件）、steps（数组）、expectedResult（最终预期）、tags（标签数组，可含模块名）。
+4. 若需表示「所属模块」，请写入 tags，例如 "tags": ["登录模块"] 或使用 "模块:登录" 形式。
+5. 禁止用 Markdown（###、**用例** 等）代替 JSON。
+
+约定结构示例：
 {
   "cases": [
     {
@@ -502,6 +532,8 @@ export class AiService {
 
       if (rows.length > 0 && rows[0]?.tags?.includes?.('ai-raw-output')) {
         this.logger.warn('流式输出未解析为 JSON 用例，已保存为单条原文占位用例')
+      } else if (rows.length > 0 && rows.some((r: any) => r?.tags?.includes?.('ai-parsed-markdown'))) {
+        this.logger.warn(`流式输出已用 Markdown 启发式拆分为 ${rows.length} 条用例（建议模板中强调仅输出 JSON）`)
       }
 
       const suite = await this.prisma.testSuite.create({

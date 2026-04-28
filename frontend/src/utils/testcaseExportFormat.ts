@@ -1,4 +1,5 @@
 import type { TestCase, TestStep } from '@/types'
+import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 
 /**
  * 与后端 `TestcasesService` Excel 导出列顺序、语义一致（前端降级 CSV/文件名用）
@@ -42,11 +43,22 @@ export function caseStatusToEditModeLabel(status: string): string {
   return m[status] ?? status
 }
 
+/** 导出用「所属模块」：优先用例标签中的 模块:xxx，否则用用例集 projectName */
+export function testcaseModuleLabel(c: TestCase, suiteFallback: string): string {
+  return extractModuleFromTags(c.tags) || suiteFallback
+}
+
+function tagsForExportCell(tags: string[] | undefined): string {
+  if (!tags?.length) return ''
+  return tags.filter((t) => t && !t.startsWith('模块:')).join(', ')
+}
+
 export function testcaseDelimitedValues(c: TestCase, moduleLabel: string): string[] {
+  const mod = testcaseModuleLabel(c, moduleLabel)
   return [
     c.title ?? '',
-    moduleLabel,
-    (c.tags ?? []).filter(Boolean).join(', '),
+    mod,
+    tagsForExportCell(c.tags),
     c.precondition ?? '',
     formatStepsForExport(c.steps),
     c.expectedResult ?? '',

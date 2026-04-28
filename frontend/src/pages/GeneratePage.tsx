@@ -17,6 +17,8 @@ import {
   testcaseDelimitedValues,
   TESTCASE_EXPORT_COLUMNS_CN,
 } from '@/utils/testcaseExportFormat'
+import { copyTextToClipboard } from '@/utils/clipboard'
+import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus } from '@/types'
 import { useNavigate } from 'react-router-dom'
@@ -250,12 +252,10 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
   }
 
   const handleCopyJson = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(cases, null, 2))
-      toast.success('已复制 JSON 到剪贴板')
-    } catch {
-      toast.error('复制失败（浏览器权限限制）')
-    }
+    const text = JSON.stringify(cases, null, 2)
+    const ok = await copyTextToClipboard(text)
+    if (ok) toast.success('已复制 JSON 到剪贴板')
+    else toast.error('复制失败，请手动全选下方内容或使用「导出 JSON」')
   }
 
   const handleCreateShare = async () => {
@@ -266,8 +266,9 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
     try {
       const res = await recordsApi.createShare(lastRecordId, { expiresDays: 7 })
       const url = `${window.location.origin}${res.path || `/records/public/shares/${res.token}`}`
-      await navigator.clipboard.writeText(url)
-      toast.success('分享链接已复制（有效期 7 天）')
+      const copied = await copyTextToClipboard(url)
+      if (copied) toast.success('分享链接已复制（有效期 7 天）')
+      else toast.success(`分享已创建：${url}`)
     } catch {
       toast.error('创建分享链接失败')
     }
@@ -312,37 +313,54 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       </div>
 
       <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-        {cases.map((c, i) => (
-          <Card key={c.id || i} className="border">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h4 className="font-medium text-sm">{c.title}</h4>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Badge className={`text-xs ${priorityColorMap[c.priority] || ''}`} variant="outline">
-                    {c.priority}
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs">{c.type}</Badge>
-                </div>
-              </div>
-              {c.precondition && (
-                <p className="text-xs text-muted-foreground mb-2">
-                  <span className="font-medium">前置条件：</span>{c.precondition}
-                </p>
-              )}
-              <div className="space-y-1">
-                {c.steps.map((step) => (
-                  <div key={step.order} className="text-xs flex gap-2">
-                    <span className="text-muted-foreground w-5 flex-shrink-0">{step.order}.</span>
-                    <span>{step.action}</span>
+        {cases.map((c, i) => {
+          const caseModule = extractModuleFromTags(c.tags)
+          const caseTags = (c.tags ?? []).filter((t) => t && !t.startsWith('模块:'))
+          return (
+            <Card key={c.id || i} className="border">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <h4 className="font-medium text-sm">{c.title}</h4>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <Badge className={`text-xs ${priorityColorMap[c.priority] || ''}`} variant="outline">
+                      {c.priority}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">{c.type}</Badge>
                   </div>
-                ))}
-              </div>
-              <p className="text-xs mt-2">
-                <span className="font-medium text-green-600">预期结果：</span>{c.expectedResult}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+                </div>
+                {caseModule && (
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <span className="font-medium">所属模块：</span>
+                    {caseModule}
+                  </p>
+                )}
+                {caseTags.length > 0 && (
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <span className="font-medium">标签：</span>
+                    {caseTags.join(', ')}
+                  </p>
+                )}
+                {c.precondition && (
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <span className="font-medium">前置条件：</span>{c.precondition}
+                  </p>
+                )}
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">步骤描述</p>
+                  {c.steps.map((step) => (
+                    <div key={step.order} className="text-xs flex gap-2">
+                      <span className="text-muted-foreground w-5 flex-shrink-0">{step.order}.</span>
+                      <span>{step.action}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs mt-2">
+                  <span className="font-medium text-green-600">预期结果：</span>{c.expectedResult}
+                </p>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )

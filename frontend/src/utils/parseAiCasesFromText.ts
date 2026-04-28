@@ -1,4 +1,9 @@
 import type { TestCase, TestCasePriority, TestCaseType, TestCaseStatus } from '@/types'
+import {
+  parseLooseMarkdownToCaseRows,
+  shouldUseLooseParsedCases,
+  type LooseCaseRow,
+} from '@/utils/parseLooseAiOutput'
 
 function tryJson(s: string): unknown {
   try {
@@ -60,6 +65,26 @@ function buildRawPlaceholderCase(content: string): TestCase {
   }
 }
 
+function looseRowToTestCase(c: LooseCaseRow, i: number): TestCase {
+  return {
+    id: `local-${i}-${Math.random().toString(36).slice(2, 9)}`,
+    title: c.title,
+    precondition: c.precondition,
+    description: undefined,
+    steps: c.steps.map((s, j) => ({
+      order: typeof s.order === 'number' ? s.order : j + 1,
+      action: s.action,
+      expected: s.expected,
+    })),
+    expectedResult: c.expectedResult,
+    priority: (c.priority as TestCasePriority) || 'P2',
+    type: (c.type as TestCaseType) || 'FUNCTIONAL',
+    tags: c.tags,
+    status: 'DRAFT',
+    suiteId: '',
+  }
+}
+
 function normalizeToTestCase(c: any, i: number): TestCase {
   return {
     id: c?.id ? String(c.id) : `local-${i}-${Date.now()}`,
@@ -89,6 +114,10 @@ function normalizeToTestCase(c: any, i: number): TestCase {
 export function parseAiCasesFromText(raw: string): TestCase[] {
   const rows = extractCaseRowsFromText(raw)
   if (rows.length > 0) return rows.map((c, i) => normalizeToTestCase(c, i))
+  const loose = parseLooseMarkdownToCaseRows(raw)
+  if (loose.length > 0 && shouldUseLooseParsedCases(loose, raw)) {
+    return loose.map((c, i) => looseRowToTestCase(c, i))
+  }
   if (raw.trim()) return [buildRawPlaceholderCase(raw)]
   return []
 }

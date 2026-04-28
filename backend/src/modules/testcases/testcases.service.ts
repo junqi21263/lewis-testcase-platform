@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '@/prisma/prisma.service'
 import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
 import type { CreateTestCaseDto } from './dto/create-test-case.dto'
+import { extractModuleFromTags } from '../ai/parse-loose-ai-output.util'
 
 /** Excel 导出表头顺序（与业务约定一致） */
 const EXCEL_CASE_HEADERS = [
@@ -47,6 +48,14 @@ function caseStatusToEditModeLabel(status: string): string {
     ARCHIVED: '已归档',
   }
   return m[status] ?? status
+}
+
+function tagsCellExcludingModulePrefix(tags: unknown): string {
+  if (!Array.isArray(tags)) return ''
+  return tags
+    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+    .filter((t) => !t.startsWith('模块:'))
+    .join(', ')
 }
 
 @Injectable()
@@ -222,8 +231,8 @@ export class TestcasesService {
     const data = suite.cases.map((c: any) => {
       const row: Record<(typeof EXCEL_CASE_HEADERS)[number], string> = {
         用例名称: c.title ?? '',
-        所属模块: moduleLabel,
-        标签: Array.isArray(c.tags) ? c.tags.filter(Boolean).join(', ') : '',
+        所属模块: extractModuleFromTags(c.tags) || moduleLabel,
+        标签: tagsCellExcludingModulePrefix(c.tags),
         前置条件: c.precondition ?? '',
         步骤描述: formatStepsForExcel(c.steps),
         预期结果: c.expectedResult ?? '',
