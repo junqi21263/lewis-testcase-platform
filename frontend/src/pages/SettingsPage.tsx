@@ -268,6 +268,10 @@ export default function SettingsPage() {
       setCityResults([])
       return
     }
+    if (query.length < 2) {
+      setCityResults([])
+      return
+    }
     setCitySearching(true)
     try {
       const list = await weatherApi.cities(query)
@@ -289,6 +293,19 @@ export default function SettingsPage() {
     setCityResults([])
     setCityQuery('')
   }
+
+  useEffect(() => {
+    const q = cityQuery.trim()
+    if (!q || q.length < 2) {
+      setCityResults([])
+      return
+    }
+    const t = window.setTimeout(() => {
+      searchCities(q).catch(() => {})
+    }, 300)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityQuery])
 
   const rotateWallpaperNow = async () => {
     try {
@@ -731,6 +748,12 @@ export default function SettingsPage() {
                 value={cityQuery}
                 onChange={(e) => setCityQuery(e.target.value)}
                 placeholder="搜索城市（如：北京、上海、深圳）"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void searchCities(cityQuery)
+                  }
+                }}
               />
               <Button
                 variant="outline"
