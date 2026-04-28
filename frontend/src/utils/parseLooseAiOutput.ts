@@ -134,7 +134,7 @@ function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | nu
 
   let stepsBlock = ''
   const stM = full.match(
-    /(?:测试)?步骤[（(]?\d*[）)]?[：:\s]*([\s\S]*?)(?=\n\s*(?:预期|期望)结果|$)/i,
+    /(?:步骤描述|测试步骤|步骤)[（(]?\d*[）)]?[：:\s]*([\s\S]*?)(?=\n\s*(?:预期|期望)结果|$)/i,
   )
   if (stM) stepsBlock = stM[1].trim()
 

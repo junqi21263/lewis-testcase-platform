@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
-import { GenerationSource, GenerationStatus, Prisma } from '@prisma/client'
+import { GenerationSource, GenerationStatus, Prisma, TestCasePriority, TestCaseType } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
 import {
@@ -17,6 +17,7 @@ import {
   OUTPUT_TRUNCATED_NOTICE,
   roughTokenEstimateFromChars,
 } from './ai-generation-limits.util'
+import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 
 @Injectable()
 export class AiService {
@@ -104,34 +105,34 @@ export class AiService {
     res.write(`data: ${JSON.stringify({ notice: text })}\n\n`)
   }
 
-  private mapRowToCaseInput(c: any) {
-    const title =
-      c?.title != null && String(c.title).trim()
-        ? String(c.title).slice(0, 500)
-        : '未命名用例'
-    const steps = Array.isArray(c?.steps) ? c.steps : []
-    const expectedResult =
-      c?.expectedResult != null && String(c.expectedResult).trim()
-        ? String(c.expectedResult)
-        : '（无）'
-    const tags = Array.isArray(c?.tags) ? [...c.tags.map((x: unknown) => String(x))] : []
-    const mod =
-      c?.module != null && String(c.module).trim()
-        ? String(c.module).trim()
-        : c?.所属模块 != null && String(c.所属模块).trim()
-          ? String(c.所属模块).trim()
-          : ''
-    if (mod && !tags.some((t) => t === `模块:${mod}` || t.startsWith('模块:'))) {
-      tags.push(`模块:${mod}`)
-    }
+  private mapRowToCaseInput(c: any): Prisma.TestCaseCreateWithoutSuiteInput {
+    const rawObj =
+      c && typeof c === 'object' ? (c as Record<string, unknown>) : ({} as Record<string, unknown>)
+    const n = normalizeCaseRowForPersistence(rawObj)
+    const preserved = Array.isArray((c as any)?.tags)
+      ? (c as any).tags
+          .map((x: unknown) => String(x))
+          .filter((t: string) => t === 'ai-raw-output' || t === 'ai-parsed-markdown')
+      : []
+    const tags = [...new Set([...n.tags, ...preserved])]
+    const pr = String(n.priority).toUpperCase()
+    const priority = (
+      ['P0', 'P1', 'P2', 'P3'].includes(pr) ? pr : 'P2'
+    ) as TestCasePriority
+    const ty = String(n.type).toUpperCase()
+    const type = (
+      ['FUNCTIONAL', 'PERFORMANCE', 'SECURITY', 'COMPATIBILITY', 'REGRESSION'].includes(ty)
+        ? ty
+        : 'FUNCTIONAL'
+    ) as TestCaseType
     return {
-      title,
-      precondition: c?.precondition != null ? String(c.precondition) : undefined,
-      description: c?.description != null ? String(c.description) : undefined,
-      steps,
-      expectedResult,
-      priority: c?.priority || 'P2',
-      type: c?.type || 'FUNCTIONAL',
+      title: String(n.title).slice(0, 500),
+      precondition: n.precondition != null ? String(n.precondition) : undefined,
+      description: n.description != null ? String(n.description) : undefined,
+      steps: n.steps as Prisma.InputJsonValue,
+      expectedResult: String(n.expectedResult),
+      priority,
+      type,
       tags,
     }
   }
@@ -337,13 +338,13 @@ export class AiService {
 
 【编写原则】准确性、可执行性、用例相互独立、可重复验证；步骤一步一个动作；预期结果与步骤可一一对应（导出为表格时步骤列用 [1][2] 编号，预期列同样编号对应）。
 
-【与平台导出列严格对齐】每条用例在 JSON 中映射为：
-- title → 用例名称（简洁，如「登录-正常登录」）
-- tags → 必须含「模块:所属模块」一项（如「模块:用户注册登录」），其余为标签（如「UI」「功能测试」「场景」「异常」）
-- precondition → 前置条件（分条写清环境与数据准备）
-- steps → 步骤描述：每项 order 从 1 递增，action 为单步操作；可选 expected 填该步中间期望
-- expectedResult → 预期结果：建议用多行「[1] …\\n[2] …」与步骤顺序一致，便于与 Excel 对照
-- priority / type → 仍填写 P0–P3 与 FUNCTIONAL 等枚举
+【与 Excel 导出六列严格对齐】每条用例对应一行，字段映射：
+- title → 用例名称（例：登录-正确邮箱密码登录成功）
+- tags → 至少含一项「模块:模块名」（例：模块:用户注册登录）；其余为标签列，用短词：UI、功能、场景、异常 等（不要用长句）
+- precondition → 前置条件：多条时请用「1. …\\n2. …」编号分行
+- steps → 步骤描述：order 从 1 连续递增；每步 action 只写一个动作（对应导出单元格内 [1][2] 列表）
+- expectedResult → 预期结果：必须与步骤条数一致，格式强制为「[1] …\\n[2] …」，第 n 条对应第 n 步
+- priority / type → P0–P3；type 为枚举；平台会把 FUNCTIONAL 映射为标签「功能」若未写
 
 【输出硬性要求】
 1. 只输出一个合法 JSON 对象，不要 Markdown、代码围栏、文前文末解释；第一个非空白字符必须是 {。
@@ -351,20 +352,20 @@ export class AiService {
 3. 禁止输出 **加粗标题**、### 标题、或「- 优先级:」这类非 JSON 叙述；一律用字段表达。
 4. 材料过长时优先 P0/P1 与核心主流程，控制单字段篇幅。
 
-示例（字段含义见上）：
+示例（与下表一致；注意 expectedResult 与 steps 条数相同且均为 [n]）：
 {
   "cases": [
     {
-      "title": "登录-正常登录",
+      "title": "登录-正确邮箱密码登录成功",
       "priority": "P0",
       "type": "FUNCTIONAL",
-      "precondition": "1. 用户已注册\\n2. 账号状态正常",
+      "precondition": "1. 用户已有注册账号\\n2. 用户未登录",
       "steps": [
-        {"order": 1, "action": "打开登录页", "expected": ""},
-        {"order": 2, "action": "输入正确账号密码并点击登录", "expected": ""}
+        {"order": 1, "action": "在邮箱和密码输入框输入正确信息", "expected": ""},
+        {"order": 2, "action": "点击「登录」按钮", "expected": ""}
       ],
-      "expectedResult": "[1] 登录页展示正确\\n[2] 登录成功并进入首页",
-      "tags": ["模块:用户注册登录", "功能测试", "UI"]
+      "expectedResult": "[1] 信息输入校验通过\\n[2] 登录成功，跳转至主页",
+      "tags": ["模块:用户注册登录", "UI", "功能"]
     }
   ]
 }`
