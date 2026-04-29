@@ -90,7 +90,7 @@ export class RecordsService {
     for (const k of keys) {
       const v = out[k]
       if (typeof v === 'string' && v.length) {
-        ;(out as Record<string, unknown>)[k as string] = maskSensitivePlainText(v)
+        (out as Record<string, unknown>)[k as string] = maskSensitivePlainText(v)
       }
     }
     return out

@@ -17,7 +17,7 @@
     "allure:open": "allure open allure-report",
     "allure:report": "pnpm test:unit && pnpm test:ct:allure && pnpm allure:generate && node scripts/print-allure-url.mjs",
     "integrate:smoke": "pnpm -C ../backend smoke:enhancements",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --ext ts,tsx --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
@@ -70,6 +70,7 @@
     "allure-vitest": "^3.7.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.11",
     "jsdom": "^29.1.0",

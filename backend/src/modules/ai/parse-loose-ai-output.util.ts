@@ -119,7 +119,7 @@ function inferSectionModule(titleLine: string): string | undefined {
 }
 
 function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | null {
-  let text = chunk.trim()
+  const text = chunk.trim()
   if (text.length < 12) return null
 
   const lines = text.split('\n')
@@ -136,7 +136,7 @@ function parseOneChunk(chunk: string, sectionModule?: string): LooseCaseRow | nu
 
   const full = text
 
-  let moduleLabel =
+  const moduleLabel =
     (full.match(/所属模块[：:\s]*([^\n]+)/)?.[1] || '').trim() || sectionModule || ''
 
   const prioM = full.match(/优先级[：:\s]*(P[0-3])/i)
