@@ -144,11 +144,26 @@ jobs:
               fi
             fi
             
-            if sudo docker compose version >/dev/null 2>&1; then
-              sudo docker compose -f docker-compose.full.yml --env-file "$ENV_FILE" up -d --build
+            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+              COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
             else
-              sudo docker-compose -f docker-compose.full.yml --env-file "$ENV_FILE" up -d --build
+              COMPOSE_FILES="-f docker-compose.full.yml"
             fi
-            
+
+            if sudo docker compose version >/dev/null 2>&1; then
+              # shellcheck disable=SC2086
+              sudo docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+            else
+              # shellcheck disable=SC2086
+              sudo docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+            fi
+
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
-            bash scripts/smoke.sh
+
+            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+              echo "🧪 Running development smoke check on :8080..."
+              curl -fsS "http://127.0.0.1:8080/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'
+              echo "✅ Development smoke check passed"
+            else
+              bash scripts/smoke.sh
+            fi
