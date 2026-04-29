@@ -85,9 +85,6 @@ pnpm dev
 ## 文档导航
 
 - 开发与测试：`docs/development/DEVELOPMENT.md`、`docs/development/TEST_PLAN.md`、`docs/development/AUTHENTICATION_FEATURES.md`
-- EdgeOne 部署与安全：`docs/deployment/edgeone/guides/`
-- EdgeOne 脚本：`docs/deployment/edgeone/scripts/`
-- EdgeOne 配置样例：`docs/deployment/edgeone/configs/`
 - 文档分层说明：`docs/README.md`
 
 ### 本地前后端联调要点（对齐）
@@ -152,8 +149,7 @@ bash scripts/dev-integration-check.sh
 
 ## 环境变量说明
 
-> 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。  
-> 本 README 与 EdgeOne 相关文档中的域名、项目 ID、示例口令均为 **占位符**；验证脚本通过环境变量传入真实主机名（见 `docs/deployment/edgeone/scripts/verify-edgeone-config.sh`）。
+> 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。
 
 ### 后端 `backend/.env`
 
@@ -178,7 +174,56 @@ bash scripts/dev-integration-check.sh
 | `VITE_API_BASE_URL` | 后端 API 基址（须以 `/api` 结尾，与 Nest `globalPrefix` 一致） | `http://localhost:3000/api`（生产推荐 `/api`） |
 | `VITE_APP_NAME` | 应用名称 | `AI 测试用例平台` |
 
-### 生产部署：云服务器（推荐，不依赖 Railway）
+## 开发与生产环境分离工作流（推荐）
+
+本项目采用 **Git 分支策略** 实现开发与生产环境隔离：
+
+### 分支说明
+
+| 分支 | 用途 | 部署目标 | 说明 |
+|------|------|----------|------|
+| `develop` | **开发环境** | 开发/测试服务器（可选） | 日常开发、功能调试、代码审查 |
+| `main` | **生产环境** | 云服务器（正式环境） | 稳定版本，正式对外提供服务 |
+
+### 推荐开发流程
+
+1. **本地开发**
+   ```bash
+   git checkout develop
+   # ... 开发新功能 ...
+   git add .
+   git commit -m "feat: 新功能描述"
+   git push origin develop
+   ```
+
+2. **本地测试**
+   ```bash
+   # 开发环境配置
+   cp .env.development.example .env.development
+   # 编辑 .env.development，配置开发环境的 AI Key、数据库等
+   
+   docker compose -f docker-compose.full.yml --env-file .env.development up -d
+   ```
+
+3. **代码审查与合并**
+   - 在 GitHub 提交 Pull Request：`develop` → `main`
+   - 审查通过后合并到 `main`
+
+4. **自动部署到生产**
+   - 合并到 `main` 后，GitHub Actions 会**自动**：
+     - 打包前端
+     - rsync 到云服务器
+     - 执行 `docker compose -f docker-compose.full.yml up -d --build`
+     - 运行冒烟测试
+
+### 环境配置文件
+
+- `.env.development.example`：开发环境模板（本地调试使用）
+- `.env.production.example`：生产环境模板（部署到服务器后复制为 `.env`）
+
+**重要**：永远不要把真实密钥、密码、API Key 提交到 Git 仓库！
+
+### 生产部署：云服务器（推荐）
 
 默认推荐在 **自有云服务器（VPS）** 上用 **Docker Compose** 跑全栈：**前端 Nginx（80）+ 后端 + PostgreSQL + Redis**，**单公网入口**，前端将 **`/api`** 反代到后端，**无需**把数据库或 Redis 暴露到公网。
 
@@ -207,21 +252,12 @@ bash scripts/dev-integration-check.sh
    `bash scripts/smoke.sh`  
    或手动：`curl -fsS http://127.0.0.1/api/health`
 
-数据库迁移由 **`backend/Dockerfile`** 构建阶段与 **`backend/start.sh`** 在容器启动时执行（与 Railway 无关）；确保 **`DATABASE_URL`** 指向 compose 内 **`postgres`** 服务。
+数据库迁移由 **`backend/Dockerfile`** 构建阶段与 **`backend/start.sh`** 在容器启动时执行；确保 **`DATABASE_URL`** 指向 compose 内 **`postgres`** 服务。
 
-#### 用 Git 更新（CI 推送云服务器，可选）
+#### 用 Git 更新（CI 推送云服务器）
 
 请在 CI 平台配置 **部署凭据占位符**（例如：`<DEPLOY_SSH_HOST>`、`<DEPLOY_SSH_USER>`、`<DEPLOY_SSH_KEY>`、`<DEPLOY_SSH_PORT>`）与部署路径变量 `<DEPLOY_PATH>`；避免在 README 中固化真实机器、账号或目录。  
 推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会：在 Runner 上 **`pnpm install && pnpm build`** 打包 **前端 `dist/`**，再 **rsync** 到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**（前端镜像会优先复用已同步的 **`dist/`**，见 `frontend/Dockerfile`），最后 **`scripts/smoke.sh`**。可选：在 CI Variables 中设置 **`VITE_API_BASE_URL`**、**`VITE_APP_NAME`**（默认 **`/api`**，与同源 Nginx 反代一致）。
-
-#### 可选：Railway / 其他 PaaS
-
-若个别环境仍用 Railway：根目录 `railway.toml` 与 **`frontend/railway.toml`** 仅为 **可选** 配置；**云服务器部署不依赖** 这些文件。Railway 上前后端分服务时，需配置 **`VITE_API_BASE_URL`** 与后端 **`CORS_ORIGINS`**（详见 `frontend/railway.toml` 内注释）。
-
-#### 静态托管（EdgeOne 等）
-
-也可将 **`frontend/dist`** 或 **`frontend/dist.zip`** 上传到 CDN/静态托管，API 指向独立后端域名；与 Compose **二选一** 为主即可。
-详细步骤与安全校验见 `docs/deployment/edgeone/guides/`。
 
 ## 项目结构
 
@@ -229,8 +265,7 @@ bash scripts/dev-integration-check.sh
 testcase-platform/
 ├── docker-compose.full.yml   # 云服务器全栈（前端 Nginx + 后端 + Postgres + Redis）
 ├── docker-compose.full.env.example  # 全栈 .env 模板（复制为 .env）
-├── frontend/                # React 前端（可选：Railway / 仅作镜像构建）
-│   ├── railway.toml         # 可选：仅在使用 Railway 时需要
+├── frontend/                # React 前端
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── api/             # API 请求层
@@ -282,8 +317,7 @@ testcase-platform/
 
 ## 前后端联调与自测清单（建议每次发布前跑一遍）
 
-> **生产推荐路径**：**云服务器 + `docker-compose.full.yml`**（见上文「生产部署：云服务器」）；可用 GitHub Actions 推送 **`main`** 自动 rsync 与 compose 重建。  
-> **可选**：Railway 等 PaaS 见同节「可选：Railway」。
+> **生产推荐路径**：**云服务器 + `docker-compose.full.yml`**（见上文「生产部署：云服务器」）；可用 GitHub Actions 推送 **`main`** 自动 rsync 与 compose 重建。
 
 ### 1) 启动（全量栈）
 
@@ -394,7 +428,7 @@ bash scripts/smoke.sh
 
 ### 2026-04-24 ~ 2026-04-26（部署稳定性与生产化打磨）
 
-- **Railway/容器启动稳定性**
+- **容器启动稳定性**
   - 启动阶段迁移与健康检查路径调整，降低 502/超时误判
   - 关键依赖在 Docker/Alpine 下的构建稳定性修复（如 canvas/pdf 渲染相关依赖）
 - **解析 Worker 稳定性**
@@ -488,20 +522,13 @@ bash scripts/smoke.sh
 - **推送与部署（摘要）**
   1. 可选：`bash scripts/dev-integration-check.sh`
   2. `git add` / `git commit` / **`git push origin main`**
-  3. **云服务器**：配置 **`.env`**（`docker-compose.full.env.example`）后 `docker compose -f docker-compose.full.yml up -d --build`，再 **`bash scripts/smoke.sh`**；若启用 GitHub Actions，推送 `main` 会自动 rsync 并 compose。
-  4. **Railway（可选）**：在 Dashboard 查看 Deployment；Variables 含 **`DATABASE_URL`**、**`JWT_SECRET`** 等；迁移见 `backend/migrate-release.sh` / `start.sh`。
+  3. **云服务器**：配置 **`.env`**（由 `docker-compose.full.env.example` 复制）后 `docker compose -f docker-compose.full.yml up -d --build`，再 **`bash scripts/smoke.sh`**；若启用 GitHub Actions，推送 `main` 会自动 rsync 并 compose。
 
 ### 2026-04-28（云服务器为默认生产部署）
 
-- **README**：生产默认路径改为 **自有云服务器 + `docker-compose.full.yml`**，**不依赖 Railway**；Railway / EdgeOne 仅作可选说明。
+- **README**：生产默认路径为 **自有云服务器 + `docker-compose.full.yml`**。
 - **`docker-compose.full.env.example`**：全栈 **`.env`** 模板（数据库、JWT、CORS、`VITE_*` 等）。
 - **Nginx**：`nginx.conf.template` 增加 **`/health`** 反代至后端裸探活，与全栈 **80** 入口一致。
-
-### 2026-04-28（Railway 前端 · Git 部署）
-
-- **`frontend/railway.toml`**：在同一 Railway 项目中新建服务，**Root Directory = `frontend`**，推送 `main` 即构建 **前端镜像**（与根目录后端服务共用仓库）。
-- **`frontend/Dockerfile`**：改为 **pnpm** 安装；支持构建参数 **`VITE_API_BASE_URL`** / **`VITE_APP_NAME`**（跨域部署后端时必填前者）；**`nginx.conf.template` + `docker-entrypoint.sh`** 支持平台注入的 **`PORT`**（Railway 必需）。
-- **`docker-compose.full.yml`**：为 `frontend` 构建传入可选 **`VITE_*`**，与 VPS 全栈 Git 部署一致。
 
 ### 2026-04-29（当日部署、更新与修改）
 
