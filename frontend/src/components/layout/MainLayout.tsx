@@ -6,7 +6,7 @@ import { WallpaperLayer } from '@/components/wallpaper/WallpaperLayer'
 /** 主布局：侧边栏 + 顶部导航 + 内容区 */
 export default function MainLayout() {
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background">
       <WallpaperLayer />
       {/* 侧边栏 */}
       <Sidebar />

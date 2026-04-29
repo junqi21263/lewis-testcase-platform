@@ -35,10 +35,7 @@ function sidebarNavClassNames(isActive: boolean, collapsed: boolean) {
     'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
     'hover:scale-[1.01] active:scale-[0.99] motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
     isActive
-      ? cn(
-          'bg-sidebar-accent/92 text-sidebar-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-foreground)/0.14)]',
-          collapsed && 'ring-2 ring-inset ring-sidebar-primary/40',
-        )
+      ? 'bg-sidebar-accent/92 text-sidebar-foreground'
       : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
     collapsed && 'justify-center px-2',
   )
@@ -110,7 +107,7 @@ export default function Sidebar() {
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
           'absolute -right-[17px] top-[4.5rem] z-10 h-11 w-11 rounded-full',
-          'border border-sidebar-foreground/12 bg-sidebar-accent/85 text-sidebar-foreground shadow-md backdrop-blur-sm',
+          'bg-sidebar-accent/85 text-sidebar-foreground shadow-md backdrop-blur-sm',
           'transition-[transform,background-color] duration-200 ease-out',
           'hover:bg-sidebar-accent hover:scale-105 active:scale-95',
           'motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100',

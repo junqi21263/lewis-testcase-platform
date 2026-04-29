@@ -69,8 +69,12 @@
   * {
     @apply border-border;
   }
+  html {
+    /* 与主题一致，避免壁纸关闭时透过透明层露出默认白底 */
+    @apply bg-background;
+  }
   body {
-    /* 透明底：动态壁纸在 MainLayout 中全屏展示；登录等页由各自布局铺底 */
+    /* 透明：主布局根节点与壁纸层负责铺底；登录等页由各自布局铺底 */
     @apply bg-transparent text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
