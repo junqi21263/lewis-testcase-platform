@@ -8,6 +8,14 @@ function mustEnv(name: string): string {
 
 type ApiResp<T> = { code: number; message?: string; data: T }
 
+function unwrap<T>(label: string, status: number, body: unknown): T {
+  const b = body as ApiResp<T>
+  if (status !== 200 || b?.code !== 0) {
+    throw new Error(`${label} failed: status=${status} body=${JSON.stringify(body)}`)
+  }
+  return b.data as T
+}
+
 async function main() {
   const base = (process.env.SMOKE_BASE_URL || 'http://localhost:3000/api').replace(/\/+$/, '')
   const username = mustEnv('SMOKE_USERNAME')
@@ -15,82 +23,90 @@ async function main() {
 
   const client = axios.create({
     baseURL: base,
-    timeout: 20_000,
+    timeout: 30_000,
     headers: { 'Content-Type': 'application/json' },
     validateStatus: () => true,
   })
 
-  const login = await client.post<ApiResp<{ accessToken: string }>>('/auth/login', {
+  {
+    const r = await client.get<ApiResp<{ status: string }>>('/health')
+    unwrap('GET /health', r.status, r.data)
+  }
+
+  const loginRes = await client.post<ApiResp<{ accessToken: string; user: unknown }>>('/auth/login', {
     username,
     password,
   })
-  if (login.status !== 200 || !login.data || (login.data as any).code !== 0) {
-    throw new Error(`login failed: status=${login.status} body=${JSON.stringify(login.data)}`)
+  const loginData = unwrap<{ accessToken: string; user: unknown }>(
+    'POST /auth/login',
+    loginRes.status,
+    loginRes.data,
+  )
+  const token = loginData.accessToken
+  if (!token || typeof token !== 'string') {
+    throw new Error('login token missing')
   }
-  const accessToken = (login.data as any).data?.accessToken || (login.data as any).accessToken
-  if (!accessToken || typeof accessToken !== 'string') {
-    // 当前后端实际返回 { accessToken, user }（被响应包装后在 data 内）
-    const wrapped = login.data as any
-    const token = wrapped?.data?.accessToken ?? wrapped?.data?.data?.accessToken
-    if (!token) throw new Error(`login token missing: ${JSON.stringify(login.data)}`)
-  }
-  const token =
-    (login.data as any).data?.accessToken ??
-    (login.data as any).data?.data?.accessToken ??
-    (login.data as any).accessToken
 
   const authed = axios.create({
     baseURL: base,
-    timeout: 20_000,
+    timeout: 30_000,
     headers: { Authorization: `Bearer ${token}` },
     validateStatus: () => true,
   })
 
-  // preferences: get
-  const pref1 = await authed.get<ApiResp<any>>('/preferences/me')
-  if (pref1.status !== 200 || (pref1.data as any).code !== 0) {
-    throw new Error(`preferences/me failed: status=${pref1.status} body=${JSON.stringify(pref1.data)}`)
+  {
+    const r = await authed.get<ApiResp<unknown>>('/preferences/me')
+    unwrap('GET /preferences/me', r.status, r.data)
   }
 
-  // preferences: patch wallpaper enabled
-  const pref2 = await authed.patch<ApiResp<any>>('/preferences/me', {
-    wallpaperEnabled: true,
-    wallpaperIntervalSec: 0,
-  })
-  if (pref2.status !== 200 || (pref2.data as any).code !== 0) {
-    throw new Error(`preferences patch failed: status=${pref2.status} body=${JSON.stringify(pref2.data)}`)
+  {
+    const r = await authed.patch<ApiResp<unknown>>('/preferences/me', {
+      wallpaperEnabled: true,
+      wallpaperIntervalSec: 0,
+    })
+    unwrap('PATCH /preferences/me', r.status, r.data)
   }
 
-  // wallpaper: next (force)
-  const wp = await authed.get<ApiResp<any>>('/wallpaper/next', { params: { force: 1 } })
-  if (wp.status !== 200 || (wp.data as any).code !== 0) {
-    throw new Error(`wallpaper/next failed: status=${wp.status} body=${JSON.stringify(wp.data)}`)
+  let wp1: { enabled: boolean; url: string | null }
+  {
+    const r = await authed.get<ApiResp<{ enabled: boolean; url: string | null }>>('/wallpaper/next', {
+      params: { force: 1 },
+    })
+    wp1 = unwrap('GET /wallpaper/next?force=1 (1)', r.status, r.data)
   }
-  const wpData = (wp.data as any).data ?? (wp.data as any)
-  if (wpData.enabled !== true || typeof wpData.url !== 'string' || !wpData.url.startsWith('http')) {
-    throw new Error(`wallpaper payload invalid: ${JSON.stringify(wpData)}`)
+  if (wp1.enabled !== true || typeof wp1.url !== 'string' || !wp1.url.startsWith('http')) {
+    throw new Error(`wallpaper payload invalid: ${JSON.stringify(wp1)}`)
   }
 
-  // weather: cities
-  const cities = await authed.get<ApiResp<any[]>>('/weather/cities', { params: { query: '北京' } })
-  if (cities.status !== 200 || (cities.data as any).code !== 0) {
-    throw new Error(`weather/cities failed: status=${cities.status} body=${JSON.stringify(cities.data)}`)
+  let wp2: { enabled: boolean; url: string | null }
+  {
+    const r = await authed.get<ApiResp<{ enabled: boolean; url: string | null }>>('/wallpaper/next', {
+      params: { force: 1 },
+    })
+    wp2 = unwrap('GET /wallpaper/next?force=1 (2)', r.status, r.data)
   }
-  const cityList = ((cities.data as any).data ?? []) as any[]
-  if (!Array.isArray(cityList)) throw new Error(`weather/cities data not array: ${JSON.stringify(cities.data)}`)
+  if (wp1.url === wp2.url) {
+    // eslint-disable-next-line no-console
+    console.warn('[smoke] warning: two forced rotations returned the same URL (rare); Bing idx collision?')
+  }
+
+  const cityList = await (async () => {
+    const r = await authed.get<ApiResp<unknown[]>>('/weather/cities', { params: { query: '北京' } })
+    return unwrap<unknown[]>('GET /weather/cities', r.status, r.data)
+  })()
+
+  if (!Array.isArray(cityList)) throw new Error(`weather/cities data not array: ${JSON.stringify(cityList)}`)
 
   if (cityList.length > 0) {
-    const first = cityList[0]
+    const first = cityList[0] as { id?: string; lat?: string; lon?: string }
     if (!first.id || !first.lat || !first.lon) {
       throw new Error(`weather city item invalid: ${JSON.stringify(first)}`)
     }
 
-    // weather: current
-    const cur = await authed.get<ApiResp<any>>('/weather/current', { params: { cityId: first.id } })
-    if (cur.status !== 200 || (cur.data as any).code !== 0) {
-      throw new Error(`weather/current failed: status=${cur.status} body=${JSON.stringify(cur.data)}`)
-    }
-    const now = (cur.data as any).data ?? (cur.data as any)
+    const r = await authed.get<ApiResp<{ locationId: string }>>('/weather/current', {
+      params: { cityId: first.id },
+    })
+    const now = unwrap<{ locationId: string }>('GET /weather/current', r.status, r.data)
     if (now.locationId !== first.id) {
       throw new Error(`weather/current locationId mismatch: ${JSON.stringify(now)}`)
     }
@@ -105,4 +121,3 @@ main().catch((e) => {
   console.error('[smoke] failed', e)
   process.exit(1)
 })
-
