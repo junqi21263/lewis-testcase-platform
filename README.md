@@ -203,8 +203,8 @@ bash scripts/dev-integration-check.sh
 
 #### 用 Git 更新（CI 推送云服务器，可选）
 
-配置 GitHub **Actions Secrets**：`SSH_HOST`、`SSH_USER`、`SSH_KEY`（可选 `SSH_PORT`）；**Variables** 可选 `DEPLOY_PATH`（默认 `/opt/<your-deploy-path>`）。  
-推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会：在 Runner 上 **`pnpm install && pnpm build`** 打包 **前端 `dist/`**，再 **rsync** 到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**（前端镜像会优先复用已同步的 **`dist/`**，见 `frontend/Dockerfile`），最后 **`scripts/smoke.sh`**。可选：在 GitHub **Repository → Variables** 设置 **`VITE_API_BASE_URL`**、**`VITE_APP_NAME`**（默认 **`/api`**，与同源 Nginx 反代一致）。
+请在 CI 平台配置 **部署凭据占位符**（例如：`<DEPLOY_SSH_HOST>`、`<DEPLOY_SSH_USER>`、`<DEPLOY_SSH_KEY>`、`<DEPLOY_SSH_PORT>`）与部署路径变量 `<DEPLOY_PATH>`；避免在 README 中固化真实机器、账号或目录。  
+推送 **`main`** 时 **`.github/workflows/deploy-vps.yml`** 会：在 Runner 上 **`pnpm install && pnpm build`** 打包 **前端 `dist/`**，再 **rsync** 到服务器并执行 **`docker compose -f docker-compose.full.yml up -d --build`**（前端镜像会优先复用已同步的 **`dist/`**，见 `frontend/Dockerfile`），最后 **`scripts/smoke.sh`**。可选：在 CI Variables 中设置 **`VITE_API_BASE_URL`**、**`VITE_APP_NAME`**（默认 **`/api`**，与同源 Nginx 反代一致）。
 
 #### 可选：Railway / 其他 PaaS
 
@@ -493,3 +493,26 @@ bash scripts/smoke.sh
 - **`frontend/railway.toml`**：在同一 Railway 项目中新建服务，**Root Directory = `frontend`**，推送 `main` 即构建 **前端镜像**（与根目录后端服务共用仓库）。
 - **`frontend/Dockerfile`**：改为 **pnpm** 安装；支持构建参数 **`VITE_API_BASE_URL`** / **`VITE_APP_NAME`**（跨域部署后端时必填前者）；**`nginx.conf.template` + `docker-entrypoint.sh`** 支持平台注入的 **`PORT`**（Railway 必需）。
 - **`docker-compose.full.yml`**：为 `frontend` 构建传入可选 **`VITE_*`**，与 VPS 全栈 Git 部署一致。
+
+### 2026-04-29（当日部署、更新与修改）
+
+- **联调与契约对齐**
+  - 后端增强联调冒烟脚本：`backend/scripts/smoke-enhancements.ts` 统一按 `{ code, data }` 解包，覆盖 `/health`、登录、偏好、壁纸、天气关键路径。
+  - 前端新增联调入口：`frontend/package.json` 增加 `integrate:smoke`，可从前端目录触发后端冒烟。
+- **UI/UX 修复与一致性**
+  - 侧边栏命中区、折叠按钮、选中态统一优化；修复“动态壁纸关闭后主界面露白”并清理多余描边，提升暗色与玻璃风格一致性。
+- **测试体系升级**
+  - Playwright CT 修复并扩展：新增 Sidebar 组件测试，壁纸/天气用例稳定化，组件测试通过。
+  - 引入 Vitest 单元测试：覆盖 `cn`、`normalizeApiBase`、`authStore`、`themeStore`。
+  - Allure 报告整合：`pnpm allure:report` 一次执行单元 + 组件测试并生成 `frontend/allure-report`。
+- **Playwright Agents / MCP**
+  - 已初始化 `planner / generator / healer` 代理定义。
+  - 针对当前 CLI 版本，文档改为推荐 Cursor 使用 `npx @playwright/mcp@latest`，避免 `run-test-mcp-server` 报错。
+- **部署状态**
+  - 当日改动均已合并并推送到 `main`；前端构建产物 `frontend/dist.zip` 已更新（未入库）。
+
+### 2026-04-29（文档脱敏与泄漏防护）
+
+- 将 CI/部署示例中的主机、账号、密钥、路径统一替换为占位符（如 `<DEPLOY_SSH_HOST>`、`<DEPLOY_PATH>`）。
+- 删除/避免在 README 中出现可被直接复用的真实基础设施标识（主机名、用户名、私钥路径等）。
+- 保留操作流程与校验步骤，降低文档泄漏时的可利用风险。
