@@ -52,6 +52,8 @@ coverage/
 test-results/
 playwright-report/
 blob-report/
+allure-results/
+allure-report/
 
 # Production
 .Dockerfile

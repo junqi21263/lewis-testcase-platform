@@ -13,7 +13,16 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'dot' : 'list',
+  reporter: [
+    [process.env.CI ? 'dot' : 'list'],
+    [
+      'allure-playwright',
+      {
+        outputFolder: 'allure-results',
+        detail: true,
+      },
+    ],
+  ],
   use: {
     viewport: { width: 1100, height: 720 },
     ctViteConfig: {
