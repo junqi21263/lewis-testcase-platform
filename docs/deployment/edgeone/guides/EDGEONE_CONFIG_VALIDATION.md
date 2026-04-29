@@ -12,7 +12,7 @@
 
 ```bash
 export EDGEONE_TEST_DOMAIN=<your-frontend-domain>
-./verify-edgeone-config.sh
+bash docs/deployment/edgeone/scripts/verify-edgeone-config.sh
 ```
 
 脚本会自动测试：
@@ -134,7 +134,7 @@ curl -X POST "https://<your-frontend-domain>/api/auth/login" \
 ### 验证更新
 更新后重新运行验证脚本：
 ```bash
-./verify-edgeone-config.sh
+bash docs/deployment/edgeone/scripts/verify-edgeone-config.sh
 ```
 
 ## 📝 验证报告

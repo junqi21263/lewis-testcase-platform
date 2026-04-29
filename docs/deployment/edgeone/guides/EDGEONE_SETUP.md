@@ -143,7 +143,7 @@ export const Method = createParamDecorator(
 
 ```bash
 # 运行部署脚本
-./deploy-edgeone.sh
+bash docs/deployment/edgeone/scripts/deploy-edgeone.sh
 
 # 或者手动部署
 cd frontend
@@ -191,10 +191,10 @@ curl -X POST "https://<your-frontend-domain>/api/auth/login" \
 
 项目包含了以下配置文件：
 
-- `edgeone-rules.json` - EdgeOne 路由规则配置
-- `edgeone-config.yaml` - EdgeOne 完整配置
-- `edgeone-security-headers.json` - 安全头配置
-- `deploy-edgeone.sh` - 部署脚本
+- `../configs/edgeone-rules.json` - EdgeOne 路由规则配置
+- `../configs/edgeone-config.yaml` - EdgeOne 完整配置
+- `../configs/edgeone-security-headers.json` - 安全头配置
+- `../scripts/deploy-edgeone.sh` - 部署脚本
 - `EDGEONE_SETUP.md` - 本文档
 
 ## 故障排除

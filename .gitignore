@@ -47,6 +47,11 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output
+test-results/
+playwright-report/
+blob-report/
+allure-results/
+allure-report/
 
 # Cache
 .eslintcache

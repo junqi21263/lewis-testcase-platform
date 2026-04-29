@@ -82,6 +82,14 @@ pnpm dev
 
 访问 http://localhost:5173
 
+## 文档导航
+
+- 开发与测试：`docs/development/DEVELOPMENT.md`、`docs/development/TEST_PLAN.md`、`docs/development/AUTHENTICATION_FEATURES.md`
+- EdgeOne 部署与安全：`docs/deployment/edgeone/guides/`
+- EdgeOne 脚本：`docs/deployment/edgeone/scripts/`
+- EdgeOne 配置样例：`docs/deployment/edgeone/configs/`
+- 文档分层说明：`docs/README.md`
+
 ### 本地前后端联调要点（对齐）
 
 | 层级 | 约定 |
@@ -145,7 +153,7 @@ bash scripts/dev-integration-check.sh
 ## 环境变量说明
 
 > 安全提示：**不要**把 `.env`、密钥、Token、私钥、生产域名/IP、数据库密码提交到仓库或粘贴到工单/群聊截图中。  
-> 本 README 与 EdgeOne 相关文档中的域名、项目 ID、示例口令均为 **占位符**；验证脚本通过环境变量传入真实主机名（见 `verify-edgeone-config.sh`）。
+> 本 README 与 EdgeOne 相关文档中的域名、项目 ID、示例口令均为 **占位符**；验证脚本通过环境变量传入真实主机名（见 `docs/deployment/edgeone/scripts/verify-edgeone-config.sh`）。
 
 ### 后端 `backend/.env`
 
@@ -213,6 +221,7 @@ bash scripts/dev-integration-check.sh
 #### 静态托管（EdgeOne 等）
 
 也可将 **`frontend/dist`** 或 **`frontend/dist.zip`** 上传到 CDN/静态托管，API 指向独立后端域名；与 Compose **二选一** 为主即可。
+详细步骤与安全校验见 `docs/deployment/edgeone/guides/`。
 
 ## 项目结构
 

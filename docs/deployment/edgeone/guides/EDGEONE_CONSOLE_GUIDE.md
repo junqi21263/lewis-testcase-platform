@@ -245,7 +245,7 @@ curl -X POST "https://<your-frontend-domain>/api/auth/login" \
 curl -X POST "https://<edgeone-openapi-host>/v1/rules" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d @edgeone-rules.json
+  -d @docs/deployment/edgeone/configs/edgeone-rules.json
 ```
 
 注意：需要替换 `YOUR_API_TOKEN` 为实际的 API 密钥。
