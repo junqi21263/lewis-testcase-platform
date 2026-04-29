@@ -32,7 +32,12 @@ type CacheEntry<T> = { value: T; expiresAt: number }
 type NominatimSearchItem = {
   lat: string
   lon: string
+  name?: string
   display_name?: string
+  importance?: number
+  class?: string
+  type?: string
+  place_rank?: number
   address?: {
     city?: string
     town?: string
@@ -42,6 +47,7 @@ type NominatimSearchItem = {
     region?: string
     province?: string
     country?: string
+    country_code?: string
   }
 }
 
@@ -75,14 +81,59 @@ export class WeatherService {
     this.cache.set(key, { value, expiresAt: Date.now() + ttlMs })
   }
 
+  private nominatimBaseScore(it: NominatimSearchItem): number {
+    let s = typeof it.importance === 'number' && Number.isFinite(it.importance) ? it.importance : 0
+    const t = (it.type ?? '').toLowerCase()
+    const c = (it.class ?? '').toLowerCase()
+    if (t === 'administrative' && c === 'boundary') s += 0.14
+    if (t === 'city' || t === 'municipality' || t === 'metropolis') s += 0.12
+    if (t === 'town') s += 0.05
+    if (['village', 'hamlet'].includes(t)) s -= 0.28
+    if (['neighbourhood', 'suburb', 'quarter', 'locality'].includes(t)) s -= 0.12
+    return s
+  }
+
+  /** 让「北京/上海」这类大城市优先于外省同名村；依赖 Nominatim 的 importance + 行政区字段 */
+  private nominatimQueryBoost(
+    query: string,
+    it: NominatimSearchItem,
+    row: { name: string; adm1: string },
+  ): number {
+    const q = query.trim()
+    if (!q) return 0
+    const qn = q.replace(/市$/u, '').trim()
+    const addr = it.address ?? {}
+    const st = addr.state ?? addr.province ?? addr.region ?? ''
+    const city = addr.city ?? ''
+    const cc = (addr.country_code ?? '').toLowerCase()
+
+    let b = 0
+    const targetAdmin =
+      st.includes(`${qn}市`) || st === `${qn}市` || city === `${qn}市` || city === `${q}市`
+    if (targetAdmin) b += 0.58
+    else if (city === qn || city === q) b += 0.42
+
+    if (cc === 'cn') {
+      const t = (it.type ?? '').toLowerCase()
+      const smallPlace = ['village', 'hamlet', 'neighbourhood', 'suburb', 'quarter'].includes(t)
+      const nameMatches =
+        row.name === qn || row.name === q || row.name === `${qn}市` || row.name === `${q}市`
+      const adminMatches = b >= 0.4
+      if (nameMatches && !adminMatches && smallPlace) b -= 0.5
+    }
+    return b
+  }
+
   private normalizePlaceFromNominatim(it: NominatimSearchItem) {
     const addr = it.address ?? {}
+    const root = typeof it.name === 'string' ? it.name.trim() : ''
     const name =
-      addr.city ??
-      addr.town ??
-      addr.village ??
-      addr.county ??
-      (typeof it.display_name === 'string' ? it.display_name.split(',')[0]?.trim() : '') ??
+      root ||
+      addr.city ||
+      addr.town ||
+      addr.village ||
+      addr.county ||
+      (typeof it.display_name === 'string' ? it.display_name.split(',')[0]?.trim() : '') ||
       ''
     const adm1 = addr.state ?? addr.province ?? addr.region ?? ''
     const adm2 =
@@ -125,14 +176,23 @@ export class WeatherService {
           q,
           format: 'jsonv2',
           addressdetails: 1,
-          limit: 10,
+          limit: 25,
           'accept-language': 'zh-CN',
         },
       })
 
-      const list = (Array.isArray(data) ? data : [])
-        .map((it) => this.normalizePlaceFromNominatim(it))
-        .filter((x) => x.lat && x.lon && x.name)
+      const scored = (Array.isArray(data) ? data : [])
+        .map((it) => {
+          const row = this.normalizePlaceFromNominatim(it)
+          const score =
+            this.nominatimBaseScore(it) + this.nominatimQueryBoost(q, it, row)
+          return { row, score }
+        })
+        .filter((x) => x.row.lat && x.row.lon && x.row.name)
+
+      scored.sort((a, b) => b.score - a.score)
+
+      const list = scored.slice(0, 10).map((x) => x.row)
 
       if (list.length > 0) {
         this.cacheSet(cacheKey, list, 60_000)
