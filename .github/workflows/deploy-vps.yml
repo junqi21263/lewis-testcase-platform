@@ -147,12 +147,7 @@ jobs:
             # develop 环境强制使用独立端口，避免与生产环境冲突
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               sudo sed -i '/^FRONTEND_HOST_BIND=/d;/^FRONTEND_HOST_PORT=/d;/^POSTGRES_HOST_BIND=/d;/^POSTGRES_HOST_PORT=/d' "$ENV_FILE"
-              sudo bash -c "cat >> '$ENV_FILE' <<'EOF'
-FRONTEND_HOST_BIND=0.0.0.0
-FRONTEND_HOST_PORT=8080
-POSTGRES_HOST_BIND=127.0.0.1
-POSTGRES_HOST_PORT=5433
-EOF"
+              sudo bash -c "printf '\nFRONTEND_HOST_BIND=0.0.0.0\nFRONTEND_HOST_PORT=8080\nPOSTGRES_HOST_BIND=127.0.0.1\nPOSTGRES_HOST_PORT=5433\n' >> '$ENV_FILE'"
             fi
             
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
