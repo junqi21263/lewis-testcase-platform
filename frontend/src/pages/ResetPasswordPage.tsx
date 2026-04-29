@@ -50,9 +50,9 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <Card className="shadow-xl border-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur">
+    <Card className="shadow-[0_30px_80px_-48px_rgba(0,0,0,0.75)]">
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-2xl font-bold text-center">重置密码</CardTitle>
+        <CardTitle className="text-[22px] font-semibold tracking-tight text-center">重置密码</CardTitle>
         <CardDescription className="text-center">
           填写邮箱、验证码与新密码
         </CardDescription>

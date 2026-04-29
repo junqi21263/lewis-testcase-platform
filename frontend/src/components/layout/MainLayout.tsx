@@ -17,7 +17,7 @@ export default function MainLayout() {
         <Header />
 
         {/* 页面内容 */}
-        <main className="relative flex-1 overflow-y-auto p-6">
+        <main className="relative flex-1 overflow-y-auto p-6 sm:p-8">
           <Outlet />
         </main>
       </div>
