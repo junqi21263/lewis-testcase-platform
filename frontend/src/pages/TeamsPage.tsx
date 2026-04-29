@@ -68,7 +68,7 @@ export default function TeamsPage() {
           {loading ? (
             <div className="text-center py-8 text-muted-foreground text-sm">加载中...</div>
           ) : teams.length === 0 ? (
-            <Card className="border-dashed">
+            <Card className="ring-2 ring-dashed ring-foreground/15 dark:ring-white/12">
               <CardContent className="flex flex-col items-center justify-center py-8 gap-2">
                 <Users className="w-8 h-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">暂无团队</p>
@@ -78,7 +78,7 @@ export default function TeamsPage() {
             teams.map((team) => (
               <Card
                 key={team.id}
-                className={`cursor-pointer transition-colors hover:shadow-md ${selectedTeam?.id === team.id ? 'border-primary ring-1 ring-primary/30' : ''}`}
+                className={`cursor-pointer transition-colors hover:shadow-md ${selectedTeam?.id === team.id ? 'ring-2 ring-primary/45 shadow-lg' : ''}`}
                 onClick={() => setSelectedTeam(team)}
               >
                 <CardContent className="p-4">

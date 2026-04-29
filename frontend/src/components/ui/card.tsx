@@ -6,8 +6,8 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
     <div
       ref={ref}
       className={cn(
-        // 动态壁纸场景：半透明 + 毛玻璃，保证内容区对比度；无 backdrop-filter 时仍有一定底色
-        'rounded-lg border border-border/55 bg-card/90 text-card-foreground shadow-sm shadow-black/[0.04] backdrop-blur-xl backdrop-saturate-150 dark:border-white/[0.08] dark:bg-card/72 dark:shadow-black/25',
+        // 无边框硬线：用 inset ring + 阴影区分层级，适配动态壁纸
+        'rounded-lg border-0 bg-card/90 text-card-foreground shadow-lg shadow-black/[0.07] ring-1 ring-inset ring-black/[0.05] backdrop-blur-xl backdrop-saturate-150 dark:bg-card/72 dark:shadow-black/40 dark:ring-white/[0.07]',
         className,
       )}
       {...props}

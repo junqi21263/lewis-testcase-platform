@@ -709,7 +709,7 @@ export default function SettingsPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">更换频率</label>
                 <select
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  className="h-10 w-full rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={String(userPrefs?.wallpaperIntervalSec ?? 0)}
                   onChange={(e) => saveUserPreferences({ wallpaperIntervalSec: Number(e.target.value) })}
                   disabled={userPrefsSaving}
@@ -765,7 +765,7 @@ export default function SettingsPage() {
             </div>
 
             {cityResults.length > 0 && (
-              <div className="border rounded-md divide-y overflow-hidden">
+              <div className="divide-y divide-border/25 overflow-hidden rounded-lg bg-muted/25 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:divide-white/10 dark:ring-white/10">
                 {cityResults.slice(0, 8).map((c) => (
                   <button
                     key={c.id}
@@ -816,7 +816,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {admin && showCreate && (
-            <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
+            <div className="space-y-3 rounded-xl bg-muted/30 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
               <p className="text-sm font-medium">新模型</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Input
@@ -898,15 +898,15 @@ export default function SettingsPage() {
           )}
 
           {admin && adminModels.length === 0 && !showCreate && (
-            <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
-              <Bot className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <div className="rounded-xl py-8 text-center text-sm text-muted-foreground ring-2 ring-dashed ring-foreground/15 dark:ring-white/12">
+              <Bot className="mx-auto mb-2 h-8 w-8 opacity-50" />
               <p>暂无模型，请点击「添加模型」</p>
             </div>
           )}
 
           {admin &&
             adminModels.map((model) => (
-              <div key={model.id} className="p-4 border rounded-lg space-y-3">
+              <div key={model.id} className="space-y-3 rounded-xl bg-muted/20 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-sm">{model.name}</p>
@@ -938,7 +938,7 @@ export default function SettingsPage() {
                       <Badge
                         variant="outline"
                         className={`text-xs max-w-[min(100%,22rem)] truncate font-normal ${
-                          model.lastTestOk === false ? 'border-destructive/60 text-destructive' : ''
+                          model.lastTestOk === false ? 'text-destructive ring-destructive/45' : ''
                         }`}
                         title={
                           model.lastTestOk === false && model.lastTestError
@@ -994,7 +994,7 @@ export default function SettingsPage() {
                 </div>
 
                 {editingId === model.id ? (
-                  <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t">
+                  <div className="grid gap-2 pt-2 sm:grid-cols-2 shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
                     <Input
                       value={editDraft.name}
                       onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
@@ -1102,12 +1102,12 @@ export default function SettingsPage() {
 
           {!admin &&
             (publicModels.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
+              <div className="rounded-xl py-8 text-center text-sm text-muted-foreground ring-2 ring-dashed ring-foreground/15 dark:ring-white/12">
                 暂无可用模型
               </div>
             ) : (
               publicModels.map((model) => (
-                <div key={model.id} className="p-4 border rounded-lg flex items-center justify-between gap-3">
+                <div key={model.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/20 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
                   <div>
                     <p className="font-medium text-sm">{model.name}</p>
                     <p className="text-xs text-muted-foreground mt-1">
@@ -1144,7 +1144,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="border rounded-lg p-3 max-h-72 overflow-y-auto">
+              <div className="max-h-72 overflow-y-auto rounded-xl bg-muted/20 p-3 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
                 {adminUsers.length === 0 ? (
                   <p className="text-sm text-muted-foreground">暂无数据，请搜索或刷新</p>
                 ) : (
@@ -1156,7 +1156,7 @@ export default function SettingsPage() {
                           key={u.id}
                           type="button"
                           onClick={() => setAdminSelectedUser(u)}
-                          className={`w-full text-left p-2 rounded border transition-colors ${active ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'}`}
+                          className={`w-full rounded-lg p-2 text-left ring-1 ring-inset transition-colors ${active ? 'bg-primary/10 ring-primary/40' : 'bg-secondary/20 ring-foreground/10 hover:bg-accent dark:ring-white/10'}`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
@@ -1172,7 +1172,7 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <div className="border rounded-lg p-3 space-y-3">
+              <div className="space-y-3 rounded-xl bg-muted/20 p-3 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
                 {!adminSelectedUser ? (
                   <p className="text-sm text-muted-foreground">选择左侧用户后，可重置密码或修改角色</p>
                 ) : (
@@ -1186,7 +1186,7 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">修改角色</label>
                       <div className="flex gap-2">
                         <select
-                          className="flex-1 h-10 px-3 rounded-md border border-input bg-background text-sm"
+                          className="h-10 flex-1 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                           value={adminSelectedUser.role}
                           onChange={(e) => updateSelectedUserRole(e.target.value as UserRole)}
                           disabled={adminOpLoading}
@@ -1254,7 +1254,7 @@ export default function SettingsPage() {
                 {adminAuditLogs.map((log) => {
                   const extra = formatAuditExtra(log.action, log.detail)
                   return (
-                    <div key={log.id} className="text-xs border rounded-md p-2 space-y-1">
+                    <div key={log.id} className="space-y-1 rounded-lg bg-muted/25 p-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-muted-foreground">
                           {format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')}

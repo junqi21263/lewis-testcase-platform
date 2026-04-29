@@ -6,6 +6,14 @@ test.describe('WeatherBadge', () => {
     mount,
     page,
   }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
+    page.on('console', (msg) => {
+      // eslint-disable-next-line no-console
+      console.log('[ct console]', msg.type(), msg.text())
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,
@@ -54,6 +62,10 @@ test.describe('WeatherBadge', () => {
   })
 
   test('edge: no cityId -> shows prompt to set city', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,
@@ -75,6 +87,10 @@ test.describe('WeatherBadge', () => {
   })
 
   test('edge: stale weather -> renders muted style', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,
@@ -117,6 +133,10 @@ test.describe('WeatherBadge', () => {
   })
 
   test('exception: weather api fails -> keeps UI stable (no crash)', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,

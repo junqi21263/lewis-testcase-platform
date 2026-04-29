@@ -513,7 +513,7 @@ export default function RecordsPage() {
       </div>
 
       {/* 主 Tab + 顶部固定筛选 */}
-      <div className="sticky top-0 z-30 -mx-2 px-2 py-2 bg-background/95 backdrop-blur border-b border-border/80 space-y-3">
+      <div className="sticky top-0 z-30 -mx-2 space-y-3 bg-background/75 px-2 py-2 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.55)] backdrop-blur-xl dark:bg-background/55 dark:shadow-[0_12px_48px_-20px_rgba(0,0,0,0.75)]">
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -573,7 +573,7 @@ export default function RecordsPage() {
                     列显隐
                   </Button>
                   {showColMenu && (
-                    <div className="absolute right-0 mt-1 z-40 w-48 rounded-md border bg-popover p-2 text-sm shadow-md space-y-1">
+                    <div className="absolute right-0 z-40 mt-1 w-48 space-y-1 rounded-md border-0 bg-popover/95 p-2 text-sm shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
                       {(Object.keys(cols) as RecordsColumnKey[]).map((k) => (
                         <label key={k} className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -614,10 +614,10 @@ export default function RecordsPage() {
                   setPage(1)
                 }}
                 className={cn(
-                  'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                  'rounded-full border-0 px-2.5 py-1 text-xs shadow-sm ring-1 ring-inset transition-colors',
                   statusSet.size === 0
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-secondary/60 border-border hover:bg-secondary',
+                    ? 'bg-primary text-primary-foreground ring-primary/40'
+                    : 'bg-secondary/55 ring-foreground/10 hover:bg-secondary dark:ring-white/10',
                 )}
               >
                 全部{summary ? `(${summary.total})` : ''}
@@ -631,10 +631,10 @@ export default function RecordsPage() {
                     type="button"
                     onClick={() => toggleStatus(st)}
                     className={cn(
-                      'px-2.5 py-1 rounded-full text-xs border transition-colors',
+                      'rounded-full border-0 px-2.5 py-1 text-xs shadow-sm ring-1 ring-inset transition-colors',
                       on
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-secondary/40 border-border hover:bg-secondary/70',
+                        ? 'bg-primary text-primary-foreground ring-primary/40'
+                        : 'bg-secondary/45 ring-foreground/10 hover:bg-secondary/70 dark:ring-white/10',
                     )}
                   >
                     {statusLabels[st]}({c})
@@ -705,7 +705,7 @@ export default function RecordsPage() {
                 <span className="text-xs text-muted-foreground">模型</span>
                 <select
                   multiple
-                  className="bg-background border rounded-md text-xs min-h-[32px] w-[180px] max-w-[180px] px-1 overflow-hidden"
+                  className="min-h-[32px] w-[180px] max-w-[180px] overflow-hidden rounded-md border-0 bg-background/55 px-1 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={modelPick}
                   onChange={(e) => {
                     const v = [...e.target.selectedOptions].map((o) => o.value)
@@ -724,7 +724,7 @@ export default function RecordsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">用例数</span>
                 <select
-                  className="bg-background border rounded-md h-8 text-xs px-2"
+                  className="h-8 rounded-md border-0 bg-background/55 px-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={caseBucket}
                   onChange={(e) => {
                     setCaseBucket(e.target.value)
@@ -759,8 +759,8 @@ export default function RecordsPage() {
                         setPage(1)
                       }}
                       className={cn(
-                        'px-2 py-0.5 rounded-md text-xs border',
-                        on ? 'bg-primary/15 border-primary' : 'border-border',
+                        'rounded-md border-0 px-2 py-0.5 text-xs ring-1 ring-inset backdrop-blur-sm',
+                        on ? 'bg-primary/15 ring-primary/35' : 'bg-secondary/30 ring-foreground/10 dark:ring-white/10',
                       )}
                     >
                       {lab}
@@ -774,7 +774,7 @@ export default function RecordsPage() {
       </div>
 
       {selected.size > 0 && view === 'list' && (
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border bg-muted/40 text-sm sticky top-[1px] z-20">
+        <div className="sticky top-[1px] z-20 flex flex-wrap items-center gap-2 rounded-xl border-0 bg-muted/40 p-3 text-sm shadow-md ring-1 ring-inset ring-white/10 backdrop-blur-md dark:ring-white/8">
           <span className="text-muted-foreground">已选 {selected.size} 条</span>
           <Button size="sm" variant="destructive" onClick={() => runBatch('SOFT_DELETE')}>
             批量删除
@@ -802,7 +802,7 @@ export default function RecordsPage() {
       )}
 
       {view === 'recycle' && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border bg-muted/40 text-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border-0 bg-muted/40 p-3 text-sm shadow-md ring-1 ring-inset ring-white/10 backdrop-blur-md dark:ring-white/8">
           <span className="text-muted-foreground">已选 {selected.size} 条</span>
           <Button size="sm" variant="outline" onClick={() => runBatch('RESTORE')}>
             批量恢复
@@ -835,7 +835,7 @@ export default function RecordsPage() {
         </CardHeader>
         <CardContent className="min-w-0">
           {error && (
-            <div className="mb-4 p-4 rounded-lg border border-destructive/50 bg-destructive/10 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border-0 bg-destructive/10 p-4 ring-1 ring-inset ring-destructive/35 backdrop-blur-sm">
               <span className="text-sm">{error}</span>
               <Button size="sm" variant="outline" onClick={() => void fetchList()}>
                 重试
@@ -867,11 +867,11 @@ export default function RecordsPage() {
               tabIndex={0}
               role="grid"
               aria-label="生成记录列表"
-              className="outline-none space-y-0 rounded-md border overflow-x-auto"
+              className="outline-none space-y-0 overflow-x-auto rounded-xl ring-1 ring-inset ring-foreground/10 dark:ring-white/10"
               onKeyDown={onKeyDown}
             >
               <div
-                className="grid gap-2 px-3 py-2 text-xs text-muted-foreground font-medium border-b bg-muted/30 min-w-[900px]"
+                className="grid min-w-[900px] gap-2 bg-muted/35 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.14)] backdrop-blur-sm dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]"
                 style={{ gridTemplateColumns: gridTemplate }}
               >
                 <span />
@@ -910,7 +910,7 @@ export default function RecordsPage() {
                     <div
                       role="row"
                       className={cn(
-                        'grid gap-2 px-3 py-2 items-center border-b last:border-0 cursor-pointer transition-colors',
+                        'grid cursor-pointer gap-2 px-3 py-2 items-center shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] transition-colors last:shadow-none dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]',
                         expanded ? 'bg-accent/40' : 'hover:bg-accent/30',
                         focused && 'ring-1 ring-ring ring-inset',
                       )}
@@ -1083,7 +1083,7 @@ export default function RecordsPage() {
                       </div>
                     </div>
                     {expanded && (
-                      <div className="px-4 py-3 bg-muted/20 border-b text-xs space-y-2">
+                      <div className="space-y-2 bg-muted/25 px-4 py-3 text-xs shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.12)] backdrop-blur-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
                         <p className="text-muted-foreground font-medium">需求摘要</p>
                         <p className="text-foreground/90 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                           <HighlightText text={r.prompt || '（无）'} query={debouncedKeyword} />
@@ -1101,13 +1101,13 @@ export default function RecordsPage() {
           )}
 
           {!loading && list.length > 0 && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 mt-2 border-t">
+            <div className="mt-2 flex flex-col items-stretch justify-between gap-3 pt-4 shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.14)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] sm:flex-row sm:items-center">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <span>
                   第 {page} / {totalPages} 页 · 每页
                 </span>
                 <select
-                  className="bg-background border rounded h-8 text-xs px-2"
+                  className="h-8 rounded-md border-0 bg-background/55 px-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={pageSize}
                   onChange={(e) => {
                     const n = +e.target.value

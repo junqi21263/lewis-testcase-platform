@@ -45,7 +45,7 @@ export default function UploadStatsBar({ stats, onClearAll, onClearDone }: Uploa
   if (stats.total === 0) return null
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-2.5 bg-muted/50 rounded-lg border border-border/50">
+    <div className="flex items-center justify-between gap-4 rounded-xl bg-muted/45 px-4 py-2.5 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
       {/* 统计数字 */}
       <div className="flex items-center gap-4 flex-wrap">
         {items.map((item) => (

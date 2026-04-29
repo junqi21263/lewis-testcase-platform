@@ -40,7 +40,7 @@ export const FileThumb = memo(function FileThumb({ file, className }: FileThumbP
 
   if (objectUrl) {
     return (
-      <div className={cn('relative overflow-hidden rounded-lg border border-border bg-muted', className)}>
+      <div className={cn('relative overflow-hidden rounded-lg border-0 bg-muted/70 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10', className)}>
         <img src={objectUrl} alt="" className="h-full w-full object-cover" />
       </div>
     )
@@ -62,7 +62,7 @@ export const FileThumb = memo(function FileThumb({ file, className }: FileThumbP
   return (
     <div
       className={cn(
-        'flex items-center justify-center rounded-lg border border-border bg-muted/80 text-muted-foreground',
+        'flex items-center justify-center rounded-lg border-0 bg-muted/80 text-muted-foreground shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10',
         className,
       )}
     >

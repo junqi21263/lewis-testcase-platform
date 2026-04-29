@@ -102,7 +102,7 @@ export default function RawTextEditor({
 
       <div
         className={cn(
-          'flex rounded-lg border border-input bg-muted/30 overflow-hidden',
+          'flex overflow-hidden rounded-lg bg-muted/35 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10',
           'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
         )}
       >
@@ -130,7 +130,7 @@ export default function RawTextEditor({
       </div>
 
       {keywords.length > 0 && previewHtml && (
-        <div className="rounded-md border border-border/60 bg-card/50 p-2 max-h-36 overflow-y-auto">
+        <div className="max-h-36 overflow-y-auto rounded-md bg-card/50 p-2 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
           <p className="text-[10px] text-muted-foreground mb-1">关键词预览（只读）</p>
           <pre
             className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono"

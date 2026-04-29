@@ -324,7 +324,7 @@ export default function ParseResultPanel({
                 ref={listRegionRef}
                 tabIndex={0}
                 onKeyDown={handleListKeyDown}
-                className="rounded-lg border border-border/60 bg-muted/20 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background space-y-1 min-h-[120px] max-h-[min(60vh,480px)] overflow-y-auto"
+                className="min-h-[120px] max-h-[min(60vh,480px)] space-y-1 overflow-y-auto rounded-lg bg-muted/25 p-2 outline-none ring-1 ring-inset ring-foreground/10 backdrop-blur-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 sm:p-3 dark:ring-white/10"
               >
                 {requirementPoints.length === 0 ? (
                   <div className="text-center py-8 text-sm text-muted-foreground">
@@ -353,7 +353,7 @@ export default function ParseResultPanel({
               <button
                 type="button"
                 onClick={() => onAddRequirement(task.id)}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg border border-dashed border-border hover:border-primary/40 transition-all active:scale-[0.99]"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs text-muted-foreground ring-2 ring-dashed ring-foreground/15 transition-all hover:bg-primary/5 hover:text-primary hover:ring-primary/35 active:scale-[0.99] dark:ring-white/12"
               >
                 <Plus className="w-3.5 h-3.5" />
                 添加需求点
@@ -394,7 +394,7 @@ export default function ParseResultPanel({
 
               {hasSensitive && !showRaw ? (
                 <div
-                  className="text-xs leading-relaxed bg-muted/20 p-3 rounded-lg max-h-48 overflow-y-auto border"
+                  className="max-h-48 overflow-y-auto rounded-lg bg-muted/25 p-3 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10"
                   // eslint-disable-next-line react/no-danger
                   dangerouslySetInnerHTML={{ __html: highlightedHtml }}
                 />
@@ -430,7 +430,7 @@ export default function ParseResultPanel({
             </div>
           )}
 
-          <div className="mt-4 p-3 rounded-lg border border-dashed border-border/80 bg-muted/20">
+          <div className="mt-4 rounded-lg bg-muted/25 p-3 ring-2 ring-dashed ring-foreground/15 backdrop-blur-md dark:ring-white/12">
             <p className="text-[10px] font-medium text-muted-foreground mb-1">提示词填充预览（仅含已勾选需求）</p>
             <pre className="text-[10px] leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto text-muted-foreground">
               {filledPreview.slice(0, 4000)}
@@ -438,7 +438,7 @@ export default function ParseResultPanel({
             </pre>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-3 mt-3 border-t border-border/50">
+          <div className="mt-3 flex flex-col items-stretch gap-2 pt-3 shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.14)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] sm:flex-row sm:items-center">
             <Button
               variant="outline"
               size="sm"

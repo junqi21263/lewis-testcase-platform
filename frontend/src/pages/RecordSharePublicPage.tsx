@@ -130,7 +130,7 @@ export default function RecordSharePublicPage() {
             </thead>
             <tbody>
               {cases.map((c) => (
-                <tr key={c.id} className="border-b border-border/50 align-top">
+                <tr key={c.id} className="align-top shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]">
                   <td className="py-2 pr-2 font-medium">{c.title}</td>
                   <td className="py-2 pr-2 whitespace-nowrap">{c.priority}</td>
                   <td className="py-2 text-muted-foreground line-clamp-4">{c.expectedResult}</td>

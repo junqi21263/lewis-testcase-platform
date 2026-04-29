@@ -120,11 +120,11 @@ const RequirementItem = memo(function RequirementItem({
       ref={rowRef}
       onContextMenu={onContextMenu}
       className={cn(
-        'group flex items-start gap-2.5 px-3 py-2.5 rounded-md transition-all duration-150',
-        'border border-transparent',
+        'group flex items-start gap-2.5 rounded-md px-3 py-2.5 transition-all duration-150',
+        'ring-1 ring-transparent',
         editing
-          ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20'
-          : 'hover:bg-muted/60 hover:border-border/80',
+          ? 'bg-primary/5 ring-primary/35'
+          : 'hover:bg-muted/60 hover:ring-foreground/10 dark:hover:ring-white/10',
         !selected && 'opacity-55 grayscale-[0.35]',
       )}
     >
@@ -154,7 +154,7 @@ const RequirementItem = memo(function RequirementItem({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={2}
-            className="w-full text-sm bg-background/50 rounded-md border border-input px-2 py-1.5 resize-none outline-none focus:ring-2 focus:ring-ring leading-relaxed text-foreground"
+            className="w-full resize-none rounded-md border-0 bg-background/55 px-2 py-1.5 text-sm leading-relaxed text-foreground shadow-sm ring-1 ring-inset ring-foreground/10 outline-none focus:ring-2 focus:ring-ring dark:ring-white/10"
           />
         ) : (
           <p
@@ -258,7 +258,7 @@ const RequirementItem = memo(function RequirementItem({
 
       {menuPos && context && (
         <div
-          className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover text-popover-foreground shadow-md py-1 text-sm animate-in fade-in-0 zoom-in-95 duration-100"
+          className="fixed z-50 min-w-[160px] animate-in rounded-md border-0 bg-popover/95 py-1 text-sm text-popover-foreground shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl fade-in-0 zoom-in-95 duration-100 dark:ring-white/10"
           style={{ left: menuPos.x, top: menuPos.y }}
           onClick={(e) => e.stopPropagation()}
         >

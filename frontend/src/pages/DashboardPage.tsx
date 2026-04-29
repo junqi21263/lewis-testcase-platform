@@ -82,7 +82,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* 欢迎区 */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm backdrop-blur-md dark:bg-background/40 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border-0 bg-background/50 px-4 py-3 shadow-md ring-1 ring-inset ring-white/15 backdrop-blur-md dark:bg-background/40 dark:ring-white/10 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold drop-shadow-sm [text-shadow:0_1px_2px_hsl(var(--background)/0.45)]">
             欢迎回来，{user?.username}
@@ -129,7 +129,7 @@ export default function DashboardPage() {
                   <p className="text-2xl font-bold mt-1">{loading ? '-' : card.value}</p>
                 </div>
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl border border-border/30 backdrop-blur-sm ${card.bg}`}
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-sm ring-1 ring-inset ring-white/12 backdrop-blur-sm dark:ring-white/8 ${card.bg}`}
                 >
                   <card.icon className={`w-6 h-6 ${card.color}`} />
                 </div>
@@ -192,7 +192,7 @@ export default function DashboardPage() {
               recentRecords.map((record) => (
                 <div
                   key={record.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-accent/30 rounded-md px-2 -mx-2"
+                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
                 >
@@ -234,7 +234,7 @@ export default function DashboardPage() {
               recentSuites.map((suite) => (
                 <div
                   key={suite.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-accent/30 rounded-md px-2 -mx-2"
+                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
                 >

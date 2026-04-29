@@ -438,7 +438,7 @@ export default function RecordDetailPage() {
       </nav>
 
       {/* 核心操作栏（打印时隐藏） */}
-      <div className="no-print sticky top-0 z-20 flex flex-wrap items-center gap-2 p-2 -mx-2 rounded-lg border bg-background/90 backdrop-blur">
+      <div className="no-print sticky top-0 z-20 -mx-2 flex flex-wrap items-center gap-2 rounded-xl bg-background/80 p-2 shadow-md ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
         <Button size="sm" className="gap-1" onClick={() => void handoffGenerate()}>
           <Wand2 className="w-3.5 h-3.5" />
           一键复用
@@ -468,7 +468,7 @@ export default function RecordDetailPage() {
             <ChevronDown className="w-3 h-3" />
           </Button>
           {exportOpen && (
-            <div className="absolute left-0 mt-1 z-30 min-w-[180px] rounded-md border bg-popover shadow-md py-1 text-sm">
+            <div className="absolute left-0 z-30 mt-1 min-w-[180px] rounded-md border-0 bg-popover/95 py-1 text-sm shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
               {(['EXCEL', 'JSON', 'MARKDOWN'] as const).map((f) => (
                 <button
                   key={f}
@@ -509,7 +509,7 @@ export default function RecordDetailPage() {
             <ChevronDown className="w-3 h-3" />
           </Button>
           {syncOpen && (
-            <div className="absolute right-0 mt-1 z-30 min-w-[160px] rounded-md border bg-popover shadow-md py-1 text-sm">
+            <div className="absolute right-0 z-30 mt-1 min-w-[160px] rounded-md border-0 bg-popover/95 py-1 text-sm shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
               {['禅道', 'Jira', 'TestLink'].map((n) => (
                 <button
                   key={n}
@@ -531,7 +531,7 @@ export default function RecordDetailPage() {
       {/* 分享弹窗 */}
       {shareOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 no-print">
-          <div className="bg-card border rounded-lg max-w-md w-full p-5 space-y-3">
+          <div className="w-full max-w-md space-y-3 rounded-xl bg-card/95 p-5 shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
             <h3 className="font-semibold">分享记录</h3>
             <p className="text-sm text-muted-foreground">
               {canEdit
@@ -658,7 +658,7 @@ export default function RecordDetailPage() {
               onChange={(e) => setNotes(e.target.value)}
               disabled={!canEdit}
               rows={4}
-              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              className="w-full rounded-md border-0 bg-transparent px-3 py-2 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10"
             />
           </div>
           {canEdit && (
@@ -670,7 +670,7 @@ export default function RecordDetailPage() {
       </Card>
 
       {/* Tab 切换 */}
-      <div className="flex gap-2 border-b">
+      <div className="flex gap-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.14)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]">
         <button
           type="button"
           className={cn(
@@ -719,7 +719,7 @@ export default function RecordDetailPage() {
               onChange={(e) => setPrompt(e.target.value)}
               disabled={!canEdit}
               rows={promptExpanded ? 24 : 12}
-              className="w-full rounded-md border border-input bg-muted/20 px-3 py-2 text-sm font-mono"
+              className="w-full rounded-md border-0 bg-muted/25 px-3 py-2 font-mono text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10"
             />
             <div className="flex flex-wrap items-center gap-3 text-sm no-print">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -776,7 +776,7 @@ export default function RecordDetailPage() {
                 }}
               />
               <select
-                className="h-8 rounded-md border bg-background px-2 text-xs"
+                className="h-8 rounded-md border-0 bg-background/55 px-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                 value={casePri}
                 onChange={(e) => {
                   setCasePri(e.target.value)
@@ -799,7 +799,7 @@ export default function RecordDetailPage() {
               <>
                 <table className="w-full text-xs border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="border-b bg-muted/30 text-left text-muted-foreground">
+                    <tr className="bg-muted/35 text-left text-xs text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.05)]">
                       <th className="p-2 w-[72px]">ID</th>
                       <th className="p-2 min-w-[120px]">标题</th>
                       <th className="p-2 w-[88px]">模块</th>
@@ -812,7 +812,7 @@ export default function RecordDetailPage() {
                   </thead>
                   <tbody>
                     {pagedCases.map((c) => (
-                      <tr key={c.id} className="border-b align-top">
+                      <tr key={c.id} className="align-top shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]">
                         <td className="p-2 font-mono text-[10px] text-muted-foreground">
                           {c.id.slice(0, 8)}…
                         </td>
@@ -846,7 +846,7 @@ export default function RecordDetailPage() {
                         <td className="p-2">
                           {caseEdit ? (
                             <textarea
-                              className="w-full min-h-[48px] rounded border bg-transparent text-xs p-1"
+                              className="min-h-[48px] w-full rounded-md border-0 bg-transparent p-1 text-xs ring-1 ring-inset ring-foreground/10 dark:ring-white/10"
                               value={c.precondition ?? ''}
                               onChange={(e) =>
                                 updateLocalCase(c.id, { precondition: e.target.value })
@@ -859,7 +859,7 @@ export default function RecordDetailPage() {
                         <td className="p-2">
                           {caseEdit ? (
                             <textarea
-                              className="w-full min-h-[64px] rounded border bg-transparent text-xs p-1 font-mono"
+                              className="min-h-[64px] w-full rounded-md border-0 bg-transparent p-1 font-mono text-xs ring-1 ring-inset ring-foreground/10 dark:ring-white/10"
                               value={stepsToLines(c.steps)}
                               onChange={(e) => {
                                 const lines = e.target.value.split('\n').filter(Boolean)
@@ -888,7 +888,7 @@ export default function RecordDetailPage() {
                         <td className="p-2">
                           {caseEdit ? (
                             <textarea
-                              className="w-full min-h-[48px] rounded border bg-transparent text-xs p-1"
+                              className="min-h-[48px] w-full rounded-md border-0 bg-transparent p-1 text-xs ring-1 ring-inset ring-foreground/10 dark:ring-white/10"
                               value={c.expectedResult}
                               onChange={(e) =>
                                 updateLocalCase(c.id, { expectedResult: e.target.value })
@@ -901,7 +901,7 @@ export default function RecordDetailPage() {
                         <td className="p-2">
                           {caseEdit ? (
                             <select
-                              className="h-7 w-full rounded border bg-background text-xs"
+                              className="h-7 w-full rounded-md border-0 bg-background/55 text-xs ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10"
                               value={c.priority}
                               onChange={(e) =>
                                 updateLocalCase(c.id, {
@@ -967,7 +967,7 @@ export default function RecordDetailPage() {
 
       {/* 关联追溯区 */}
       <div className="space-y-2 no-print">
-        <details className="rounded-lg border bg-card px-4 py-2">
+        <details className="rounded-xl bg-card/90 px-4 py-2 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
           <summary className="cursor-pointer font-medium text-sm">生成参数与模板快照</summary>
           <div className="mt-3 text-xs text-muted-foreground space-y-2">
             <p>
@@ -978,7 +978,7 @@ export default function RecordDetailPage() {
             {record.generateParams != null && Object.keys(record.generateParams).length > 0 ? (
               <div className="space-y-1">
                 <p className="text-foreground font-medium">已保存参数快照（JSON）</p>
-                <pre className="text-[11px] whitespace-pre-wrap font-mono max-h-40 overflow-auto border rounded-md p-2 bg-muted/30 text-foreground">
+                <pre className="max-h-40 overflow-auto rounded-md bg-muted/35 p-2 font-mono text-[11px] whitespace-pre-wrap text-foreground ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
                   {JSON.stringify(record.generateParams, null, 2)}
                 </pre>
               </div>
@@ -1008,7 +1008,7 @@ export default function RecordDetailPage() {
             </p>
           </div>
         </details>
-        <details className="rounded-lg border bg-card px-4 py-2" open>
+        <details className="rounded-xl bg-card/90 px-4 py-2 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10" open>
           <summary className="cursor-pointer font-medium text-sm">导出 / 下载记录</summary>
           <div className="mt-3 overflow-x-auto">
             {downloads.length === 0 ? (
@@ -1016,7 +1016,7 @@ export default function RecordDetailPage() {
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-muted-foreground border-b">
+                  <tr className="text-left text-xs text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.05)]">
                     <th className="py-1">时间</th>
                     <th className="py-1">来源</th>
                     <th className="py-1">格式</th>
@@ -1028,7 +1028,7 @@ export default function RecordDetailPage() {
                 </thead>
                 <tbody>
                   {downloads.map((d) => (
-                    <tr key={`${d.source}-${d.id}`} className="border-b border-border/50">
+                    <tr key={`${d.source}-${d.id}`} className="shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]">
                       <td className="py-1 whitespace-nowrap">
                         {formatDate(d.createdAt, 'MM-dd HH:mm')}
                       </td>
@@ -1055,7 +1055,7 @@ export default function RecordDetailPage() {
             </p>
           </div>
         </details>
-        <details className="rounded-lg border bg-card px-4 py-2" open>
+        <details className="rounded-xl bg-card/90 px-4 py-2 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10" open>
           <summary className="cursor-pointer font-medium text-sm">操作日志</summary>
           <div className="mt-3 overflow-x-auto">
             {!record.auditLogs?.length ? (
@@ -1063,7 +1063,7 @@ export default function RecordDetailPage() {
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-muted-foreground border-b">
+                  <tr className="text-left text-xs text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.05)]">
                     <th className="py-1">时间</th>
                     <th className="py-1">操作人</th>
                     <th className="py-1">动作</th>
@@ -1073,7 +1073,7 @@ export default function RecordDetailPage() {
                 </thead>
                 <tbody>
                   {record.auditLogs.map((log) => (
-                    <tr key={log.id} className="border-b border-border/50 align-top">
+                    <tr key={log.id} className="align-top shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]">
                       <td className="py-1 whitespace-nowrap">
                         {formatDate(log.createdAt, 'MM-dd HH:mm')}
                       </td>
@@ -1090,7 +1090,7 @@ export default function RecordDetailPage() {
             )}
           </div>
         </details>
-        <details className="rounded-lg border bg-card px-4 py-2">
+        <details className="rounded-xl bg-card/90 px-4 py-2 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
           <summary className="cursor-pointer font-medium text-sm">版本对比</summary>
           <div className="mt-3 space-y-2 text-xs">
             <p className="text-muted-foreground">
@@ -1114,7 +1114,7 @@ export default function RecordDetailPage() {
             </div>
             {compareResult && (
               <div className="grid sm:grid-cols-3 gap-2 text-[11px]">
-                <div className="rounded border p-2 bg-muted/20">
+                <div className="rounded-lg bg-muted/25 p-2 ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
                   <p className="font-medium text-foreground mb-1">新增 ({compareResult.added.length})</p>
                   <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
                     {compareResult.added.slice(0, 20).map((x) => (
@@ -1123,7 +1123,7 @@ export default function RecordDetailPage() {
                   </ul>
                   {compareResult.added.length > 20 ? <p>…</p> : null}
                 </div>
-                <div className="rounded border p-2 bg-muted/20">
+                <div className="rounded-lg bg-muted/25 p-2 ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
                   <p className="font-medium text-foreground mb-1">
                     删除 ({compareResult.removed.length})
                   </p>
@@ -1134,7 +1134,7 @@ export default function RecordDetailPage() {
                   </ul>
                   {compareResult.removed.length > 20 ? <p>…</p> : null}
                 </div>
-                <div className="rounded border p-2 bg-muted/20">
+                <div className="rounded-lg bg-muted/25 p-2 ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
                   <p className="font-medium text-foreground mb-1">
                     变更 ({compareResult.changed.length})
                   </p>

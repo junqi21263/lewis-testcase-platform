@@ -15,7 +15,7 @@ export function ConfirmDialog(props: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-      <div className="bg-card border rounded-lg shadow-lg max-w-md w-full p-5 space-y-4">
+      <div className="w-full max-w-md space-y-4 rounded-xl bg-card/95 p-5 shadow-2xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
         <h3 className="font-semibold text-lg">{props.title}</h3>
         {props.description ? (
           <div className="text-sm text-muted-foreground">{props.description}</div>

@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useState } from 'react'
-import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 
 const navItems = [
@@ -35,7 +34,7 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative z-10 flex flex-col border-r border-sidebar-border/80 bg-sidebar/94 text-sidebar-foreground shadow-[inset_-1px_0_0_0_hsl(var(--sidebar-border)/0.35)] backdrop-blur-2xl transition-all duration-300 supports-[backdrop-filter]:bg-sidebar/88',
+        'relative z-10 flex flex-col bg-sidebar/94 text-sidebar-foreground shadow-[6px_0_32px_-12px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition-all duration-300 supports-[backdrop-filter]:bg-sidebar/88 dark:shadow-[6px_0_40px_-8px_rgba(0,0,0,0.75)]',
         collapsed ? 'w-16' : 'w-60',
       )}
     >
@@ -51,7 +50,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      <Separator className="bg-sidebar-border" />
+      <div className="h-px w-[88%] mx-auto shrink-0 bg-gradient-to-r from-transparent via-sidebar-foreground/14 to-transparent" />
 
       {/* 主导航 */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
@@ -76,7 +75,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <Separator className="bg-sidebar-border" />
+      <div className="h-px w-[88%] mx-auto shrink-0 bg-gradient-to-r from-transparent via-sidebar-foreground/14 to-transparent" />
 
       {/* 底部导航 */}
       <div className="px-2 py-3 space-y-1">
@@ -107,7 +106,7 @@ export default function Sidebar() {
         size="icon"
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
-          'absolute -right-3.5 top-20 w-7 h-7 rounded-full bg-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent border border-sidebar-border shadow-sm z-10',
+          'absolute -right-3.5 top-20 z-10 h-7 w-7 rounded-full bg-sidebar-accent/90 text-sidebar-foreground shadow-md ring-1 ring-sidebar-foreground/15 hover:bg-sidebar-accent',
         )}
       >
         {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}

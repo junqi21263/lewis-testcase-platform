@@ -129,7 +129,7 @@ function FileUploadZone() {
     <div
       onDrop={handleDrop}
       onDragOver={(e) => e.preventDefault()}
-      className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 hover:bg-accent/30 transition-colors cursor-pointer"
+      className="cursor-pointer rounded-lg border-0 bg-muted/25 p-8 text-center shadow-sm ring-2 ring-dashed ring-foreground/15 transition-colors hover:bg-accent/30 hover:ring-primary/40 dark:ring-white/12"
       onClick={() => document.getElementById('file-input')?.click()}
     >
       <input
@@ -592,7 +592,7 @@ export default function GeneratePage() {
                   <button
                     key={type}
                     onClick={() => setSourceType(type)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${sourceType === type ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-accent'}`}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-inset transition-colors ${sourceType === type ? 'bg-primary/10 text-primary ring-primary/40' : 'bg-secondary/25 ring-foreground/10 hover:bg-accent dark:ring-white/10'}`}
                   >
                     {type === 'file' ? <Upload className="w-4 h-4" /> : <Type className="w-4 h-4" />}
                     {type === 'file' ? '上传文档' : '文本输入'}
@@ -623,7 +623,7 @@ export default function GeneratePage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <label className="text-sm text-muted-foreground whitespace-nowrap">插入平台模板</label>
                 <select
-                  className="flex-1 h-10 px-3 rounded-md border border-input bg-background text-sm min-w-0"
+                  className="h-10 min-w-0 flex-1 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={selectedTemplateId ?? ''}
                   onChange={(e) => {
                     const id = e.target.value

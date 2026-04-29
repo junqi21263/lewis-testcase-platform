@@ -576,7 +576,7 @@ export default function UploadPage() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <label className="text-sm text-muted-foreground whitespace-nowrap">用例生成模板</label>
             <select
-              className="flex-1 h-10 px-3 rounded-md border border-input bg-background text-sm min-w-0"
+              className="h-10 min-w-0 flex-1 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
               value={parseTemplateId ?? ''}
               onChange={(e) => {
                 const id = e.target.value

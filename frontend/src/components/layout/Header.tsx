@@ -31,7 +31,7 @@ export default function Header() {
     : 'U'
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 border-b border-border/45 bg-background/80 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/55">
+    <header className="h-16 flex items-center justify-between px-6 border-b-0 bg-background/80 shadow-[0_8px_28px_-16px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/55 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.65)]">
       {/* 面包屑或页面标题可在此扩展 */}
       <div className="flex-1" />
 
@@ -66,7 +66,7 @@ export default function Header() {
             <DropdownMenu.Content
               align="end"
               sideOffset={5}
-              className="w-48 rounded-md border bg-popover p-1 shadow-md text-popover-foreground z-50 animate-in fade-in-0 zoom-in-95"
+              className="z-50 w-48 animate-in rounded-md border-0 bg-popover/95 p-1 text-popover-foreground shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl fade-in-0 zoom-in-95 dark:ring-white/10"
             >
               <DropdownMenu.Item
                 className="flex items-center gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none"

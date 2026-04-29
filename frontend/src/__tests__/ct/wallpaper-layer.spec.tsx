@@ -13,6 +13,14 @@ function base64ToUint8Array(b64: string): Uint8Array {
 
 test.describe('WallpaperLayer', () => {
   test('normal: enabled -> loads and applies wallpaper background', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
+    page.on('console', (msg) => {
+      // eslint-disable-next-line no-console
+      console.log('[ct console]', msg.type(), msg.text())
+    })
     const imgUrl = 'https://example.com/wallpaper.png'
 
     await page.route('**/api/preferences/me', async (route) => {
@@ -57,6 +65,10 @@ test.describe('WallpaperLayer', () => {
   })
 
   test('edge: disabled -> renders nothing', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,
@@ -73,6 +85,10 @@ test.describe('WallpaperLayer', () => {
   })
 
   test('edge: enabled but API returns disabled -> renders nothing', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,
@@ -96,6 +112,10 @@ test.describe('WallpaperLayer', () => {
   })
 
   test('exception: wallpaper API fails -> keeps UI stable (no crash)', async ({ mount, page }) => {
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('[ct pageerror]', err)
+    })
     await page.route('**/api/preferences/me', async (route) => {
       await route.fulfill({
         status: 200,

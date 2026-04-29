@@ -234,7 +234,7 @@ export default function TemplatesPage() {
               </CardHeader>
               <CardContent className="pt-0 flex flex-col flex-1 gap-2">
                 <div
-                  className="text-xs bg-muted p-3 rounded-md max-h-48 overflow-y-auto font-mono whitespace-pre-wrap select-text cursor-text border border-border/60"
+                  className="max-h-48 cursor-text select-text overflow-y-auto rounded-lg bg-muted/55 p-3 font-mono text-xs whitespace-pre-wrap shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10"
                   title="可选中复制全文"
                 >
                   {tpl.content}
@@ -293,7 +293,7 @@ export default function TemplatesPage() {
             className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]">
               <CardTitle className="text-lg">{editor.mode === 'create' ? '新建模板' : '编辑模板'}</CardTitle>
               <Button type="button" variant="ghost" size="icon" onClick={closeEditor} aria-label="关闭">
                 <X className="w-4 h-4" />
@@ -315,7 +315,7 @@ export default function TemplatesPage() {
               <div className="space-y-1">
                 <label className="text-sm font-medium">分类</label>
                 <select
-                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                  className="h-10 w-full rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={draft.category}
                   onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value as TemplateCategory }))}
                 >
@@ -329,7 +329,7 @@ export default function TemplatesPage() {
               <div className="space-y-1">
                 <label className="text-sm font-medium">提示词内容</label>
                 <textarea
-                  className="w-full min-h-[220px] p-3 text-sm border rounded-lg bg-background font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring select-text"
+                  className="min-h-[220px] w-full resize-y rounded-lg border-0 bg-background/55 p-3 font-mono text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md select-text focus:outline-none focus:ring-2 focus:ring-ring dark:ring-white/10"
                   value={draft.content}
                   onChange={(e) => setDraft((d) => ({ ...d, content: e.target.value }))}
                 />
