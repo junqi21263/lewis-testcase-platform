@@ -44,25 +44,46 @@ export function WallpaperLayer() {
     }
   }
 
-  const applyPreferences = (p: UserPreferences) => {
+  /** mount：进入页拉新图；event：偏好已在服务端更新（如「换一张」），只同步 URL，避免重复请求 */
+  const applyPreferences = (p: UserPreferences, source: 'mount' | 'event') => {
     setEnabled(!!p.wallpaperEnabled)
-    setUrl(p.wallpaperCurrentUrl ?? null)
 
     if (intervalRef.current) {
       window.clearInterval(intervalRef.current)
       intervalRef.current = null
     }
 
-    if (p.wallpaperEnabled) {
-      void refresh(true)
-      if ((p.wallpaperIntervalSec ?? 0) > 0) {
-        intervalRef.current = window.setInterval(() => {
-          void refresh(false)
-        }, p.wallpaperIntervalSec * 1000)
-      }
-    } else {
+    if (!p.wallpaperEnabled) {
       setUrl(null)
+      return
     }
+
+    if ((p.wallpaperIntervalSec ?? 0) > 0) {
+      intervalRef.current = window.setInterval(() => {
+        void refresh(false)
+      }, p.wallpaperIntervalSec * 1000)
+    }
+
+    if (source === 'mount') {
+      setUrl(p.wallpaperCurrentUrl ?? null)
+      void refresh(true)
+      return
+    }
+
+    if (!p.wallpaperCurrentUrl) {
+      setUrl(null)
+      void refresh(true)
+      return
+    }
+
+    const nextUrl = p.wallpaperCurrentUrl
+    void preloadImage(nextUrl)
+      .then(() => {
+        setFading(true)
+        setUrl(nextUrl)
+        window.setTimeout(() => setFading(false), 350)
+      })
+      .catch(() => {})
   }
 
   useEffect(() => {
@@ -71,7 +92,7 @@ export function WallpaperLayer() {
       .getMy()
       .then((p) => {
         if (!mounted) return
-        applyPreferences(p)
+        applyPreferences(p, 'mount')
       })
       .catch(() => {})
 
@@ -80,7 +101,7 @@ export function WallpaperLayer() {
         .getMy()
         .then((p) => {
           if (!mounted) return
-          applyPreferences(p)
+          applyPreferences(p, 'event')
         })
         .catch(() => {})
     }

@@ -310,7 +310,10 @@ export default function SettingsPage() {
   const rotateWallpaperNow = async () => {
     try {
       await wallpaperApi.next({ force: true })
-      notify.success('已请求更换壁纸（若已开启动态壁纸，将在页面背景生效）')
+      const next = await preferencesApi.getMy()
+      setUserPrefs(next)
+      notify.success('壁纸已更新')
+      window.dispatchEvent(new Event('user-preferences-updated'))
     } catch {
       /* */
     }
