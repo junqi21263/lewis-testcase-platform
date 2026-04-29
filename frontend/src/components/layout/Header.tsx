@@ -31,7 +31,7 @@ export default function Header() {
     : 'U'
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 border-b-0 bg-background/80 shadow-[0_8px_28px_-16px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/55 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.65)]">
+    <header className="h-16 flex items-center justify-between px-6 bg-[color:var(--glass-bg)] shadow-[0_12px_40px_-28px_rgba(0,0,0,0.75)] ring-1 ring-inset ring-[color:var(--glass-border)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-150">
       {/* 面包屑或页面标题可在此扩展 */}
       <div className="flex-1" />
 
@@ -52,7 +52,7 @@ export default function Header() {
         {/* 用户菜单 */}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
-            <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent transition-colors">
+            <button className="flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-[color:var(--glass-bg)] hover:backdrop-blur-[var(--glass-blur)] transition-colors">
               <Avatar className="w-8 h-8">
                 <AvatarImage src={user?.avatar} />
                 <AvatarFallback className="text-xs">{initials}</AvatarFallback>
@@ -66,24 +66,24 @@ export default function Header() {
             <DropdownMenu.Content
               align="end"
               sideOffset={5}
-              className="z-50 w-48 animate-in rounded-md border-0 bg-popover/95 p-1 text-popover-foreground shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl fade-in-0 zoom-in-95 dark:ring-white/10"
+              className="z-50 w-52 animate-in rounded-lg border-0 bg-[color:var(--glass-bg)] p-1 text-popover-foreground shadow-[0_30px_80px_-48px_rgba(0,0,0,0.7)] ring-1 ring-inset ring-[color:var(--glass-border)] backdrop-blur-[var(--glass-blur)] fade-in-0 zoom-in-95"
             >
               <DropdownMenu.Item
-                className="flex items-center gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md cursor-pointer hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)] outline-none"
                 onClick={() => navigate('/profile')}
               >
                 <User className="w-4 h-4" />
                 个人中心
               </DropdownMenu.Item>
               <DropdownMenu.Item
-                className="flex items-center gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md cursor-pointer hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)] outline-none"
                 onClick={() => navigate('/settings')}
               >
                 个人设置
               </DropdownMenu.Item>
-              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <DropdownMenu.Separator className="my-1 h-px bg-white/10" />
               <DropdownMenu.Item
-                className="flex items-center gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer text-destructive hover:bg-destructive/10 outline-none"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md cursor-pointer text-destructive hover:bg-[hsl(var(--destructive)/0.12)] outline-none"
                 onClick={handleLogout}
               >
                 <LogOut className="w-4 h-4" />

@@ -107,9 +107,9 @@ export default function RegisterPage() {
   }
 
   return (
-    <Card className="shadow-xl border-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur">
+    <Card className="shadow-[0_30px_80px_-48px_rgba(0,0,0,0.75)]">
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-2xl font-bold text-center">创建新账号</CardTitle>
+        <CardTitle className="text-[22px] font-semibold tracking-tight text-center">创建新账号</CardTitle>
         <CardDescription className="text-center">
           {step === 'form'
             ? '使用邮箱 + 用户名 + 密码注册；登录时使用用户名'
@@ -121,8 +121,8 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit(onSendCode)}>
           <CardContent className="space-y-4">
             {authError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-                <p className="text-sm">{authError}</p>
+              <div className="rounded-lg bg-[hsl(var(--destructive)/0.12)] px-4 py-3 ring-1 ring-inset ring-[hsl(var(--destructive)/0.22)]">
+                <p className="text-[13px] leading-5 text-destructive break-words">{authError}</p>
               </div>
             )}
 
@@ -205,7 +205,7 @@ export default function RegisterPage() {
                 type="checkbox"
                 checked={agreeTerms}
                 onChange={(e) => setAgreeTerms(e.target.checked)}
-                className="mt-1 rounded border-gray-300"
+                className="mt-1 h-4 w-4 rounded accent-[hsl(var(--primary))]"
               />
               <label className="text-sm text-muted-foreground">
                 我同意 <a href="#" className="text-primary hover:underline">服务条款</a> 和{' '}
@@ -228,8 +228,8 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmitCode(onConfirmCode)}>
           <CardContent className="space-y-4">
             {authError && (
-              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-                <p className="text-sm">{authError}</p>
+              <div className="rounded-lg bg-[hsl(var(--destructive)/0.12)] px-4 py-3 ring-1 ring-inset ring-[hsl(var(--destructive)/0.22)]">
+                <p className="text-[13px] leading-5 text-destructive break-words">{authError}</p>
               </div>
             )}
 

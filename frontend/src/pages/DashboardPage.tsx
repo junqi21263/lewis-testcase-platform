@@ -66,10 +66,10 @@ export default function DashboardPage() {
   }, [])
 
   const statCards = [
-    { title: '总生成记录', value: stats.totalRecords, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-    { title: '用例集数量', value: stats.totalSuites, icon: CheckSquare, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-950/30' },
-    { title: '累计生成用例', value: stats.totalCases, icon: TrendingUp, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-    { title: '成功率', value: `${stats.successRate}%`, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
+    { title: '总生成记录', value: stats.totalRecords, icon: FileText, iconClass: 'text-primary' },
+    { title: '用例集数量', value: stats.totalSuites, icon: CheckSquare, iconClass: 'text-[hsl(var(--success))]' },
+    { title: '累计生成用例', value: stats.totalCases, icon: TrendingUp, iconClass: 'text-primary' },
+    { title: '成功率', value: `${stats.successRate}%`, icon: TrendingUp, iconClass: 'text-primary' },
   ]
 
   const quickActions = [
@@ -80,37 +80,41 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* 欢迎区 */}
-      <div className="flex flex-col gap-3 rounded-xl border-0 bg-background/50 px-4 py-3 shadow-md ring-1 ring-inset ring-white/15 backdrop-blur-md dark:bg-background/40 dark:ring-white/10 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold drop-shadow-sm [text-shadow:0_1px_2px_hsl(var(--background)/0.45)]">
-            欢迎回来，{user?.username}
-          </h1>
-          <p className="mt-1 text-muted-foreground">今天也是提升测试效率的好日子</p>
-        </div>
-        <Button onClick={() => navigate('/generate')} className="shrink-0 gap-2">
-          <Wand2 className="w-4 h-4" />
-          立即生成用例
-        </Button>
-      </div>
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-semibold leading-7 tracking-tight">
+              欢迎回来，{user?.username}
+            </h1>
+            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+              今天也是提升测试效率的好日子
+            </p>
+          </div>
+          <Button onClick={() => navigate('/generate')} className="shrink-0 gap-2">
+            <Wand2 className="w-4 h-4" />
+            立即生成用例
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* 快捷入口 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {quickActions.map((a) => (
           <Card
             key={a.title}
-            className="hover:shadow-md transition-shadow cursor-pointer"
+            className="cursor-pointer transition-[transform,box-shadow] duration-200 ease-out hover:shadow-[0_26px_70px_-44px_rgba(0,0,0,0.75)] hover:-translate-y-[1px]"
             onClick={() => navigate(a.to)}
           >
-            <CardContent className="p-5">
+            <CardContent className="p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
+                  <p className="text-[15px] font-medium leading-6">{a.title}</p>
+                  <p className="text-[13px] leading-5 text-muted-foreground mt-1">{a.desc}</p>
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/40 bg-muted/60 backdrop-blur-sm">
-                  <a.icon className="w-5 h-5 text-muted-foreground" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg ring-1 ring-inset ring-[color:var(--glass-border)] bg-[color:var(--glass-bg)] backdrop-blur-[var(--glass-blur)]">
+                  <a.icon className="w-5 h-5 text-primary" />
                 </div>
               </div>
             </CardContent>
@@ -119,19 +123,21 @@ export default function DashboardPage() {
       </div>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((card) => (
-          <Card key={card.title} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
+          <Card key={card.title}>
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">{card.title}</p>
-                  <p className="text-2xl font-bold mt-1">{loading ? '-' : card.value}</p>
+                  <p className="text-[13px] text-muted-foreground">{card.title}</p>
+                  <p className="text-[26px] font-semibold mt-1 tracking-tight">
+                    {loading ? '-' : card.value}
+                  </p>
                 </div>
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-sm ring-1 ring-inset ring-white/12 backdrop-blur-sm dark:ring-white/8 ${card.bg}`}
+                  className="flex h-12 w-12 items-center justify-center rounded-lg ring-1 ring-inset ring-[color:var(--glass-border)] bg-[color:var(--glass-bg)] backdrop-blur-[var(--glass-blur)]"
                 >
-                  <card.icon className={`w-6 h-6 ${card.color}`} />
+                  <card.icon className={`w-6 h-6 ${card.iconClass}`} />
                 </div>
               </div>
             </CardContent>
@@ -192,7 +198,7 @@ export default function DashboardPage() {
               recentRecords.map((record) => (
                 <div
                   key={record.id}
-                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
+                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2.5 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
                 >
@@ -234,7 +240,7 @@ export default function DashboardPage() {
               recentSuites.map((suite) => (
                 <div
                   key={suite.id}
-                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
+                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2.5 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)] dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
                 >
