@@ -11,10 +11,11 @@
     "test:ct:ui": "playwright test -c playwright-ct.config.ts --ui",
     "test:pw:install": "playwright install chromium",
     "test:self": "playwright test -c playwright-ct.config.ts",
+    "test:unit": "vitest run",
     "test:ct:allure": "playwright test -c playwright-ct.config.ts",
     "allure:generate": "allure generate allure-results -o allure-report --clean",
     "allure:open": "allure open allure-report",
-    "allure:report": "pnpm test:ct:allure && pnpm allure:generate",
+    "allure:report": "pnpm test:unit && pnpm test:ct:allure && pnpm allure:generate && node scripts/print-allure-url.mjs",
     "integrate:smoke": "pnpm -C ../backend smoke:enhancements",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
@@ -63,17 +64,21 @@
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "3.2.4",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",
+    "allure-vitest": "^3.7.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.11",
+    "jsdom": "^29.1.0",
     "postcss": "^8.4.43",
     "prettier": "^3.3.3",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "3.2.4"
   },
   "pnpm": {
     "overrides": {
