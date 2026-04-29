@@ -28,6 +28,22 @@ const bottomItems = [
   { path: '/settings', icon: Settings, label: '系统设置' },
 ]
 
+function sidebarNavClassNames(isActive: boolean, collapsed: boolean) {
+  return cn(
+    'flex items-center gap-3 rounded-lg px-3.5 py-3 text-sm font-medium outline-none transition-[transform,background-color,color,box-shadow] duration-200 ease-out motion-reduce:transition-none',
+    'min-h-11 touch-manipulation [-webkit-tap-highlight-color:transparent]',
+    'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
+    'hover:scale-[1.01] active:scale-[0.99] motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
+    isActive
+      ? cn(
+          'bg-sidebar-accent/92 text-sidebar-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-foreground)/0.14)]',
+          collapsed && 'ring-2 ring-inset ring-sidebar-primary/40',
+        )
+      : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+    collapsed && 'justify-center px-2',
+  )
+}
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -53,21 +69,12 @@ export default function Sidebar() {
       <div className="h-px w-[88%] mx-auto shrink-0 bg-gradient-to-r from-transparent via-sidebar-foreground/14 to-transparent" />
 
       {/* 主导航 */}
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto min-h-0">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[transform,background-color,color] duration-200 ease-out will-change-transform motion-reduce:transition-none',
-                'hover:scale-[1.02] active:scale-[0.98] motion-reduce:transform-none',
-                isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                collapsed && 'justify-center px-2',
-              )
-            }
+            className={({ isActive }) => sidebarNavClassNames(isActive, collapsed)}
             title={collapsed ? item.label : undefined}
           >
             <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -79,21 +86,12 @@ export default function Sidebar() {
       <div className="h-px w-[88%] mx-auto shrink-0 bg-gradient-to-r from-transparent via-sidebar-foreground/14 to-transparent" />
 
       {/* 底部导航 */}
-      <div className="px-2 py-3 space-y-1">
+      <div className="shrink-0 px-2 pb-4 pt-2 space-y-1">
         {bottomItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[transform,background-color,color] duration-200 ease-out will-change-transform motion-reduce:transition-none',
-                'hover:scale-[1.02] active:scale-[0.98] motion-reduce:transform-none',
-                isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                collapsed && 'justify-center px-2',
-              )
-            }
+            className={({ isActive }) => sidebarNavClassNames(isActive, collapsed)}
             title={collapsed ? item.label : undefined}
           >
             <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -102,16 +100,24 @@ export default function Sidebar() {
         ))}
       </div>
 
-      {/* 折叠按钮 */}
+      {/* 折叠按钮：44×44 命中区，与侧栏玻璃风格一致 */}
       <Button
+        type="button"
         variant="ghost"
         size="icon"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
-          'absolute -right-3.5 top-20 z-10 h-7 w-7 rounded-full bg-sidebar-accent/90 text-sidebar-foreground shadow-md ring-1 ring-sidebar-foreground/15 transition-transform duration-200 ease-out hover:scale-110 hover:bg-sidebar-accent active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100',
+          'absolute -right-[17px] top-[4.5rem] z-10 h-11 w-11 rounded-full',
+          'border border-sidebar-foreground/12 bg-sidebar-accent/85 text-sidebar-foreground shadow-md backdrop-blur-sm',
+          'transition-[transform,background-color] duration-200 ease-out',
+          'hover:bg-sidebar-accent hover:scale-105 active:scale-95',
+          'motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
+          'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
         )}
       >
-        {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
       </Button>
     </aside>
   )
