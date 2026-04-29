@@ -143,6 +143,17 @@ jobs:
                 exit 1
               fi
             fi
+
+            # develop 环境强制使用独立端口，避免与生产环境冲突
+            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+              sudo sed -i '/^FRONTEND_HOST_BIND=/d;/^FRONTEND_HOST_PORT=/d;/^POSTGRES_HOST_BIND=/d;/^POSTGRES_HOST_PORT=/d' "$ENV_FILE"
+              sudo bash -c "cat >> '$ENV_FILE' <<'EOF'
+FRONTEND_HOST_BIND=0.0.0.0
+FRONTEND_HOST_PORT=8080
+POSTGRES_HOST_BIND=127.0.0.1
+POSTGRES_HOST_PORT=5433
+EOF"
+            fi
             
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
@@ -162,7 +173,20 @@ jobs:
 
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               echo "🧪 Running development smoke check on :8080..."
-              curl -fsS "http://127.0.0.1:8080/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'
+              ok=0
+              for i in $(seq 1 60); do
+                if curl -fsS "http://127.0.0.1:8080/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                  ok=1
+                  break
+                fi
+                sleep 1
+              done
+              if [ "$ok" != "1" ]; then
+                echo "❌ Development smoke check failed after waiting 60s"
+                sudo docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file "$ENV_FILE" ps || true
+                sudo docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file "$ENV_FILE" logs --tail=200 || true
+                exit 1
+              fi
               echo "✅ Development smoke check passed"
               echo "访问地址: http://${{ secrets.SSH_HOST }}:8080"
             else
