@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test:ct": "playwright test -c playwright-ct.config.ts",
     "test:ct:ui": "playwright test -c playwright-ct.config.ts --ui",
+    "test:pw:install": "playwright install chromium",
+    "test:self": "playwright test -c playwright-ct.config.ts",
     "integrate:smoke": "pnpm -C ../backend smoke:enhancements",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
@@ -66,5 +68,10 @@
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "5.4.21"
+    }
   }
 }

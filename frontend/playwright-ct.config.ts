@@ -23,6 +23,10 @@ export default defineConfig({
           '@': path.resolve(__dirname, './src'),
         },
       },
+      // CT 的 Vite root 在 playwright/，默认找不到上级 postcss.config.js，会导致 Tailwind 未处理、页面脚本异常
+      css: {
+        postcss: path.resolve(__dirname, './postcss.config.js'),
+      },
     },
   },
   projects: [
