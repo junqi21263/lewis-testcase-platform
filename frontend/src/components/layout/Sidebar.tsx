@@ -60,7 +60,8 @@ export default function Sidebar() {
             to={item.path}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
+                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[transform,background-color,color] duration-200 ease-out will-change-transform motion-reduce:transition-none',
+                'hover:scale-[1.02] active:scale-[0.98] motion-reduce:transform-none',
                 isActive
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -85,7 +86,8 @@ export default function Sidebar() {
             to={item.path}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
+                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[transform,background-color,color] duration-200 ease-out will-change-transform motion-reduce:transition-none',
+                'hover:scale-[1.02] active:scale-[0.98] motion-reduce:transform-none',
                 isActive
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -106,7 +108,7 @@ export default function Sidebar() {
         size="icon"
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
-          'absolute -right-3.5 top-20 z-10 h-7 w-7 rounded-full bg-sidebar-accent/90 text-sidebar-foreground shadow-md ring-1 ring-sidebar-foreground/15 hover:bg-sidebar-accent',
+          'absolute -right-3.5 top-20 z-10 h-7 w-7 rounded-full bg-sidebar-accent/90 text-sidebar-foreground shadow-md ring-1 ring-sidebar-foreground/15 transition-transform duration-200 ease-out hover:scale-110 hover:bg-sidebar-accent active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100',
         )}
       >
         {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}

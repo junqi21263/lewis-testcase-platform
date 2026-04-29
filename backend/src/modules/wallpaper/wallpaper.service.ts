@@ -16,16 +16,23 @@ type BingArchiveResponse = {
 export class WallpaperService {
   constructor(private prefs: PreferencesService) {}
 
-  private bingApiUrl(): string {
+  private bingApiUrl(idx: number): string {
     const mkt = process.env.WALLPAPER_BING_MKT || 'zh-CN'
     const uhd = process.env.WALLPAPER_BING_UHD === '0' ? '0' : '1'
-    return `https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=${encodeURIComponent(
+    const i = Math.max(0, Math.min(7, Math.floor(idx)))
+    return `https://www.bing.com/HPImageArchive.aspx?format=js&idx=${i}&n=1&mkt=${encodeURIComponent(
       mkt,
     )}&uhd=${encodeURIComponent(uhd)}`
   }
 
-  private async fetchBingOne(): Promise<{ url: string; title?: string; copyright?: string }> {
-    const { data } = await axios.get<BingArchiveResponse>(this.bingApiUrl(), {
+  /** variedIdx：手动「换一张」时用不同 idx，否则 Bing 始终返回同一张「今日」图，URL 不变前端看起来像没换 */
+  private async fetchBingOne(opts?: { variedIdx?: boolean }): Promise<{
+    url: string
+    title?: string
+    copyright?: string
+  }> {
+    const idx = opts?.variedIdx ? Math.floor(Math.random() * 8) : 0
+    const { data } = await axios.get<BingArchiveResponse>(this.bingApiUrl(idx), {
       timeout: 10_000,
       headers: { 'User-Agent': 'lewis-testcase-platform/1.0' },
     })
@@ -69,7 +76,8 @@ export class WallpaperService {
       }
     }
 
-    const img = await this.fetchBingOne()
+    // 定时更换时也用随机 idx，否则长期只会拿到「今日」同一张
+    const img = await this.fetchBingOne({ variedIdx: force || intervalSec > 0 })
 
     await this.prefs.update(userId, {
       wallpaperProvider: 'bing',

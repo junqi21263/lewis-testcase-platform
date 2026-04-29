@@ -105,12 +105,29 @@ export function WallpaperLayer() {
         })
         .catch(() => {})
     }
+
+    /** 设置页「换一张」等：直接用接口返回的 URL 切换，避免与 getMy 时序或重复 idx=0 同图竞态 */
+    const onWallpaperUrl = (ev: Event) => {
+      const url = (ev as CustomEvent<{ url?: string | null }>).detail?.url
+      if (!mounted || !url) return
+      void preloadImage(url)
+        .then(() => {
+          setEnabled(true)
+          setFading(true)
+          setUrl(url)
+          window.setTimeout(() => setFading(false), 350)
+        })
+        .catch(() => {})
+    }
+
     window.addEventListener('user-preferences-updated', onPrefsUpdated)
+    window.addEventListener('wallpaper-url-updated', onWallpaperUrl)
 
     return () => {
       mounted = false
       if (intervalRef.current) window.clearInterval(intervalRef.current)
       window.removeEventListener('user-preferences-updated', onPrefsUpdated)
+      window.removeEventListener('wallpaper-url-updated', onWallpaperUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
