@@ -164,6 +164,7 @@ jobs:
               echo "🧪 Running development smoke check on :8080..."
               curl -fsS "http://127.0.0.1:8080/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'
               echo "✅ Development smoke check passed"
+              echo "访问地址: http://${{ secrets.SSH_HOST }}:8080"
             else
               bash scripts/smoke.sh
             fi
