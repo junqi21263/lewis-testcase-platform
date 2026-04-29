@@ -35,7 +35,7 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative z-10 flex flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300',
+        'relative z-10 flex flex-col border-r border-sidebar-border/80 bg-sidebar/94 text-sidebar-foreground shadow-[inset_-1px_0_0_0_hsl(var(--sidebar-border)/0.35)] backdrop-blur-2xl transition-all duration-300 supports-[backdrop-filter]:bg-sidebar/88',
         collapsed ? 'w-16' : 'w-60',
       )}
     >

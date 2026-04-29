@@ -82,14 +82,14 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* 欢迎区 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">
+      <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm backdrop-blur-md dark:bg-background/40 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold drop-shadow-sm [text-shadow:0_1px_2px_hsl(var(--background)/0.45)]">
             欢迎回来，{user?.username}
           </h1>
-          <p className="text-muted-foreground mt-1">今天也是提升测试效率的好日子</p>
+          <p className="mt-1 text-muted-foreground">今天也是提升测试效率的好日子</p>
         </div>
-        <Button onClick={() => navigate('/generate')} className="gap-2">
+        <Button onClick={() => navigate('/generate')} className="shrink-0 gap-2">
           <Wand2 className="w-4 h-4" />
           立即生成用例
         </Button>
@@ -109,7 +109,7 @@ export default function DashboardPage() {
                   <p className="text-sm font-medium">{a.title}</p>
                   <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/40 bg-muted/60 backdrop-blur-sm">
                   <a.icon className="w-5 h-5 text-muted-foreground" />
                 </div>
               </div>
@@ -128,7 +128,9 @@ export default function DashboardPage() {
                   <p className="text-sm text-muted-foreground">{card.title}</p>
                   <p className="text-2xl font-bold mt-1">{loading ? '-' : card.value}</p>
                 </div>
-                <div className={`w-12 h-12 rounded-xl ${card.bg} flex items-center justify-center`}>
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl border border-border/30 backdrop-blur-sm ${card.bg}`}
+                >
                   <card.icon className={`w-6 h-6 ${card.color}`} />
                 </div>
               </div>

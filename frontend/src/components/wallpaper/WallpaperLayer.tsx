@@ -105,8 +105,8 @@ export function WallpaperLayer() {
       <div
         className={[
           'absolute inset-0',
-          // 轻微遮罩，避免影响可读性
-          'bg-gradient-to-b from-background/30 via-background/40 to-background/70',
+          // 轻遮罩：卡片已承担主要对比度，此处略减不透明度以露出更多壁纸
+          'bg-gradient-to-b from-background/18 via-background/28 to-background/58 dark:from-background/22 dark:via-background/32 dark:to-background/62',
           fading ? 'opacity-80' : 'opacity-100',
           'transition-opacity duration-300',
         ].join(' ')}

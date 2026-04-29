@@ -31,7 +31,7 @@ export default function Header() {
     : 'U'
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="h-16 flex items-center justify-between px-6 border-b border-border/45 bg-background/80 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/55">
       {/* 面包屑或页面标题可在此扩展 */}
       <div className="flex-1" />
 
