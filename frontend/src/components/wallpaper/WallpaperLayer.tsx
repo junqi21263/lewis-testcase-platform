@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { preferencesApi } from '@/api/preferences'
+import { preferencesApi, type UserPreferences } from '@/api/preferences'
 import { wallpaperApi } from '@/api/wallpaper'
 
 function preloadImage(url: string): Promise<void> {
@@ -16,6 +16,8 @@ export function WallpaperLayer() {
   const [url, setUrl] = useState<string | null>(null)
   const [fading, setFading] = useState(false)
   const intervalRef = useRef<number | null>(null)
+  const urlRef = useRef<string | null>(null)
+  urlRef.current = url
 
   const style = useMemo(() => {
     if (!enabled || !url) return undefined
@@ -23,17 +25,44 @@ export function WallpaperLayer() {
   }, [enabled, url])
 
   const refresh = async (force: boolean) => {
-    const res = await wallpaperApi.next({ force })
-    if (!res.enabled || !res.url) {
-      setEnabled(false)
-      setUrl(null)
-      return
+    try {
+      const res = await wallpaperApi.next({ force })
+      // 接口失败或未返回 url 时保留当前展示，避免误把用户已开启的壁纸关掉
+      if (!res?.url) return
+      if (res.enabled === false) {
+        setEnabled(false)
+        setUrl(null)
+        return
+      }
+      if (res.url === urlRef.current) return
+      await preloadImage(res.url)
+      setFading(true)
+      setUrl(res.url)
+      window.setTimeout(() => setFading(false), 350)
+    } catch {
+      /* 保持 preferences 里已有的 url */
     }
-    if (res.url === url) return
-    await preloadImage(res.url)
-    setFading(true)
-    setUrl(res.url)
-    window.setTimeout(() => setFading(false), 350)
+  }
+
+  const applyPreferences = (p: UserPreferences) => {
+    setEnabled(!!p.wallpaperEnabled)
+    setUrl(p.wallpaperCurrentUrl ?? null)
+
+    if (intervalRef.current) {
+      window.clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+
+    if (p.wallpaperEnabled) {
+      void refresh(true)
+      if ((p.wallpaperIntervalSec ?? 0) > 0) {
+        intervalRef.current = window.setInterval(() => {
+          void refresh(false)
+        }, p.wallpaperIntervalSec * 1000)
+      }
+    } else {
+      setUrl(null)
+    }
   }
 
   useEffect(() => {
@@ -42,26 +71,25 @@ export function WallpaperLayer() {
       .getMy()
       .then((p) => {
         if (!mounted) return
-        setEnabled(!!p.wallpaperEnabled)
-        setUrl(p.wallpaperCurrentUrl ?? null)
-
-        if (p.wallpaperEnabled) {
-          // intervalSec=0 时，页面进入“主动换一张”
-          refresh(true).catch(() => {})
-
-          if ((p.wallpaperIntervalSec ?? 0) > 0) {
-            if (intervalRef.current) window.clearInterval(intervalRef.current)
-            intervalRef.current = window.setInterval(() => {
-              refresh(false).catch(() => {})
-            }, p.wallpaperIntervalSec * 1000)
-          }
-        }
+        applyPreferences(p)
       })
       .catch(() => {})
+
+    const onPrefsUpdated = () => {
+      preferencesApi
+        .getMy()
+        .then((p) => {
+          if (!mounted) return
+          applyPreferences(p)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener('user-preferences-updated', onPrefsUpdated)
 
     return () => {
       mounted = false
       if (intervalRef.current) window.clearInterval(intervalRef.current)
+      window.removeEventListener('user-preferences-updated', onPrefsUpdated)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -69,7 +97,7 @@ export function WallpaperLayer() {
   if (!enabled || !url) return null
 
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10">
+    <div className="pointer-events-none fixed inset-0 z-0">
       <div
         className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
         style={style}

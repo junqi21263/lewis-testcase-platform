@@ -70,7 +70,8 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    /* 透明底：动态壁纸在 MainLayout 中全屏展示；登录等页由各自布局铺底 */
+    @apply bg-transparent text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
