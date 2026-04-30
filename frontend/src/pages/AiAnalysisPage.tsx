@@ -242,6 +242,7 @@ export default function AiAnalysisPage() {
   const [requirementText, setRequirementText] = useState('')
   const [humanReview, setHumanReview] = useState(true)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -251,7 +252,10 @@ export default function AiAnalysisPage() {
   useEffect(() => {
     aiApi.getModels().then((models) => {
       const def = models.find((m) => m.isDefault) ?? models[0]
-      if (def) setModelInfo(def)
+      if (def) {
+        setModelInfo(def)
+        setSelectedModelId(def.id)
+      }
     }).catch(() => {})
   }, [])
 
@@ -370,6 +374,7 @@ export default function AiAnalysisPage() {
             fileId: uploadedFile.id,
             customPrompt,
             stream: true,
+            modelConfigId: selectedModelId,
           },
           (chunk) => {
             dispatch({ type: 'APPEND_REPORT', chunk })
@@ -432,6 +437,7 @@ ${state.reportText}
             fileId: uploadedFile.id,
             customPrompt: revisionPrompt,
             stream: true,
+            modelConfigId: selectedModelId,
           },
           (chunk) => {
             dispatch({ type: 'APPEND_REPORT', chunk })
