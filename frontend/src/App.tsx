@@ -15,6 +15,7 @@ import TeamsPage from '@/pages/TeamsPage'
 import ProfilePage from '@/pages/ProfilePage'
 import SettingsPage from '@/pages/SettingsPage'
 import UploadPage from '@/pages/UploadPage'
+import AiAnalysisPage from '@/pages/AiAnalysisPage'
 
 /** 路由守卫：未登录跳转登录页 */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/upload" element={<UploadPage />} />
+          <Route path="/ai-analysis" element={<AiAnalysisPage />} />
           <Route path="/generate" element={<GeneratePage />} />
           <Route path="/records" element={<RecordsPage />} />
           <Route path="/records/:id" element={<RecordDetailPage />} />
