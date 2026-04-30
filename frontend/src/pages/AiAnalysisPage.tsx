@@ -251,12 +251,16 @@ export default function AiAnalysisPage() {
   // 获取默认模型信息
   useEffect(() => {
     aiApi.getModels().then((models) => {
+      console.log('可用模型列表:', models)
       const def = models.find((m) => m.isDefault) ?? models[0]
       if (def) {
+        console.log('选择的默认模型:', def)
         setModelInfo(def)
         setSelectedModelId(def.id)
       }
-    }).catch(() => {})
+    }).catch((err) => {
+      console.error('获取模型列表失败:', err)
+    })
   }, [])
 
   // 自动滚动日志
@@ -355,6 +359,8 @@ export default function AiAnalysisPage() {
       return
     }
 
+    console.log('开始分析，selectedModelId:', selectedModelId, 'uploadedFile:', uploadedFile.id)
+
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -395,7 +401,7 @@ export default function AiAnalysisPage() {
     } catch {
       // 错误已在 onError 中处理
     }
-  }, [uploadedFile, requirementText, addLog])
+  }, [uploadedFile, requirementText, addLog, selectedModelId])
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
