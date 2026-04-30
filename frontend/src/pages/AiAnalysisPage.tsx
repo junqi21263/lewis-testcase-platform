@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { filesApi } from '@/api/files'
 import { aiApi } from '@/api/ai'
 import type { AIModel, UploadedFile } from '@/types'
+import { safeRandomUUID } from '@/utils/uuid'
 
 /* ──────────────────────── 类型定义 ──────────────────────── */
 
@@ -251,18 +252,12 @@ export default function AiAnalysisPage() {
   // 获取默认模型信息
   useEffect(() => {
     aiApi.getModels().then((models) => {
-      console.log('可用模型列表:', models)
       const def = models.find((m) => m.isDefault) ?? models[0]
       if (def) {
-        console.log('选择的默认模型:', def)
         setModelInfo(def)
         setSelectedModelId(def.id)
-      } else {
-        console.warn('没有找到任何可用模型！')
       }
-    }).catch((err) => {
-      console.error('获取模型列表失败:', err)
-    })
+    }).catch(() => {})
   }, [])
 
   // 自动滚动日志
@@ -273,7 +268,7 @@ export default function AiAnalysisPage() {
   }, [state.logs, state.reportText])
 
   const addLog = useCallback((icon: LogEntry['icon'], text: string) => {
-    dispatch({ type: 'ADD_LOG', log: { id: crypto.randomUUID(), icon, text } })
+    dispatch({ type: 'ADD_LOG', log: { id: safeRandomUUID(), icon, text } })
   }, [])
 
   /* ──────── 文件上传 ──────── */
@@ -301,7 +296,7 @@ export default function AiAnalysisPage() {
           dispatch({ type: 'GO_IDLE' })
         } else {
           addLog('error', '❌ 文档解析失败，请重新上传')
-          dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: '文档解析失败' } })
+          dispatch({ type: 'ERROR', log: { id: safeRandomUUID(), icon: 'error', text: '文档解析失败' } })
         }
       } else {
         const charCount = result.parsedContent?.length ?? 0
@@ -309,7 +304,7 @@ export default function AiAnalysisPage() {
       }
     } catch {
       addLog('error', '❌ 文件上传失败，请重试')
-      dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: '上传失败' } })
+      dispatch({ type: 'ERROR', log: { id: safeRandomUUID(), icon: 'error', text: '上传失败' } })
       toast.error('文件上传失败')
     }
   }, [addLog])
@@ -361,8 +356,6 @@ export default function AiAnalysisPage() {
       return
     }
 
-    console.log('开始分析，selectedModelId:', selectedModelId, 'uploadedFile:', uploadedFile.id)
-
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -395,7 +388,7 @@ export default function AiAnalysisPage() {
           },
           (err) => {
             addLog('error', `❌ 分析失败：${err.message}`)
-            dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: err.message } })
+            dispatch({ type: 'ERROR', log: { id: safeRandomUUID(), icon: 'error', text: err.message } })
             reject(err)
           },
         )
@@ -457,7 +450,7 @@ ${state.reportText}
           },
           (err) => {
             addLog('error', `❌ 修订失败：${err.message}`)
-            dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: err.message } })
+            dispatch({ type: 'ERROR', log: { id: safeRandomUUID(), icon: 'error', text: err.message } })
             reject(err)
           },
         )

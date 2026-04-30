@@ -21,6 +21,7 @@ import { documentParseApi, type DocumentParseRecord } from '@/api/documentParse'
 import { filesApi } from '@/api/files'
 import { fillPromptTemplate } from '@/utils/fillPromptTemplate'
 import { detectSensitive, maskText } from '@/utils/sensitiveDetector'
+import { safeRandomUUID } from '@/utils/uuid'
 
 const DRAFT_KEY = 'document-parse-draft-v1'
 
@@ -120,7 +121,7 @@ export default function UploadPage() {
               const struct = Array.isArray(f.structuredRequirements) ? f.structuredRequirements : []
               if (struct.length > 0) {
                 points = struct.map((content) => ({
-                  id: crypto.randomUUID(),
+                  id: safeRandomUUID(),
                   content,
                   originalContent: content,
                   edited: false,
@@ -232,7 +233,7 @@ export default function UploadPage() {
       prev.map((t) => {
         if (t.id !== taskId) return t
         const newPoint: RequirementPoint = {
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           content: '',
           originalContent: '',
           edited: false,
@@ -314,7 +315,7 @@ export default function UploadPage() {
         const mergedContent = sel.map((p) => p.content).join('；')
         const rest = t.requirementPoints.filter((p) => !p.selected)
         const newPoint: RequirementPoint = {
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           content: mergedContent,
           originalContent: mergedContent,
           edited: true,
@@ -335,7 +336,7 @@ export default function UploadPage() {
         if (t.id !== taskId) return t
         const idx = t.requirementPoints.findIndex((p) => p.id === afterPointId)
         const newPoint: RequirementPoint = {
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           content: trimmed,
           originalContent: trimmed,
           edited: false,
@@ -363,7 +364,7 @@ export default function UploadPage() {
         const b = t.requirementPoints[idx + 1]!
         const mergedContent = `${a.content}；${b.content}`
         const newPoint: RequirementPoint = {
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           content: mergedContent,
           originalContent: mergedContent,
           edited: true,
@@ -401,7 +402,7 @@ export default function UploadPage() {
       const nextPoints: RequirementPoint[] =
         struct.length > 0
           ? struct.map((content) => ({
-              id: crypto.randomUUID(),
+              id: safeRandomUUID(),
               content: content.trim(),
               originalContent: content.trim(),
               edited: false,
@@ -524,7 +525,7 @@ export default function UploadPage() {
     const blob = new Blob([], { type: 'application/octet-stream' })
     const pseudoFile = new File([blob], rec.title, { lastModified: Date.now() })
     const points: RequirementPoint[] = (rec.requirements ?? []).map((r) => ({
-      id: r.id || crypto.randomUUID(),
+      id: r.id || safeRandomUUID(),
       content: r.content,
       originalContent: r.content,
       edited: false,
@@ -533,7 +534,7 @@ export default function UploadPage() {
     }))
     setTasks([
       {
-        id: crypto.randomUUID(),
+        id: safeRandomUUID(),
         file: pseudoFile,
         progress: 100,
         status: 'parsed',
