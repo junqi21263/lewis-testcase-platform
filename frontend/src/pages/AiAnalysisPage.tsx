@@ -1,6 +1,11 @@
 /**
  * AiAnalysisPage —— AI 需求分析全流程
- * 左右分栏：左侧操作区（上传/选择文档、描述、开关、按钮）| 右侧输出区（终端日志 + 结构化报告 + 人工审阅）
+ * 左右分栏：左侧操作区（上传文档、描述、开关、按钮）| 右侧输出区（终端日志 + 结构化报告 + 人工审阅）
+ *
+ * 功能：
+ * 1. 真实文件上传（filesApi.upload）
+ * 2. 真实大模型流式分析（aiApi.generateStream）
+ * 3. 人工审阅 + 迭代修订
  */
 
 import { useState, useCallback, useRef, useEffect, useReducer } from 'react'
@@ -15,16 +20,18 @@ import {
   Square,
   User,
   ArrowRight,
-  ChevronDown,
   X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { filesApi } from '@/api/files'
+import { aiApi } from '@/api/ai'
+import type { AIModel, UploadedFile } from '@/types'
 
 /* ──────────────────────── 类型定义 ──────────────────────── */
 
-type AnalysisStatus = 'idle' | 'uploading' | 'analyzing' | 'review' | 'approved' | 'error'
+type AnalysisStatus = 'idle' | 'uploading' | 'parsing' | 'analyzing' | 'review' | 'approved' | 'error'
 
 interface LogEntry {
   id: string
@@ -32,161 +39,96 @@ interface LogEntry {
   text: string
 }
 
-interface AnalysisReport {
-  title: string
-  sections: { heading: string; items: string[] }[]
-}
-
 interface State {
   status: AnalysisStatus
   logs: LogEntry[]
-  report: AnalysisReport | null
+  reportText: string
   reviewText: string
   revisionCount: number
 }
 
 type Action =
-  | { type: 'START' }
+  | { type: 'START_UPLOAD' }
+  | { type: 'UPLOAD_DONE' }
+  | { type: 'START_PARSE' }
+  | { type: 'START_ANALYSIS' }
   | { type: 'ADD_LOG'; log: LogEntry }
-  | { type: 'SET_REPORT'; report: AnalysisReport }
+  | { type: 'APPEND_REPORT'; chunk: string }
+  | { type: 'SET_REPORT'; text: string }
   | { type: 'SET_REVIEW_TEXT'; text: string }
   | { type: 'REVIEW' }
   | { type: 'APPROVE' }
   | { type: 'STOP' }
   | { type: 'ERROR'; log: LogEntry }
   | { type: 'RESET' }
+  | { type: 'GO_IDLE' }
 
 const initialState: State = {
   status: 'idle',
   logs: [],
-  report: null,
+  reportText: '',
   reviewText: '',
   revisionCount: 0,
 }
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case 'START':
-      return { ...state, status: 'analyzing', logs: [], report: null, reviewText: '' }
+    case 'START_UPLOAD':
+      return { ...state, status: 'uploading', logs: [], reportText: '', reviewText: '' }
+    case 'UPLOAD_DONE':
+      return { ...state, status: 'parsing' }
+    case 'START_PARSE':
+      return state
+    case 'START_ANALYSIS':
+      return { ...state, status: 'analyzing', logs: [], reportText: '', reviewText: '' }
     case 'ADD_LOG':
       return { ...state, logs: [...state.logs, action.log] }
+    case 'APPEND_REPORT':
+      return { ...state, reportText: state.reportText + action.chunk }
     case 'SET_REPORT':
-      return { ...state, report: action.report, reviewText: '', status: 'review' }
+      // reportText 已通过 APPEND_REPORT 累积，此处仅切换状态
+      return { ...state, status: 'review' }
     case 'SET_REVIEW_TEXT':
       return { ...state, reviewText: action.text }
     case 'REVIEW':
-      return { ...state, status: 'analyzing', revisionCount: state.revisionCount + 1 }
+      return { ...state, status: 'analyzing', logs: [], reportText: '', revisionCount: state.revisionCount + 1 }
     case 'APPROVE':
       return { ...state, status: 'approved' }
     case 'STOP':
-      return { ...initialState }
+      return initialState
     case 'ERROR':
       return { ...state, logs: [...state.logs, action.log], status: 'error' }
     case 'RESET':
       return initialState
+    case 'GO_IDLE':
+      return { ...state, status: 'idle' }
     default:
       return state
   }
 }
 
-/* ──────────────────────── 模拟数据 ──────────────────────── */
+/* ──────────────────────── 常量 ──────────────────────── */
 
-const MOCK_PROJECTS = ['电商平台 v2.1', '内部 OA 系统', '移动端 App', '数据分析平台']
+const ANALYSIS_PROMPT = `请对以下需求文档进行详细的结构化分析，输出包含以下部分：
 
-const MOCK_UPLOADED_FILES = [
-  '用户管理需求文档.pdf',
-  '订单流程设计.docx',
-  '支付接口说明.md',
-  '数据字典 v3.xlsx',
-]
+## 1. 主要功能需求
+列出所有核心功能点，每条用加粗标注关键术语。
 
-function generateMockReport(revision: number): AnalysisReport {
-  const suffix = revision > 0 ? `（第 ${revision + 1} 次修订）` : ''
-  return {
-    title: `电商平台用户管理系统${suffix}`,
-    sections: [
-      {
-        heading: '1. 主要功能需求',
-        items: [
-          `用户注册与登录：支持手机号、邮箱注册${suffix}`,
-          '**多因素认证（MFA）**：短信验证码 + 邮箱验证双因子',
-          '用户信息管理：头像、昵称、密码修改、绑定手机/邮箱',
-          '**权限角色体系**：管理员 / 普通用户 / 访客三种角色',
-          '操作审计日志：记录关键操作（登录、密码修改、权限变更）',
-        ],
-      },
-      {
-        heading: '2. 非功能需求',
-        items: [
-          '**性能**：登录接口响应时间 < 200ms（P99）',
-          '**并发**：支持 5000 QPS 用户登录',
-          '**安全**：密码 bcrypt 加密存储，登录失败 5 次锁定 30 分钟',
-          '**可用性**：99.9% SLA，故障自动切换至备用节点',
-        ],
-      },
-      {
-        heading: '3. 接口需求',
-        items: [
-          'POST /api/auth/register — 用户注册',
-          'POST /api/auth/login — 用户登录（返回 JWT）',
-          'POST /api/auth/refresh — 刷新 Token',
-          'GET /api/users/me — 获取当前用户信息',
-          'PATCH /api/users/me — 更新用户信息',
-        ],
-      },
-      {
-        heading: '4. 数据模型',
-        items: [
-          '**users**：id, username, email, phone, password_hash, role, avatar_url, status, created_at',
-          '**audit_logs**：id, user_id, action, target, ip_address, created_at',
-          '**login_attempts**：id, user_id, ip, success, created_at',
-        ],
-      },
-      {
-        heading: '5. 风险与建议',
-        items: [
-          '**高风险**：手机号注册需对接短信网关，建议预留 2 周联调时间',
-          '**中风险**：JWT 密钥轮换策略需提前设计',
-          '**建议**：优先实现邮箱注册 + 登录，手机注册作为 P1 迭代',
-        ],
-      },
-    ],
-  }
-}
+## 2. 非功能需求
+包括性能、安全、可用性、兼容性等方面的要求。
 
-/* ──────────────────── 模拟分析流程 ──────────────────── */
+## 3. 接口需求
+列出需要的 API 接口，包含方法、路径和简要说明。
 
-async function simulateAnalysis(
-  dispatch: React.Dispatch<Action>,
-  signal: AbortSignal,
-  revision: number,
-): Promise<void> {
-  const logs = [
-    { icon: 'loading' as const, text: '🚀 开始需求分析...' },
-    { icon: 'loading' as const, text: '📄 正在解析上传的文档...' },
-    { icon: 'success' as const, text: '✅ 文档解析完成 (12,480 字符)' },
-    { icon: 'loading' as const, text: '📥 正在将文档存入向量数据库...' },
-    { icon: 'success' as const, text: '✅ 向量数据库处理完成' },
-    { icon: 'loading' as const, text: '🤖 AI 正在进行需求归纳分析...' },
-    { icon: 'success' as const, text: '✅ AI 需求归纳已输出，请审阅下方内容。您可以输入修改意见，或点击「确认通过」继续。' },
-  ]
+## 4. 数据模型
+列出主要数据实体及其关键字段。
 
-  for (let i = 0; i < logs.length; i++) {
-    if (signal.aborted) return
-    await new Promise((r) => setTimeout(r, 600 + Math.random() * 800))
-    dispatch({
-      type: 'ADD_LOG',
-      log: { id: crypto.randomUUID(), ...logs[i] },
-    })
-  }
+## 5. 风险与建议
+标注高/中/低风险项，并给出可行建议。
 
-  await new Promise((r) => setTimeout(r, 500))
-  if (!signal.aborted) {
-    dispatch({ type: 'SET_REPORT', report: generateMockReport(revision) })
-  }
-}
+请用 Markdown 格式输出，层次清晰、内容完整。`
 
-/* ──────────────────────── 子组件 ──────────────────────── */
+/* ──────────────────── 子组件 ──────────────────────── */
 
 /** 终端风格状态指示灯 */
 function TrafficLights() {
@@ -203,7 +145,8 @@ function TrafficLights() {
 function StatusBadge({ status }: { status: AnalysisStatus }) {
   const map: Record<AnalysisStatus, { label: string; cls: string }> = {
     idle: { label: '等待上传', cls: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-    uploading: { label: '上传中', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+    uploading: { label: '上传中', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
+    parsing: { label: '解析中...', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
     analyzing: { label: '分析中...', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
     review: { label: '等待审阅', cls: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
     approved: { label: '已通过', cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
@@ -223,132 +166,69 @@ function LogLine({ entry }: { entry: LogEntry }) {
   return (
     <div className="flex items-start gap-2.5 text-sm leading-relaxed font-mono py-0.5 animate-[fadeIn_0.3s_ease-out]">
       {iconMap[entry.icon]}
-      <span className="text-gray-300">{entry.text}</span>
+      <span className="text-gray-300 whitespace-pre-wrap break-words">{entry.text}</span>
     </div>
   )
 }
 
-/** 结构化报告 */
-function AnalysisReport({ report }: { report: AnalysisReport }) {
+/** Markdown 简易渲染器（终端风格） */
+function MarkdownReport({ text }: { text: string }) {
+  const lines = text.split('\n')
   return (
-    <div className="mt-4 space-y-5 text-sm leading-[1.6]">
-      <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
-        需求文档分析摘要：{report.title}
-      </h3>
-      {report.sections.map((sec) => (
-        <div key={sec.heading} className="space-y-2">
-          <h4 className="font-semibold text-foreground">{sec.heading}</h4>
-          <ul className="space-y-1.5 pl-4">
-            {sec.items.map((item, i) => (
-              <li key={i} className="text-gray-300 list-disc">
-                <span dangerouslySetInnerHTML={{ __html: item.replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground">$1</strong>') }} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  )
-}
+    <div className="space-y-1 text-sm leading-[1.7] font-mono">
+      {lines.map((line, i) => {
+        const trimmed = line.trim()
+        if (!trimmed) return <div key={i} className="h-2" />
 
-/** 小型文件上传区 */
-function MiniDropZone({ onFile }: { onFile: (name: string) => void }) {
-  const [dragging, setDragging] = useState(false)
-
-  const handleClick = () => {
-    // 模拟选择文件
-    onFile('新建需求文档.pdf')
-    toast.success('文件已添加')
-  }
-
-  return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        const name = e.dataTransfer.files[0]?.name ?? '上传文件.pdf'
-        onFile(name)
-        toast.success('文件已添加')
-      }}
-      onClick={handleClick}
-      className={`
-        cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-all duration-200
-        ${dragging
-          ? 'border-primary bg-primary/10 scale-[1.02]'
-          : 'border-border/40 bg-muted/15 hover:border-primary/40 hover:bg-muted/25'
+        // H2
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h3 key={i} className="text-base font-bold text-foreground mt-4 mb-1 border-b border-border/30 pb-1">
+              {trimmed.slice(3)}
+            </h3>
+          )
         }
-      `}
-    >
-      <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
-      <p className="text-xs text-muted-foreground">拖拽文件到此处，或点击选择</p>
-      <p className="text-[11px] text-muted-foreground/60 mt-1">支持 PDF / Word / Excel / TXT / MD</p>
-    </div>
-  )
-}
-
-/* ──────────────────── 自定义 Select ──────────────────── */
-
-interface SelectOption {
-  value: string
-  label: string
-}
-
-function GlassSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className = '',
-}: {
-  value: string
-  onChange: (v: string) => void
-  options: SelectOption[]
-  placeholder?: string
-  className?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const selected = options.find((o) => o.value === value)
-
-  return (
-    <div ref={ref} className={`relative ${className}`}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between h-10 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 hover:ring-primary/40 transition-colors text-left"
-      >
-        <span className={selected ? 'text-foreground' : 'text-muted-foreground'}>
-          {selected?.label ?? placeholder ?? '请选择'}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-xl max-h-60 overflow-y-auto backdrop-blur-xl">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => { onChange(o.value); setOpen(false) }}
-              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-accent transition-colors ${
-                o.value === value ? 'bg-primary/10 text-primary' : 'text-foreground'
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
+        // H3
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h4 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1">
+              {trimmed.slice(4)}
+            </h4>
+          )
+        }
+        // Bold line
+        if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
+          return (
+            <p key={i} className="text-foreground font-semibold">{trimmed.slice(2, -2)}</p>
+          )
+        }
+        // List item
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          const content = trimmed.slice(2).replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
+          return (
+            <div key={i} className="flex gap-2 pl-2">
+              <span className="text-primary flex-shrink-0">•</span>
+              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
+            </div>
+          )
+        }
+        // Numbered list
+        if (/^\d+\.\s/.test(trimmed)) {
+          const content = trimmed.replace(/^\d+\.\s/, '').replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
+          const num = trimmed.match(/^(\d+)\./)?.[1]
+          return (
+            <div key={i} className="flex gap-2 pl-2">
+              <span className="text-primary flex-shrink-0 font-semibold">{num}.</span>
+              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
+            </div>
+          )
+        }
+        // Normal text with bold
+        const content = trimmed.replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
+        return (
+          <p key={i} className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
+        )
+      })}
     </div>
   )
 }
@@ -357,39 +237,160 @@ function GlassSelect({
 
 export default function AiAnalysisPage() {
   const [state, dispatch] = useReducer(reducer, initialState)
-  const [selectedProject, setSelectedProject] = useState('')
-  const [uploadedFile, setUploadedFile] = useState('')
-  const [selectedExistingFile, setSelectedExistingFile] = useState('')
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [requirementText, setRequirementText] = useState('')
   const [humanReview, setHumanReview] = useState(true)
+  const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 获取默认模型信息
+  useEffect(() => {
+    aiApi.getModels().then((models) => {
+      const def = models.find((m) => m.isDefault) ?? models[0]
+      if (def) setModelInfo(def)
+    }).catch(() => {})
+  }, [])
 
   // 自动滚动日志
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
     }
-  }, [state.logs])
+  }, [state.logs, state.reportText])
 
-  const hasDocument = Boolean(uploadedFile || selectedExistingFile)
+  const addLog = useCallback((icon: LogEntry['icon'], text: string) => {
+    dispatch({ type: 'ADD_LOG', log: { id: crypto.randomUUID(), icon, text } })
+  }, [])
+
+  /* ──────── 文件上传 ──────── */
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    dispatch({ type: 'START_UPLOAD' })
+    setUploadProgress(0)
+    addLog('loading', `📤 正在上传文件：${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`)
+
+    try {
+      const result = await filesApi.upload(file, (p) => setUploadProgress(p))
+      setUploadedFile(result)
+      addLog('success', `✅ 文件上传成功，服务端文件 ID：${result.id}`)
+
+      // 轮询等待文件解析完成
+      if (result.status !== 'PARSED') {
+        dispatch({ type: 'UPLOAD_DONE' })
+        addLog('loading', '📄 正在等待服务端解析文档（OCR / 文本提取）...')
+
+        const parsed = await pollUntilParsed(result.id)
+        if (parsed.status === 'PARSED') {
+          setUploadedFile(parsed)
+          const charCount = parsed.parsedContent?.length ?? 0
+          addLog('success', `✅ 文档解析完成 (${charCount.toLocaleString()} 字符)`)
+          dispatch({ type: 'GO_IDLE' })
+        } else {
+          addLog('error', '❌ 文档解析失败，请重新上传')
+          dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: '文档解析失败' } })
+        }
+      } else {
+        const charCount = result.parsedContent?.length ?? 0
+        addLog('success', `✅ 文档解析完成 (${charCount.toLocaleString()} 字符)`)
+      }
+    } catch {
+      addLog('error', '❌ 文件上传失败，请重试')
+      dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: '上传失败' } })
+      toast.error('文件上传失败')
+    }
+  }, [addLog])
+
+  /** 轮询文件解析状态 */
+  const pollUntilParsed = async (fileId: string): Promise<UploadedFile> => {
+    for (let i = 0; i < 90; i++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const f = await filesApi.getFileById(fileId)
+        if (f.status === 'PARSED' || f.status === 'FAILED') return f
+      } catch {
+        // 继续轮询
+      }
+    }
+    // 超时返回最后状态
+    try {
+      return await filesApi.getFileById(fileId)
+    } catch {
+      throw new Error('轮询超时')
+    }
+  }
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file) void handleFileSelect(file)
+  }, [handleFileSelect])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) void handleFileSelect(file)
+    e.target.value = ''
+  }, [handleFileSelect])
+
+  const handleRemoveFile = useCallback(() => {
+    setUploadedFile(null)
+    dispatch({ type: 'STOP' })
+  }, [])
+
+  /* ──────── AI 分析 ──────── */
+
+  const canStartAnalysis = Boolean(uploadedFile && uploadedFile.status === 'PARSED')
   const isIdle = state.status === 'idle' || state.status === 'error'
 
   const handleStartAnalysis = useCallback(async () => {
-    if (!hasDocument) {
-      toast.error('请先上传或选择文档')
+    if (!uploadedFile) {
+      toast.error('请先上传文档')
       return
     }
+
     const controller = new AbortController()
     abortRef.current = controller
-    dispatch({ type: 'START' })
+
+    dispatch({ type: 'START_ANALYSIS' })
+    addLog('loading', '🚀 开始需求分析...')
+    addLog('loading', '🤖 正在调用 AI 模型进行需求归纳分析...')
+
+    const customPrompt = requirementText.trim()
+      ? `${ANALYSIS_PROMPT}\n\n用户补充说明：\n${requirementText}`
+      : ANALYSIS_PROMPT
+
     try {
-      await simulateAnalysis(dispatch, controller.signal, state.revisionCount)
+      await new Promise<void>((resolve, reject) => {
+        aiApi.generateStream(
+          {
+            sourceType: 'file',
+            fileId: uploadedFile.id,
+            customPrompt,
+            stream: true,
+          },
+          (chunk) => {
+            dispatch({ type: 'APPEND_REPORT', chunk })
+          },
+          (_meta) => {
+            addLog('success', '✅ AI 需求分析完成，请审阅下方内容。您可以输入修改意见，或点击「确认通过」继续。')
+            dispatch({ type: 'SET_REPORT', text: '' }) // 触发状态变为 review，reportText 已在 APPEND_REPORT 中累积
+            // 实际上需要把 reportText 保留在 state 中
+            resolve()
+          },
+          (err) => {
+            addLog('error', `❌ 分析失败：${err.message}`)
+            dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: err.message } })
+            reject(err)
+          },
+        )
+      })
     } catch {
-      dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: '❌ 分析过程中发生错误' } })
+      // 错误已在 onError 中处理
     }
-  }, [hasDocument, state.revisionCount])
+  }, [uploadedFile, requirementText, addLog])
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
@@ -397,20 +398,60 @@ export default function AiAnalysisPage() {
     toast('已停止分析', { icon: '⏹' })
   }, [])
 
-  const handleSubmitRevision = useCallback(() => {
+  const handleSubmitRevision = useCallback(async () => {
     if (!state.reviewText.trim()) {
       toast.error('请输入修改意见')
       return
     }
+    if (!uploadedFile) return
+
     abortRef.current?.abort()
     dispatch({ type: 'REVIEW' })
-    // 重新开始分析
-    setTimeout(() => {
-      const controller = new AbortController()
-      abortRef.current = controller
-      void simulateAnalysis(dispatch, controller.signal, state.revisionCount + 1)
-    }, 300)
-  }, [state.reviewText, state.revisionCount])
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    const revisionPrompt = `${ANALYSIS_PROMPT}
+
+以下是上一轮分析结果：
+---
+${state.reportText}
+---
+
+用户修改意见：${state.reviewText}
+
+请根据修改意见重新分析并改进报告。`
+
+    addLog('loading', '🔄 正在根据修改意见重新分析...')
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        aiApi.generateStream(
+          {
+            sourceType: 'file',
+            fileId: uploadedFile.id,
+            customPrompt: revisionPrompt,
+            stream: true,
+          },
+          (chunk) => {
+            dispatch({ type: 'APPEND_REPORT', chunk })
+          },
+          () => {
+            addLog('success', '✅ 修订完成，请再次审阅。')
+            dispatch({ type: 'SET_REPORT', text: '' })
+            resolve()
+          },
+          (err) => {
+            addLog('error', `❌ 修订失败：${err.message}`)
+            dispatch({ type: 'ERROR', log: { id: crypto.randomUUID(), icon: 'error', text: err.message } })
+            reject(err)
+          },
+        )
+      })
+    } catch {
+      // handled
+    }
+  }, [uploadedFile, state.reviewText, state.reportText, addLog])
 
   const handleApprove = useCallback(() => {
     dispatch({ type: 'APPROVE' })
@@ -427,12 +468,11 @@ export default function AiAnalysisPage() {
     [handleSubmitRevision],
   )
 
-  const handleFileDrop = useCallback((name: string) => {
-    setUploadedFile(name)
-  }, [])
-
-  const projectOptions: SelectOption[] = MOCK_PROJECTS.map((p) => ({ value: p, label: p }))
-  const existingFileOptions: SelectOption[] = MOCK_UPLOADED_FILES.map((f) => ({ value: f, label: f }))
+  // 实际状态判断：上传/解析完成后回到 idle 让用户点开始分析
+  const showStartButton = isIdle && canStartAnalysis
+  const showAnalyzing = state.status === 'analyzing'
+  const showReviewArea = state.status === 'review' || state.status === 'approved'
+  const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
 
   return (
     <div className="w-full min-w-0 max-w-[1600px] mx-auto px-3 sm:px-4 md:px-6 pb-8 space-y-5">
@@ -447,6 +487,11 @@ export default function AiAnalysisPage() {
             上传需求文档，AI 自动解析并生成结构化需求分析报告，支持人工审阅与迭代修订
           </p>
         </div>
+        {modelInfo && (
+          <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/5 flex-shrink-0">
+            模型：{modelInfo.name}
+          </Badge>
+        )}
       </div>
 
       {/* 使用说明 */}
@@ -455,22 +500,10 @@ export default function AiAnalysisPage() {
         <div className="space-y-0.5">
           <p className="font-medium">使用说明</p>
           <p className="text-xs opacity-80">
-            上传需求文档或从已上传文件中选择，AI 将自动解析文档内容并生成结构化的需求分析报告。
+            上传需求文档，AI 将自动解析文档内容并生成结构化的需求分析报告。
             分析完成后可进行人工审阅，输入修改意见后 AI 将根据反馈迭代优化报告，满意后点击「确认通过」继续。
+            使用的是系统设置中配置的 AI 模型。
           </p>
-        </div>
-      </div>
-
-      {/* 用例生成模板（保留原有样式） */}
-      <div className="rounded-xl border bg-card p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <label className="text-sm text-muted-foreground whitespace-nowrap">用例生成模板</label>
-          <select className="h-10 min-w-0 flex-1 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
-            <option value="">— 使用默认模板 —</option>
-            <option>功能测试用例模板</option>
-            <option>接口测试用例模板</option>
-            <option>性能测试用例模板</option>
-          </select>
         </div>
       </div>
 
@@ -478,54 +511,69 @@ export default function AiAnalysisPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 min-h-[600px]">
         {/* ──────── 左侧操作区 ──────── */}
         <div className="space-y-4">
-          {/* 关联项目 */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">关联项目</label>
-            <GlassSelect
-              value={selectedProject}
-              onChange={setSelectedProject}
-              options={projectOptions}
-              placeholder="请选择关联项目"
-            />
-          </div>
-
-          {/* 需求文档 */}
+          {/* 需求文档上传 */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
-            <MiniDropZone onFile={handleFileDrop} />
-            {uploadedFile && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
-                <FileText className="w-4 h-4 text-green-400 flex-shrink-0" />
-                <span className="text-sm text-green-300 flex-1 truncate">{uploadedFile}</span>
+
+            {/* 隐藏的 file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".pdf,.docx,.xlsx,.txt,.md,.yaml,.yml,.png,.jpg,.jpeg"
+              onChange={handleInputChange}
+            />
+
+            {!uploadedFile ? (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-all duration-200 border-border/40 bg-muted/15 hover:border-primary/40 hover:bg-muted/25"
+              >
+                <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">拖拽文件到此处，或点击选择</p>
+                <p className="text-[11px] text-muted-foreground/60 mt-1">支持 PDF / Word / Excel / TXT / MD / 图片</p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <FileText className="w-5 h-5 text-green-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-green-300 truncate">{uploadedFile.originalName}</p>
+                  <p className="text-xs text-green-400/60">
+                    {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB · {uploadedFile.status === 'PARSED' ? '解析完成' : uploadedFile.status === 'PARSING' ? '解析中...' : uploadedFile.status}
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setUploadedFile('')}
-                  className="text-green-400/60 hover:text-green-300 transition-colors"
+                  onClick={handleRemoveFile}
+                  className="text-green-400/60 hover:text-green-300 transition-colors p-1"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             )}
-            <p className="text-xs text-muted-foreground">或从已上传文件中选择</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <GlassSelect
-                  value={selectedExistingFile}
-                  onChange={setSelectedExistingFile}
-                  options={existingFileOptions}
-                  placeholder="选择已上传的文档"
-                />
+
+            {/* 上传进度 */}
+            {state.status === 'uploading' && uploadProgress > 0 && (
+              <div className="space-y-1">
+                <div className="w-full bg-secondary rounded-full h-1.5">
+                  <div
+                    className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground text-right">{uploadProgress}%</p>
               </div>
-              {selectedExistingFile && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedExistingFile('')}
-                  className="flex-shrink-0 p-2 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            )}
+
+            {/* 解析中提示 */}
+            {state.status === 'parsing' && (
+              <div className="flex items-center gap-2 text-xs text-amber-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                正在等待服务端解析文档（OCR / 文本提取可能需要一段时间）...
+              </div>
+            )}
           </div>
 
           {/* 需求描述/补充说明 */}
@@ -564,16 +612,16 @@ export default function AiAnalysisPage() {
 
           {/* 操作按钮组 */}
           <div className="space-y-2 pt-2">
-            {isIdle ? (
+            {showStartButton && (
               <Button
-                className="w-full h-11 text-sm font-medium gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!hasDocument}
+                className="w-full h-11 text-sm font-medium gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-purple-500/20"
                 onClick={handleStartAnalysis}
               >
                 <Brain className="w-4 h-4" />
                 开始分析
               </Button>
-            ) : state.status === 'analyzing' ? (
+            )}
+            {showAnalyzing && (
               <>
                 <Button
                   className="w-full h-11 text-sm font-medium gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white opacity-70 cursor-not-allowed"
@@ -591,7 +639,16 @@ export default function AiAnalysisPage() {
                   停止分析
                 </Button>
               </>
-            ) : null}
+            )}
+            {isIdle && !canStartAnalysis && !isUploadingOrParsing && (
+              <Button
+                className="w-full h-11 text-sm font-medium gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white opacity-50 cursor-not-allowed"
+                disabled
+              >
+                <Brain className="w-4 h-4" />
+                开始分析
+              </Button>
+            )}
           </div>
         </div>
 
@@ -611,7 +668,7 @@ export default function AiAnalysisPage() {
             {/* 日志区域 */}
             <div
               ref={logContainerRef}
-              className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5 min-h-[160px] max-h-[280px]"
+              className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5 min-h-[120px] max-h-[220px]"
             >
               {state.logs.length === 0 && (
                 <div className="text-sm text-gray-500 font-mono py-4 text-center">
@@ -624,14 +681,19 @@ export default function AiAnalysisPage() {
             </div>
 
             {/* 结构化报告 */}
-            {state.report && (
-              <div className="px-4 py-3 border-t border-border/20 bg-[#111125]/80 max-h-[320px] overflow-y-auto">
-                <AnalysisReport report={state.report} />
+            {state.reportText && (
+              <div className="px-4 py-3 border-t border-border/20 bg-[#111125]/80 max-h-[360px] overflow-y-auto">
+                <div className="mb-3">
+                  <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                    需求文档分析报告
+                  </h3>
+                </div>
+                <MarkdownReport text={state.reportText} />
               </div>
             )}
 
             {/* 人工审阅交互区 */}
-            {(state.status === 'review' || state.status === 'approved') && (
+            {showReviewArea && (
               <div className="px-4 py-4 border-t border-border/20 bg-[#0d0d1a]">
                 {state.status === 'approved' ? (
                   <div className="text-center py-3 space-y-2">
@@ -665,7 +727,7 @@ export default function AiAnalysisPage() {
                     <div className="flex items-center gap-2 mt-3">
                       <Button
                         className="flex-1 h-10 text-sm font-medium gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white shadow-md"
-                        onClick={handleSubmitRevision}
+                        onClick={() => void handleSubmitRevision()}
                       >
                         <ArrowRight className="w-4 h-4" />
                         提交修改意见 (Ctrl+Enter)
