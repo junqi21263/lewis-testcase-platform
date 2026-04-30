@@ -296,6 +296,7 @@ export class AiService {
     let configId: string | null = null
 
     if (modelConfigId) {
+      this.logger.log(`查找模型配置: modelConfigId=${modelConfigId}`)
       const config = await this.prisma.aIModelConfig.findUnique({ where: { id: modelConfigId } })
       if (config) {
         configId = config.id
@@ -303,6 +304,9 @@ export class AiService {
         apiKey = config.apiKey
         modelId = config.modelId
         modelName = config.name
+        this.logger.log(`找到模型配置: id=${configId}, name=${modelName}, modelId=${modelId}`)
+      } else {
+        this.logger.warn(`未找到模型配置: modelConfigId=${modelConfigId}`)
       }
     } else {
       // 使用默认模型
@@ -313,10 +317,14 @@ export class AiService {
         apiKey = defaultModel.apiKey
         modelId = defaultModel.modelId
         modelName = defaultModel.name
+        this.logger.log(`使用默认模型: id=${configId}, name=${modelName}, modelId=${modelId}`)
+      } else {
+        this.logger.warn('未找到默认模型，将使用环境变量配置')
       }
     }
 
     if (!apiKey || apiKey === 'placeholder') {
+      this.logger.error(`API Key 未配置或为空: apiKey=${apiKey}`)
       throw new BadRequestException('AI API Key 未配置，请在系统设置中配置模型')
     }
 
