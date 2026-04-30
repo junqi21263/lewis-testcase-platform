@@ -257,6 +257,8 @@ export default function AiAnalysisPage() {
         console.log('选择的默认模型:', def)
         setModelInfo(def)
         setSelectedModelId(def.id)
+      } else {
+        console.warn('没有找到任何可用模型！')
       }
     }).catch((err) => {
       console.error('获取模型列表失败:', err)

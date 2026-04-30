@@ -470,6 +470,7 @@ export class AiService {
 
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
+    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
@@ -592,6 +593,7 @@ export class AiService {
 
   /** 流式生成（SSE） */
   async generateStream(dto: GenerateDto, userId: string, res: Response) {
+    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
