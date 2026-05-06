@@ -178,59 +178,26 @@ jobs:
               sudo env STACK_PREFIX="$STACK_PREFIX" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             fi
             
-            echo "✅ Deployment started, waiting for services to initialize..."
-            
-            # 等待后端容器启动（先等数据库就绪，再等后端启动）
-            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
-              echo "⏳ Waiting for database to be ready..."
-              for i in $(seq 1 60); do
-                if sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T postgres pg_isready -U ${DB_USER:-testcase_user} 2>/dev/null; then
-                  echo "✅ Database is ready"
-                  break
-                fi
-                sleep 1
-              done
-              
-              echo "⏳ Waiting for backend to be ready..."
-              for i in $(seq 1 60); do
-                if curl -fsS "http://127.0.0.1:3000/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-                  echo "✅ Backend is ready"
-                  break
-                fi
-                sleep 1
-              done
-            fi
-            
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
             
-            # 开发环境使用独立端口进行smoke检查
+            # 开发环境smoke检查（通过前端代理检查后端健康状态）
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               echo "🧪 Running development smoke check on port 8080..."
               ok=0
-              # 增加等待时间，给后端足够时间初始化（包括数据库迁移等）
-              for i in $(seq 1 120); do
-                # 通过前端代理检查健康状态
+              for i in $(seq 1 60); do
                 if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
                   ok=1
                   break
                 fi
-                if [ $((i % 10)) -eq 0 ]; then
-                  echo "Waiting for services... ($i/120)"
-                  sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps 2>/dev/null || true
-                fi
-                sleep 1
+                sleep 2
               done
               if [ "$ok" != "1" ]; then
-                echo "❌ Development smoke check failed after waiting 120s"
-                echo "--- Container status ---"
+                echo "❌ Smoke check failed after waiting 60s"
                 sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
-                echo "--- Backend logs ---"
-                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=200 backend || true
-                echo "--- Frontend logs ---"
-                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 frontend || true
+                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend || true
                 exit 1
               fi
-              echo "✅ Development smoke check passed"
+              echo "✅ Smoke check passed"
               echo "访问地址: http://${{ secrets.SSH_HOST }}:8080"
             else
               env STACK_PREFIX="$STACK_PREFIX" COMPOSE_ENV_FILE="$ENV_FILE" bash scripts/smoke.sh
