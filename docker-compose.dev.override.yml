@@ -1,12 +1,16 @@
 services:
   frontend:
     container_name: testcase_dev_frontend
+    ports:
+      - "0.0.0.0:8080:80"
 
   backend:
     container_name: testcase_dev_backend
 
   postgres:
     container_name: testcase_dev_postgres
+    ports:
+      - "127.0.0.1:5433:5432"
 
   redis:
     container_name: testcase_dev_redis
