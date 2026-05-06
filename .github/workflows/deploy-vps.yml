@@ -187,10 +187,11 @@ jobs:
             
             # 勿使用 build --no-cache：每次部署都会重跑 apk/canvas 依赖层，在小型 VPS 上极慢且易被误判为「卡住」
             # 需要彻底重建时在服务器手动执行: docker compose ... build --no-cache && up -d
+            # BUILDKIT_PROGRESS=plain：apk/pnpm 长时间无 classic 进度条时仍能看到底层输出
             if sudo docker compose version >/dev/null 2>&1; then
-              sudo env STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              sudo env DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             else
-              sudo env STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              sudo env DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             fi
             
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
