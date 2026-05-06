@@ -8,7 +8,7 @@ services:
         # 与 frontend/.env.production / Vite 约定一致；同源反代保持 /api 即可
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
         VITE_APP_NAME: ${VITE_APP_NAME:-}
-    container_name: testcase_frontend
+    container_name: ${STACK_PREFIX:-testcase}_frontend
     restart: unless-stopped
     ports:
       - "80:80"
@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: testcase_backend
+    container_name: ${STACK_PREFIX:-testcase}_backend
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -54,7 +54,7 @@ services:
   # 数据库服务
   postgres:
     image: public.ecr.aws/docker/library/postgres:15-alpine
-    container_name: testcase_postgres
+    container_name: ${STACK_PREFIX:-testcase}_postgres
     restart: unless-stopped
     # 仅绑定本机，供 SSH 隧道 / 本机工具（如 Navicat）连到「与后端相同」的库；勿对公网 0.0.0.0 暴露
     ports:
@@ -76,7 +76,7 @@ services:
   # Redis 缓存服务
   redis:
     image: public.ecr.aws/docker/library/redis:7-alpine
-    container_name: testcase_redis
+    container_name: ${STACK_PREFIX:-testcase}_redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
