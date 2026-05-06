@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { Response } from 'express'
 import { AiService } from './ai.service'
 import { GenerateDto } from './dto/generate.dto'
+import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Roles } from '@/common/decorators/roles.decorator'
 import { UserRole } from '@prisma/client'
@@ -33,6 +34,16 @@ export class AiController {
     @Res() res: Response,
   ) {
     return this.aiService.generateStream(dto, userId, res)
+  }
+
+  @Post('analyze/stream')
+  @ApiOperation({ summary: '需求分析专用流式（SSE，不走用例管线）' })
+  analyzeStream(
+    @Body() dto: CreateAnalysisDto,
+    @CurrentUser('id') userId: string,
+    @Res() res: Response,
+  ) {
+    return this.aiService.analyzeStream(dto, userId, res)
   }
 
   @Post('test')

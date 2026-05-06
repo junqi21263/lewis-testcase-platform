@@ -1,4 +1,5 @@
 import type { RequirementPoint } from '@/types/upload'
+import { safeRandomUUID } from '@/utils/uuid'
 
 /**
  * 从解析后的文本中智能提取需求点
@@ -58,7 +59,7 @@ export function extractRequirements(
   const unique = Array.from(new Set(results)).slice(0, 50)
 
   return unique.map((content) => ({
-    id: crypto.randomUUID(),
+    id: safeRandomUUID(),
     content,
     originalContent: content,
     edited: false,

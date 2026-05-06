@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Bot,
   FileUp,
+  Brain,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useState } from 'react'
@@ -18,6 +19,7 @@ import { Button } from '@/components/ui/button'
 const navItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: '工作台' },
   { path: '/upload', icon: FileUp, label: '文档解析' },
+  { path: '/ai-analysis', icon: Brain, label: 'AI 需求分析' },
   { path: '/generate', icon: Wand2, label: '生成用例' },
   { path: '/records', icon: ClipboardList, label: '生成记录' },
   { path: '/templates', icon: BookTemplate, label: '模板管理' },
@@ -36,7 +38,7 @@ function sidebarNavClassNames(isActive: boolean, collapsed: boolean) {
     'hover:scale-[1.01] active:scale-[0.99] motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
     isActive
       ? 'bg-sidebar-accent/92 text-sidebar-foreground'
-      : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/55 hover:text-sidebar-accent-foreground',
+      : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
     collapsed && 'justify-center px-2',
   )
 }
@@ -47,7 +49,7 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative z-10 flex flex-col bg-[color:var(--glass-bg)] text-sidebar-foreground shadow-[10px_0_40px_-34px_rgba(0,0,0,0.75)] ring-1 ring-inset ring-[color:var(--glass-border)] backdrop-blur-[var(--glass-blur)] transition-all duration-300',
+        'relative z-10 flex flex-col bg-sidebar/94 text-sidebar-foreground shadow-[6px_0_32px_-12px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition-all duration-300 supports-[backdrop-filter]:bg-sidebar/88 dark:shadow-[6px_0_40px_-8px_rgba(0,0,0,0.75)]',
         collapsed ? 'w-16' : 'w-60',
       )}
     >
@@ -107,9 +109,9 @@ export default function Sidebar() {
         onClick={() => setCollapsed(!collapsed)}
         className={cn(
           'absolute -right-[17px] top-[4.5rem] z-10 h-11 w-11 rounded-full',
-          'bg-[color:var(--glass-bg)] text-sidebar-foreground shadow-[0_18px_50px_-34px_rgba(0,0,0,0.8)] ring-1 ring-inset ring-[color:var(--glass-border)] backdrop-blur-[var(--glass-blur)]',
-          'transition-[transform,background-color,box-shadow] duration-200 ease-out',
-          'hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)] hover:scale-105 active:scale-95',
+          'bg-sidebar-accent/85 text-sidebar-foreground shadow-md backdrop-blur-sm',
+          'transition-[transform,background-color] duration-200 ease-out',
+          'hover:bg-sidebar-accent hover:scale-105 active:scale-95',
           'motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100',
           'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
         )}

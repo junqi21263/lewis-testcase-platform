@@ -97,8 +97,12 @@ export interface UploadedFile {
   fileType: FileType
   status: FileStatus
   parsedContent?: string
+  /** 服务端解析阶段（PENDING / CLAIMED / FILE_OK / PDF / WORD / EXCEL / IMAGE / STRUCTURE / DONE / FAILED / CANCELLED） */
+  parseStage?: string | null
   /** 服务端解析失败原因 */
   parseError?: string | null
+  /** 解析重试次数 */
+  parseAttempts?: number
   /** 后端 LLM 结构化后的需求条目 */
   structuredRequirements?: string[] | null
   uploaderId: string

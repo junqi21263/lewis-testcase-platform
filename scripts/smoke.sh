@@ -44,9 +44,16 @@ pick_compose_runner() {
 
 COMPOSE_RUNNER="$(pick_compose_runner)"
 
+compose_env_args=()
+if [ -n "${COMPOSE_ENV_FILE:-}" ] && [ -f "$ROOT/$COMPOSE_ENV_FILE" ]; then
+  compose_env_args=(--env-file "$ROOT/$COMPOSE_ENV_FILE")
+elif [ -f "$ROOT/.env" ]; then
+  compose_env_args=(--env-file "$ROOT/.env")
+fi
+
 docker_compose() {
   # shellcheck disable=SC2086
-  $COMPOSE_RUNNER -f "$COMPOSE_FILE" "$@"
+  $COMPOSE_RUNNER -f "$COMPOSE_FILE" "${compose_env_args[@]}" "$@"
 }
 
 echo "[smoke] compose ps"

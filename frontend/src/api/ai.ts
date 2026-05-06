@@ -47,8 +47,20 @@ export const aiApi = {
     onChunk: (chunk: string) => void,
     onDone?: (meta?: StreamDoneMeta) => void,
     onError?: (error: Error) => void,
+    signal?: AbortSignal,
   ) => {
-    return streamRequest('/ai/generate/stream', payload, onChunk, onDone, onError)
+    return streamRequest('/ai/generate/stream', payload, onChunk, onDone, onError, signal)
+  },
+
+  /** 需求分析专用流式（SSE，不走用例管线） */
+  analyzeStream: (
+    payload: Omit<GenerateTestCasesPayload, 'sourceType'> & { sourceType: 'file' | 'text' },
+    onChunk: (chunk: string) => void,
+    onDone?: (meta?: StreamDoneMeta) => void,
+    onError?: (error: Error) => void,
+    signal?: AbortSignal,
+  ) => {
+    return streamRequest('/ai/analyze/stream', payload, onChunk, onDone, onError, signal)
   },
 
   /** 管理用途：测试模型连通性（需要管理员权限） */

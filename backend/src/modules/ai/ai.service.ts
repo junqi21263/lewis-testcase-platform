@@ -9,6 +9,7 @@ import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
 import { GenerationSource, GenerationStatus, Prisma, TestCasePriority, TestCaseType } from '@prisma/client'
 import { GenerateDto } from './dto/generate.dto'
+import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
 import {
   clampGenerationUserContent,
@@ -296,6 +297,7 @@ export class AiService {
     let configId: string | null = null
 
     if (modelConfigId) {
+      this.logger.log(`查找模型配置: modelConfigId=${modelConfigId}`)
       const config = await this.prisma.aIModelConfig.findUnique({ where: { id: modelConfigId } })
       if (config) {
         configId = config.id
@@ -303,6 +305,9 @@ export class AiService {
         apiKey = config.apiKey
         modelId = config.modelId
         modelName = config.name
+        this.logger.log(`找到模型配置: id=${configId}, name=${modelName}, modelId=${modelId}`)
+      } else {
+        this.logger.warn(`未找到模型配置: modelConfigId=${modelConfigId}`)
       }
     } else {
       // 使用默认模型
@@ -313,10 +318,14 @@ export class AiService {
         apiKey = defaultModel.apiKey
         modelId = defaultModel.modelId
         modelName = defaultModel.name
+        this.logger.log(`使用默认模型: id=${configId}, name=${modelName}, modelId=${modelId}`)
+      } else {
+        this.logger.warn('未找到默认模型，将使用环境变量配置')
       }
     }
 
     if (!apiKey || apiKey === 'placeholder') {
+      this.logger.error(`API Key 未配置或为空: apiKey=${apiKey}`)
       throw new BadRequestException('AI API Key 未配置，请在系统设置中配置模型')
     }
 
@@ -470,6 +479,7 @@ export class AiService {
 
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
+    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
@@ -592,6 +602,7 @@ export class AiService {
 
   /** 流式生成（SSE） */
   async generateStream(dto: GenerateDto, userId: string, res: Response) {
+    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
@@ -730,6 +741,123 @@ export class AiService {
           caseCount: suite.cases.length,
         })}\n\n`,
       )
+      res.write(`data: [DONE]\n\n`)
+      res.end()
+    } catch (err: unknown) {
+      const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
+      await this.prisma.generationRecord.update({
+        where: { id: record.id },
+        data: { status: GenerationStatus.FAILED, errorMessage: message },
+      })
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ error: message })}\n\n`)
+        res.end()
+      }
+    } finally {
+      clearInterval(keepAlive)
+    }
+  }
+
+  /**
+   * 需求分析专用流式 SSE —— 不走测试用例生成管线，不做 JSON 解析，不创建 TestSuite。
+   * 完成后仅存一条轻量 GenerationRecord（generationSource = FILE_PARSE / MANUAL_INPUT）。
+   */
+  async analyzeStream(dto: CreateAnalysisDto, userId: string, res: Response) {
+    this.logger.log(`analyzeStream: sourceType=${dto.sourceType}, fileId=${dto.fileId}, modelConfigId=${dto.modelConfigId}`)
+    const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
+    const startTime = Date.now()
+
+    // 获取文件内容
+    let fileContent: string | undefined
+    if (dto.sourceType === 'file' && dto.fileId) {
+      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
+      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成')
+      fileContent = file.parsedContent
+    }
+
+    // 构建轻量记录
+    const record = await this.prisma.generationRecord.create({
+      data: {
+        title: `需求分析 ${new Date().toLocaleString('zh-CN')}`,
+        status: GenerationStatus.PROCESSING,
+        sourceType: dto.sourceType,
+        prompt: dto.customPrompt || '',
+        demandContent: fileContent || dto.text || '',
+        generationSource: dto.fileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT,
+        modelId,
+        modelName,
+        creatorId: userId,
+        fileId: dto.fileId,
+      },
+    })
+
+    // SSE 头
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders()
+
+    const keepAliveMs = 15000
+    const keepAlive = setInterval(() => {
+      if (!res.writableEnded) res.write(': ping\n\n')
+    }, keepAliveMs)
+
+    let fullContent = ''
+    let finishReason: string | null = null
+    try {
+      // 构建用户内容
+      let userContent = dto.customPrompt || '请对以下需求文档进行详细的结构化分析，输出 Markdown 格式的需求分析报告。'
+      if (fileContent) {
+        userContent += `\n\n需求文档内容：\n${fileContent}`
+      } else if (dto.text) {
+        userContent += `\n\n需求描述：\n${dto.text}`
+      }
+
+      const maxOut = this.effectiveMaxTokens(dto.maxTokens)
+      const stream = await client.chat.completions.create({
+        model: modelId,
+        messages: [
+          { role: 'system', content: '你是需求分析专家，请根据用户提供的需求文档或描述，输出结构化的需求分析报告。用 Markdown 格式输出，层次清晰、内容完整。' },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.7,
+        max_tokens: maxOut,
+        stream: true,
+      })
+
+      for await (const chunk of stream) {
+        const ch0 = chunk.choices[0]
+        const fr = ch0?.finish_reason
+        if (fr) finishReason = fr
+        const d = ch0?.delta as { content?: string; reasoning_content?: string } | undefined
+        const delta =
+          (typeof d?.content === 'string' ? d.content : '') ||
+          (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
+        if (delta) {
+          fullContent += delta
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+        }
+      }
+
+      if (finishReason === 'length') {
+        this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
+        this.logger.warn('analyzeStream: 模型输出因 max_tokens 被截断')
+      }
+
+      // 更新记录
+      const duration = Date.now() - startTime
+      await this.prisma.generationRecord.update({
+        where: { id: record.id },
+        data: {
+          status: GenerationStatus.SUCCESS,
+          demandContent: fullContent.slice(0, 100_000),
+          duration,
+          tokensUsed: undefined,
+        },
+      })
+
+      res.write(`data: ${JSON.stringify({ recordId: record.id, done: true })}\n\n`)
       res.write(`data: [DONE]\n\n`)
       res.end()
     } catch (err: unknown) {

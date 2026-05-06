@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Run local Playwright CLI with a sanitized environment so IDE/sandbox injections
  * of PLAYWRIGHT_BROWSERS_PATH do not hide already-installed Chromium / headless shell.
@@ -12,7 +11,17 @@ const exe = process.platform === 'win32' ? 'playwright.cmd' : 'playwright'
 const bin = path.join(root, 'node_modules', '.bin', exe)
 
 const env = { ...process.env }
-delete env.PLAYWRIGHT_BROWSERS_PATH
+delete env.PLAYWRIGHT_BROWSERS_PATH // <--- Key change here
+
+// Use the installed Playwright browsers path from node_modules
+const pwPkgPath = path.join(root, 'node_modules', '@playwright', 'test', 'package.json')
+try {
+  const pwPkg = JSON.parse(require('fs').readFileSync(pwPkgPath, 'utf8'))
+  const browsersPath = path.join(root, 'node_modules', '.playwright')
+  env.PLAYWRIGHT_BROWSERS_PATH = browsersPath
+} catch {
+  // Fallback: use default
+}
 
 const child = spawn(bin, process.argv.slice(2), {
   cwd: root,

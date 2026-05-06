@@ -126,12 +126,13 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   
-  teams         TeamMember[]
-  testSuites    TestSuite[]
-  testCases     TestCase[]
-  uploadedFiles UploadedFile[]
-  records       GenerationRecord[]
-  preference    UserPreference?
+  teams          TeamMember[]
+  testSuites     TestSuite[]
+  testCasesAsCreator TestCase[] @relation("TestCaseCreator")
+  testCasesAsAssignee TestCase[] @relation("TestCaseAssignee")
+  uploadedFiles  UploadedFile[]
+  records        GenerationRecord[]
+  preference     UserPreference?
   
   @@map("users")
 }
@@ -223,12 +224,12 @@ model TestCase {
   title          String
   description    String?
   precondition   String?
-  steps          Json
+  steps          String           @default("[]")
   expectedResult String?
   priority       TestCasePriority  @default(P2)
   type           TestCaseType     @default(FUNCTIONAL)
   status         TestCaseStatus   @default(DRAFT)
-  tags           String[]
+  tags           String           @default("[]")
   estimatedTime  Int?
   suiteId        String
   creatorId      String
@@ -237,8 +238,8 @@ model TestCase {
   updatedAt      DateTime         @updatedAt
   
   suite     TestSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
-  creator   User      @relation(fields: [creatorId], references: [id])
-  assignee  User?     @relation(fields: [assigneeId], references: [id])
+  creator   User      @relation("TestCaseCreator", fields: [creatorId], references: [id])
+  assignee  User?     @relation("TestCaseAssignee", fields: [assigneeId], references: [id])
   
   @@map("test_cases")
 }

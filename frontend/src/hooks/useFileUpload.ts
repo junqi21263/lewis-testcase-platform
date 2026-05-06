@@ -12,6 +12,7 @@ import { filesApi, CHUNK_THRESHOLD, CHUNK_SIZE } from '@/api/files'
 import { detectSensitive, maskText } from '@/utils/sensitiveDetector'
 import { extractRequirements } from '@/utils/requirementExtractor'
 import { compressImageIfNeeded } from '@/utils/imageCompress'
+import { safeRandomUUID } from '@/utils/uuid'
 import type { UploadTask, SupportedExtension, RequirementPoint } from '@/types/upload'
 import type { UploadedFile } from '@/types'
 
@@ -39,7 +40,7 @@ function serverFileToRequirementPoints(file: UploadedFile, sourceName: string): 
 
   if (structured.length > 0) {
     return structured.map((content) => ({
-      id: crypto.randomUUID(),
+      id: safeRandomUUID(),
       content: content.trim(),
       originalContent: content.trim(),
       edited: false,
@@ -100,7 +101,7 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
   const initTask = useCallback(
     (file: File): UploadTask => {
       const task: UploadTask = {
-        id: crypto.randomUUID(),
+        id: safeRandomUUID(),
         file,
         progress: 0,
         status: 'idle',
