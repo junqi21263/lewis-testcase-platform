@@ -182,20 +182,29 @@ jobs:
             
             # 开发环境使用独立端口进行smoke检查
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
-              echo "🧪 Running development smoke check on :8080..."
+              echo "🧪 Running development smoke check on port 8080..."
               ok=0
-              for i in $(seq 1 60); do
-                # 健康检查端点是 /health（不带 /api 前缀），由 nginx 直接代理到后端
-                if curl -fsS "http://127.0.0.1:8080/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+              # 增加等待时间，给后端足够时间初始化（包括数据库迁移等）
+              for i in $(seq 1 120); do
+                # 通过前端代理检查健康状态
+                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
                   ok=1
                   break
+                fi
+                if [ $((i % 10)) -eq 0 ]; then
+                  echo "Waiting for services... ($i/120)"
+                  sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps 2>/dev/null || true
                 fi
                 sleep 1
               done
               if [ "$ok" != "1" ]; then
-                echo "❌ Development smoke check failed after waiting 60s"
+                echo "❌ Development smoke check failed after waiting 120s"
+                echo "--- Container status ---"
                 sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
-                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=200 || true
+                echo "--- Backend logs ---"
+                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=200 backend || true
+                echo "--- Frontend logs ---"
+                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 frontend || true
                 exit 1
               fi
               echo "✅ Development smoke check passed"
