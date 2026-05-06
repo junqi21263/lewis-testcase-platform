@@ -1,5 +1,4 @@
-# 使用 Public ECR 上的 library 镜像，避免部分构建环境访问 docker.io（IPv6）时出现 network unreachable
-FROM public.ecr.aws/docker/library/node:20-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
