@@ -23,6 +23,24 @@ import { RestructureFileDto } from './dto/restructure-file.dto'
 import { UploadChunkFieldsDto } from './dto/upload-chunk-fields.dto'
 import { MergeChunksDto } from './dto/merge-chunks.dto'
 
+/**
+ * 解码文件名中的 UTF-8 编码（处理中文/繁体等非 ASCII 字符）
+ * multer 默认使用 latin1 编码，需要转换为 UTF-8
+ */
+function decodeFilename(filename: string): string {
+  try {
+    // 尝试检测并解码 URL 编码的文件名
+    if (filename.includes('%')) {
+      return decodeURIComponent(filename)
+    }
+    // 尝试将 latin1 编码转换为 UTF-8
+    const buffer = Buffer.from(filename, 'latin1')
+    return buffer.toString('utf-8')
+  } catch {
+    return filename
+  }
+}
+
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024
 const maxUploadBytes = parseInt(process.env.MAX_FILE_SIZE || String(DEFAULT_MAX_FILE_BYTES), 10)
 const effectiveMaxUpload =
@@ -58,6 +76,8 @@ export class FilesController {
     file: Express.Multer.File,
     @CurrentUser('id') userId: string,
   ) {
+    // 解码文件名，处理中文/繁体等非 ASCII 字符
+    file.originalname = decodeFilename(file.originalname)
     return this.filesService.saveUploadedFile(file, userId)
   }
 
@@ -96,6 +116,8 @@ export class FilesController {
   @Post('upload/merge')
   @ApiOperation({ summary: '合并分片并完成上传与解析排队' })
   mergeChunks(@Body() dto: MergeChunksDto, @CurrentUser('id') userId: string) {
+    // 解码文件名，处理中文/繁体等非 ASCII 字符
+    dto.originalName = decodeFilename(dto.originalName)
     return this.filesService.mergeChunkedUpload(userId, dto)
   }
 
