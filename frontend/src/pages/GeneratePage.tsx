@@ -100,8 +100,8 @@ function FileUploadZone() {
   if (uploadedFile) {
     const parsing = uploadedFile.status === 'PENDING' || uploadedFile.status === 'PARSING'
     return (
-      <div className="flex items-center gap-3 p-4 rounded-lg bg-[hsl(var(--success)/0.10)] ring-1 ring-inset ring-[hsl(var(--success)/0.22)]">
-        <FileText className="w-8 h-8 text-[hsl(var(--success))] flex-shrink-0" />
+      <div className="flex items-center gap-3 p-4 border rounded-lg bg-green-50 dark:bg-green-950/20">
+        <FileText className="w-8 h-8 text-green-600 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{uploadedFile.originalName}</p>
           <p className="text-xs text-muted-foreground">

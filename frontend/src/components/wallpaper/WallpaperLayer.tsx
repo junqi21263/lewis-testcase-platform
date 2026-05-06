@@ -19,15 +19,6 @@ export function WallpaperLayer() {
   const urlRef = useRef<string | null>(null)
   urlRef.current = url
 
-  const lowPowerMode = useMemo(() => {
-    const prefersReducedMotion =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const saveData = (navigator as unknown as { connection?: { saveData?: boolean } }).connection?.saveData
-    return Boolean(prefersReducedMotion || saveData)
-  }, [])
-
   const style = useMemo(() => {
     if (!enabled || !url) return undefined
     return { backgroundImage: `url("${url}")` } as const
@@ -55,11 +46,6 @@ export function WallpaperLayer() {
 
   /** mount：进入页拉新图；event：偏好已在服务端更新（如「换一张」），只同步 URL，避免重复请求 */
   const applyPreferences = (p: UserPreferences, source: 'mount' | 'event') => {
-    if (lowPowerMode) {
-      setEnabled(false)
-      setUrl(null)
-      return
-    }
     setEnabled(!!p.wallpaperEnabled)
 
     if (intervalRef.current) {

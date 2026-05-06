@@ -53,9 +53,9 @@ export default function LoginPage() {
   }
 
   return (
-    <Card className="shadow-[0_30px_80px_-48px_rgba(0,0,0,0.75)]">
+    <Card className="shadow-xl border-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur">
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-[22px] font-semibold tracking-tight text-center">欢迎回来</CardTitle>
+        <CardTitle className="text-2xl font-bold text-center">欢迎回来</CardTitle>
         <CardDescription className="text-center">
           当前已关闭注册与找回密码，请使用管理员账号登录
         </CardDescription>
@@ -65,8 +65,8 @@ export default function LoginPage() {
         <CardContent className="space-y-4">
           {/* 错误显示 */}
           {authError && (
-            <div className="rounded-lg bg-[hsl(var(--destructive)/0.12)] px-4 py-3 ring-1 ring-inset ring-[hsl(var(--destructive)/0.22)]">
-              <p className="text-[13px] leading-5 text-destructive break-words">{authError}</p>
+            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
+              <p className="text-sm">{authError}</p>
             </div>
           )}
 
@@ -119,14 +119,14 @@ export default function LoginPage() {
           </div>
         </CardContent>
 
-          <CardFooter className="flex flex-col gap-3 pt-2">
+        <CardFooter className="flex flex-col gap-3 pt-2">
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 rounded accent-[hsl(var(--primary))]"
+                  className="rounded border-gray-300"
                 />
                 记住我
               </label>

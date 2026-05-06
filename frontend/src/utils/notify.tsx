@@ -18,7 +18,7 @@ export const notify = {
       (t) => (
         <div
           className={[
-            'max-w-lg w-full rounded-lg bg-[color:var(--glass-bg)] shadow-[0_30px_80px_-48px_rgba(0,0,0,0.65)] p-3.5 space-y-2 ring-1 ring-inset ring-[color:var(--glass-border)] backdrop-blur-[var(--glass-blur)]',
+            'max-w-lg w-full rounded-md border bg-background shadow-lg p-3 space-y-2',
             t.visible ? 'animate-in fade-in-0 zoom-in-95' : 'animate-out fade-out-0 zoom-out-95',
           ].join(' ')}
         >
@@ -26,7 +26,7 @@ export const notify = {
           <div className="text-sm text-muted-foreground break-words">{short}</div>
           <div className="flex justify-end gap-2">
             <button
-              className="text-xs px-2.5 py-1.5 rounded-lg ring-1 ring-inset ring-[color:var(--glass-border)] bg-[color:var(--glass-bg)] hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)]"
+              className="text-xs px-2 py-1 rounded border hover:bg-accent"
               onClick={async () => {
                 await copyTextToClipboard(long)
                 toast.success('已复制错误详情')
@@ -35,7 +35,7 @@ export const notify = {
               复制详情
             </button>
             <button
-              className="text-xs px-2.5 py-1.5 rounded-lg ring-1 ring-inset ring-[color:var(--glass-border)] bg-[color:var(--glass-bg)] hover:bg-[color:color-mix(in_srgb,var(--glass-bg),white_6%)]"
+              className="text-xs px-2 py-1 rounded border hover:bg-accent"
               onClick={() => toast.dismiss(t.id)}
             >
               关闭
