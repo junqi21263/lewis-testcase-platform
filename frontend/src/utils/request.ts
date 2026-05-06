@@ -174,6 +174,7 @@ export async function streamRequest(
   onChunk: (chunk: string) => void,
   onDone?: (meta?: StreamDoneMeta) => void,
   onError?: (error: Error) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const token = useAuthStore.getState().token
   const baseURL = getApiBaseUrl()
@@ -185,6 +186,7 @@ export async function streamRequest(
       Authorization: token ? `Bearer ${token}` : '',
     },
     body: JSON.stringify(data),
+    signal,
   })
 
   if (!response.ok) {
@@ -258,6 +260,8 @@ export async function streamRequest(
     }
   } catch (err) {
     const e = err as Error
+    // 用户主动中止时静默退出
+    if (e?.name === 'AbortError') return
     const msg = e?.message || String(err)
     if (
       msg.includes('chunked') ||
