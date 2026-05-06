@@ -185,7 +185,8 @@ jobs:
               echo "🧪 Running development smoke check on :8080..."
               ok=0
               for i in $(seq 1 60); do
-                if curl -fsS "http://127.0.0.1:8080/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                # 健康检查端点是 /health（不带 /api 前缀），由 nginx 直接代理到后端
+                if curl -fsS "http://127.0.0.1:8080/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
                   ok=1
                   break
                 fi
