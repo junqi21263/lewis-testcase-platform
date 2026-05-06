@@ -10,7 +10,12 @@
 #     SSH_PORT      — default 22 if omitted
 #
 #   Variables (optional): Repository → Variables
-#     DEPLOY_PATH   — absolute path to the repo on the server (default below)
+#     DEPLOY_PATH / DEV_DEPLOY_PATH — absolute deploy path (production / dev)
+#     DEPLOY_REGION — docker Hub mirror behaviour on the VPS host:
+#                     unset or "global" = do NOT merge CN registry mirrors (recommended overseas)
+#                     "cn" = merge CN mirrors via scripts/merge-docker-mirrors.py (recommended mainland China)
+#     APK_MIRROR — optional Alpine apk index host for docker image builds, e.g. mirrors.aliyun.com
+#                  (when set here, overrides empty defaults for that deploy; combine with server .env as needed)
 #
 # Server prerequisites:
 #   - No need for git clone on server (workflow rsyncs code).
@@ -130,22 +135,30 @@ jobs:
             
             echo "🚀 Deploying to ${{ steps.env.outputs.ENV }} environment at $DEPLOY_PATH"
             
-            # 合并 registry-mirrors（勿整文件覆盖：避免清空用户已有的 insecure-registries 等配置）
-            echo "🔧 Ensuring Docker registry mirrors (merge into daemon.json)..."
-            sudo mkdir -p /etc/docker
-            if command -v python3 >/dev/null 2>&1; then
-              MERGE_OUT=$(sudo python3 "$DEPLOY_PATH/scripts/merge-docker-mirrors.py")
-              if [ "$MERGE_OUT" = "restart" ]; then
-                echo "✅ daemon.json updated, restarting Docker..."
-                sudo systemctl daemon-reload
-                sudo systemctl restart docker
-                sleep 5
-              else
-                echo "✅ registry mirrors already satisfied"
-              fi
-            else
-              echo "⚠️ python3 not found; cannot merge daemon.json. Install python3 or set registry-mirrors manually."
-            fi
+            # Docker Hub registry mirrors：海外节点默认跳过国内镜像站；中国大陆 VPS 请在仓库 Variables 设置 DEPLOY_REGION=cn
+            REGION="${{ vars.DEPLOY_REGION }}"
+            case "${REGION:-global}" in
+              cn)
+                echo "🔧 DEPLOY_REGION=cn: merging CN-oriented Docker Hub registry mirrors into daemon.json..."
+                sudo mkdir -p /etc/docker
+                if command -v python3 >/dev/null 2>&1; then
+                  MERGE_OUT=$(sudo python3 "$DEPLOY_PATH/scripts/merge-docker-mirrors.py")
+                  if [ "$MERGE_OUT" = "restart" ]; then
+                    echo "✅ daemon.json updated, restarting Docker..."
+                    sudo systemctl daemon-reload
+                    sudo systemctl restart docker
+                    sleep 5
+                  else
+                    echo "✅ registry mirrors already satisfied"
+                  fi
+                else
+                  echo "⚠️ python3 not found; cannot merge daemon.json. Install python3 or configure mirrors manually."
+                fi
+                ;;
+              *)
+                echo "🔧 DEPLOY_REGION=${REGION:-global}: skipping CN Docker Hub mirrors (use official / regional Hub; set DEPLOY_REGION=cn on mainland China VPS if pulls are slow)"
+                ;;
+            esac
             
             # 确保部署目录和 .env 文件存在
             sudo mkdir -p "$DEPLOY_PATH"
@@ -191,13 +204,24 @@ jobs:
             export STACK_PREFIX
             export COMPOSE_ENV_FILE="$ENV_FILE"
             
+            # Alpine apk：可选仓库 Variables APK_MIRROR（非空时注入本次部署；海外通常留空走官方 dl-cdn）
+            if [ -n "${{ vars.APK_MIRROR }}" ]; then
+              export APK_MIRROR="${{ vars.APK_MIRROR }}"
+              echo "📦 APK_MIRROR from GitHub Variables: $APK_MIRROR"
+            fi
+            
+            deploy_compose_env=(DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT")
+            if [ -n "${APK_MIRROR:-}" ]; then
+              deploy_compose_env+=(APK_MIRROR="$APK_MIRROR")
+            fi
+            
             # 勿使用 build --no-cache：每次部署都会重跑 apk/canvas 依赖层，在小型 VPS 上极慢且易被误判为「卡住」
             # 需要彻底重建时在服务器手动执行: docker compose ... build --no-cache && up -d
             # BUILDKIT_PROGRESS=plain：apk/pnpm 长时间无 classic 进度条时仍能看到底层输出
             if sudo docker compose version >/dev/null 2>&1; then
-              sudo env DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             else
-              sudo env DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             fi
             
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
@@ -215,8 +239,8 @@ jobs:
               done
               if [ "$ok" != "1" ]; then
                 echo "❌ Smoke check failed after waiting 60s"
-                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
-                sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend || true
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend || true
                 exit 1
               fi
               echo "✅ Smoke check passed"

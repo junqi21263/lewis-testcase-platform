@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Merge registry mirrors into /etc/docker/daemon.json without wiping other keys.
 
+Mirrors listed below are oriented toward mainland China Docker Hub acceleration.
+Overseas hosts should skip calling this script (see deploy workflow DEPLOY_REGION).
+
 Prints one line to stdout: 'restart' if file changed (caller should restart docker), else 'ok'.
 """
 
