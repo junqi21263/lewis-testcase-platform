@@ -21,6 +21,9 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        # 生产默认安装 font-noto-cjk（PDF/Canvas 中文）；开发栈可在 override 中设为 0 以显著缩短首次构建
+        INSTALL_CJK_FONTS: ${INSTALL_CJK_FONTS:-1}
     container_name: ${STACK_PREFIX:-testcase}_backend
     restart: unless-stopped
     environment:

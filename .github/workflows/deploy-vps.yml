@@ -31,8 +31,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # VPS 上 backend 镜像含 apk+cairo+pnpm build，首次或 --no-cache 可能 >25min
-    timeout-minutes: 60
+    # backend 首次构建（apk+pnpm）在弱网 VPS 上可能较慢；须大于 ssh-action command_timeout
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,8 +120,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # 与 job timeout 对齐；避免 ssh-action 在 docker build 尚未完成时切断
-          command_timeout: 45m
+          # 须小于 job timeout-minutes；backend 构建可能接近 1h（弱网 / 首次）
+          command_timeout: 70m
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
@@ -130,15 +130,21 @@ jobs:
             
             echo "🚀 Deploying to ${{ steps.env.outputs.ENV }} environment at $DEPLOY_PATH"
             
-            # 配置 Docker 镜像加速器（解决服务器无法访问 docker.io / ECR 的问题）
-            if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
-              echo "🔧 Configuring Docker registry mirrors..."
-              sudo mkdir -p /etc/docker
-              sudo sh -c 'echo "{\"registry-mirrors\":[\"https://docker.1ms.run\",\"https://docker.xuanyuan.me\",\"https://docker.rainbond.cc\"]}" > /etc/docker/daemon.json'
-              sudo systemctl daemon-reload
-              sudo systemctl restart docker
-              echo "✅ Docker mirrors configured, daemon restarted"
-              sleep 5
+            # 合并 registry-mirrors（勿整文件覆盖：避免清空用户已有的 insecure-registries 等配置）
+            echo "🔧 Ensuring Docker registry mirrors (merge into daemon.json)..."
+            sudo mkdir -p /etc/docker
+            if command -v python3 >/dev/null 2>&1; then
+              MERGE_OUT=$(sudo python3 "$DEPLOY_PATH/scripts/merge-docker-mirrors.py")
+              if [ "$MERGE_OUT" = "restart" ]; then
+                echo "✅ daemon.json updated, restarting Docker..."
+                sudo systemctl daemon-reload
+                sudo systemctl restart docker
+                sleep 5
+              else
+                echo "✅ registry mirrors already satisfied"
+              fi
+            else
+              echo "⚠️ python3 not found; cannot merge daemon.json. Install python3 or set registry-mirrors manually."
             fi
             
             # 确保部署目录和 .env 文件存在

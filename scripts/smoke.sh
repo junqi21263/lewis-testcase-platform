@@ -61,12 +61,13 @@ docker_compose ps
 
 echo "[smoke] waiting for /api/health ..."
 ok=0
-for i in $(seq 1 30); do
+# 冷启动 + migrate 在小型 VPS 上可能 >30s
+for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
     ok=1
     break
   fi
-  sleep 1
+  sleep 2
 done
 
 if [ "$ok" != "1" ]; then

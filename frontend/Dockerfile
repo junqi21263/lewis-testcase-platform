@@ -29,7 +29,10 @@ RUN if [ -f dist/index.html ]; then \
 
 FROM nginx:alpine
 
-RUN apk add --no-cache gettext
+# gettext 安装走 apk；国内访问 dl-cdn 可能极慢，与 backend 一致改用阿里云镜像
+RUN set -eux; \
+  sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories; \
+  apk update && apk add --no-cache gettext
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/nginx.conf.template

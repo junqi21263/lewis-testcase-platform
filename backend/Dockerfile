@@ -29,8 +29,14 @@ RUN echo "=== [backend image] apk: canvas / native deps ===" && \
     freetype-dev \
     fontconfig
 
-RUN echo "=== [backend image] apk: CJK fonts (download may take several minutes on slow networks) ===" && \
-  apk add --no-cache font-noto-cjk
+# 开发 compose 可传 INSTALL_CJK_FONTS=0 跳过 ~百 MB 的 font-noto-cjk，缩短弱网 VPS 首次构建
+ARG INSTALL_CJK_FONTS=1
+RUN echo "=== [backend image] apk: CJK fonts ===" && \
+  if [ "$INSTALL_CJK_FONTS" = "1" ]; then \
+    apk add --no-cache font-noto-cjk; \
+  else \
+    echo "[backend image] INSTALL_CJK_FONTS=0 — skipping font-noto-cjk (set INSTALL_CJK_FONTS=1 if PDF needs CJK glyphs)"; \
+  fi
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
