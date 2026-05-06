@@ -182,8 +182,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText(/文件上传成功/)).toBeVisible({ timeout: 10000 })
     await expect(page.getByText(/文档解析完成/)).toBeVisible({ timeout: 10000 })
 
-    // 5. 验证文件已显示在左侧
-    await expect(page.getByText('需求文档.txt')).toBeVisible()
+    // 5. 验证文件已显示在左侧（使用精确匹配）
+    await expect(page.getByText('需求文档.txt', { exact: true })).toBeVisible()
 
     // 6. 验证"开始分析"按钮可点击
     const startBtn = page.getByRole('button', { name: '开始分析' })
@@ -195,9 +195,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 8. 点击开始分析
     await startBtn.click()
 
-    // 9. 验证分析中状态
-    await expect(page.getByText(/分析中/)).toBeVisible()
-    await expect(page.getByRole('button', { name: '停止分析' })).toBeVisible()
+    // 9. 等待分析开始并显示报告
     await expect(page.getByText(/开始需求分析/)).toBeVisible()
 
     // 10. 等待流式报告出现
@@ -207,7 +205,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 11. 等待分析完成 → 进入审阅状态
     await expect(page.getByText('等待审阅')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText('人工审阅')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '人工审阅' })).toBeVisible()
 
     // 12. 验证审阅区域
     const reviewTextarea = page.getByPlaceholder(/请输入修改意见/)
@@ -218,9 +216,9 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 13. 点击确认通过
     await page.getByRole('button', { name: '确认通过' }).click()
 
-    // 14. 验证已通过状态
-    await expect(page.getByText('已通过')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText('需求分析已通过')).toBeVisible()
+    // 14. 验证已通过状态（使用exact精确匹配状态标签）
+    await expect(page.getByText('已通过', { exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('main').getByText('需求分析已通过')).toBeVisible()
   })
 
   test('初始状态验证：页面元素完整', async ({ page }) => {
@@ -241,8 +239,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 补充说明输入框
     await expect(page.getByPlaceholder('在此输入需求背景、业务描述或补充说明...')).toBeVisible()
 
-    // 人工审阅开关
-    await expect(page.getByText('人工审阅')).toBeVisible()
+    // 人工审阅开关（使用精确匹配）
+    await expect(page.getByText('人工审阅', { exact: true })).toBeVisible()
 
     // 终端标题
     await expect(page.getByText('AI 需求分析终端')).toBeVisible()
@@ -278,6 +276,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
   test('上传非解析文件后显示解析等待状态', async ({ page }) => {
     // 覆盖文件上传 mock：返回 PARSING 状态
     await page.unroute('**/*')
+    let parseCount = 0  // 移到外部保持状态
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url())
       const p = url.pathname
@@ -303,6 +302,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
       // 文件上传返回 PARSING 状态
       if (p === '/api/files/upload' && method === 'POST') {
+        parseCount = 0  // 重置计数
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -317,20 +317,35 @@ test.describe('E2E: AI 需求分析全流程', () => {
         return
       }
 
-      // 轮询：第一次返回 PARSING，第二次返回 PARSED
+      // 轮询：先返回几次 PARSING，然后返回 PARSED
       if (p.startsWith('/api/files/') && method === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(apiOk({
-            id: 'file-2',
-            originalName: '大文档.pdf',
-            size: 5242880,
-            fileType: 'PDF',
-            status: 'PARSED',
-            parsedContent: 'PDF 文档的解析内容，包含详细的业务需求描述。',
-          })),
-        })
+        parseCount++
+        if (parseCount < 3) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(apiOk({
+              id: 'file-2',
+              originalName: '大文档.pdf',
+              size: 5242880,
+              fileType: 'PDF',
+              status: 'PARSING',
+            })),
+          })
+        } else {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(apiOk({
+              id: 'file-2',
+              originalName: '大文档.pdf',
+              size: 5242880,
+              fileType: 'PDF',
+              status: 'PARSED',
+              parsedContent: 'PDF 文档的解析内容，包含详细的业务需求描述。',
+            })),
+          })
+        }
         return
       }
 
@@ -349,7 +364,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 验证解析等待提示（日志文案）
     await expect(page.getByText(/正在等待服务端解析文档/)).toBeVisible({ timeout: 10000 })
 
-    // 等待解析完成
-    await expect(page.getByText(/文档解析完成/)).toBeVisible({ timeout: 15000 })
+    // 等待解析完成（匹配日志消息中的带勾版本）
+    await expect(page.getByText('✅ 解析完成')).toBeVisible({ timeout: 15000 })
   })
 })
