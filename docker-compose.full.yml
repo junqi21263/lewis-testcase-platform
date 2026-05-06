@@ -14,7 +14,7 @@ services:
     depends_on:
       - backend
     networks:
-      - ${STACK_PREFIX:-testcase}_network
+      - testcase_network
 
   # 后端服务
   backend:
@@ -48,7 +48,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - ${STACK_PREFIX:-testcase}_network
+      - testcase_network
 
   # 数据库服务
   postgres:
@@ -62,14 +62,14 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-testcase_pass}
       POSTGRES_DB: ${DB_NAME:-testcase_db}
     volumes:
-      - ${STACK_PREFIX:-testcase}_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-testcase_user}']
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - ${STACK_PREFIX:-testcase}_network
+      - testcase_network
 
   # Redis 缓存服务
   redis:
@@ -79,14 +79,14 @@ services:
     ports:
       - '${REDIS_HOST_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379'
     volumes:
-      - ${STACK_PREFIX:-testcase}_redis_data:/data
+      - redis_data:/data
     networks:
-      - ${STACK_PREFIX:-testcase}_network
+      - testcase_network
 
 volumes:
-  ${STACK_PREFIX:-testcase}_postgres_data:
-  ${STACK_PREFIX:-testcase}_redis_data:
+  postgres_data:
+  redis_data:
 
 networks:
-  ${STACK_PREFIX:-testcase}_network:
+  testcase_network:
     driver: bridge
