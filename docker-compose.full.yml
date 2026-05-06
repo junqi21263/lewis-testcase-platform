@@ -11,7 +11,7 @@ services:
     container_name: ${STACK_PREFIX:-testcase}_frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
       - backend
     networks:
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     # 仅绑定本机，供 SSH 隧道 / 本机工具（如 Navicat）连到「与后端相同」的库；勿对公网 0.0.0.0 暴露
     ports:
-      - '127.0.0.1:5432:5432'
+      - '${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432'
     environment:
       POSTGRES_USER: ${DB_USER:-testcase_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-testcase_pass}
