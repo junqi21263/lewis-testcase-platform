@@ -27,12 +27,15 @@ RUN apk add --no-cache \
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY backend/package.json backend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --frozen-lockfile --prod=false --prefer-offline=false
 
 COPY backend/ .
-# Railway / 生产使用 PostgreSQL schema（与 sqlite 开发 schema 分离）
-RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
-RUN pnpm build
+RUN ls -la && echo "[debug] backend files copied"
+
+RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma && echo "[debug] prisma generate completed"
+
+RUN pnpm exec nest --version && echo "[debug] nest CLI version"
+RUN pnpm build && echo "[debug] build completed"
 
 RUN ls -la dist/ && echo "[build] dist OK"
 
