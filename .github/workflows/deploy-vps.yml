@@ -178,6 +178,29 @@ jobs:
               sudo env STACK_PREFIX="$STACK_PREFIX" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
             fi
             
+            echo "✅ Deployment started, waiting for services to initialize..."
+            
+            # 等待后端容器启动（先等数据库就绪，再等后端启动）
+            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+              echo "⏳ Waiting for database to be ready..."
+              for i in $(seq 1 60); do
+                if sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T postgres pg_isready -U ${DB_USER:-testcase_user} 2>/dev/null; then
+                  echo "✅ Database is ready"
+                  break
+                fi
+                sleep 1
+              done
+              
+              echo "⏳ Waiting for backend to be ready..."
+              for i in $(seq 1 60); do
+                if curl -fsS "http://127.0.0.1:3000/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                  echo "✅ Backend is ready"
+                  break
+                fi
+                sleep 1
+              done
+            fi
+            
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
             
             # 开发环境使用独立端口进行smoke检查
