@@ -144,6 +144,15 @@ jobs:
               sudo bash -c "printf '\nFRONTEND_HOST_BIND=0.0.0.0\nFRONTEND_HOST_PORT=8080\nPOSTGRES_HOST_BIND=127.0.0.1\nPOSTGRES_HOST_PORT=5433\nREDIS_HOST_BIND=127.0.0.1\nREDIS_HOST_PORT=6380\n' >> '$DEPLOY_PATH/$ENV_FILE'"
             fi
             
+            # 开发环境：先停止并删除旧容器，释放端口
+            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+              echo "🧹 Cleaning up old development containers..."
+              # 停止并删除开发环境容器（如果存在）
+              sudo docker stop testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
+              sudo docker rm testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
+              echo "✅ Old containers cleaned up"
+            fi
+            
             # 与同机生产栈区分容器名（否则固定 testcase_postgres 会与旧容器冲突）
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               STACK_PREFIX="${STACK_PREFIX:-testcase_dev}"
