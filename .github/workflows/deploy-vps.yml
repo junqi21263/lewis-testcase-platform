@@ -173,9 +173,11 @@ jobs:
             export COMPOSE_ENV_FILE="$ENV_FILE"
             
             if sudo docker compose version >/dev/null 2>&1; then
-              sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build --no-cache
+              sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" build --no-cache
+              sudo env STACK_PREFIX="$STACK_PREFIX" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
             else
-              sudo env STACK_PREFIX="$STACK_PREFIX" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build --no-cache
+              sudo env STACK_PREFIX="$STACK_PREFIX" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" build --no-cache
+              sudo env STACK_PREFIX="$STACK_PREFIX" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
             fi
             
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"

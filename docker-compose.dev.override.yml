@@ -10,27 +10,32 @@ services:
       - "${BACKEND_HOST_BIND:-0.0.0.0}:${BACKEND_HOST_PORT:-3000}:3000"
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/testcase_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/dev_testcase_db}
       - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-2024}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-dev-placeholder-api-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - DEFAULT_AI_MODEL=${DEFAULT_AI_MODEL:-gpt-4o}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - AUTH_ALLOW_PLAINTEXT_PASSWORD=${AUTH_ALLOW_PLAINTEXT_PASSWORD:-}
       - UPLOAD_DIR=${UPLOAD_DIR:-./uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
       - APP_PORT=${APP_PORT:-3000}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - ./backend/uploads:/app/uploads
+      - ./backend/prisma:/app/prisma
 
   postgres:
     container_name: ${STACK_PREFIX:-testcase_dev}_postgres
     ports:
       - "${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dev_testcase_db}
 
   redis:
     container_name: ${STACK_PREFIX:-testcase_dev}_redis

@@ -1,4 +1,4 @@
-#!/bin/ash
+#!/bin/sh
 set -e
 
 # Railway 上若此处失败，平台会报 502 / Application failed to respond，请先看本服务 Logs 里以 [start] 开头的行。
