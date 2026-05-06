@@ -29,10 +29,14 @@ RUN if [ -f dist/index.html ]; then \
 
 FROM nginx:alpine
 
-# gettext 安装走 apk；国内访问 dl-cdn 可能极慢，与 backend 一致改用阿里云镜像
+# 与 backend/Dockerfile 相同策略：默认官方 CDN；国内慢时 compose 传 APK_MIRROR
+ARG APK_MIRROR=
 RUN set -eux; \
-  sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories; \
-  apk update && apk add --no-cache gettext
+  if [ -n "$APK_MIRROR" ]; then \
+    echo "[frontend/nginx] APK_MIRROR=$APK_MIRROR"; \
+    sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories; \
+  fi; \
+  apk add --no-cache gettext
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/nginx.conf.template

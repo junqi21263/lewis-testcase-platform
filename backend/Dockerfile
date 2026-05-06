@@ -5,11 +5,17 @@ WORKDIR /app
 # Railway / 容器边缘转发需要监听所有接口（勿在平台 Variables 里设 HOST=localhost）
 ENV HOST=0.0.0.0
 
-# 多台 VPS 访问 dl-cdn.alpinelinux.org 极慢或超时，apk 长时间无输出易被误判为「卡死」
-# 默认改用阿里云镜像（路径与官方一致）；若在境外构建可把下行注释掉或自建 ARG 切换
+# Alpine 镜像源：勿默认写死国内镜像 — 部分出口访问 mirrors.aliyun.com 会在 apk update 阶段长时间挂起。
+# 使用官方 dl-cdn；国内构建慢时在 compose/.env 设置 APK_MIRROR=mirrors.aliyun.com（或 mirrors.tuna.tsinghua.edu.cn）。
+# 勿单独 RUN apk update：`apk add --no-cache` 会拉取索引；单独 apk update 易在弱 mirror 上卡住且无日志。
+ARG APK_MIRROR=
 RUN set -eux; \
-  sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories; \
-  apk update
+  if [ -n "$APK_MIRROR" ]; then \
+    echo "[backend image] APK_MIRROR=$APK_MIRROR"; \
+    sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories; \
+  else \
+    echo "[backend image] Alpine APK: official CDN (set APK_MIRROR if downloads are slow)"; \
+  fi
 
 # openssl：Prisma；cairo/pango：node-canvas（pdf-to-img 渲染 PDF 首页）
 # 拆成两步：日志可见进度；font-noto-cjk 体积大、单独一层便于缓存与排查
