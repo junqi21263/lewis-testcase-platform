@@ -736,7 +736,7 @@ function AiAnalysisPageInner() {
         await new Promise<void>((resolve, reject) => {
           aiApi.analyzeStream(
             payload,
-            (chunk) => {
+            (chunk: string) => {
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
             () => {
@@ -753,7 +753,7 @@ function AiAnalysisPageInner() {
               }
               resolve()
             },
-            (err) => {
+            (err: Error) => {
               addLog('error', `❌ 分析失败：${err.message}`)
               dispatch({ type: 'ERROR', log: makeLog('error', err.message) })
               reject(err)
