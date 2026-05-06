@@ -30,18 +30,12 @@ COPY backend/package.json backend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod=false --prefer-offline=false
 
 COPY backend/ .
-RUN ls -la && echo "[debug] backend files copied"
-RUN ls -la src/ && echo "[debug] src directory contents"
 
-RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma && echo "[debug] prisma generate completed"
+RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
 
-RUN pnpm exec nest --version && echo "[debug] nest CLI version"
-RUN pnpm build 2>&1 | tee build.log && echo "[debug] build completed"
-RUN cat build.log && echo "[debug] build log contents"
+RUN set -o pipefail && pnpm build 2>&1 | tee build.log
 
-RUN ls -la dist/ && echo "[build] dist directory contents"
-RUN ls -la dist/src/ 2>/dev/null || echo "[debug] dist/src does not exist"
-RUN cat dist/src/main.js 2>/dev/null | head -20 || echo "[debug] main.js not found"
+RUN ls -la dist/src/main.js && echo "[build] dist OK"
 
 RUN mkdir -p uploads && chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh
 
