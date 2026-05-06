@@ -435,6 +435,40 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.uploadedFile.delete({ where: { id } })
   }
 
+  /** 取消正在解析的任务 */
+  async cancelTask(id: string, userId: string) {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+
+    // 只能取消 PENDING 或 PARSING 状态的文件
+    if (file.status !== FileStatus.PENDING && file.status !== FileStatus.PARSING) {
+      throw new BadRequestException('该文件不在可取消的状态')
+    }
+
+    // 清理分片临时目录（如果存在）
+    const chunkDir = this.chunkSessionDir(userId, id)
+    if (fs.existsSync(chunkDir)) {
+      try {
+        fs.rmSync(chunkDir, { recursive: true, force: true })
+      } catch (e) {
+        this.logger.warn(`取消任务时清理分片目录失败: ${chunkDir}`, e as Error)
+      }
+    }
+
+    const updated = await this.prisma.uploadedFile.update({
+      where: { id },
+      data: {
+        status: FileStatus.FAILED,
+        parseStage: 'CANCELLED',
+        parseError: '用户取消',
+        parseFinishedAt: new Date(),
+        lastHeartbeatAt: new Date(),
+      },
+    })
+    this.logger.log(`任务已取消: ${id}`)
+    return updated
+  }
+
   /** 重新排队解析（上传页「重试」） */
   async retryParse(id: string, userId: string) {
     const file = await this.getFileById(id)

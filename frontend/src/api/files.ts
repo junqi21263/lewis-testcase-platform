@@ -106,4 +106,7 @@ export const filesApi = {
     request.get<PaginatedData<UploadedFile>>('/files', { params }),
 
   deleteFile: (id: string) => request.delete<void>(`/files/${id}`),
+
+  /** 取消正在解析的任务 */
+  cancelTask: (id: string) => request.post<UploadedFile>(`/files/${id}/cancel`),
 }

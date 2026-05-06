@@ -116,6 +116,12 @@ export class FilesController {
     return this.filesService.retryParse(id, userId)
   }
 
+  @Post(':id/cancel')
+  @ApiOperation({ summary: '取消正在解析的任务' })
+  cancelTask(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.cancelTask(id, userId)
+  }
+
   @Post(':id/restructure')
   @ApiOperation({ summary: '根据编辑后的全文重新结构化需求' })
   restructure(
