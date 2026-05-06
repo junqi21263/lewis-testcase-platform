@@ -40,4 +40,4 @@ RUN mkdir -p uploads && chmod +x start.sh migrate-release.sh prisma-resolve-stuc
 
 EXPOSE 3000
 
-CMD ["/bin/sh", "start.sh"]
+CMD ["sh", "start.sh"]
