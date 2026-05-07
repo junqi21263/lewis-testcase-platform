@@ -8,7 +8,8 @@ services:
     ports:
       - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - testcase_network
 
@@ -40,6 +41,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      # migrate deploy 完成后才 listen；start_period 内失败不计入 retries
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "require(''http'').get(''http://127.0.0.1:3000/health'',(r)=>process.exit(r.statusCode===200?0:1)).on(''error'',()=>process.exit(1))"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 180s
     networks:
       - testcase_network
 
