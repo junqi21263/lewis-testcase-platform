@@ -59,6 +59,9 @@ allure-report/
 .eslintcache
 .cache/
 
+# 误拷的嵌套仓库副本（勿提交）
+lewis-testcase-platform/
+
 # Cursor: 版本库中保留 `.cursor/rules/`，其余 Cursor 数据仍忽略
 .cursor/*
 !.cursor/rules/

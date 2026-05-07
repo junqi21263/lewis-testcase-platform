@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
 import type { Request, Response } from 'express'
+import helmet from 'helmet'
 import { AppModule } from './app.module'
 import { corsOriginDelegate } from '@/config/cors.config'
 import * as fs from 'fs'
@@ -25,6 +26,11 @@ async function bootstrap() {
       allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     },
   })
+
+  // 安全响应头（生产）；避免干扰本地 Swagger / 部分代理，开发环境不启用
+  if (process.env.NODE_ENV === 'production') {
+    app.use(helmet())
+  }
 
   // 统一 API 前缀
   app.setGlobalPrefix('api')

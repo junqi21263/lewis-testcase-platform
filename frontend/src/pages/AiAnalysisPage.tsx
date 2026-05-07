@@ -13,6 +13,7 @@ import React, {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
+import { escapeHtml } from '@/utils/sensitiveDetector'
 import {
   Brain,
   Upload,
@@ -270,6 +271,15 @@ function LogLine({ entry }: { entry: LogEntry }) {
   )
 }
 
+/** 先 HTML 转义，再允许受控的 **粗体** → <strong>，避免 AI 返回内容中的脚本标签 XSS */
+function formatMarkdownInlineToSafeHtml(raw: string): string {
+  const e = escapeHtml(raw)
+  return e.replace(
+    /\*\*(.+?)\*\*/g,
+    '<strong class="text-foreground font-semibold">$1</strong>',
+  )
+}
+
 function MarkdownReport({ text }: { text: string }) {
   const lines = text.split('\n')
   return (
@@ -303,9 +313,7 @@ function MarkdownReport({ text }: { text: string }) {
           )
         }
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const content = trimmed
-            .slice(2)
-            .replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
+          const content = formatMarkdownInlineToSafeHtml(trimmed.slice(2))
           return (
             <div key={i} className="flex gap-2 pl-2">
               <span className="text-primary flex-shrink-0">•</span>
@@ -314,9 +322,7 @@ function MarkdownReport({ text }: { text: string }) {
           )
         }
         if (/^\d+\.\s/.test(trimmed)) {
-          const content = trimmed
-            .replace(/^\d+\.\s/, '')
-            .replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
+          const content = formatMarkdownInlineToSafeHtml(trimmed.replace(/^\d+\.\s/, ''))
           const num = trimmed.match(/^(\d+)\./)?.[1]
           return (
             <div key={i} className="flex gap-2 pl-2">
@@ -325,10 +331,7 @@ function MarkdownReport({ text }: { text: string }) {
             </div>
           )
         }
-        const content = trimmed.replace(
-          /\*\*(.+?)\*\*/g,
-          '<strong class="text-foreground font-semibold">$1</strong>',
-        )
+        const content = formatMarkdownInlineToSafeHtml(trimmed)
         return <p key={i} className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
       })}
     </div>

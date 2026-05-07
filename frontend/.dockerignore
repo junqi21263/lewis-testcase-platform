@@ -10,3 +10,11 @@ allure-results
 allure-report
 .eslintcache
 .cache
+# 测试与 Playwright：不参与 nginx 静态镜像，减小 docker build 上下文
+tests
+playwright.config.ts
+playwright-ct.config.ts
+playwright.dev.config.ts
+seed.spec.ts
+vitest.config.ts
+scripts/run-playwright.mjs
