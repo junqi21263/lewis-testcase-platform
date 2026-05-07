@@ -1,0 +1,83 @@
+# 与 docker-compose.full.yml 等价，但 frontend/backend 使用预构建镜像（GHCR），不在 VPS 上 docker build。
+# 由 CI 注入 BACKEND_IMAGE / FRONTEND_IMAGE；本地/VPS 应急可在仓库 Variables 设 DEPLOY_BUILD_ON_SERVER=true 改回 full + build。
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE from CI or env}
+    container_name: ${STACK_PREFIX:-testcase}_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-80}:80"
+    depends_on:
+      - backend
+    networks:
+      - testcase_network
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE from CI or env}
+    container_name: ${STACK_PREFIX:-testcase}_backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/testcase_db}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
+      - DEFAULT_AI_MODEL=${DEFAULT_AI_MODEL:-glm-4.5}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - AUTH_ALLOW_PLAINTEXT_PASSWORD=${AUTH_ALLOW_PLAINTEXT_PASSWORD:-}
+      - UPLOAD_DIR=${UPLOAD_DIR:-./uploads}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
+      - APP_PORT=${APP_PORT:-3000}
+      - THROTTLE_TTL=${THROTTLE_TTL:-60}
+      - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - testcase_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ${STACK_PREFIX:-testcase}_postgres
+    restart: unless-stopped
+    ports:
+      - '${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432'
+    environment:
+      POSTGRES_USER: ${DB_USER:-testcase_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-testcase_pass}
+      POSTGRES_DB: ${DB_NAME:-testcase_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-testcase_user}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - testcase_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${STACK_PREFIX:-testcase}_redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_HOST_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - testcase_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  testcase_network:
+    driver: bridge

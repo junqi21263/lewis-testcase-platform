@@ -7,7 +7,8 @@
 #     SSH_USER      — e.g. ubuntu
 #     SSH_KEY       — private key (PEM), full text including BEGIN/END lines
 #   Secrets (optional):
-#     SSH_PORT      — default 22 if omitted
+#     SSH_PORT          — default 22 if omitted
+#     GHCR_PULL_TOKEN   — PAT with read:packages for VPS docker login when GHCR images are private (omit if public).
 #
 #   Variables (optional): Repository → Variables
 #     DEPLOY_PATH / DEV_DEPLOY_PATH — absolute deploy path (production / dev)
@@ -16,6 +17,7 @@
 #                     "cn" = merge CN mirrors via scripts/merge-docker-mirrors.py (recommended mainland China)
 #     APK_MIRROR — optional Alpine apk index host for docker image builds, e.g. mirrors.aliyun.com
 #                  (when set here, overrides empty defaults for that deploy; combine with server .env as needed)
+#     DEPLOY_BUILD_ON_SERVER — set to "true" to skip GHCR image build/push and run docker compose up --build on the VPS (slow; debugging only).
 #
 # Server prerequisites:
 #   - No need for git clone on server (workflow rsyncs code).
@@ -36,13 +38,34 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # backend 首次 apk（build-base/gcc）在弱网 VPS 上可能 >1h；job 须大于 ssh-action command_timeout，并留 checkout/rsync 余量
+    permissions:
+      contents: read
+      packages: write
+    # GHCR 构建在 GitHub Runner 上完成；VPS 仅 pull+up 通常远快于原 150m apk。仍保留较大上限以防偶然排队。
     timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 与生产一致：在 Runner 上先打包前端，rsync 到云服务器后 Docker 可直接复用 dist/（见 frontend/Dockerfile）
+      - name: Determine environment and deployment path
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "ENV=development" >> $GITHUB_OUTPUT
+            echo "DEPLOY_PATH=${{ vars.DEV_DEPLOY_PATH || '/opt/lewis_testcase_platform_dev' }}" >> $GITHUB_OUTPUT
+            echo "ENV_FILE=.env.development" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=develop" >> $GITHUB_OUTPUT
+            echo "INSTALL_CJK_FONTS=0" >> $GITHUB_OUTPUT
+          else
+            echo "ENV=production" >> $GITHUB_OUTPUT
+            echo "DEPLOY_PATH=${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}" >> $GITHUB_OUTPUT
+            echo "ENV_FILE=.env" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=main" >> $GITHUB_OUTPUT
+            echo "INSTALL_CJK_FONTS=1" >> $GITHUB_OUTPUT
+          fi
+          echo "ghcr_repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      # 与生产一致：Runner 上先打包前端；随后 CI 构建镜像推 GHCR，VPS 拉取而非本地 apk/build。
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -67,6 +90,49 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
+      - name: Set up Docker Buildx
+        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ github.sha }}
+            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ steps.env.outputs.IMAGE_TAG }}
+          build-args: |
+            INSTALL_CJK_FONTS=${{ steps.env.outputs.INSTALL_CJK_FONTS }}
+            APK_MIRROR=${{ vars.APK_MIRROR }}
+
+      - name: Build and push frontend image
+        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ github.sha }}
+            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ steps.env.outputs.IMAGE_TAG }}
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_APP_NAME=${{ vars.VITE_APP_NAME }}
+            APK_MIRROR=${{ vars.APK_MIRROR }}
+
       - name: Prepare SSH known_hosts
         shell: bash
         run: |
@@ -74,19 +140,6 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           ssh-keyscan -p "${{ secrets.SSH_PORT || '22' }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Determine environment and deployment path
-        id: env
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            echo "ENV=development" >> $GITHUB_OUTPUT
-            echo "DEPLOY_PATH=${{ vars.DEV_DEPLOY_PATH || '/opt/lewis_testcase_platform_dev' }}" >> $GITHUB_OUTPUT
-            echo "ENV_FILE=.env.development" >> $GITHUB_OUTPUT
-          else
-            echo "ENV=production" >> $GITHUB_OUTPUT
-            echo "DEPLOY_PATH=${{ vars.DEPLOY_PATH || '/opt/lewis_testcase_platform' }}" >> $GITHUB_OUTPUT
-            echo "ENV_FILE=.env" >> $GITHUB_OUTPUT
-          fi
 
       - name: Rsync code to server
         shell: bash
@@ -125,8 +178,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # 弱网首次安装 build-base 曾触发 70m 超时；国内建议 Variables 设置 APK_MIRROR + DEPLOY_REGION=cn
-          command_timeout: 150m
+          # 默认在 GitHub 构建镜像推 GHCR，VPS 仅 pull；仅在 DEPLOY_BUILD_ON_SERVER=true 时会在服务器编译（可能很慢）
+          command_timeout: 60m
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
@@ -186,16 +239,15 @@ jobs:
             fi
             
             # 与同机生产栈区分容器名（否则固定 testcase_postgres 会与旧容器冲突）
+            BUILD_ON_SERVER="${{ vars.DEPLOY_BUILD_ON_SERVER }}"
             if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
               STACK_PREFIX="${STACK_PREFIX:-testcase_dev}"
-              COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
               # 开发环境独立端口配置
               export FRONTEND_HOST_PORT=8080
               export POSTGRES_HOST_PORT=5433
               export REDIS_HOST_PORT=6380
             else
               STACK_PREFIX="${STACK_PREFIX:-testcase}"
-              COMPOSE_FILES="-f docker-compose.full.yml"
               # 生产环境默认端口配置
               export FRONTEND_HOST_PORT=80
               export POSTGRES_HOST_PORT=5432
@@ -204,7 +256,31 @@ jobs:
             export STACK_PREFIX
             export COMPOSE_ENV_FILE="$ENV_FILE"
             
-            # Alpine apk：可选仓库 Variables APK_MIRROR（非空时注入本次部署；海外通常留空走官方 dl-cdn）
+            if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
+              echo "⚠️ DEPLOY_BUILD_ON_SERVER=true — building images on VPS (slow)."
+              if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+                COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
+              else
+                COMPOSE_FILES="-f docker-compose.full.yml"
+              fi
+              SMOKE_COMPOSE_FILE="docker-compose.full.yml"
+            else
+              echo "📦 Using GHCR prebuilt images (docker-compose.ghcr.yml); VPS pull only."
+              GHCR_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+              export BACKEND_IMAGE="ghcr.io/${GHCR_REPO}/backend:${{ github.sha }}"
+              export FRONTEND_IMAGE="ghcr.io/${GHCR_REPO}/frontend:${{ github.sha }}"
+              if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
+                echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+              fi
+              if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+                COMPOSE_FILES="-f docker-compose.ghcr.yml -f docker-compose.dev.override.yml"
+              else
+                COMPOSE_FILES="-f docker-compose.ghcr.yml"
+              fi
+              SMOKE_COMPOSE_FILE="docker-compose.ghcr.yml"
+            fi
+            
+            # Alpine apk：可选仓库 Variables APK_MIRROR（仅 VPS 构建路径有意义）
             if [ -n "${{ vars.APK_MIRROR }}" ]; then
               export APK_MIRROR="${{ vars.APK_MIRROR }}"
               echo "📦 APK_MIRROR from GitHub Variables: $APK_MIRROR"
@@ -214,14 +290,25 @@ jobs:
             if [ -n "${APK_MIRROR:-}" ]; then
               deploy_compose_env+=(APK_MIRROR="$APK_MIRROR")
             fi
+            if [ "${BUILD_ON_SERVER:-}" != "true" ]; then
+              deploy_compose_env+=(BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE")
+            fi
             
-            # 勿使用 build --no-cache：每次部署都会重跑 apk/canvas 依赖层，在小型 VPS 上极慢且易被误判为「卡住」
-            # 需要彻底重建时在服务器手动执行: docker compose ... build --no-cache && up -d
-            # BUILDKIT_PROGRESS=plain：apk/pnpm 长时间无 classic 进度条时仍能看到底层输出
+            # GHCR：pull 预构建镜像；VPS 本地构建：勿使用 build --no-cache（极慢）
             if sudo docker compose version >/dev/null 2>&1; then
-              sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              else
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
+              fi
             else
-              sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
+                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+              else
+                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend
+                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
+              fi
             fi
             
             echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
@@ -240,11 +327,11 @@ jobs:
               if [ "$ok" != "1" ]; then
                 echo "❌ Smoke check failed after waiting 60s"
                 sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
-                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend || true
+                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend frontend || true
                 exit 1
               fi
               echo "✅ Smoke check passed"
               echo "访问地址: http://${{ secrets.SSH_HOST }}:8080"
             else
-              env STACK_PREFIX="$STACK_PREFIX" COMPOSE_ENV_FILE="$ENV_FILE" bash scripts/smoke.sh
+              env STACK_PREFIX="$STACK_PREFIX" COMPOSE_ENV_FILE="$ENV_FILE" COMPOSE_FILE="$SMOKE_COMPOSE_FILE" bash scripts/smoke.sh
             fi
