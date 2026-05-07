@@ -60,6 +60,8 @@ services:
       - OCR_LANGS=${OCR_LANGS:-chi_sim+chi_tra+eng}
       - SKIP_PRISMA_MIGRATE_ON_START=${SKIP_PRISMA_MIGRATE_ON_START:-}
       - AUTO_ARCHIVE_IDLE_DAYS=${AUTO_ARCHIVE_IDLE_DAYS:-0}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - TEMPLATES_LIST_CACHE_REDIS=${TEMPLATES_LIST_CACHE_REDIS:-}
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/prisma:/app/prisma
