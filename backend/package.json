@@ -44,6 +44,7 @@
     "passport-local": "^1.0.0",
     "pdf-parse": "^1.1.1",
     "pdf-to-img": "4.5.0",
+    "prisma": "^5.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tesseract.js": "^5.1.0",
@@ -78,7 +79,6 @@
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
     "prettier": "^3.3.3",
-    "prisma": "^5.18.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.4"

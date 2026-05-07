@@ -52,6 +52,9 @@ RUN set -o pipefail && pnpm build 2>&1 | tee build.log
 
 RUN ls -la dist/src/main.js && echo "[build] dist OK"
 
+# 去掉 devDependencies，显著缩小推送到 GHCR / 国内仓的镜像体积（prisma 已在 dependencies 供 migrate deploy）
+RUN pnpm prune --prod
+
 # ---------- runtime：无 gcc；canvas 仅依赖动态库 ----------
 FROM public.ecr.aws/docker/library/node:20-alpine AS runner
 
