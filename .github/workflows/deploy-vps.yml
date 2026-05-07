@@ -19,6 +19,13 @@
 #                  (when set here, overrides empty defaults for that deploy; combine with server .env as needed)
 #     DEPLOY_BUILD_ON_SERVER — set to "true" to skip GHCR image build/push and run docker compose up --build on the VPS (slow; debugging only).
 #
+#   --- 大陆 VPS 根治「拉 GHCR 极慢」：国内镜像仓（推荐阿里云 ACR / 腾讯云等）---
+#     DEPLOY_PULL_FROM_MIRROR — 设为 "true" 时：CI 将镜像从 GHCR 复制到国内仓，VPS 只从国内仓 pull（不走 ghcr.io）。
+#     Variables：CONTAINER_MIRROR_IMAGE_PREFIX — 无尾斜杠，例如 registry.cn-hangzhou.aliyuncs.com/your-namespace
+#     Secrets：CONTAINER_MIRROR_REGISTRY — 登录域名，可与前缀主机一致，例如 registry.cn-hangzhou.aliyuncs.com
+#             CONTAINER_MIRROR_USERNAME / CONTAINER_MIRROR_PASSWORD — ACR 控制台「访问凭证」或 RAM 子账号
+#     （须在云平台创建命名空间及 backend、frontend 镜像仓库；首次 push 由 workflow 自动推送）
+#
 # Server prerequisites:
 #   - No need for git clone on server (workflow rsyncs code).
 #   - Docker Engine + docker compose plugin; user in docker group OR script uses sudo (see script).
@@ -132,6 +139,31 @@ jobs:
             VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
             VITE_APP_NAME=${{ vars.VITE_APP_NAME }}
             APK_MIRROR=${{ vars.APK_MIRROR }}
+
+      # 大陆：Runner 上从 GHCR pull 再 push 到国内仓（带宽通常优于 VPS→GHCR）；VPS 后续只 pull 国内域名
+      - name: Mirror images to domestic registry (optional)
+        if: ${{ vars.DEPLOY_PULL_FROM_MIRROR == 'true' && vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        env:
+          GHCR_PREFIX: ghcr.io/${{ steps.env.outputs.ghcr_repo }}
+          MIRROR_PREFIX: ${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}
+          SHA: ${{ github.sha }}
+          MIRROR_REG: ${{ secrets.CONTAINER_MIRROR_REGISTRY }}
+          MIRROR_USER: ${{ secrets.CONTAINER_MIRROR_USERNAME }}
+          MIRROR_PASS: ${{ secrets.CONTAINER_MIRROR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MIRROR_PREFIX:-}" ] || [ -z "${MIRROR_REG:-}" ] || [ -z "${MIRROR_USER:-}" ] || [ -z "${MIRROR_PASS:-}" ]; then
+            echo "::error::DEPLOY_PULL_FROM_MIRROR=true requires Variable CONTAINER_MIRROR_IMAGE_PREFIX and Secrets CONTAINER_MIRROR_REGISTRY, CONTAINER_MIRROR_USERNAME, CONTAINER_MIRROR_PASSWORD"
+            exit 1
+          fi
+          echo "$MIRROR_PASS" | docker login "$MIRROR_REG" -u "$MIRROR_USER" --password-stdin
+          for svc in backend frontend; do
+            echo "Mirroring ${svc}..."
+            docker pull "${GHCR_PREFIX}/${svc}:${SHA}"
+            docker tag "${GHCR_PREFIX}/${svc}:${SHA}" "${MIRROR_PREFIX}/${svc}:${SHA}"
+            docker push "${MIRROR_PREFIX}/${svc}:${SHA}"
+          done
+          echo "✅ Mirror push complete; VPS will pull from ${MIRROR_PREFIX}"
 
       - name: Prepare SSH known_hosts
         shell: bash
@@ -265,12 +297,21 @@ jobs:
               fi
               SMOKE_COMPOSE_FILE="docker-compose.full.yml"
             else
-              echo "📦 Using GHCR prebuilt images (docker-compose.ghcr.yml); VPS pull only."
-              GHCR_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-              export BACKEND_IMAGE="ghcr.io/${GHCR_REPO}/backend:${{ github.sha }}"
-              export FRONTEND_IMAGE="ghcr.io/${GHCR_REPO}/frontend:${{ github.sha }}"
-              if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
-                echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+              SHA="${{ github.sha }}"
+              if [ "${{ vars.DEPLOY_PULL_FROM_MIRROR }}" = "true" ]; then
+                echo "📦 Domestic mirror pull (no ghcr.io on VPS)."
+                MIRROR_PREFIX="${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}"
+                export BACKEND_IMAGE="${MIRROR_PREFIX}/backend:${SHA}"
+                export FRONTEND_IMAGE="${MIRROR_PREFIX}/frontend:${SHA}"
+                echo "${{ secrets.CONTAINER_MIRROR_PASSWORD }}" | sudo docker login "${{ secrets.CONTAINER_MIRROR_REGISTRY }}" -u "${{ secrets.CONTAINER_MIRROR_USERNAME }}" --password-stdin
+              else
+                echo "📦 GHCR prebuilt images (docker-compose.ghcr.yml); VPS pull ghcr.io."
+                GHCR_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+                export BACKEND_IMAGE="ghcr.io/${GHCR_REPO}/backend:${SHA}"
+                export FRONTEND_IMAGE="ghcr.io/${GHCR_REPO}/frontend:${SHA}"
+                if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
+                  echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+                fi
               fi
               if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
                 COMPOSE_FILES="-f docker-compose.ghcr.yml -f docker-compose.dev.override.yml"
