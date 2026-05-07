@@ -178,8 +178,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # 默认在 GitHub 构建镜像推 GHCR，VPS 仅 pull；仅在 DEPLOY_BUILD_ON_SERVER=true 时会在服务器编译（可能很慢）
-          command_timeout: 60m
+          # GHCR 在大陆 VPS 上 pull 可能远超 60m（跨境带宽）；首次拉层尤甚，后续本地有缓存会快很多
+          command_timeout: 120m
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
