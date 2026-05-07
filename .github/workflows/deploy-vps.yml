@@ -50,6 +50,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # docker/build-push-action cache-to type=gha 需要写入 Actions cache
+      actions: write
     # CI 构建镜像 + rsync + VPS pull GHCR；大陆 VPS 拉 GHCR 可能 >2h，须大于 ssh command_timeout
     timeout-minutes: 360
     steps:
@@ -119,6 +121,9 @@ jobs:
           file: backend/Dockerfile
           push: true
           platforms: linux/amd64
+          # 复用 BuildKit 层缓存，避免每次部署重复 apk/gcc/pnpm install（显著缩短 CI 时间）
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ github.sha }}
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ steps.env.outputs.IMAGE_TAG }}
@@ -134,6 +139,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ github.sha }}
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ steps.env.outputs.IMAGE_TAG }}
@@ -203,6 +210,8 @@ jobs:
             --exclude "frontend/node_modules/" \
             --exclude "backend/node_modules/" \
             --exclude "backend/uploads/" \
+            --exclude "frontend/dist/" \
+            --exclude "backend/dist/" \
             ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
 
       - name: Deploy on server (docker compose)
