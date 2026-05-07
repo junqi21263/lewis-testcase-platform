@@ -50,9 +50,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # BuildKit `type=gha` 缓存读写在部分仓库需显式授权（与 GitHub Cache API 一致）
-      actions: write
-      # docker/build-push-action cache-to type=gha 需要写入 Actions cache
+      # BuildKit cache-to type=gha / docker/build-push-action：写入 GitHub Actions cache
       actions: write
     # CI 构建镜像 + rsync + VPS pull GHCR；大陆 VPS 拉 GHCR 可能 >2h，须大于 ssh command_timeout
     timeout-minutes: 360
