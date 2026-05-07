@@ -41,8 +41,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    # GHCR 构建在 GitHub Runner 上完成；VPS 仅 pull+up 通常远快于原 150m apk。仍保留较大上限以防偶然排队。
-    timeout-minutes: 180
+    # CI 构建镜像 + rsync + VPS pull GHCR；大陆 VPS 拉 GHCR 可能 >2h，须大于 ssh command_timeout
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,8 +178,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # GHCR 在大陆 VPS 上 pull 可能远超 60m（跨境带宽）；首次拉层尤甚，后续本地有缓存会快很多
-          command_timeout: 120m
+          # 实测单层可长时间卡在 tens MB；120m 仍不够时提高到 240m（治本仍建议国内镜像仓或更好出口）
+          command_timeout: 240m
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
