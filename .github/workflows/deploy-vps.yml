@@ -1,37 +1,10 @@
-# 云服务器生产部署：推送 main 时 rsync + docker compose 全栈（不依赖 Railway）。
-# Deploy to your own VPS over SSH when pushing to main.
+# 云服务器生产部署：推送 main/develop 时 rsync + docker compose 全栈。
 #
 # GitHub → Repository → Settings → Secrets and variables → Actions
-#   Secrets (required):
-#     SSH_HOST      — server IP or domain
-#     SSH_USER      — e.g. ubuntu
-#     SSH_KEY       — private key (PEM), full text including BEGIN/END lines
-#   Secrets (optional):
-#     SSH_PORT          — default 22 if omitted
-#     GHCR_PULL_TOKEN   — PAT with read:packages for VPS docker login when GHCR images are private (omit if public).
-#
-#   Variables (optional): Repository → Variables
-#     DEPLOY_PATH / DEV_DEPLOY_PATH — absolute deploy path (production / dev)
-#     DEPLOY_REGION — docker Hub mirror behaviour on the VPS host:
-#                     unset or "global" = do NOT merge CN registry mirrors (recommended overseas)
-#                     "cn" = merge CN mirrors via scripts/merge-docker-mirrors.py (recommended mainland China)
-#     APK_MIRROR — optional Alpine apk index host for docker image builds, e.g. mirrors.aliyun.com
-#                  (when set here, overrides empty defaults for that deploy; combine with server .env as needed)
-#     DEPLOY_BUILD_ON_SERVER — set to "true" to skip GHCR image build/push and run docker compose up --build on the VPS (slow; debugging only).
-#
-#   --- 大陆 VPS 根治「拉 GHCR 极慢」：国内镜像仓（腾讯云 TCR 广州 / 阿里云 ACR 等）---
-#     DEPLOY_PULL_FROM_MIRROR — 设为 "true" 时：CI 将镜像从 GHCR 复制到国内仓，VPS 只从国内仓 pull（不走 ghcr.io）。
-#     Variables：CONTAINER_MIRROR_IMAGE_PREFIX — 无尾斜杠，例如：
-#                腾讯云个人版：ccr.ccs.tencentyun.com/your-namespace（地域在控制台选广州即可）
-#                阿里云：registry.cn-hangzhou.aliyuncs.com/your-namespace
-#     Secrets：CONTAINER_MIRROR_REGISTRY — docker login 域名（腾讯云个人版多为 ccr.ccs.tencentyun.com）
-#             CONTAINER_MIRROR_USERNAME / CONTAINER_MIRROR_PASSWORD — 腾讯云常为账号 ID + TCR 镜像仓库密码；见控制台访问凭证
-#     （须在云平台创建命名空间及 backend、frontend 镜像仓库；首次 push 由 workflow 自动推送）
-#
-# Server prerequisites:
-#   - No need for git clone on server (workflow rsyncs code).
-#   - Docker Engine + docker compose plugin; user in docker group OR script uses sudo (see script).
-#   - rsync installed on server (Ubuntu: sudo apt-get install -y rsync)
+#   Secrets (required): SSH_HOST, SSH_USER, SSH_KEY
+#   Variables (optional): DEPLOY_PATH, DEV_DEPLOY_PATH, DEPLOY_REGION=cn（大陆 VPS 拉 Docker Hub 加速）,
+#     DEPLOY_PULL_FROM_MIRROR, CONTAINER_MIRROR_IMAGE_PREFIX, APK_MIRROR, DEPLOY_BUILD_ON_SERVER,
+#     MIRROR_STEP_TIMEOUT_MIN（可选，国内镜像同步步骤超时分钟数，默认 90）
 #
 name: Deploy to VPS
 
@@ -41,25 +14,25 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-vps
+  group: deploy-vps-${{ github.ref }}
   cancel-in-progress: false
 
+# -----------------------------------------------------------------------------
+# 共享：解析分支环境（供多 job 使用 outputs）
+# -----------------------------------------------------------------------------
 jobs:
-  deploy:
+  setup:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      # BuildKit cache-to type=gha / docker/build-push-action：写入 GitHub Actions cache
-      actions: write
-    # CI 构建镜像 + rsync + VPS pull GHCR；大陆 VPS 拉 GHCR 可能 >2h，须大于 ssh command_timeout
-    timeout-minutes: 360
+    outputs:
+      ENV: ${{ steps.env.outputs.ENV }}
+      DEPLOY_PATH: ${{ steps.env.outputs.DEPLOY_PATH }}
+      ENV_FILE: ${{ steps.env.outputs.ENV_FILE }}
+      IMAGE_TAG: ${{ steps.env.outputs.IMAGE_TAG }}
+      INSTALL_CJK_FONTS: ${{ steps.env.outputs.INSTALL_CJK_FONTS }}
+      ghcr_repo: ${{ steps.env.outputs.ghcr_repo }}
+      deploy_t0: ${{ steps.timing.outputs.deploy_t0 }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Determine environment and deployment path
-        id: env
+      - id: env
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "ENV=development" >> $GITHUB_OUTPUT
@@ -75,15 +48,26 @@ jobs:
             echo "INSTALL_CJK_FONTS=1" >> $GITHUB_OUTPUT
           fi
           echo "ghcr_repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      - id: timing
+        run: echo "deploy_t0=$(date +%s)" >> $GITHUB_OUTPUT
 
-      # 与生产一致：Runner 上先打包前端；随后 CI 构建镜像推 GHCR，VPS 拉取而非本地 apk/build。
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+  # ---------------------------------------------------------------------------
+  # 并行：前端静态资源构建（与后端镜像构建同时进行，缩短 wall-clock）
+  # ---------------------------------------------------------------------------
+  vite-build:
+    needs: setup
+    if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
         with:
           version: 10
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: pnpm
@@ -96,17 +80,41 @@ jobs:
           VITE_APP_NAME: ${{ vars.VITE_APP_NAME }}
         run: |
           set -euo pipefail
+          T0="${{ needs.setup.outputs.deploy_t0 }}"
+          NOW=$(date +%s)
+          echo "::notice::phase=vite_build_start seconds_since_setup_start=$((NOW - T0))"
           export VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api}"
           export VITE_APP_NAME="${VITE_APP_NAME:-}"
           pnpm install --frozen-lockfile
           pnpm run build
+          NOW=$(date +%s)
+          echo "::notice::phase=vite_build_done seconds_since_setup_start=$((NOW - T0))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 2
+
+  # ---------------------------------------------------------------------------
+  # 并行：仅构建并推送 backend 镜像到 GHCR（不依赖 frontend dist）
+  # ---------------------------------------------------------------------------
+  docker-backend:
+    needs: setup
+    if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -114,25 +122,57 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
-        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: backend/Dockerfile
           push: true
           platforms: linux/amd64
-          # 复用 BuildKit 层缓存；分 scope 避免 backend / frontend 两次 build 互相覆盖同一缓存槽
           cache-from: type=gha,scope=backend-amd64
           cache-to: type=gha,mode=max,scope=backend-amd64
           tags: |
-            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ github.sha }}
-            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ steps.env.outputs.IMAGE_TAG }}
+            ghcr.io/${{ needs.setup.outputs.ghcr_repo }}/backend:${{ github.sha }}
+            ghcr.io/${{ needs.setup.outputs.ghcr_repo }}/backend:${{ needs.setup.outputs.IMAGE_TAG }}
           build-args: |
-            INSTALL_CJK_FONTS=${{ steps.env.outputs.INSTALL_CJK_FONTS }}
+            INSTALL_CJK_FONTS=${{ needs.setup.outputs.INSTALL_CJK_FONTS }}
             APK_MIRROR=${{ vars.APK_MIRROR }}
 
+      - name: Timing checkpoint
+        run: |
+          T0="${{ needs.setup.outputs.deploy_t0 }}"
+          echo "::notice::phase=docker_backend_pushed seconds_since_setup_start=$(( $(date +%s) - T0 ))"
+
+  # ---------------------------------------------------------------------------
+  # 合并：frontend 镜像 + 可选国内镜像同步 + rsync + VPS 部署
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: [setup, vite-build, docker-backend]
+    if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push frontend image
-        if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
@@ -142,23 +182,30 @@ jobs:
           cache-from: type=gha,scope=frontend-amd64
           cache-to: type=gha,mode=max,scope=frontend-amd64
           tags: |
-            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ github.sha }}
-            ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ steps.env.outputs.IMAGE_TAG }}
+            ghcr.io/${{ needs.setup.outputs.ghcr_repo }}/frontend:${{ github.sha }}
+            ghcr.io/${{ needs.setup.outputs.ghcr_repo }}/frontend:${{ needs.setup.outputs.IMAGE_TAG }}
           build-args: |
             VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
             VITE_APP_NAME=${{ vars.VITE_APP_NAME }}
             APK_MIRROR=${{ vars.APK_MIRROR }}
 
-      # 大陆：Runner 上从 GHCR pull 再 push 到国内仓（带宽通常优于 VPS→GHCR）；VPS 后续只 pull 国内域名
+      - name: Timing after frontend image
+        run: |
+          T0="${{ needs.setup.outputs.deploy_t0 }}"
+          echo "::notice::phase=docker_frontend_pushed seconds_since_setup_start=$(( $(date +%s) - T0 ))"
+
       - name: Mirror images to domestic registry (optional)
-        if: ${{ vars.DEPLOY_PULL_FROM_MIRROR == 'true' && vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
+        if: ${{ vars.DEPLOY_PULL_FROM_MIRROR == 'true' }}
+        # 与 job timeout 衔接；实际 pull/push 时长由下方 timeout 命令与 MIRROR_STEP_TIMEOUT_MIN 控制
+        timeout-minutes: 95
         env:
-          GHCR_PREFIX: ghcr.io/${{ steps.env.outputs.ghcr_repo }}
+          GHCR_PREFIX: ghcr.io/${{ needs.setup.outputs.ghcr_repo }}
           MIRROR_PREFIX: ${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}
           SHA: ${{ github.sha }}
           MIRROR_REG: ${{ secrets.CONTAINER_MIRROR_REGISTRY }}
           MIRROR_USER: ${{ secrets.CONTAINER_MIRROR_USERNAME }}
           MIRROR_PASS: ${{ secrets.CONTAINER_MIRROR_PASSWORD }}
+          MIRROR_TIMEOUT_MIN: ${{ vars.MIRROR_STEP_TIMEOUT_MIN || '90' }}
         run: |
           set -euo pipefail
           if [ -z "${MIRROR_PREFIX:-}" ] || [ -z "${MIRROR_REG:-}" ] || [ -z "${MIRROR_USER:-}" ] || [ -z "${MIRROR_PASS:-}" ]; then
@@ -166,13 +213,30 @@ jobs:
             exit 1
           fi
           echo "$MIRROR_PASS" | docker login "$MIRROR_REG" -u "$MIRROR_USER" --password-stdin
-          for svc in backend frontend; do
-            echo "Mirroring ${svc}..."
-            docker pull "${GHCR_PREFIX}/${svc}:${SHA}"
-            docker tag "${GHCR_PREFIX}/${svc}:${SHA}" "${MIRROR_PREFIX}/${svc}:${SHA}"
-            docker push "${MIRROR_PREFIX}/${svc}:${SHA}"
-          done
+          T0="${{ needs.setup.outputs.deploy_t0 }}"
+          echo "::notice::phase=mirror_start seconds_since_setup_start=$(( $(date +%s) - T0 ))"
+          TM="${MIRROR_TIMEOUT_MIN:-90}"
+          set +e
+          timeout "${TM}m" env GHCR_PREFIX="$GHCR_PREFIX" MIRROR_PREFIX="$MIRROR_PREFIX" SHA="$SHA" bash -eo pipefail -c '
+            for svc in backend frontend; do
+              echo "Mirroring ${svc}..."
+              docker pull "${GHCR_PREFIX}/${svc}:${SHA}"
+              docker tag "${GHCR_PREFIX}/${svc}:${SHA}" "${MIRROR_PREFIX}/${svc}:${SHA}"
+              docker push "${MIRROR_PREFIX}/${svc}:${SHA}"
+            done
+          '
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "::error::国内镜像同步超过 ${TM} 分钟（timeout）。可在仓库 Variables 设置 MIRROR_STEP_TIMEOUT_MIN 增大；或检查 Runner→国内仓网络。"
+            exit 124
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::国内镜像同步失败（exit $rc）"
+            exit "$rc"
+          fi
           echo "✅ Mirror push complete; VPS will pull from ${MIRROR_PREFIX}"
+          echo "::notice::phase=mirror_done seconds_since_setup_start=$(( $(date +%s) - T0 ))"
 
       - name: Prepare SSH known_hosts
         shell: bash
@@ -189,15 +253,14 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-          DEPLOY_PATH: ${{ steps.env.outputs.DEPLOY_PATH }}
+          DEPLOY_PATH: ${{ needs.setup.outputs.DEPLOY_PATH }}
         run: |
           set -euo pipefail
+          T0="${{ needs.setup.outputs.deploy_t0 }}"
+          echo "::notice::phase=rsync_start seconds_since_setup_start=$(( $(date +%s) - T0 ))"
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
-
-          # NOTE: /opt/* 通常归 root 所有；使用 sudo mkdir + sudo rsync 写入，避免 Permission denied
           ssh -i /tmp/deploy_key -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo mkdir -p \"$DEPLOY_PATH\""
-
           rsync -az --delete \
             -e "ssh -i /tmp/deploy_key -p $SSH_PORT -o StrictHostKeyChecking=yes" \
             --rsync-path="sudo rsync" \
@@ -213,6 +276,7 @@ jobs:
             --exclude "frontend/dist/" \
             --exclude "backend/dist/" \
             ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+          echo "::notice::phase=rsync_done seconds_since_setup_start=$(( $(date +%s) - T0 ))"
 
       - name: Deploy on server (docker compose)
         uses: appleboy/ssh-action@v1.2.1
@@ -221,17 +285,13 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # 实测单层可长时间卡在 tens MB；120m 仍不够时提高到 240m（治本仍建议国内镜像仓或更好出口）
           command_timeout: 240m
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
-            ENV_FILE="${{ steps.env.outputs.ENV_FILE }}"
+            DEPLOY_PATH="${{ needs.setup.outputs.DEPLOY_PATH }}"
+            ENV_FILE="${{ needs.setup.outputs.ENV_FILE }}"
             cd "$DEPLOY_PATH"
-            
-            echo "🚀 Deploying to ${{ steps.env.outputs.ENV }} environment at $DEPLOY_PATH"
-            
-            # Docker Hub registry mirrors：海外节点默认跳过国内镜像站；中国大陆 VPS 请在仓库 Variables 设置 DEPLOY_REGION=cn
+            echo "🚀 Deploying to ${{ needs.setup.outputs.ENV }} environment at $DEPLOY_PATH"
             REGION="${{ vars.DEPLOY_REGION }}"
             case "${REGION:-global}" in
               cn)
@@ -252,11 +312,9 @@ jobs:
                 fi
                 ;;
               *)
-                echo "🔧 DEPLOY_REGION=${REGION:-global}: skipping CN Docker Hub mirrors (use official / regional Hub; set DEPLOY_REGION=cn on mainland China VPS if pulls are slow)"
+                echo "🔧 DEPLOY_REGION=${REGION:-global}: skipping CN Docker Hub mirrors (set DEPLOY_REGION=cn on mainland China VPS if pulls are slow)"
                 ;;
             esac
-            
-            # 确保部署目录和 .env 文件存在
             sudo mkdir -p "$DEPLOY_PATH"
             if [ ! -f "$DEPLOY_PATH/$ENV_FILE" ]; then
               echo "⚠️  $ENV_FILE not found, copying from example..."
@@ -265,135 +323,96 @@ jobs:
                 echo "✅ Created $ENV_FILE from template. Please edit it with production values!"
               fi
             fi
-            
-            # 开发环境强制使用独立端口，避免与生产环境冲突
-            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               sudo sed -i '/^FRONTEND_HOST_BIND=/d;/^FRONTEND_HOST_PORT=/d;/^POSTGRES_HOST_BIND=/d;/^POSTGRES_HOST_PORT=/d;/^REDIS_HOST_BIND=/d;/^REDIS_HOST_PORT=/d' "$DEPLOY_PATH/$ENV_FILE"
               sudo bash -c "printf '\nFRONTEND_HOST_BIND=0.0.0.0\nFRONTEND_HOST_PORT=8080\nPOSTGRES_HOST_BIND=127.0.0.1\nPOSTGRES_HOST_PORT=5433\nREDIS_HOST_BIND=127.0.0.1\nREDIS_HOST_PORT=6380\n' >> '$DEPLOY_PATH/$ENV_FILE'"
             fi
-            
-            # 开发环境：先停止并删除旧容器，释放端口
-            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               echo "🧹 Cleaning up old development containers..."
-              # 停止并删除开发环境容器（如果存在）
               sudo docker stop testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
               sudo docker rm testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
               echo "✅ Old containers cleaned up"
             fi
-            
-            # 与同机生产栈区分容器名（否则固定 testcase_postgres 会与旧容器冲突）
             BUILD_ON_SERVER="${{ vars.DEPLOY_BUILD_ON_SERVER }}"
-            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               STACK_PREFIX="${STACK_PREFIX:-testcase_dev}"
-              # 开发环境独立端口配置
               export FRONTEND_HOST_PORT=8080
               export POSTGRES_HOST_PORT=5433
               export REDIS_HOST_PORT=6380
             else
               STACK_PREFIX="${STACK_PREFIX:-testcase}"
-              # 生产环境默认端口配置
               export FRONTEND_HOST_PORT=80
               export POSTGRES_HOST_PORT=5432
               export REDIS_HOST_PORT=6379
             fi
             export STACK_PREFIX
             export COMPOSE_ENV_FILE="$ENV_FILE"
-            
-            if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
-              echo "⚠️ DEPLOY_BUILD_ON_SERVER=true — building images on VPS (slow)."
-              if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
-                COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
-              else
-                COMPOSE_FILES="-f docker-compose.full.yml"
-              fi
-              SMOKE_COMPOSE_FILE="docker-compose.full.yml"
+            SHA="${{ github.sha }}"
+            if [ "${{ vars.DEPLOY_PULL_FROM_MIRROR }}" = "true" ]; then
+              echo "📦 Domestic mirror pull (no ghcr.io on VPS)."
+              MIRROR_PREFIX="${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}"
+              export BACKEND_IMAGE="${MIRROR_PREFIX}/backend:${SHA}"
+              export FRONTEND_IMAGE="${MIRROR_PREFIX}/frontend:${SHA}"
+              echo "${{ secrets.CONTAINER_MIRROR_PASSWORD }}" | sudo docker login "${{ secrets.CONTAINER_MIRROR_REGISTRY }}" -u "${{ secrets.CONTAINER_MIRROR_USERNAME }}" --password-stdin
             else
-              SHA="${{ github.sha }}"
-              if [ "${{ vars.DEPLOY_PULL_FROM_MIRROR }}" = "true" ]; then
-                echo "📦 Domestic mirror pull (no ghcr.io on VPS)."
-                MIRROR_PREFIX="${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}"
-                export BACKEND_IMAGE="${MIRROR_PREFIX}/backend:${SHA}"
-                export FRONTEND_IMAGE="${MIRROR_PREFIX}/frontend:${SHA}"
-                echo "${{ secrets.CONTAINER_MIRROR_PASSWORD }}" | sudo docker login "${{ secrets.CONTAINER_MIRROR_REGISTRY }}" -u "${{ secrets.CONTAINER_MIRROR_USERNAME }}" --password-stdin
-              else
-                echo "📦 GHCR prebuilt images (docker-compose.ghcr.yml); VPS pull ghcr.io."
-                GHCR_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-                export BACKEND_IMAGE="ghcr.io/${GHCR_REPO}/backend:${SHA}"
-                export FRONTEND_IMAGE="ghcr.io/${GHCR_REPO}/frontend:${SHA}"
-                if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
-                  echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-                fi
+              echo "📦 GHCR prebuilt images (docker-compose.ghcr.yml); VPS pull ghcr.io."
+              GHCR_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+              export BACKEND_IMAGE="ghcr.io/${GHCR_REPO}/backend:${SHA}"
+              export FRONTEND_IMAGE="ghcr.io/${GHCR_REPO}/frontend:${SHA}"
+              if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
+                echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
               fi
-              if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
-                COMPOSE_FILES="-f docker-compose.ghcr.yml -f docker-compose.dev.override.yml"
-              else
-                COMPOSE_FILES="-f docker-compose.ghcr.yml"
-              fi
-              SMOKE_COMPOSE_FILE="docker-compose.ghcr.yml"
             fi
-            
-            # Alpine apk：可选仓库 Variables APK_MIRROR（仅 VPS 构建路径有意义）
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
+              COMPOSE_FILES="-f docker-compose.ghcr.yml -f docker-compose.dev.override.yml"
+            else
+              COMPOSE_FILES="-f docker-compose.ghcr.yml"
+            fi
+            SMOKE_COMPOSE_FILE="docker-compose.ghcr.yml"
             if [ -n "${{ vars.APK_MIRROR }}" ]; then
               export APK_MIRROR="${{ vars.APK_MIRROR }}"
               echo "📦 APK_MIRROR from GitHub Variables: $APK_MIRROR"
             fi
-            
             deploy_compose_env=(DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT")
             if [ -n "${APK_MIRROR:-}" ]; then
               deploy_compose_env+=(APK_MIRROR="$APK_MIRROR")
             fi
-            if [ "${BUILD_ON_SERVER:-}" != "true" ]; then
-              deploy_compose_env+=(BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE")
-            fi
-            
-            # GHCR：pull 预构建镜像；VPS 本地构建：勿使用 build --no-cache（极慢）
-            # pull 对 ghcr.io 可能偶发 connection reset：重试数次（大陆 VPS 仍建议 DEPLOY_PULL_FROM_MIRROR）
+            deploy_compose_env+=(BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE")
             if sudo docker compose version >/dev/null 2>&1; then
-              if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
-                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
-              else
-                pull_ok=0
-                for attempt in 1 2 3 4 5; do
-                  echo "📥 docker compose pull backend frontend (attempt $attempt/5)..."
-                  if sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
-                    pull_ok=1
-                    break
-                  fi
-                  echo "⚠️ Pull failed (network?), retry in 25s..."
-                  sleep 25
-                done
-                if [ "$pull_ok" != "1" ]; then
-                  echo "::error::docker compose pull failed after 5 attempts"
-                  exit 1
+              pull_ok=0
+              for attempt in 1 2 3 4 5; do
+                echo "📥 docker compose pull backend frontend (attempt $attempt/5)..."
+                if sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
+                  pull_ok=1
+                  break
                 fi
-                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
+                echo "⚠️ Pull failed (network?), retry in 25s..."
+                sleep 25
+              done
+              if [ "$pull_ok" != "1" ]; then
+                echo "::error::docker compose pull failed after 5 attempts"
+                exit 1
               fi
+              sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
             else
-              if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
-                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
-              else
-                pull_ok=0
-                for attempt in 1 2 3 4 5; do
-                  echo "📥 docker-compose pull backend frontend (attempt $attempt/5)..."
-                  if sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
-                    pull_ok=1
-                    break
-                  fi
-                  echo "⚠️ Pull failed (network?), retry in 25s..."
-                  sleep 25
-                done
-                if [ "$pull_ok" != "1" ]; then
-                  echo "::error::docker-compose pull failed after 5 attempts"
-                  exit 1
+              pull_ok=0
+              for attempt in 1 2 3 4 5; do
+                echo "📥 docker-compose pull backend frontend (attempt $attempt/5)..."
+                if sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
+                  pull_ok=1
+                  break
                 fi
-                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
+                echo "⚠️ Pull failed (network?), retry in 25s..."
+                sleep 25
+              done
+              if [ "$pull_ok" != "1" ]; then
+                echo "::error::docker-compose pull failed after 5 attempts"
+                exit 1
               fi
+              sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
             fi
-            
-            echo "✅ Deployment to ${{ steps.env.outputs.ENV }} completed"
-            
-            # 开发环境smoke检查（通过前端代理检查后端健康状态）
-            if [ "${{ steps.env.outputs.ENV }}" = "development" ]; then
+            echo "✅ Deployment to ${{ needs.setup.outputs.ENV }} completed"
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               echo "🧪 Running development smoke check on port 8080..."
               ok=0
               for i in $(seq 1 60); do
@@ -411,6 +430,174 @@ jobs:
               fi
               echo "✅ Smoke check passed"
               echo "访问地址: http://${{ secrets.SSH_HOST }}:8080"
+            else
+              env STACK_PREFIX="$STACK_PREFIX" COMPOSE_ENV_FILE="$ENV_FILE" COMPOSE_FILE="$SMOKE_COMPOSE_FILE" bash scripts/smoke.sh
+            fi
+
+      - name: Deploy timings summary
+        if: always()
+        env:
+          DEPLOY_T0: ${{ needs.setup.outputs.deploy_t0 }}
+        run: |
+          T1=$(date +%s)
+          echo "## Deploy timings (wall-clock)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Checkpoint | Seconds from workflow setup |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------------|------------------------------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| setup job finished (deploy_t0 recorded) | 0 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| deploy job finished (this step) | $((T1 - DEPLOY_T0)) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Individual steps above include **vite-build**, **docker-backend**, and **deploy** sub-steps; check GitHub UI per-step duration for bottlenecks." >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # VPS 本地构建镜像（调试）：不走并行镜像 job
+  # ---------------------------------------------------------------------------
+  deploy-build-on-server:
+    needs: setup
+    if: ${{ vars.DEPLOY_BUILD_ON_SERVER == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_APP_NAME: ${{ vars.VITE_APP_NAME }}
+        run: |
+          set -euo pipefail
+          export VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api}"
+          export VITE_APP_NAME="${VITE_APP_NAME:-}"
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Prepare SSH known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "${{ secrets.SSH_PORT || '22' }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Rsync code to server
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ needs.setup.outputs.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          ssh -i /tmp/deploy_key -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo mkdir -p \"$DEPLOY_PATH\""
+          rsync -az --delete \
+            -e "ssh -i /tmp/deploy_key -p $SSH_PORT -o StrictHostKeyChecking=yes" \
+            --rsync-path="sudo rsync" \
+            --exclude ".git/" \
+            --exclude ".env" \
+            --exclude ".env.*" \
+            --exclude "backend/.env" \
+            --exclude "frontend/.env" \
+            --exclude "node_modules/" \
+            --exclude "frontend/node_modules/" \
+            --exclude "backend/node_modules/" \
+            --exclude "backend/uploads/" \
+            --exclude "frontend/dist/" \
+            --exclude "backend/dist/" \
+            ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Deploy on server (docker compose --build)
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          command_timeout: 240m
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ needs.setup.outputs.DEPLOY_PATH }}"
+            ENV_FILE="${{ needs.setup.outputs.ENV_FILE }}"
+            cd "$DEPLOY_PATH"
+            echo "⚠️ DEPLOY_BUILD_ON_SERVER=true — building on VPS (slow)"
+            REGION="${{ vars.DEPLOY_REGION }}"
+            case "${REGION:-global}" in
+              cn)
+                echo "🔧 DEPLOY_REGION=cn: merging CN Docker Hub mirrors..."
+                sudo mkdir -p /etc/docker
+                if command -v python3 >/dev/null 2>&1; then
+                  MERGE_OUT=$(sudo python3 "$DEPLOY_PATH/scripts/merge-docker-mirrors.py")
+                  if [ "$MERGE_OUT" = "restart" ]; then
+                    sudo systemctl daemon-reload
+                    sudo systemctl restart docker
+                    sleep 5
+                  fi
+                fi
+                ;;
+            esac
+            sudo mkdir -p "$DEPLOY_PATH"
+            if [ ! -f "$DEPLOY_PATH/$ENV_FILE" ] && [ -f "$DEPLOY_PATH/$ENV_FILE.example" ]; then
+              sudo cp "$DEPLOY_PATH/$ENV_FILE.example" "$DEPLOY_PATH/$ENV_FILE"
+            fi
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
+              sudo sed -i '/^FRONTEND_HOST_BIND=/d;/^FRONTEND_HOST_PORT=/d;/^POSTGRES_HOST_BIND=/d;/^POSTGRES_HOST_PORT=/d;/^REDIS_HOST_BIND=/d;/^REDIS_HOST_PORT=/d' "$DEPLOY_PATH/$ENV_FILE"
+              sudo bash -c "printf '\nFRONTEND_HOST_BIND=0.0.0.0\nFRONTEND_HOST_PORT=8080\nPOSTGRES_HOST_BIND=127.0.0.1\nPOSTGRES_HOST_PORT=5433\nREDIS_HOST_BIND=127.0.0.1\nREDIS_HOST_PORT=6380\n' >> '$DEPLOY_PATH/$ENV_FILE'"
+              echo "🧹 Cleaning up old dev containers..."
+              sudo docker stop testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
+              sudo docker rm testcase_dev_redis testcase_dev_postgres testcase_dev_backend testcase_dev_frontend 2>/dev/null || true
+            fi
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
+              STACK_PREFIX="${STACK_PREFIX:-testcase_dev}"
+              COMPOSE_FILES="-f docker-compose.full.yml -f docker-compose.dev.override.yml"
+              export FRONTEND_HOST_PORT=8080
+              export POSTGRES_HOST_PORT=5433
+              export REDIS_HOST_PORT=6380
+            else
+              STACK_PREFIX="${STACK_PREFIX:-testcase}"
+              COMPOSE_FILES="-f docker-compose.full.yml"
+              export FRONTEND_HOST_PORT=80
+              export POSTGRES_HOST_PORT=5432
+              export REDIS_HOST_PORT=6379
+            fi
+            export STACK_PREFIX
+            export COMPOSE_ENV_FILE="$ENV_FILE"
+            SMOKE_COMPOSE_FILE="docker-compose.full.yml"
+            deploy_compose_env=(DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain STACK_PREFIX="$STACK_PREFIX" FRONTEND_HOST_PORT="$FRONTEND_HOST_PORT" POSTGRES_HOST_PORT="$POSTGRES_HOST_PORT" REDIS_HOST_PORT="$REDIS_HOST_PORT")
+            if [ -n "${{ vars.APK_MIRROR }}" ]; then
+              export APK_MIRROR="${{ vars.APK_MIRROR }}"
+              deploy_compose_env+=(APK_MIRROR="$APK_MIRROR")
+            fi
+            sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
+            echo "✅ Deployment to ${{ needs.setup.outputs.ENV }} completed"
+            if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
+              ok=0
+              for i in $(seq 1 60); do
+                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                  ok=1
+                  break
+                fi
+                sleep 2
+              done
+              if [ "$ok" != "1" ]; then
+                exit 1
+              fi
             else
               env STACK_PREFIX="$STACK_PREFIX" COMPOSE_ENV_FILE="$ENV_FILE" COMPOSE_FILE="$SMOKE_COMPOSE_FILE" bash scripts/smoke.sh
             fi

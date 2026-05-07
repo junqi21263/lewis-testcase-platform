@@ -1,11 +1,34 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { PrismaService } from '@/prisma/prisma.service'
 
+type ListParams = { page?: number; pageSize?: number; category?: string; keyword?: string }
+
 @Injectable()
 export class TemplatesService {
+  /** GET /templates 短期内存缓存（毫秒），TEMPLATES_LIST_CACHE_TTL_MS=0 关闭 */
+  private readonly listCacheTtlMs = parseInt(process.env.TEMPLATES_LIST_CACHE_TTL_MS || '0', 10)
+  private readonly listCache = new Map<string, { expires: number; payload: { list: unknown[]; total: number; page: number; pageSize: number } }>()
+
   constructor(private prisma: PrismaService) {}
 
-  async getTemplates(userId: string, params: { page?: number; pageSize?: number; category?: string; keyword?: string }) {
+  private listCacheKey(userId: string, params: ListParams): string {
+    return `${userId}:${JSON.stringify(params)}`
+  }
+
+  private invalidateAllListCache() {
+    this.listCache.clear()
+  }
+
+  async getTemplates(userId: string, params: ListParams) {
+    const ttl = this.listCacheTtlMs
+    if (ttl > 0) {
+      const key = this.listCacheKey(userId, params)
+      const hit = this.listCache.get(key)
+      if (hit && hit.expires > Date.now()) {
+        return hit.payload
+      }
+    }
+
     const { page = 1, pageSize = 20, category, keyword } = params
     const where = {
       OR: [{ creatorId: userId }, { isPublic: true }],
@@ -22,7 +45,12 @@ export class TemplatesService {
       }),
       this.prisma.promptTemplate.count({ where }),
     ])
-    return { list, total, page, pageSize }
+    const payload = { list, total, page, pageSize }
+    if (ttl > 0) {
+      const key = this.listCacheKey(userId, params)
+      this.listCache.set(key, { expires: Date.now() + ttl, payload })
+    }
+    return payload
   }
 
   async getById(id: string) {
@@ -32,9 +60,11 @@ export class TemplatesService {
   }
 
   async create(userId: string, data: any) {
-    return this.prisma.promptTemplate.create({
+    const created = await this.prisma.promptTemplate.create({
       data: { ...data, creatorId: userId, variables: data.variables || [] },
     })
+    this.invalidateAllListCache()
+    return created
   }
 
   async update(id: string, userId: string, data: any, role?: string) {
@@ -43,7 +73,9 @@ export class TemplatesService {
     const isOwner = tpl.creatorId === userId
     const isSuper = role === 'SUPER_ADMIN'
     if (!isOwner && !isSuper) throw new ForbiddenException('无权修改该模板')
-    return this.prisma.promptTemplate.update({ where: { id }, data })
+    const updated = await this.prisma.promptTemplate.update({ where: { id }, data })
+    this.invalidateAllListCache()
+    return updated
   }
 
   async delete(id: string, userId: string, role?: string) {
@@ -53,5 +85,6 @@ export class TemplatesService {
     const isSuper = role === 'SUPER_ADMIN'
     if (!isOwner && !isSuper) throw new ForbiddenException('无权删除该模板')
     await this.prisma.promptTemplate.delete({ where: { id } })
+    this.invalidateAllListCache()
   }
 }

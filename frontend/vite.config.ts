@@ -9,6 +9,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@tiptap')) return 'tiptap'
+            if (id.includes('@tanstack/react-table')) return 'tanstack-table'
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

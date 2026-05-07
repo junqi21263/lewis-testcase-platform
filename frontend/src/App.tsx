@@ -1,21 +1,30 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useThemeStore } from '@/store/themeStore'
-import { useEffect } from 'react'
 import MainLayout from '@/components/layout/MainLayout'
 import AuthLayout from '@/components/layout/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
-import DashboardPage from '@/pages/DashboardPage'
-import GeneratePage from '@/pages/GeneratePage'
-import RecordsPage from '@/pages/RecordsPage'
-import RecordDetailPage from '@/pages/RecordDetailPage'
-import RecordSharePublicPage from '@/pages/RecordSharePublicPage'
-import TemplatesPage from '@/pages/TemplatesPage'
-import TeamsPage from '@/pages/TeamsPage'
-import ProfilePage from '@/pages/ProfilePage'
-import SettingsPage from '@/pages/SettingsPage'
-import UploadPage from '@/pages/UploadPage'
-import AiAnalysisPage from '@/pages/AiAnalysisPage'
+
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const GeneratePage = lazy(() => import('@/pages/GeneratePage'))
+const RecordsPage = lazy(() => import('@/pages/RecordsPage'))
+const RecordDetailPage = lazy(() => import('@/pages/RecordDetailPage'))
+const RecordSharePublicPage = lazy(() => import('@/pages/RecordSharePublicPage'))
+const TemplatesPage = lazy(() => import('@/pages/TemplatesPage'))
+const TeamsPage = lazy(() => import('@/pages/TeamsPage'))
+const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const UploadPage = lazy(() => import('@/pages/UploadPage'))
+const AiAnalysisPage = lazy(() => import('@/pages/AiAnalysisPage'))
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+      加载中…
+    </div>
+  )
+}
 
 /** 路由守卫：未登录跳转登录页 */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -26,7 +35,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   const { theme } = useThemeStore()
 
-  // 全局主题切换
   useEffect(() => {
     const root = window.document.documentElement
     root.classList.remove('light', 'dark')
@@ -35,43 +43,41 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        {/* 公开路由 */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          {/* 管理员模式：关闭注册/找回密码入口，全部回到登录 */}
-          <Route path="/register" element={<Navigate to="/login" replace />} />
-          <Route path="/verify-email" element={<Navigate to="/login" replace />} />
-          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
-          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
-        </Route>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<Navigate to="/login" replace />} />
+            <Route path="/verify-email" element={<Navigate to="/login" replace />} />
+            <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+            <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+          </Route>
 
-        <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />
+          <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />
 
-        {/* 受保护路由 */}
-        <Route
-          element={
-            <PrivateRoute>
-              <MainLayout />
-            </PrivateRoute>
-          }
-        >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/upload" element={<UploadPage />} />
-          <Route path="/ai-analysis" element={<AiAnalysisPage />} />
-          <Route path="/generate" element={<GeneratePage />} />
-          <Route path="/records" element={<RecordsPage />} />
-          <Route path="/records/:id" element={<RecordDetailPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="/teams" element={<TeamsPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
+          <Route
+            element={
+              <PrivateRoute>
+                <MainLayout />
+              </PrivateRoute>
+            }
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/upload" element={<UploadPage />} />
+            <Route path="/ai-analysis" element={<AiAnalysisPage />} />
+            <Route path="/generate" element={<GeneratePage />} />
+            <Route path="/records" element={<RecordsPage />} />
+            <Route path="/records/:id" element={<RecordDetailPage />} />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/teams" element={<TeamsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
 
-        {/* 404 兜底 */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }
