@@ -347,18 +347,45 @@ jobs:
             fi
             
             # GHCR：pull 预构建镜像；VPS 本地构建：勿使用 build --no-cache（极慢）
+            # pull 对 ghcr.io 可能偶发 connection reset：重试数次（大陆 VPS 仍建议 DEPLOY_PULL_FROM_MIRROR）
             if sudo docker compose version >/dev/null 2>&1; then
               if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
                 sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
               else
-                sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend
+                pull_ok=0
+                for attempt in 1 2 3 4 5; do
+                  echo "📥 docker compose pull backend frontend (attempt $attempt/5)..."
+                  if sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
+                    pull_ok=1
+                    break
+                  fi
+                  echo "⚠️ Pull failed (network?), retry in 25s..."
+                  sleep 25
+                done
+                if [ "$pull_ok" != "1" ]; then
+                  echo "::error::docker compose pull failed after 5 attempts"
+                  exit 1
+                fi
                 sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
               fi
             else
               if [ "${BUILD_ON_SERVER:-}" = "true" ]; then
                 sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --build
               else
-                sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend
+                pull_ok=0
+                for attempt in 1 2 3 4 5; do
+                  echo "📥 docker-compose pull backend frontend (attempt $attempt/5)..."
+                  if sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" pull backend frontend; then
+                    pull_ok=1
+                    break
+                  fi
+                  echo "⚠️ Pull failed (network?), retry in 25s..."
+                  sleep 25
+                done
+                if [ "$pull_ok" != "1" ]; then
+                  echo "::error::docker-compose pull failed after 5 attempts"
+                  exit 1
+                fi
                 sudo env "${deploy_compose_env[@]}" docker-compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
               fi
             fi

@@ -4,10 +4,10 @@ services:
     ports:
       - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-8080}:80"
 
+  # 勿在此声明 backend build：与 docker-compose.ghcr.yml 合并时会出现 image+build，
+  # compose pull 失败时会误报「须 docker compose build backend」。开发栈镜像由 CI 构建（develop 已 INSTALL_CJK_FONTS=0）。
+  # 若仅用 docker-compose.full.yml 本地构建且需跳过 CJK 字体：INSTALL_CJK_FONTS=0 docker compose ... build backend
   backend:
-    build:
-      args:
-        INSTALL_CJK_FONTS: "0"
     container_name: ${STACK_PREFIX:-testcase_dev}_backend
     ports:
       - "${BACKEND_HOST_BIND:-0.0.0.0}:${BACKEND_HOST_PORT:-3000}:3000"
