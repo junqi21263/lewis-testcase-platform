@@ -16,6 +16,9 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('@tiptap')) return 'tiptap'
             if (id.includes('@tanstack/react-table')) return 'tanstack-table'
+            if (id.includes('@radix-ui')) return 'radix-ui'
+            if (id.includes('lucide-react')) return 'lucide'
+            if (id.includes('jszip') || id.includes('file-saver')) return 'export-libs'
           }
         },
       },
