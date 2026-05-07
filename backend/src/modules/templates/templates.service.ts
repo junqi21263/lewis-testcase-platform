@@ -5,11 +5,20 @@ type ListParams = { page?: number; pageSize?: number; category?: string; keyword
 
 @Injectable()
 export class TemplatesService {
-  /** GET /templates 短期内存缓存（毫秒），TEMPLATES_LIST_CACHE_TTL_MS=0 关闭 */
-  private readonly listCacheTtlMs = parseInt(process.env.TEMPLATES_LIST_CACHE_TTL_MS || '0', 10)
+  /** GET /templates 短期内存缓存（毫秒）。未设置或空：生产默认 30s，非生产默认关闭；显式 0=关闭 */
+  private readonly listCacheTtlMs = TemplatesService.resolveListCacheTtlMs()
   private readonly listCache = new Map<string, { expires: number; payload: { list: unknown[]; total: number; page: number; pageSize: number } }>()
 
   constructor(private prisma: PrismaService) {}
+
+  private static resolveListCacheTtlMs(): number {
+    const raw = process.env.TEMPLATES_LIST_CACHE_TTL_MS?.trim()
+    if (raw !== undefined && raw !== '') {
+      const n = parseInt(raw, 10)
+      return Number.isFinite(n) && n >= 0 ? n : 0
+    }
+    return process.env.NODE_ENV === 'production' ? 30_000 : 0
+  }
 
   private listCacheKey(userId: string, params: ListParams): string {
     return `${userId}:${JSON.stringify(params)}`
