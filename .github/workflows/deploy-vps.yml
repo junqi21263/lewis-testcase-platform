@@ -50,6 +50,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # BuildKit `type=gha` 缓存读写在部分仓库需显式授权（与 GitHub Cache API 一致）
+      actions: write
       # docker/build-push-action cache-to type=gha 需要写入 Actions cache
       actions: write
     # CI 构建镜像 + rsync + VPS pull GHCR；大陆 VPS 拉 GHCR 可能 >2h，须大于 ssh command_timeout
@@ -121,9 +123,9 @@ jobs:
           file: backend/Dockerfile
           push: true
           platforms: linux/amd64
-          # 复用 BuildKit 层缓存，避免每次部署重复 apk/gcc/pnpm install（显著缩短 CI 时间）
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 复用 BuildKit 层缓存；分 scope 避免 backend / frontend 两次 build 互相覆盖同一缓存槽
+          cache-from: type=gha,scope=backend-amd64
+          cache-to: type=gha,mode=max,scope=backend-amd64
           tags: |
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ github.sha }}
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/backend:${{ steps.env.outputs.IMAGE_TAG }}
@@ -139,8 +141,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-amd64
+          cache-to: type=gha,mode=max,scope=frontend-amd64
           tags: |
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ github.sha }}
             ghcr.io/${{ steps.env.outputs.ghcr_repo }}/frontend:${{ steps.env.outputs.IMAGE_TAG }}

@@ -1,0 +1,12 @@
+# docker build context=./frontend；排除宿主 node_modules，避免重复 pnpm install 与超大上下文。
+# dist/ 必须保留：CI 先于镜像构建执行 pnpm build 时，镜像内可直接使用预构建产物。
+node_modules
+.git
+coverage
+test-results
+playwright-report
+blob-report
+allure-results
+allure-report
+.eslintcache
+.cache

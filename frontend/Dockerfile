@@ -7,11 +7,6 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-COPY . .
-
 # 生产环境 API 基址（与 Nest globalPrefix 一致须以 /api 结尾）
 # Railway 上前端与后端域名不同时，设为后端公网 + /api，并在后端 CORS_ORIGINS 中放行前端 Origin。
 ARG VITE_API_BASE_URL=/api
@@ -19,12 +14,15 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ARG VITE_APP_NAME=
 ENV VITE_APP_NAME=${VITE_APP_NAME}
 
-# GitHub Actions 等 CI 可先 pnpm build，rsync 到服务器后此处直接使用 dist，缩短云主机构建时间。
-# 本地无 dist 时仍执行完整构建。
+COPY . .
+
+# CI 已 pnpm build 时存在 dist/：跳过镜像内 pnpm install（与 workflow「先本地构建再 docker build」配套）。
+# 无 dist 时（本地 docker build）：完整 install + build。
 RUN if [ -f dist/index.html ]; then \
       echo "[frontend-docker] using existing dist/ (from CI or host)"; \
     else \
-      echo "[frontend-docker] running pnpm build in container"; \
+      echo "[frontend-docker] running pnpm install + build in container"; \
+      pnpm install --frozen-lockfile && \
       pnpm run build; \
     fi
 

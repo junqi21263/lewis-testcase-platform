@@ -57,4 +57,3 @@ allure-report/
 
 # Production
 .Dockerfile
-.dockerignore
