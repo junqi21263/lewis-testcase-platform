@@ -19,11 +19,13 @@
 #                  (when set here, overrides empty defaults for that deploy; combine with server .env as needed)
 #     DEPLOY_BUILD_ON_SERVER — set to "true" to skip GHCR image build/push and run docker compose up --build on the VPS (slow; debugging only).
 #
-#   --- 大陆 VPS 根治「拉 GHCR 极慢」：国内镜像仓（推荐阿里云 ACR / 腾讯云等）---
+#   --- 大陆 VPS 根治「拉 GHCR 极慢」：国内镜像仓（腾讯云 TCR 广州 / 阿里云 ACR 等）---
 #     DEPLOY_PULL_FROM_MIRROR — 设为 "true" 时：CI 将镜像从 GHCR 复制到国内仓，VPS 只从国内仓 pull（不走 ghcr.io）。
-#     Variables：CONTAINER_MIRROR_IMAGE_PREFIX — 无尾斜杠，例如 registry.cn-hangzhou.aliyuncs.com/your-namespace
-#     Secrets：CONTAINER_MIRROR_REGISTRY — 登录域名，可与前缀主机一致，例如 registry.cn-hangzhou.aliyuncs.com
-#             CONTAINER_MIRROR_USERNAME / CONTAINER_MIRROR_PASSWORD — ACR 控制台「访问凭证」或 RAM 子账号
+#     Variables：CONTAINER_MIRROR_IMAGE_PREFIX — 无尾斜杠，例如：
+#                腾讯云个人版：ccr.ccs.tencentyun.com/your-namespace（地域在控制台选广州即可）
+#                阿里云：registry.cn-hangzhou.aliyuncs.com/your-namespace
+#     Secrets：CONTAINER_MIRROR_REGISTRY — docker login 域名（腾讯云个人版多为 ccr.ccs.tencentyun.com）
+#             CONTAINER_MIRROR_USERNAME / CONTAINER_MIRROR_PASSWORD — 腾讯云常为账号 ID + TCR 镜像仓库密码；见控制台访问凭证
 #     （须在云平台创建命名空间及 backend、frontend 镜像仓库；首次 push 由 workflow 自动推送）
 #
 # Server prerequisites:
