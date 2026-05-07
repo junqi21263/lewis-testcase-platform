@@ -428,15 +428,17 @@ jobs:
             if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               echo "🧪 Running development smoke check on port 8080..."
               ok=0
+              # nginx 将 /health 反代到后端裸路由 GET /health，响应为 text/plain「ok」；
+              # /api/health 才是 JSON { status: 'ok', ... }。须同时匹配两种形式。
               for i in $(seq 1 60); do
-                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -qE '^[[:space:]]*ok[[:space:]]*$|\"status\"[[:space:]]*:[[:space:]]*\"ok\"'; then
                   ok=1
                   break
                 fi
                 sleep 2
               done
               if [ "$ok" != "1" ]; then
-                echo "❌ Smoke check failed after waiting 60s"
+                echo "❌ Smoke check failed after ~120s (60 attempts × 2s)"
                 sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps || true
                 sudo env "${deploy_compose_env[@]}" docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs --tail=100 backend frontend || true
                 exit 1
@@ -610,13 +612,14 @@ jobs:
             if [ "${{ needs.setup.outputs.ENV }}" = "development" ]; then
               ok=0
               for i in $(seq 1 60); do
-                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                if curl -fsS "http://127.0.0.1:8080/health" 2>/dev/null | grep -qE '^[[:space:]]*ok[[:space:]]*$|\"status\"[[:space:]]*:[[:space:]]*\"ok\"'; then
                   ok=1
                   break
                 fi
                 sleep 2
               done
               if [ "$ok" != "1" ]; then
+                echo "::error::dev smoke: /health did not return plain ok or JSON status ok after ~120s"
                 exit 1
               fi
             else
