@@ -37,7 +37,7 @@
     "js-yaml": "^4.1.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.8.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.0.2",
     "nodemailer": "^8.0.5",
     "openai": "^4.56.0",
     "passport": "^0.7.0",
@@ -54,7 +54,11 @@
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["canvas", "prisma", "@prisma/engines"],
+    "onlyBuiltDependencies": [
+      "canvas",
+      "prisma",
+      "@prisma/engines"
+    ],
     "overrides": {
       "canvas": "3.2.1"
     }
@@ -69,7 +73,7 @@
     "@types/bcryptjs": "^3.0.0",
     "@types/express": "^4.17.21",
     "@types/js-yaml": "^4.0.9",
-    "@types/multer": "^1.4.12",
+    "@types/multer": "^2.1.0",
     "@types/node": "^20.16.1",
     "@types/nodemailer": "^8.0.0",
     "@types/passport-jwt": "^4.0.1",
