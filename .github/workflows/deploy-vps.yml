@@ -36,8 +36,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # backend 首次构建（apk+pnpm）在弱网 VPS 上可能较慢；须大于 ssh-action command_timeout
-    timeout-minutes: 75
+    # backend 首次 apk（build-base/gcc）在弱网 VPS 上可能 >1h；job 须大于 ssh-action command_timeout，并留 checkout/rsync 余量
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,8 +125,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          # 须小于 job timeout-minutes；backend 构建可能接近 1h（弱网 / 首次）
-          command_timeout: 70m
+          # 弱网首次安装 build-base 曾触发 70m 超时；国内建议 Variables 设置 APK_MIRROR + DEPLOY_REGION=cn
+          command_timeout: 150m
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ steps.env.outputs.DEPLOY_PATH }}"
