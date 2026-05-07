@@ -58,6 +58,8 @@ jobs:
     needs: setup
     if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
     runs-on: ubuntu-latest
+    outputs:
+      wall_sec: ${{ steps.job_timing.outputs.wall_sec }}
     permissions:
       contents: read
     steps:
@@ -96,6 +98,12 @@ jobs:
           path: frontend/dist
           retention-days: 2
 
+      - id: job_timing
+        if: always()
+        env:
+          T0: ${{ needs.setup.outputs.deploy_t0 }}
+        run: echo "wall_sec=$(( $(date +%s) - T0 ))" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------------
   # 并行：仅构建并推送 backend 镜像到 GHCR（不依赖 frontend dist）
   # ---------------------------------------------------------------------------
@@ -103,6 +111,8 @@ jobs:
     needs: setup
     if: ${{ vars.DEPLOY_BUILD_ON_SERVER != 'true' }}
     runs-on: ubuntu-latest
+    outputs:
+      wall_sec: ${{ steps.job_timing.outputs.wall_sec }}
     permissions:
       contents: read
       packages: write
@@ -137,10 +147,13 @@ jobs:
             INSTALL_CJK_FONTS=${{ needs.setup.outputs.INSTALL_CJK_FONTS }}
             APK_MIRROR=${{ vars.APK_MIRROR }}
 
-      - name: Timing checkpoint
+      - id: job_timing
+        if: always()
+        env:
+          T0: ${{ needs.setup.outputs.deploy_t0 }}
         run: |
-          T0="${{ needs.setup.outputs.deploy_t0 }}"
-          echo "::notice::phase=docker_backend_pushed seconds_since_setup_start=$(( $(date +%s) - T0 ))"
+          echo "wall_sec=$(( $(date +%s) - T0 ))" >> "$GITHUB_OUTPUT"
+          echo "::notice::phase=docker_backend_job_end seconds_since_setup_start=$(( $(date +%s) - T0 ))"
 
   # ---------------------------------------------------------------------------
   # 合并：frontend 镜像 + 可选国内镜像同步 + rsync + VPS 部署
@@ -438,16 +451,24 @@ jobs:
         if: always()
         env:
           DEPLOY_T0: ${{ needs.setup.outputs.deploy_t0 }}
+          VITE_WALL: ${{ needs.vite-build.outputs.wall_sec }}
+          BE_WALL: ${{ needs.docker-backend.outputs.wall_sec }}
         run: |
           T1=$(date +%s)
           echo "## Deploy timings (wall-clock)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Checkpoint | Seconds from workflow setup |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------------|------------------------------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| setup job finished (deploy_t0 recorded) | 0 |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| deploy job finished (this step) | $((T1 - DEPLOY_T0)) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Phase | Seconds from setup (deploy_t0) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|---------------------------------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| setup (reference) | 0 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| parallel **vite-build** job (ends) | ${VITE_WALL:-n/a} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| parallel **docker-backend** job (ends) | ${BE_WALL:-n/a} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **deploy** job to this step | $((T1 - DEPLOY_T0)) |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Individual steps above include **vite-build**, **docker-backend**, and **deploy** sub-steps; check GitHub UI per-step duration for bottlenecks." >> "$GITHUB_STEP_SUMMARY"
+          echo "Open each job in the GitHub Actions UI for per-step duration. Compare **vite-build** vs **docker-backend** wall times to see which parallel leg is slower." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 大陆 VPS 提示" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 拉 **Docker Hub** 基础镜像慢：仓库 Variables 设 \`DEPLOY_REGION=cn\`。" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 拉 **ghcr.io** 慢/断连：设 \`DEPLOY_PULL_FROM_MIRROR=true\` 并配置国内镜像仓；可用 \`MIRROR_STEP_TIMEOUT_MIN\` 调整同步超时。" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # VPS 本地构建镜像（调试）：不走并行镜像 job
