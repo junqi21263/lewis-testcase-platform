@@ -18,6 +18,7 @@ import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
 import { v4 as uuid } from 'uuid'
 import axios from 'axios'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
+import { CosStorageService } from './cos-storage.service'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -35,6 +36,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private config: ConfigService,
     private documentVision: DocumentVisionService,
     private requirementStructure: RequirementStructureService,
+    private cosStorage: CosStorageService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -169,7 +171,25 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(record.id)
     }
 
-    return record
+    if (this.cosStorage.isConfigured() && file.path && fs.existsSync(file.path)) {
+      try {
+        const uri = await this.cosStorage.uploadLocalFile(file.path, file.originalname)
+        await this.prisma.uploadedFile.update({
+          where: { id: record.id },
+          data: { path: uri },
+        })
+        try {
+          fs.unlinkSync(file.path)
+        } catch (e) {
+          this.logger.warn(`COS 上传成功但删除本地临时文件失败: ${file.path}`, e as Error)
+        }
+        return this.getFileById(record.id)
+      } catch (e) {
+        this.logger.warn(`COS 上传失败，已保留本地文件: ${(e as Error).message}`)
+      }
+    }
+
+    return this.getFileById(record.id)
   }
 
   /** 异步解析文件内容（图片/PDF 优先多模态视觉理解，再 OCR/文本提取） */
@@ -184,6 +204,20 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       select: { parseRetryHint: true },
     })
     const parseRetryHint = hintRow?.parseRetryHint ?? null
+
+    let effectivePath = filePath
+    let cosTempFile: string | null = null
+    if (CosStorageService.isCosUri(filePath)) {
+      if (!this.cosStorage.isConfigured()) {
+        throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
+      }
+      try {
+        cosTempFile = await this.cosStorage.downloadToTempFile(filePath)
+        effectivePath = cosTempFile
+      } catch (e) {
+        throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
+      }
+    }
 
     try {
     const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
@@ -208,12 +242,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       let content = ''
 
       // 再次确认文件存在且非空（避免零字节文件进入 pdf-to-img 等链路）
-      if (!filePath || !fs.existsSync(filePath)) {
-        throw new Error(`【解析失败】本地文件不存在：${filePath || '(empty path)'}。请重新上传。`)
+      if (!effectivePath || !fs.existsSync(effectivePath)) {
+        throw new Error(`【解析失败】本地文件不存在：${effectivePath || '(empty path)'}。请重新上传。`)
       }
-      const st = fs.statSync(filePath)
+      const st = fs.statSync(effectivePath)
       if (st.size < 1) {
-        throw new Error(`【解析失败】本地文件为空（0 bytes）：${filePath}。请重新上传。`)
+        throw new Error(`【解析失败】本地文件为空（0 bytes）：${effectivePath}。请重新上传。`)
       }
       await heartbeat('FILE_OK')
 
@@ -225,7 +259,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             fileBytes: st.size,
             ...(sizeMb > 5 ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf' } : {}),
           })
-          content = await this.parsePdfWithVisionFallback(filePath, heartbeat, {
+          content = await this.parsePdfWithVisionFallback(effectivePath, heartbeat, {
             fileId,
             fileBytes: st.size,
             parseRetryHint,
@@ -234,23 +268,23 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         }
         case FileType.WORD:
           await heartbeat('WORD')
-          content = await this.parseWord(filePath)
+          content = await this.parseWord(effectivePath)
           break
         case FileType.EXCEL:
           await heartbeat('EXCEL')
-          content = await this.parseExcel(filePath)
+          content = await this.parseExcel(effectivePath)
           break
         case FileType.YAML:
           await heartbeat('YAML')
-          content = fs.readFileSync(filePath, 'utf-8')
+          content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.TEXT:
           await heartbeat('TEXT')
-          content = fs.readFileSync(filePath, 'utf-8')
+          content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
           await heartbeat('IMAGE')
-          content = await this.parseImageVisionThenOcr(filePath, mimeType)
+          content = await this.parseImageVisionThenOcr(effectivePath, mimeType)
           break
         default:
           content = '不支持的文件格式'
@@ -307,6 +341,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`文件解析失败: ${fileId}`, err as Error)
     }
     } finally {
+      if (cosTempFile && fs.existsSync(cosTempFile)) {
+        try {
+          fs.unlinkSync(cosTempFile)
+        } catch {
+          /* ignore */
+        }
+      }
       await this.cleanupChunkDirAfterParse(fileId)
     }
   }
@@ -861,7 +902,19 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
 
-    if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path)
+    if (file.path) {
+      if (CosStorageService.isCosUri(file.path)) {
+        if (this.cosStorage.isConfigured()) {
+          try {
+            await this.cosStorage.deleteObject(file.path)
+          } catch (e) {
+            this.logger.warn(`删除 COS 对象失败 ${file.path}`, e as Error)
+          }
+        }
+      } else if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path)
+      }
+    }
 
     await this.prisma.uploadedFile.delete({ where: { id } })
   }
@@ -904,7 +957,10 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   async retryParse(id: string, userId: string, opts?: { textOnly?: boolean }) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
-    if (!file.path || !fs.existsSync(file.path)) {
+    const canRetry =
+      !!file.path &&
+      (CosStorageService.isCosUri(file.path) || fs.existsSync(file.path))
+    if (!canRetry) {
       throw new BadRequestException('源文件已按存储策略删除或不存在，无法重新解析，请重新上传')
     }
 

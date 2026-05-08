@@ -6,6 +6,7 @@ import { execSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import { PrismaService } from '@/prisma/prisma.service'
+import { CosStorageService } from './cos-storage.service'
 
 /**
  * 轻量云磁盘治理：过期 PDF 源文件删除（保留 parsedContent）、孤儿分片目录、
@@ -19,6 +20,7 @@ export class LightweightCloudCleanupService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private cosStorage: CosStorageService,
   ) {}
 
   onModuleInit() {
@@ -50,7 +52,10 @@ export class LightweightCloudCleanupService implements OnModuleInit {
   @Cron('*/10 * * * *')
   async diskPressureWatch(): Promise<void> {
     if (!this.enabled()) return
-    const raw = this.config.get<string>('LIGHTWEIGHT_DISK_THRESHOLD_PERCENT') || '85'
+    const raw =
+      this.config.get<string>('LIGHTWEIGHT_DISK_THRESHOLD_PERCENT') ||
+      this.config.get<string>('DISK_CLEANUP_THRESHOLD') ||
+      '85'
     const threshold = parseInt(raw, 10)
     const t = Number.isFinite(threshold) && threshold > 0 && threshold <= 100 ? threshold : 85
     const pct = this.getDiskUsagePercent()
@@ -65,7 +70,10 @@ export class LightweightCloudCleanupService implements OnModuleInit {
 
   /** 解析完成的 PDF：默认保留 LIGHTWEIGHT_UPLOAD_RETENTION_DAYS（默认 3）天后删除本地文件；DB 保留 parsedContent */
   async purgePdfUploadsPastRetention(): Promise<number> {
-    const raw = this.config.get<string>('LIGHTWEIGHT_UPLOAD_RETENTION_DAYS') || '3'
+    const raw =
+      this.config.get<string>('LIGHTWEIGHT_UPLOAD_RETENTION_DAYS') ||
+      this.config.get<string>('PDF_RETENTION_DAYS') ||
+      '3'
     const days = parseInt(raw, 10)
     const d = Number.isFinite(days) && days > 0 ? days : 3
     const cutoff = new Date()
@@ -85,7 +93,16 @@ export class LightweightCloudCleanupService implements OnModuleInit {
 
     const ids = rows.map((r) => r.id)
     for (const r of rows) {
-      if (r.path && fs.existsSync(r.path)) {
+      if (!r.path) continue
+      if (CosStorageService.isCosUri(r.path)) {
+        if (this.cosStorage.isConfigured()) {
+          try {
+            await this.cosStorage.deleteObject(r.path)
+          } catch (e) {
+            this.logger.warn(`删除 COS 过期 PDF 失败 ${r.path}`, e as Error)
+          }
+        }
+      } else if (fs.existsSync(r.path)) {
         try {
           fs.unlinkSync(r.path)
         } catch (e) {
