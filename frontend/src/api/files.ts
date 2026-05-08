@@ -103,9 +103,13 @@ export const filesApi = {
   getFileById: (id: string) =>
     request.get<UploadedFile>(`/files/${id}`, { timeout: FILES_LONG_TIMEOUT_MS }),
 
-  /** 重新触发文件解析 */
-  retryParse: (id: string) =>
-    request.post<UploadedFile>(`/files/${id}/parse`, undefined, { timeout: FILES_LONG_TIMEOUT_MS }),
+  /** 重新触发文件解析（可选仅内置文本层） */
+  retryParse: (id: string, opts?: { textOnly?: boolean }) =>
+    request.post<UploadedFile>(
+      `/files/${id}/parse`,
+      opts?.textOnly ? { textOnly: true } : {},
+      { timeout: FILES_LONG_TIMEOUT_MS },
+    ),
 
   /** 根据用户编辑后的全文重新结构化（脱敏 + LLM） */
   restructure: (id: string, text: string) =>

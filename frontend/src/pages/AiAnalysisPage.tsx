@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { filesApi } from '@/api/files'
+import { subscribeFileParseEvents } from '@/api/fileParseSse'
 import { aiApi } from '@/api/ai'
 import type { AIModel, UploadedFile } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
@@ -244,6 +245,8 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
       return { icon: 'loading', text: '🔍 检测到扫描件，正在 OCR 识别...' }
     case 'STRUCTURE':
       return { icon: 'loading', text: '⚙️ 正在结构化需求提取...' }
+    case 'PDF_OCR_PARTIAL':
+      return { icon: 'loading', text: '📎 已生成部分解析文本，后台继续识别剩余页面…' }
     case 'DONE':
       return { icon: 'success', text: '✅ 解析完成' }
     case 'FAILED':
@@ -591,13 +594,18 @@ function AiAnalysisPageInner() {
   }, [state.logs])
 
   const pollUntilParsed = useCallback(
-    async (fileId: string, signal: AbortSignal): Promise<UploadedFile> => {
+    async (
+      fileId: string,
+      signal: AbortSignal,
+      onTick?: (f: UploadedFile) => void,
+    ): Promise<UploadedFile> => {
       let lastStage: string | undefined
       for (let i = 0; i < POLL_MAX_ROUNDS; i++) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         await sleep(POLL_INTERVAL_MS)
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         const f = await filesApi.getFileById(fileId)
+        onTick?.(f)
         const stage = f.parseStage ?? undefined
         if (stage !== lastStage) {
           lastStage = stage
@@ -621,6 +629,56 @@ function AiAnalysisPageInner() {
     },
     [addLog],
   )
+
+  const retryParseFlow = useCallback(
+    async (fileId: string, signal: AbortSignal, textOnly?: boolean) => {
+      const r = await filesApi.retryParse(fileId, textOnly ? { textOnly: true } : undefined)
+      setUploadedFile(r)
+      dispatch({ type: 'UPLOAD_DONE' })
+      addLog(
+        'loading',
+        textOnly ? '📄 已提交「仅内置文本」重新解析…' : '📄 已提交重新解析…',
+      )
+      const parsed = await pollUntilParsed(fileId, signal, setUploadedFile)
+      setUploadedFile(parsed)
+      if (parsed.status === 'PARSED') {
+        setEditedParsedText(parsed.parsedContent ?? '')
+        dispatch({ type: 'GO_IDLE' })
+        void loadFileHistory()
+      } else {
+        addLog('error', `❌ ${parsed.parseError ?? '解析失败'}`)
+        dispatch({
+          type: 'ERROR',
+          log: makeLog('error', parsed.parseError ?? '解析失败'),
+        })
+      }
+    },
+    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed],
+  )
+
+  useEffect(() => {
+    if (!uploadedFile?.id || uploadedFile.status !== 'PARSING') return
+    const id = uploadedFile.id
+    const ac = new AbortController()
+    subscribeFileParseEvents(
+      id,
+      (p) => {
+        setUploadedFile((prev) =>
+          prev?.id === id
+            ? {
+                ...prev,
+                status: p.status as UploadedFile['status'],
+                parseStage: p.parseStage,
+                parseError: p.parseError,
+                parseProgress: p.parseProgress as UploadedFile['parseProgress'],
+              }
+            : prev,
+        )
+      },
+      { signal: ac.signal },
+    )
+    return () => ac.abort()
+  }, [uploadedFile?.id, uploadedFile?.status])
 
   const handleFileSelect = useCallback(
     async (file: File) => {
@@ -661,7 +719,7 @@ function AiAnalysisPageInner() {
         dispatch({ type: 'UPLOAD_DONE' })
         addLog('loading', '📄 正在等待服务端解析文档（OCR / 文本提取）...')
 
-        const parsed = await pollUntilParsed(result.id, signal)
+        const parsed = await pollUntilParsed(result.id, signal, setUploadedFile)
         if (signal.aborted) return
 
         setUploadedFile(parsed)
@@ -1099,11 +1157,69 @@ ${state.reportText}
                   <TerminalLogStatusIcon status="loading" />
                   正在解析… 已等待 {parseElapsed}s
                 </div>
+                {uploadedFile &&
+                  uploadedFile.size > 5 * 1024 * 1024 &&
+                  uploadedFile.parseProgress?.etaMinutes != null && (
+                    <p className="text-[11px] text-muted-foreground">
+                      大文件解析中，预计仍需约 {uploadedFile.parseProgress.etaMinutes} 分钟（仅供参考）
+                    </p>
+                  )}
+                {uploadedFile?.parseProgress?.pageTotal != null &&
+                  uploadedFile?.parseProgress?.pageCurrent != null &&
+                  (uploadedFile.parseProgress.phase === 'TEXT_LAYER' ||
+                    uploadedFile.parseProgress.phase === 'OCR') && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {uploadedFile.parseProgress.phase === 'TEXT_LAYER'
+                        ? '提取内置文本'
+                        : 'OCR 识别'}
+                      ：第 {uploadedFile.parseProgress.pageCurrent} / {uploadedFile.parseProgress.pageTotal} 页
+                    </p>
+                  )}
               </div>
             )}
           </div>
 
-          {uploadedFile?.status === 'PARSED' && (
+          {uploadedFile?.status === 'FAILED' && (
+            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 space-y-2 text-xs">
+              <p className="text-red-300 font-medium">解析失败</p>
+              <p className="text-muted-foreground whitespace-pre-wrap break-words">
+                {uploadedFile.parseError ?? '未知错误'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!uploadedFile?.id) return
+                    operationAbortRef.current?.abort()
+                    operationAbortRef.current = new AbortController()
+                    void retryParseFlow(uploadedFile.id, operationAbortRef.current.signal, false)
+                  }}
+                >
+                  手动重试
+                </Button>
+                {uploadedFile.fileType === 'PDF' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (!uploadedFile?.id) return
+                      operationAbortRef.current?.abort()
+                      operationAbortRef.current = new AbortController()
+                      void retryParseFlow(uploadedFile.id, operationAbortRef.current.signal, true)
+                    }}
+                  >
+                    仅提取内置文本
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(uploadedFile?.status === 'PARSED' ||
+            (uploadedFile?.status === 'PARSING' && uploadedFile.parsedContent?.trim())) && (
             <div className="rounded-lg border border-border/30 bg-muted/10 overflow-hidden">
               <button
                 type="button"

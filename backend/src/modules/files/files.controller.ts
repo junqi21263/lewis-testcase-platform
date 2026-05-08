@@ -11,6 +11,8 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   BadRequestException,
+  Req,
+  Res,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage, memoryStorage } from 'multer'
@@ -22,6 +24,8 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { RestructureFileDto } from './dto/restructure-file.dto'
 import { UploadChunkFieldsDto } from './dto/upload-chunk-fields.dto'
 import { MergeChunksDto } from './dto/merge-chunks.dto'
+import { RetryParseDto } from './dto/retry-parse.dto'
+import type { Request, Response } from 'express'
 
 /**
  * 解码文件名中的 UTF-8 编码（处理中文/繁体等非 ASCII 字符）
@@ -132,10 +136,26 @@ export class FilesController {
   }
 
   /** 须放在 @Get(':id') 之前，避免被误匹配 */
+  @Get(':id/parse-events')
+  @ApiOperation({ summary: 'SSE：解析进度（parseProgress / stage），完成后关闭流' })
+  parseEvents(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Req() req: Request,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    return this.filesService.streamParseEvents(id, userId, res, req)
+  }
+
+  /** 须放在 @Get(':id') 之前，避免被误匹配 */
   @Post(':id/parse')
-  @ApiOperation({ summary: '重新解析文件' })
-  retryParse(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    return this.filesService.retryParse(id, userId)
+  @ApiOperation({ summary: '重新解析文件（可选仅内置文本）' })
+  retryParse(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: RetryParseDto,
+  ) {
+    return this.filesService.retryParse(id, userId, { textOnly: dto?.textOnly === true })
   }
 
   @Post(':id/cancel')

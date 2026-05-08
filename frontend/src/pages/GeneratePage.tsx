@@ -19,6 +19,7 @@ import {
 } from '@/utils/testcaseExportFormat'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
+import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
 import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus } from '@/types'
 import { useNavigate } from 'react-router-dom'
@@ -86,7 +87,11 @@ function FileUploadZone() {
     setUploading(true)
     setProgress(0)
     try {
-      const result = await filesApi.upload(file, setProgress)
+      let toUpload = file
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        toUpload = await preprocessPdfForUpload(file)
+      }
+      const result = await filesApi.upload(toUpload, setProgress)
       setUploadedFile(result)
       toast.success('上传成功，正在解析文档…')
       void pollFileUntilParsed(result.id)

@@ -16,6 +16,7 @@ import { DocumentVisionService } from './document-vision.service'
 import { RequirementStructureService } from './requirement-structure.service'
 import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
 import { v4 as uuid } from 'uuid'
+import axios from 'axios'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
 
 @Injectable()
@@ -161,11 +162,23 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     fileType: FileType,
     mimeType: string,
   ) {
-    const heartbeat = async (stage: string) => {
+    const hintRow = await this.prisma.uploadedFile.findUnique({
+      where: { id: fileId },
+      select: { parseRetryHint: true },
+    })
+    const parseRetryHint = hintRow?.parseRetryHint ?? null
+
+    const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
       try {
         await this.prisma.uploadedFile.update({
           where: { id: fileId },
-          data: { lastHeartbeatAt: new Date(), parseStage: stage },
+          data: {
+            lastHeartbeatAt: new Date(),
+            parseStage: stage,
+            ...(progress && Object.keys(progress).length > 0
+              ? { parseProgress: progress as Prisma.InputJsonValue }
+              : {}),
+          },
         })
       } catch (e) {
         if (this.isNotFoundUpdateError(e)) return
@@ -187,10 +200,20 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       await heartbeat('FILE_OK')
 
       switch (fileType) {
-        case FileType.PDF:
-          await heartbeat('PDF')
-          content = await this.parsePdfWithVisionFallback(filePath, heartbeat)
+        case FileType.PDF: {
+          const sizeMb = st.size / (1024 * 1024)
+          await heartbeat('PDF', {
+            phase: 'PDF',
+            fileBytes: st.size,
+            ...(sizeMb > 5 ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf' } : {}),
+          })
+          content = await this.parsePdfWithVisionFallback(filePath, heartbeat, {
+            fileId,
+            fileBytes: st.size,
+            parseRetryHint,
+          })
           break
+        }
         case FileType.WORD:
           await heartbeat('WORD')
           content = await this.parseWord(filePath)
@@ -220,7 +243,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         throw new Error(trimmed || '内容为空，无法完成解析')
       }
 
-      await heartbeat('STRUCTURE')
+      await heartbeat('STRUCTURE', { phase: 'STRUCTURE' })
       const masked = maskSensitivePlainText(content)
       const { requirements: structured, cleanedText } =
         await this.requirementStructure.structureRequirements(masked)
@@ -237,6 +260,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           parseStage: 'DONE',
           parseFinishedAt: new Date(),
           lastHeartbeatAt: new Date(),
+          parseProgress: Prisma.DbNull,
+          parseRetryHint: null,
         },
       })
       this.logger.log(`文件解析完成: ${fileId}`)
@@ -251,6 +276,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             parseStage: 'FAILED',
             parseFinishedAt: new Date(),
             lastHeartbeatAt: new Date(),
+            parseProgress: Prisma.DbNull,
           },
         })
       } catch (e) {
@@ -293,19 +319,53 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * PDF：第一层 pdf-parse 文本层；足够则直接返回。
-   * 否则分页渲染 → 每批最多 5 页、全局最多 2 批并行 → 视觉（若配置了支持视觉的模型）失败则降级 Tesseract；分片带重试，失败页单独记录。
+   * 否则分页 OCR（视觉 / Paddle / Tesseract）；支持增量快照与 parseProgress 回写。
    */
   private async parsePdfWithVisionFallback(
     filePath: string,
-    heartbeat: (stage: string) => Promise<void>,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null },
   ): Promise<string> {
-    await heartbeat('PDF_TEXT_LAYER')
+    if (ctx.parseRetryHint === 'text_only') {
+      await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
+      const { text, numpages } = await this.parsePdfWithMeta(filePath)
+      if (!text.trim()) {
+        throw new Error(
+          '【解析失败】「仅内置文本」模式下未读取到文本层，可能为扫描版 PDF。请重新解析并取消「仅内置文本」，以启用完整 OCR。',
+        )
+      }
+      await heartbeat('PDF_TEXT_LAYER_OK', {
+        phase: 'TEXT_LAYER',
+        pageTotal: numpages,
+        message: 'text_only_ok',
+      })
+      return `【PDF 文本提取｜仅内置文本】\n${text.trim()}`
+    }
+
+    const sizeMb = ctx.fileBytes / (1024 * 1024)
+    await heartbeat('PDF_TEXT_LAYER', {
+      phase: 'TEXT_LAYER',
+      fileBytes: ctx.fileBytes,
+      ...(sizeMb > 5
+        ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf_eta' }
+        : {}),
+    })
+
     let text = ''
+    let numpages = 0
     try {
-      text = await this.parsePdf(filePath)
+      const meta = await this.parsePdfWithMeta(filePath)
+      text = meta.text
+      numpages = meta.numpages
     } catch (e) {
       this.logger.warn(`pdf-parse 失败: ${(e as Error).message}`)
     }
+
+    await heartbeat('PDF_TEXT_LAYER', {
+      phase: 'TEXT_LAYER',
+      extractedChars: text.trim().length,
+      pageTotal: numpages,
+    })
 
     const minLen = parseInt(this.config.get<string>('VISION_PDF_MIN_TEXT_CHARS') || '120', 10)
     const garbledMaxRaw = this.config.get<string>('PDF_TEXT_GARBLED_RATIO_MAX')
@@ -317,7 +377,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const textSufficient = text.trim().length >= minLen && garbledRatio <= gm
 
     if (textSufficient && !forceVision) {
-      await heartbeat('PDF_TEXT_LAYER_OK')
+      await heartbeat('PDF_TEXT_LAYER_OK', {
+        phase: 'TEXT_LAYER',
+        pageTotal: numpages,
+        message: 'skip_ocr',
+      })
       this.logger.log(
         `PDF 文本层可用（${text.trim().length} 字，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），跳过多模态/OCR`,
       )
@@ -325,7 +389,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (textSufficient && forceVision) {
-      await heartbeat('PDF_TEXT_LAYER_OK')
+      await heartbeat('PDF_TEXT_LAYER_OK', { phase: 'TEXT_LAYER', pageTotal: numpages })
       this.logger.log(
         `PDF 文本层已充足；忽略 VISION_PDF_ALWAYS，避免对大文件发起多余视觉调用（${text.trim().length} 字）`,
       )
@@ -335,7 +399,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     this.logger.warn(
       `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），启用分页 OCR 管线`,
     )
-    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat)
+    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat, ctx.fileId, numpages)
   }
 
   /** 乱码/替换符占比，用于判断是否需要 OCR */
@@ -402,12 +466,98 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return results
   }
 
+  /** 增量解析：拆出前若干页的批次，便于先落库快照再继续后台识别 */
+  private splitBatchesForIncremental(
+    batches: { pageNum: number; buffer: Buffer }[][],
+    snapshotThroughPage: number,
+  ): [{ pageNum: number; buffer: Buffer }[][], { pageNum: number; buffer: Buffer }[][]] {
+    if (!batches.length) return [[], []]
+    let cut = 0
+    let maxP = 0
+    for (let i = 0; i < batches.length; i++) {
+      const batchMax = Math.max(...batches[i].map((x) => x.pageNum))
+      maxP = Math.max(maxP, batchMax)
+      cut = i + 1
+      if (maxP >= snapshotThroughPage) break
+    }
+    if (cut >= batches.length) return [batches, []]
+    return [batches.slice(0, cut), batches.slice(cut)]
+  }
+
+  private combineOcrBatchSections(results: { section: string; failedPages: number[] }[]): {
+    sectionsText: string
+    failedPages: number[]
+  } {
+    const failed: number[] = []
+    const sections: string[] = []
+    for (const br of results) {
+      sections.push(br.section)
+      failed.push(...br.failedPages)
+    }
+    return {
+      sectionsText: sections.join('\n\n'),
+      failedPages: [...new Set(failed)].sort((a, b) => a - b),
+    }
+  }
+
+  private buildPdfOcrBody(
+    embeddedText: string,
+    ocrSections: string,
+    failedPages: number[],
+  ): string {
+    const parts: string[] = []
+    if (embeddedText.trim()) {
+      parts.push(
+        `【PDF 内置文本层（质量不足或为空；已启用分页 OCR）】\n${embeddedText.trim()}`,
+      )
+    }
+    parts.push(`【PDF 分页识别】\n${ocrSections}`)
+    if (failedPages.length) {
+      parts.push(
+        `【PDF 解析备注】以下页面自动识别失败，建议对照原稿核对：第 ${failedPages.join('、')} 页`,
+      )
+    }
+    return parts.join('\n\n')
+  }
+
+  private async saveIncrementalSnapshot(
+    fileId: string,
+    markdown: string,
+    meta: Record<string, unknown>,
+  ) {
+    try {
+      await this.prisma.uploadedFile.update({
+        where: { id: fileId },
+        data: {
+          parsedContent:
+            markdown +
+            '\n\n---\n【增量解析】剩余页面仍在后台识别中，完成后将自动替换为完整结果；也可稍后刷新页面。',
+          structuredRequirements: Prisma.DbNull,
+          status: FileStatus.PARSING,
+          parseStage: 'PDF_OCR_PARTIAL',
+          parseProgress: { ...meta, incremental: true, phase: 'OCR' } as Prisma.InputJsonValue,
+          lastHeartbeatAt: new Date(),
+        },
+      })
+      this.logger.log(`PDF 增量快照已写入 file=${fileId}`)
+    } catch (e) {
+      this.logger.warn(`增量快照写入失败: ${(e as Error).message}`)
+    }
+  }
+
   private async parsePdfOcrBatchedPipeline(
     filePath: string,
     embeddedText: string,
-    heartbeat: (stage: string) => Promise<void>,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    fileId: string,
+    totalPagesHint: number,
   ): Promise<string> {
-    await heartbeat('PDF_OCR_PIPELINE')
+    await heartbeat('PDF_OCR_PIPELINE', {
+      phase: 'OCR',
+      pageTotal: totalPagesHint,
+      pageCurrent: 0,
+      message: 'ocr_start',
+    })
     const batchSize = this.getOcrBatchSize()
     const maxConc = this.getOcrMaxConcurrentBatches()
 
@@ -433,37 +583,66 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       throw new Error('【解析失败】PDF 无页面或无法渲染（0 页）。')
     }
 
-    this.logger.log(`PDF OCR：共 ${batches.length} 批，每批最多 ${batchSize} 页，并发 ${maxConc}`)
+    const lastPageNum = batches[batches.length - 1][batches[batches.length - 1].length - 1].pageNum
+    const incrementalThreshold = parseInt(
+      this.config.get<string>('PDF_INCREMENTAL_THRESHOLD_PAGES') || '50',
+      10,
+    )
+    const snapshotPages = parseInt(this.config.get<string>('PDF_INCREMENTAL_SNAPSHOT_PAGES') || '10', 10)
+    const thr = Number.isFinite(incrementalThreshold) && incrementalThreshold > 0 ? incrementalThreshold : 50
+    const snap = Number.isFinite(snapshotPages) && snapshotPages > 0 ? snapshotPages : 10
 
-    const batchResults = await this.runPool(batches, maxConc, async (batch, idx) => {
+    this.logger.log(`PDF OCR：共 ${batches.length} 批，每批最多 ${batchSize} 页，并发 ${maxConc}，约 ${lastPageNum} 页`)
+
+    const globalBatchTotal = batches.length
+
+    const runBatch = async (
+      batch: { pageNum: number; buffer: Buffer }[],
+      idx: number,
+    ) => {
       const first = batch[0].pageNum
       const last = batch[batch.length - 1].pageNum
-      await heartbeat(`PDF_OCR_P${first}_${last}`)
-      this.logger.log(`PDF OCR 批次 ${idx + 1}/${batches.length}：第 ${first}–${last} 页`)
+      await heartbeat(`PDF_OCR_P${first}_${last}`, {
+        phase: 'OCR',
+        pageCurrent: last,
+        pageTotal: lastPageNum || totalPagesHint,
+        batchIndex: idx + 1,
+        batchTotal: globalBatchTotal,
+        etaMinutes: Math.max(1, Math.ceil(((globalBatchTotal - idx - 1) * 45) / 60)),
+      })
+      this.logger.log(`PDF OCR 批次 ${idx + 1}/${globalBatchTotal}：第 ${first}–${last} 页`)
       return this.processSinglePdfOcrBatch(batch)
-    })
-
-    const failedAll: number[] = []
-    const sections: string[] = []
-    for (const br of batchResults) {
-      sections.push(br.section)
-      failedAll.push(...br.failedPages)
     }
 
-    const uniqFail = [...new Set(failedAll)].sort((a, b) => a - b)
-    const parts: string[] = []
-    if (embeddedText.trim()) {
-      parts.push(
-        `【PDF 内置文本层（质量不足或为空；已启用分页 OCR）】\n${embeddedText.trim()}`,
-      )
+    let batchResults: { section: string; failedPages: number[] }[]
+
+    if (lastPageNum >= thr && batches.length > 1) {
+      const [firstPart, restPart] = this.splitBatchesForIncremental(batches, snap)
+      if (firstPart.length && restPart.length) {
+        const firstRes = await this.runPool(firstPart, maxConc, (b, i) => runBatch(b, i))
+        const mergedFirst = this.combineOcrBatchSections(firstRes)
+        const interimMd = this.buildPdfOcrBody(
+          embeddedText,
+          mergedFirst.sectionsText,
+          mergedFirst.failedPages,
+        )
+        await this.saveIncrementalSnapshot(fileId, interimMd, {
+          pageCurrent: Math.max(...firstPart.flatMap((b) => b.map((p) => p.pageNum))),
+          pageTotal: lastPageNum,
+        })
+        const restRes = await this.runPool(restPart, maxConc, (b, i) =>
+          runBatch(b, firstPart.length + i),
+        )
+        batchResults = [...firstRes, ...restRes]
+      } else {
+        batchResults = await this.runPool(batches, maxConc, (b, i) => runBatch(b, i))
+      }
+    } else {
+      batchResults = await this.runPool(batches, maxConc, (b, i) => runBatch(b, i))
     }
-    parts.push(`【PDF 分页识别】\n${sections.join('\n\n')}`)
-    if (uniqFail.length) {
-      parts.push(
-        `【PDF 解析备注】以下页面自动识别失败，建议对照原稿核对：第 ${uniqFail.join('、')} 页`,
-      )
-    }
-    return parts.join('\n\n')
+
+    const merged = this.combineOcrBatchSections(batchResults)
+    return this.buildPdfOcrBody(embeddedText, merged.sectionsText, merged.failedPages)
   }
 
   private async processSinglePdfOcrBatch(
@@ -515,8 +694,27 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** PNG Buffer → Tesseract（与图片 OCR 共用语言配置） */
+  /**
+   * PNG Buffer：可选 Paddle OCR HTTP 服务 → Tesseract
+   * 期望 Paddle 服务 POST JSON `{ image_base64 }` 返回 `{ text }`
+   */
   private async ocrPngBuffer(buffer: Buffer): Promise<string> {
+    const paddleBase = this.config.get<string>('PADDLE_OCR_SERVICE_URL')?.trim()
+    if (paddleBase) {
+      try {
+        const timeoutMs = parseInt(this.config.get<string>('PADDLE_OCR_TIMEOUT_MS') || '120000', 10)
+        const { data } = await axios.post<{ text?: string }>(
+          `${paddleBase.replace(/\/+$/, '')}/ocr`,
+          { image_base64: buffer.toString('base64') },
+          { timeout: Number.isFinite(timeoutMs) && timeoutMs > 5000 ? timeoutMs : 120000 },
+        )
+        const t = typeof data?.text === 'string' ? data.text : ''
+        if (t.trim()) return t
+      } catch (e) {
+        this.logger.warn(`Paddle OCR 不可用，降级 Tesseract: ${(e as Error).message}`)
+      }
+    }
+
     const Tesseract = require('tesseract.js')
     const langs =
       (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
@@ -527,11 +725,17 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return text || ''
   }
 
-  private async parsePdf(filePath: string): Promise<string> {
+  private async parsePdfWithMeta(filePath: string): Promise<{ text: string; numpages: number }> {
     const pdfParse = require('pdf-parse')
     const buffer = fs.readFileSync(filePath)
     const data = await pdfParse(buffer)
-    return data.text
+    const numpages =
+      typeof data.numpages === 'number'
+        ? data.numpages
+        : typeof (data as { numPages?: number }).numPages === 'number'
+          ? (data as { numPages: number }).numPages
+          : 0
+    return { text: data.text || '', numpages }
   }
 
   private async parseWord(filePath: string): Promise<string> {
@@ -657,8 +861,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return updated
   }
 
-  /** 重新排队解析（上传页「重试」） */
-  async retryParse(id: string, userId: string) {
+  /** 重新排队解析（上传页「重试」）；可选仅内置文本层 */
+  async retryParse(id: string, userId: string, opts?: { textOnly?: boolean }) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
     if (!fs.existsSync(file.path)) throw new BadRequestException('本地文件已不存在，请重新上传')
@@ -671,10 +875,65 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         parseError: null,
         parsedContent: null,
         structuredRequirements: Prisma.DbNull,
+        parseProgress: Prisma.DbNull,
+        parseRetryHint: opts?.textOnly ? 'text_only' : null,
       },
     })
 
     return this.getFileById(id)
+  }
+
+  /** SSE：订阅解析进度（每秒轮询 DB，终端状态或客户端断开时结束） */
+  async streamParseEvents(
+    id: string,
+    userId: string,
+    res: import('express').Response,
+    req?: import('express').Request,
+  ): Promise<void> {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) {
+      res.status(403).end()
+      return
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders?.()
+
+    let iv: ReturnType<typeof setInterval> | undefined
+    const cleanup = () => {
+      if (iv) clearInterval(iv)
+      iv = undefined
+      try {
+        if (!res.writableEnded) res.end()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    req?.on('close', cleanup)
+
+    const tick = async () => {
+      try {
+        const f = await this.getFileById(id)
+        const payload = {
+          status: f.status,
+          parseStage: f.parseStage,
+          parseProgress: (f as { parseProgress?: unknown }).parseProgress ?? null,
+          parseError: f.parseError,
+        }
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+        if (f.status !== FileStatus.PENDING && f.status !== FileStatus.PARSING) {
+          cleanup()
+        }
+      } catch {
+        cleanup()
+      }
+    }
+
+    void tick()
+    iv = setInterval(() => void tick(), 1000)
   }
 
   /**

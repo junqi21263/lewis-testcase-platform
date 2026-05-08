@@ -88,6 +88,21 @@ export interface TeamMember {
 export type FileType = 'PDF' | 'WORD' | 'EXCEL' | 'YAML' | 'IMAGE' | 'TEXT'
 export type FileStatus = 'PENDING' | 'PARSING' | 'PARSED' | 'FAILED'
 
+/** 后端 parseProgress JSON（按需扩展字段） */
+export interface FileParseProgress {
+  phase?: string
+  pageCurrent?: number
+  pageTotal?: number
+  etaMinutes?: number
+  incremental?: boolean
+  fileBytes?: number
+  message?: string
+  extractedChars?: number
+  batchIndex?: number
+  batchTotal?: number
+  textOnly?: boolean
+}
+
 export interface UploadedFile {
   id: string
   name: string
@@ -99,6 +114,9 @@ export interface UploadedFile {
   parsedContent?: string
   /** 服务端解析阶段（PENDING / CLAIMED / FILE_OK / PDF / WORD / EXCEL / IMAGE / STRUCTURE / DONE / FAILED / CANCELLED） */
   parseStage?: string | null
+  /** 解析进度快照（轮询或 SSE 更新） */
+  parseProgress?: FileParseProgress | null
+  parseRetryHint?: string | null
   /** 服务端解析失败原因 */
   parseError?: string | null
   /** 解析重试次数 */

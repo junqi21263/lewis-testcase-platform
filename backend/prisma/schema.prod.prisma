@@ -238,6 +238,10 @@ model UploadedFile {
   status                 FileStatus @default(PENDING)
   /// 解析后台队列：当前阶段（用于前端展示/排障），例如 CLAIMED/PDF_TEXT/PDF_RENDER/VISION/OCR/STRUCTURE/DONE
   parseStage             String?    @db.VarChar(64)
+  /// 解析进度 JSON： phase / pageCurrent / pageTotal / etaMinutes / incremental / fileBytes 等
+  parseProgress          Json?
+  /// 重试解析时的偏好：如 text_only（仅提取内置文本层）
+  parseRetryHint         String?    @db.VarChar(32)
   /// 解析尝试次数（含重试）
   parseAttempts          Int        @default(0)
   /// 解析任务开始/结束时间（后台 worker 写入）
