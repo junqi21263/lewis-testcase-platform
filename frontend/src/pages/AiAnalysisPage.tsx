@@ -13,7 +13,6 @@ import React, {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
-import { escapeHtml } from '@/utils/sensitiveDetector'
 import {
   Brain,
   Upload,
@@ -31,7 +30,10 @@ import {
   ChevronDown,
   ChevronUp,
   WifiOff,
+  FileDown,
+  Sparkles,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +45,9 @@ import type { AIModel, UploadedFile } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
 import { normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
+import { useGenerateStore } from '@/store/generateStore'
+import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
+import { buildAnalysisPdfFileName, exportReportRegionToPdf } from '@/utils/exportAnalysisPdf'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -162,6 +167,18 @@ const ANALYSIS_PROMPT = `请对以下需求文档进行详细的结构化分析�
 标注高/中/低风险项，并给出可行建议。
 
 请用 Markdown 格式输出，层次清晰、内容完整。`
+
+const PROMPT_TEMPLATE_STORAGE_KEY = 'ai-analysis-prompt-template-v1'
+
+function loadStoredPromptTemplate(): string {
+  try {
+    const s = localStorage.getItem(PROMPT_TEMPLATE_STORAGE_KEY)
+    if (s?.trim()) return s
+  } catch {
+    /* 隐私模式等 */
+  }
+  return ANALYSIS_PROMPT
+}
 
 const POLL_INTERVAL_MS = 1000
 /** 与后端 FILE_PARSE_TIMEOUT_MINUTES（默认 15）对齐：约 15 分钟内每秒轮询一次 */
@@ -333,73 +350,6 @@ function LogLine({ entry }: { entry: LogEntry }) {
   )
 }
 
-/** 先 HTML 转义，再允许受控的 **粗体** → <strong>，避免 AI 返回内容中的脚本标签 XSS */
-function formatMarkdownInlineToSafeHtml(raw: string): string {
-  const e = escapeHtml(raw)
-  return e.replace(
-    /\*\*(.+?)\*\*/g,
-    '<strong class="text-foreground font-semibold">$1</strong>',
-  )
-}
-
-function MarkdownReport({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div className="space-y-1 text-sm leading-[1.7] font-mono">
-      {lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed) return <div key={i} className="h-2" />
-
-        if (trimmed.startsWith('## ')) {
-          return (
-            <h3
-              key={i}
-              className="text-base font-bold text-foreground mt-4 mb-1 border-b border-border/30 pb-1"
-            >
-              {trimmed.slice(3)}
-            </h3>
-          )
-        }
-        if (trimmed.startsWith('### ')) {
-          return (
-            <h4 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1">
-              {trimmed.slice(4)}
-            </h4>
-          )
-        }
-        if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
-          return (
-            <p key={i} className="text-foreground font-semibold">
-              {trimmed.slice(2, -2)}
-            </p>
-          )
-        }
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const content = formatMarkdownInlineToSafeHtml(trimmed.slice(2))
-          return (
-            <div key={i} className="flex gap-2 pl-2">
-              <span className="text-primary flex-shrink-0">•</span>
-              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-            </div>
-          )
-        }
-        if (/^\d+\.\s/.test(trimmed)) {
-          const content = formatMarkdownInlineToSafeHtml(trimmed.replace(/^\d+\.\s/, ''))
-          const num = trimmed.match(/^(\d+)\./)?.[1]
-          return (
-            <div key={i} className="flex gap-2 pl-2">
-              <span className="text-primary flex-shrink-0 font-semibold">{num}.</span>
-              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-            </div>
-          )
-        }
-        const content = formatMarkdownInlineToSafeHtml(trimmed)
-        return <p key={i} className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-      })}
-    </div>
-  )
-}
-
 class AiAnalysisErrorBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
   constructor(props: { children: ReactNode }) {
     super(props)
@@ -433,9 +383,13 @@ class AiAnalysisErrorBoundary extends Component<{ children: ReactNode }, { err: 
 /* ──────────────────── 内页 ──────────────────────── */
 
 function AiAnalysisPageInner() {
+  const navigate = useNavigate()
+  const setPendingGenerateHandoff = useGenerateStore((s) => s.setPendingGenerateHandoff)
   const [state, dispatch] = useReducer(pageReducer, initialPageState)
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
   const [requirementText, setRequirementText] = useState('')
+  const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
+  const [exportingPdf, setExportingPdf] = useState(false)
   const [humanReview, setHumanReview] = useState(true)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
@@ -453,6 +407,7 @@ function AiAnalysisPageInner() {
   const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
 
   const logContainerRef = useRef<HTMLDivElement>(null)
+  const reportMarkdownRef = useRef<HTMLDivElement>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
   const operationAbortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -592,6 +547,81 @@ function AiAnalysisPageInner() {
       toast.error('复制失败，请在下方报告中选中后手动复制')
     }
   }, [state.reportText])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROMPT_TEMPLATE_STORAGE_KEY, analysisPromptTemplate)
+    } catch {
+      /* ignore */
+    }
+  }, [analysisPromptTemplate])
+
+  const resetAnalysisPromptTemplate = useCallback(() => {
+    setAnalysisPromptTemplate(ANALYSIS_PROMPT)
+    toast.success('已恢复默认分析指令模板')
+  }, [])
+
+  const handleExportAnalysisPdf = useCallback(async () => {
+    const el = reportMarkdownRef.current
+    if (!el || !state.reportText.trim()) {
+      toast.error('暂无可导出的分析报告')
+      return
+    }
+    setExportingPdf(true)
+    try {
+      const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
+      await exportReportRegionToPdf(el, name)
+      toast.success('PDF 已生成并开始下载')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '导出 PDF 失败')
+    } finally {
+      setExportingPdf(false)
+    }
+  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+
+  const handleSendToGenerate = useCallback(() => {
+    const report = state.reportText.trim()
+    if (!report) {
+      toast.error('请先生成并通过分析报告后再跳转')
+      return
+    }
+    const parts: string[] = []
+    if (uploadedFile?.originalName) {
+      parts.push(`来源文档：${normalizeUploadedFilename(uploadedFile.originalName)}`)
+    }
+    if (requirementText.trim()) {
+      parts.push(`【补充说明】\n${requirementText.trim()}`)
+    }
+    const edited = editedParsedText.trim()
+    if (edited && parsePreviewDirty) {
+      parts.push(`【解析原文（当前编辑）】\n${edited}`)
+    } else if (uploadedFile?.parsedContent?.trim()) {
+      const pc = uploadedFile.parsedContent
+      const cap = 12000
+      parts.push(
+        `【解析原文摘录】\n${pc.length > cap ? `${pc.slice(0, cap)}\n…（共 ${pc.length} 字，已截断）` : pc}`,
+      )
+    }
+    const ctx = parts.filter(Boolean).join('\n\n')
+    const filledPrompt = `请根据以下材料生成完整、可执行的测试用例（遵守平台模板与输出格式要求）。\n\n${ctx ? `${ctx}\n\n` : ''}【AI 需求分析报告】\n${report}`
+    setPendingGenerateHandoff({
+      filledPrompt,
+      templateId: null,
+      parseRecordId: null,
+      fileIds: uploadedFile?.id ? [uploadedFile.id] : [],
+      rawText: report,
+      handoffSource: 'ai-analysis',
+    })
+    navigate('/generate')
+  }, [
+    editedParsedText,
+    navigate,
+    parsePreviewDirty,
+    requirementText,
+    setPendingGenerateHandoff,
+    state.reportText,
+    uploadedFile,
+  ])
 
   const pollUntilParsed = useCallback(
     async (
@@ -835,10 +865,10 @@ function AiAnalysisPageInner() {
 
   const buildCustomPrompt = useCallback(() => {
     const base = requirementText.trim()
-      ? `${ANALYSIS_PROMPT}\n\n用户补充说明：\n${requirementText}`
-      : ANALYSIS_PROMPT
+      ? `${analysisPromptTemplate}\n\n用户补充说明：\n${requirementText}`
+      : analysisPromptTemplate
     return base
-  }, [requirementText])
+  }, [analysisPromptTemplate, requirementText])
 
   const runAnalyzeStream = useCallback(
     async (customPrompt: string, isRevision: boolean) => {
@@ -937,8 +967,12 @@ function AiAnalysisPageInner() {
       toast.error('请先上传并等待文档解析完成')
       return
     }
+    if (!analysisPromptTemplate.trim()) {
+      toast.error('分析指令模板不能为空')
+      return
+    }
     await runAnalyzeStream(buildCustomPrompt(), false)
-  }, [uploadedFile, buildCustomPrompt, runAnalyzeStream])
+  }, [uploadedFile, analysisPromptTemplate, buildCustomPrompt, runAnalyzeStream])
 
   const handleSubmitRevision = useCallback(async () => {
     if (!state.reviewText.trim()) {
@@ -947,7 +981,7 @@ function AiAnalysisPageInner() {
     }
     if (!uploadedFile) return
 
-    const revisionPrompt = `${ANALYSIS_PROMPT}
+    const revisionPrompt = `${analysisPromptTemplate}
 
 以下是上一轮分析结果：
 ---
@@ -962,7 +996,14 @@ ${state.reportText}
       ? `\n\n用户补充说明：\n${requirementText}`
       : ''
     await runAnalyzeStream(revisionPrompt + extra, true)
-  }, [state.reviewText, state.reportText, uploadedFile, requirementText, runAnalyzeStream])
+  }, [
+    analysisPromptTemplate,
+    state.reviewText,
+    state.reportText,
+    uploadedFile,
+    requirementText,
+    runAnalyzeStream,
+  ])
 
   const executeStop = useCallback(async () => {
     setConfirmStopOpen(false)
@@ -1317,6 +1358,34 @@ ${state.reportText}
             />
           </div>
 
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
+                分析指令模板（Prompt）
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={resetAnalysisPromptTemplate}
+              >
+                恢复默认
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              作为发送给模型的分析指令；可与上方「补充说明」组合。修改后自动保存在本机浏览器。
+            </p>
+            <textarea
+              id="ai-analysis-prompt-template"
+              className="w-full min-h-[140px] max-h-[280px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
+              placeholder="编辑 AI 分析指令..."
+              value={analysisPromptTemplate}
+              onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
+              spellCheck={false}
+            />
+          </div>
+
           <div className="flex items-center gap-3 py-2">
             <User className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-foreground" id="human-review-label">
@@ -1395,7 +1464,7 @@ ${state.reportText}
               <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
               <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
               <Button
                 type="button"
                 variant="ghost"
@@ -1406,6 +1475,35 @@ ${state.reportText}
                 <Copy className="w-3.5 h-3.5 mr-1" />
                 复制文本
               </Button>
+              {state.reportText.trim().length > 0 && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-violet-300 hover:text-violet-100 hover:bg-violet-500/15"
+                    onClick={() => void handleSendToGenerate()}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1" />
+                    生成用例
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={exportingPdf}
+                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
+                    onClick={() => void handleExportAnalysisPdf()}
+                  >
+                    {exportingPdf ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <FileDown className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    导出 PDF
+                  </Button>
+                </>
+              )}
               {!autoScroll && (
                 <button
                   type="button"
@@ -1442,7 +1540,9 @@ ${state.reportText}
                     需求文档分析报告
                   </h3>
                 </div>
-                <MarkdownReport text={state.reportText} />
+                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text">
+                  <AnalysisMarkdownReport text={state.reportText} />
+                </div>
               </div>
             )}
 

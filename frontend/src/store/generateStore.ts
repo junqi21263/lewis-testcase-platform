@@ -6,13 +6,15 @@ import { loadGenPrefs } from '@/utils/genPrefs'
 type GenerateStep = 'upload' | 'prompt' | 'generating' | 'result'
 type SourceType = 'file' | 'text' | 'url'
 
-/** 文档解析页「带入用例生成」一次性投递的数据（不在 localStorage 持久化） */
+/** 各模块「带入用例生成」一次性投递的数据（不在 localStorage 持久化） */
 export interface PendingGenerateHandoff {
   filledPrompt: string
   templateId: string | null
   parseRecordId: string | null
   fileIds: string[]
   rawText: string
+  /** 用于生成页首屏提示文案 */
+  handoffSource?: 'document-parse' | 'ai-analysis'
 }
 
 const defaultGenerationOptions: GenerationOptions = {

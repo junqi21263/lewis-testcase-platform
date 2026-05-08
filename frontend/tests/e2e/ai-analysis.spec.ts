@@ -202,6 +202,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText('需求文档分析报告')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('主要功能需求')).toBeVisible()
     await expect(page.getByText('用户登录')).toBeVisible()
+    await expect(page.getByRole('button', { name: '生成用例' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '导出 PDF' })).toBeVisible()
 
     // 11. 等待分析完成 → 进入审阅状态
     await expect(page.getByText('等待审阅')).toBeVisible({ timeout: 15000 })
@@ -238,6 +240,9 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 补充说明输入框
     await expect(page.getByPlaceholder('在此输入需求背景、业务描述或补充说明...')).toBeVisible()
+
+    // 可编辑分析指令模板
+    await expect(page.getByLabel('分析指令模板（Prompt）')).toBeVisible()
 
     // 人工审阅开关（使用精确匹配）
     await expect(page.getByText('人工审阅', { exact: true })).toBeVisible()

@@ -404,7 +404,11 @@ export default function GeneratePage() {
     setUploadedFile(null)
     setStep('prompt')
     useGenerateStore.getState().setPendingGenerateHandoff(null)
-    toast.success('已从文档解析载入需求与提示词，可直接生成')
+    toast.success(
+      h.handoffSource === 'ai-analysis'
+        ? '已从 AI 需求分析载入材料，可在提示词步骤直接生成用例'
+        : '已从文档解析载入需求与提示词，可直接生成',
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时消费 handoff
   }, [])
 
