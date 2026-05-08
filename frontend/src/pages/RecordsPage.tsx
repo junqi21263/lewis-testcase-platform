@@ -488,7 +488,7 @@ export default function RecordsPage() {
       cols.duration ? '72px' : '',
       cols.created ? '120px' : '',
       cols.operator ? '88px' : '',
-      '160px',
+      'minmax(272px, 1fr)',
     ].filter(Boolean)
     return parts.join(' ')
   }, [cols])
@@ -551,7 +551,7 @@ export default function RecordsPage() {
                       setPage(1)
                     }}
                     onKeyDown={(e) => e.key === 'Enter' && void fetchList()}
-                    className="pl-9"
+                    className="h-8 pl-9"
                   />
                 </div>
                 <Button variant="outline" size="icon" onClick={() => void fetchList()} title="刷新">
@@ -643,7 +643,7 @@ export default function RecordsPage() {
               })}
             </div>
 
-            <div className="flex flex-col xl:flex-row flex-wrap gap-3 text-sm">
+            <div className="flex flex-col xl:flex-row xl:items-center flex-wrap gap-3 text-sm">
               <div className="flex flex-wrap gap-1.5 items-center">
                 <span className="text-xs text-muted-foreground mr-1">时间</span>
                 {(
@@ -705,7 +705,13 @@ export default function RecordsPage() {
                 <span className="text-xs text-muted-foreground">模型</span>
                 <select
                   multiple
-                  className="min-h-[32px] w-[180px] max-w-[180px] overflow-hidden rounded-md border-0 bg-background/55 px-1 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
+                  size={1}
+                  title={
+                    modelPick.length
+                      ? `已选 ${modelPick.length} 个模型：${modelPick.join('、')}`
+                      : '按住 Ctrl / ⌘ 可多选模型'
+                  }
+                  className="h-8 w-[180px] max-w-[180px] shrink-0 rounded-md border-0 bg-background/55 px-2 py-0 text-xs leading-8 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
                   value={modelPick}
                   onChange={(e) => {
                     const v = [...e.target.selectedOptions].map((o) => o.value)
@@ -871,7 +877,7 @@ export default function RecordsPage() {
               onKeyDown={onKeyDown}
             >
               <div
-                className="grid min-w-[900px] gap-2 bg-muted/35 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.14)] backdrop-blur-sm dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]"
+                className="grid min-w-[1012px] gap-2 bg-muted/35 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.14)] backdrop-blur-sm dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]"
                 style={{ gridTemplateColumns: gridTemplate }}
               >
                 <span />
@@ -906,7 +912,7 @@ export default function RecordsPage() {
                 const focused = focusIdx === idx
                 const inRecycle = view === 'recycle' || !!r.deletedAt
                 return (
-                  <div key={r.id} className="min-w-[900px]">
+                  <div key={r.id} className="min-w-[1012px]">
                     <div
                       role="row"
                       className={cn(
@@ -969,79 +975,79 @@ export default function RecordsPage() {
                         </span>
                       )}
                       <div
-                        className="flex items-center gap-0.5 flex-wrap justify-end"
+                        className="flex items-center justify-end gap-2 flex-nowrap min-w-0 overflow-x-auto px-0.5 -mr-0.5"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {rowLoading === r.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                         ) : (
                           <>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 shrink-0"
                               title="查看详情"
                               onClick={() => navigate(`/records/${r.id}`)}
                             >
-                              <Eye className="w-3.5 h-3.5" />
+                              <Eye />
                             </Button>
                             {!inRecycle && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-8 w-8 shrink-0"
                                   title="一键复用"
                                   onClick={() => void openReuse(r)}
                                 >
-                                  <Copy className="w-3.5 h-3.5" />
+                                  <Copy />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-8 w-8 shrink-0"
                                   title="快速导出"
                                   onClick={() => exportOne(r)}
                                 >
-                                  <Download className="w-3.5 h-3.5" />
+                                  <Download />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-8 w-8 shrink-0"
                                   title="编辑（带入生成页）"
                                   onClick={() => void openReuse(r)}
                                 >
-                                  <Pencil className="w-3.5 h-3.5" />
+                                  <Pencil />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-8 w-8 shrink-0"
                                   title="分享链接"
                                   onClick={() => void copyShare(r)}
                                 >
-                                  <Share2 className="w-3.5 h-3.5" />
+                                  <Share2 />
                                 </Button>
                                 {r.status !== 'ARCHIVED' ? (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8"
+                                    className="h-8 w-8 shrink-0"
                                     title="归档"
                                     onClick={() => void handleRowAction(r, 'archive')}
                                   >
-                                    <Archive className="w-3.5 h-3.5" />
+                                    <Archive />
                                   </Button>
                                 ) : (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8"
+                                    className="h-8 w-8 shrink-0"
                                     title="恢复状态"
                                     onClick={() => void handleRowAction(r, 'patch_active')}
                                   >
-                                    <ArchiveRestore className="w-3.5 h-3.5" />
+                                    <ArchiveRestore />
                                   </Button>
                                 )}
                               </>
@@ -1051,31 +1057,31 @@ export default function RecordsPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-8 w-8 shrink-0"
                                   title="恢复"
                                   onClick={() => void handleRowAction(r, 'restore')}
                                 >
-                                  <ArchiveRestore className="w-3.5 h-3.5" />
+                                  <ArchiveRestore />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-destructive"
+                                  className="h-8 w-8 shrink-0 text-destructive"
                                   title="彻底删除"
                                   onClick={() => setConfirm({ type: 'hard_delete', ids: [r.id] })}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 />
                                 </Button>
                               </>
                             ) : (
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 text-destructive"
+                                className="h-8 w-8 shrink-0 text-destructive"
                                 title="删除"
                                 onClick={() => setConfirm({ type: 'soft_delete', ids: [r.id] })}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 />
                               </Button>
                             )}
                           </>
