@@ -10,6 +10,9 @@ export const CHUNK_THRESHOLD = 5 * 1024 * 1024
 /** 每片大小（须 ≤ 后端单分片校验上限） */
 export const CHUNK_SIZE = 2 * 1024 * 1024
 
+/** 解析轮询 / 合并 / 重试解析：响应可能较大或链路较慢，长于全局 60s */
+const FILES_LONG_TIMEOUT_MS = 300_000
+
 const BASE_URL = getApiBaseUrl()
 
 export const filesApi = {
@@ -84,19 +87,25 @@ export const filesApi = {
     mimeType: string,
     chunkTotal: number,
   ): Promise<UploadedFile> {
-    return request.post<UploadedFile>('/files/upload/merge', {
-      fileId,
-      originalName,
-      mimeType,
-      chunkTotal,
-    })
+    return request.post<UploadedFile>(
+      '/files/upload/merge',
+      {
+        fileId,
+        originalName,
+        mimeType,
+        chunkTotal,
+      },
+      { timeout: FILES_LONG_TIMEOUT_MS },
+    )
   },
 
   /** 轮询文件解析状态，直到 status 为 PARSED 或 FAILED */
-  getFileById: (id: string) => request.get<UploadedFile>(`/files/${id}`),
+  getFileById: (id: string) =>
+    request.get<UploadedFile>(`/files/${id}`, { timeout: FILES_LONG_TIMEOUT_MS }),
 
   /** 重新触发文件解析 */
-  retryParse: (id: string) => request.post<UploadedFile>(`/files/${id}/parse`),
+  retryParse: (id: string) =>
+    request.post<UploadedFile>(`/files/${id}/parse`, undefined, { timeout: FILES_LONG_TIMEOUT_MS }),
 
   /** 根据用户编辑后的全文重新结构化（脱敏 + LLM） */
   restructure: (id: string, text: string) =>
