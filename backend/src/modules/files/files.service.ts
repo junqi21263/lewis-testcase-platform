@@ -94,6 +94,23 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       select: { id: true, path: true, fileType: true, mimeType: true },
     })
     if (!next) return null
+    if (!next.path?.trim()) {
+      try {
+        await this.prisma.uploadedFile.update({
+          where: { id: next.id },
+          data: {
+            status: FileStatus.FAILED,
+            parseError: '【解析失败】文件路径无效，请重新上传',
+            parseStage: 'FAILED',
+            parseFinishedAt: new Date(),
+            lastHeartbeatAt: new Date(),
+          },
+        })
+      } catch (e) {
+        if (!this.isNotFoundUpdateError(e)) throw e
+      }
+      return null
+    }
 
     const now = new Date()
     const updated = await this.prisma.uploadedFile.updateMany({
@@ -108,8 +125,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
     if (updated.count !== 1) return null
-    if (!next.path) return null
-    return { ...next, path: next.path }
+    return { ...next, path: next.path as string }
   }
 
   /** 保存上传记录并触发异步解析 */

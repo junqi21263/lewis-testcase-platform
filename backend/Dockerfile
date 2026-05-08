@@ -71,6 +71,7 @@ RUN set -eux; \
 
 RUN echo "=== [backend runner] apk: runtime libs for canvas + prisma ===" && \
   apk add --no-cache \
+    bash \
     openssl \
     cairo \
     pango \
