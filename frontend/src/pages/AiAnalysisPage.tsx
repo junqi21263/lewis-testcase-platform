@@ -21,8 +21,8 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  Circle,
   Square,
+  Terminal,
   User,
   ArrowRight,
   X,
@@ -40,6 +40,7 @@ import { filesApi } from '@/api/files'
 import { aiApi } from '@/api/ai'
 import type { AIModel, UploadedFile } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
+import { normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 
 /* ──────────────────────── 类型 ──────────────────────── */
@@ -196,7 +197,7 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
     case 'CLAIMED':
       return { icon: 'loading', text: '📝 开始解析文档...' }
     case 'FILE_OK':
-      return { icon: 'success', text: '✅ 文件读取成功' }
+      return { icon: 'loading', text: '✅ 文件读取成功，继续解析…' }
     case 'PDF':
       return { icon: 'loading', text: '📄 正在提取 PDF 文本...' }
     case 'WORD':
@@ -222,16 +223,6 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
 }
 
 /* ──────────────────── 子组件 ──────────────────────── */
-
-function TrafficLights() {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Circle className="w-3 h-3 fill-red-500 text-red-500" />
-      <Circle className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-      <Circle className="w-3 h-3 fill-green-500 text-green-500" />
-    </div>
-  )
-}
 
 function StatusBadge({
   status,
@@ -388,6 +379,8 @@ function AiAnalysisPageInner() {
   const [parseElapsed, setParseElapsed] = useState(0)
   const [analysisElapsed, setAnalysisElapsed] = useState(0)
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  /** 本机选择的 File.name，避免接口 originalName 编码异常导致列表乱码 */
+  const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
@@ -496,12 +489,38 @@ function AiAnalysisPageInner() {
     if (dist > 50) setAutoScroll(false)
   }, [])
 
-  const copyLogs = useCallback(() => {
+  const copyLogs = useCallback(async () => {
     const text = state.logs.map((l) => `[${l.timestamp}] ${l.text}`).join('\n')
-    void navigator.clipboard.writeText(text).then(
-      () => toast.success('日志已复制'),
-      () => toast.error('复制失败'),
-    )
+    if (!text.trim()) {
+      toast.error('暂无内容可复制')
+      return
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        toast.success('已复制到剪贴板')
+        return
+      }
+    } catch {
+      /* HTTP 或非安全上下文常失败，走 fallback */
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.top = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) toast.success('已复制到剪贴板')
+      else toast.error('复制失败，请手动选中终端内文本复制')
+    } catch {
+      toast.error('复制失败，请手动选中终端内文本复制')
+    }
   }, [state.logs])
 
   const pollUntilParsed = useCallback(
@@ -551,6 +570,7 @@ function AiAnalysisPageInner() {
       dispatch({ type: 'START_UPLOAD' })
       resetUploadProgress()
       uploadStartedAtRef.current = Date.now()
+      setUploadDisplayName(file.name)
 
       addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
@@ -595,8 +615,10 @@ function AiAnalysisPageInner() {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
           setUploadedFile(null)
+          setUploadDisplayName(null)
           return
         }
+        setUploadDisplayName(null)
         addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
         dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
         toast.error('文件上传失败')
@@ -646,19 +668,21 @@ function AiAnalysisPageInner() {
     operationAbortRef.current?.abort()
     abortUpload()
     setUploadedFile(null)
+    setUploadDisplayName(null)
     setEditedParsedText('')
     setParsePreviewDirty(false)
     dispatch({ type: 'RESET' })
   }, [abortUpload])
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
+    setUploadDisplayName(null)
     setUploadedFile(f)
     setEditedParsedText(f.parsedContent ?? '')
     setParsePreviewDirty(false)
     setPreviewEditable(false)
     dispatch({ type: 'GO_IDLE' })
     if (f.status === 'PARSED') {
-      toast.success(`已选择：${f.originalName}`)
+      toast.success(`已选择：${normalizeUploadedFilename(f.originalName)}`)
     } else {
       toast('该文件尚未解析完成', { icon: 'ℹ️' })
     }
@@ -672,6 +696,7 @@ function AiAnalysisPageInner() {
         setFileHistory((prev) => prev.filter((x) => x.id !== id))
         if (uploadedFile?.id === id) {
           setUploadedFile(null)
+          setUploadDisplayName(null)
           setEditedParsedText('')
           dispatch({ type: 'RESET' })
         }
@@ -832,6 +857,7 @@ ${state.reportText}
         /* 可能已结束 */
       }
       setUploadedFile(null)
+      setUploadDisplayName(null)
       addLog('loading', '⏹ 已请求取消解析任务')
       dispatch({ type: 'STOP_TO_IDLE' })
       toast('已停止', { icon: '⏹' })
@@ -955,7 +981,9 @@ ${state.reportText}
               <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
                 <FileText className="w-5 h-5 text-green-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-green-300 truncate">{uploadedFile.originalName}</p>
+                  <p className="text-sm text-green-300 truncate" title={uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)}>
+                    {uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)}
+                  </p>
                   <p className="text-xs text-green-400/60">
                     {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
                     {uploadedFile.status === 'PARSED'
@@ -1073,7 +1101,9 @@ ${state.reportText}
                       uploadedFile?.id === f.id ? 'bg-primary/10' : ''
                     }`}
                   >
-                    <span className="flex-1 truncate text-left">{f.originalName}</span>
+                    <span className="flex-1 truncate text-left" title={normalizeUploadedFilename(f.originalName)}>
+                      {normalizeUploadedFilename(f.originalName)}
+                    </span>
                     <span className="text-muted-foreground whitespace-nowrap">
                       {formatRelative(f.createdAt)}
                     </span>
@@ -1179,7 +1209,7 @@ ${state.reportText}
         <div className="flex flex-col">
           <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
-              <TrafficLights />
+              <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
               <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -1191,7 +1221,7 @@ ${state.reportText}
                 onClick={copyLogs}
               >
                 <Copy className="w-3.5 h-3.5 mr-1" />
-                复制日志
+                复制文本
               </Button>
               {!autoScroll && (
                 <button
