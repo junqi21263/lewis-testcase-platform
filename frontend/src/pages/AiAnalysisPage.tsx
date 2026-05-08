@@ -227,6 +227,12 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
       return { icon: 'loading', text: '✅ 文件读取成功，继续解析…' }
     case 'PDF':
       return { icon: 'loading', text: '📄 正在提取 PDF 文本...' }
+    case 'PDF_TEXT_LAYER':
+      return { icon: 'loading', text: '📄 正在提取 PDF 内置文本层...' }
+    case 'PDF_TEXT_LAYER_OK':
+      return { icon: 'loading', text: '✅ PDF 内置文本可用，跳过 OCR' }
+    case 'PDF_OCR_PIPELINE':
+      return { icon: 'loading', text: '🔍 扫描件或文本不足，正在分页 OCR（分批处理）...' }
     case 'WORD':
       return { icon: 'loading', text: '📄 正在提取 Word 文本...' }
     case 'EXCEL':
@@ -244,8 +250,16 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
       return { icon: 'error', text: '❌ 解析失败' }
     case 'CANCELLED':
       return { icon: 'error', text: '❌ 已取消解析' }
-    default:
+    default: {
+      const m = /^PDF_OCR_P(\d+)_(\d+)$/.exec(s || '')
+      if (m) {
+        return {
+          icon: 'loading',
+          text: `🔍 正在识别 PDF 第 ${m[1]}–${m[2]} 页（分批 OCR）...`,
+        }
+      }
       return { icon: 'loading', text: `📄 解析阶段：${s}` }
+    }
   }
 }
 

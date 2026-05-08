@@ -189,7 +189,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       switch (fileType) {
         case FileType.PDF:
           await heartbeat('PDF')
-          content = await this.parsePdfWithVisionFallback(filePath)
+          content = await this.parsePdfWithVisionFallback(filePath, heartbeat)
           break
         case FileType.WORD:
           await heartbeat('WORD')
@@ -291,8 +291,15 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     )
   }
 
-  /** PDF：先文本提取；文本过少或强制开关时，对首页做视觉理解 */
-  private async parsePdfWithVisionFallback(filePath: string): Promise<string> {
+  /**
+   * PDF：第一层 pdf-parse 文本层；足够则直接返回。
+   * 否则分页渲染 → 每批最多 5 页、全局最多 2 批并行 → 视觉（若配置了支持视觉的模型）失败则降级 Tesseract；分片带重试，失败页单独记录。
+   */
+  private async parsePdfWithVisionFallback(
+    filePath: string,
+    heartbeat: (stage: string) => Promise<void>,
+  ): Promise<string> {
+    await heartbeat('PDF_TEXT_LAYER')
     let text = ''
     try {
       text = await this.parsePdf(filePath)
@@ -301,42 +308,223 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     const minLen = parseInt(this.config.get<string>('VISION_PDF_MIN_TEXT_CHARS') || '120', 10)
+    const garbledMaxRaw = this.config.get<string>('PDF_TEXT_GARBLED_RATIO_MAX')
+    const garbledMax = parseFloat(garbledMaxRaw || '0.3')
+    const garbledRatio = this.estimateGarbledRatio(text)
     const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
 
-    let visionBlock = ''
-    let pdfVisionOutcome: Awaited<
-      ReturnType<DocumentVisionService['transcribePdfFirstPageVision']>
-    > | null = null
-    const hasVision = !!(await this.documentVision.resolveVisionModel())
-    if (hasVision && (text.trim().length < minLen || forceVision)) {
-      pdfVisionOutcome = await this.documentVision.transcribePdfFirstPageVision(filePath)
-      if (pdfVisionOutcome.outcome === 'success') {
-        visionBlock = `【PDF 首页视觉理解｜${pdfVisionOutcome.modelName}】\n${pdfVisionOutcome.text.trim()}`
+    const gm = Number.isFinite(garbledMax) && garbledMax > 0 && garbledMax <= 1 ? garbledMax : 0.3
+    const textSufficient = text.trim().length >= minLen && garbledRatio <= gm
+
+    if (textSufficient && !forceVision) {
+      await heartbeat('PDF_TEXT_LAYER_OK')
+      this.logger.log(
+        `PDF 文本层可用（${text.trim().length} 字，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），跳过多模态/OCR`,
+      )
+      return `【PDF 文本提取】\n${text.trim()}`
+    }
+
+    if (textSufficient && forceVision) {
+      await heartbeat('PDF_TEXT_LAYER_OK')
+      this.logger.log(
+        `PDF 文本层已充足；忽略 VISION_PDF_ALWAYS，避免对大文件发起多余视觉调用（${text.trim().length} 字）`,
+      )
+      return `【PDF 文本提取】\n${text.trim()}`
+    }
+
+    this.logger.warn(
+      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），启用分页 OCR 管线`,
+    )
+    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat)
+  }
+
+  /** 乱码/替换符占比，用于判断是否需要 OCR */
+  private estimateGarbledRatio(raw: string): number {
+    if (!raw || raw.length === 0) return 1
+    let bad = 0
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw.charCodeAt(i)
+      if (c === 0xfffd) bad++
+      else if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++
+    }
+    return bad / raw.length
+  }
+
+  private getOcrBatchSize(): number {
+    const n = parseInt(this.config.get<string>('PDF_OCR_BATCH_SIZE') || '5', 10)
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.max(n, 1), 20) : 5
+  }
+
+  private getOcrMaxConcurrentBatches(): number {
+    const n = parseInt(this.config.get<string>('PDF_OCR_MAX_CONCURRENT_BATCHES') || '2', 10)
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 8) : 2
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms))
+  }
+
+  private async retryPdfShard<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    const retries = parseInt(this.config.get<string>('PDF_OCR_SHARD_RETRIES') || '2', 10)
+    const delayMs = parseInt(this.config.get<string>('PDF_OCR_SHARD_RETRY_DELAY_MS') || '5000', 10)
+    const maxAttempts = Number.isFinite(retries) && retries >= 0 ? retries + 1 : 3
+    const delay = Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 5000
+    let lastErr: Error | undefined
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn()
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e))
+        this.logger.warn(`${label} 第 ${attempt}/${maxAttempts} 次失败: ${lastErr.message}`)
+        if (attempt < maxAttempts) await this.sleep(delay)
+      }
+    }
+    throw lastErr ?? new Error(`${label} 失败`)
+  }
+
+  private async runPool<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T, idx: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) return []
+    const results = new Array<R>(items.length)
+    let nextIndex = 0
+    const workerFn = async () => {
+      while (true) {
+        const idx = nextIndex++
+        if (idx >= items.length) break
+        results[idx] = await worker(items[idx], idx)
+      }
+    }
+    const pool = Math.min(Math.max(limit, 1), items.length)
+    await Promise.all(Array.from({ length: pool }, () => workerFn()))
+    return results
+  }
+
+  private async parsePdfOcrBatchedPipeline(
+    filePath: string,
+    embeddedText: string,
+    heartbeat: (stage: string) => Promise<void>,
+  ): Promise<string> {
+    await heartbeat('PDF_OCR_PIPELINE')
+    const batchSize = this.getOcrBatchSize()
+    const maxConc = this.getOcrMaxConcurrentBatches()
+
+    const batches: { pageNum: number; buffer: Buffer }[][] = []
+    let cur: { pageNum: number; buffer: Buffer }[] = []
+
+    try {
+      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath)) {
+        cur.push(page)
+        if (cur.length >= batchSize) {
+          batches.push(cur)
+          cur = []
+        }
+      }
+      if (cur.length) batches.push(cur)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.logger.error(`PDF 分页渲染失败: ${msg}`)
+      throw new Error(`【解析失败】PDF 分页渲染失败：${msg}`)
+    }
+
+    if (batches.length === 0) {
+      throw new Error('【解析失败】PDF 无页面或无法渲染（0 页）。')
+    }
+
+    this.logger.log(`PDF OCR：共 ${batches.length} 批，每批最多 ${batchSize} 页，并发 ${maxConc}`)
+
+    const batchResults = await this.runPool(batches, maxConc, async (batch, idx) => {
+      const first = batch[0].pageNum
+      const last = batch[batch.length - 1].pageNum
+      await heartbeat(`PDF_OCR_P${first}_${last}`)
+      this.logger.log(`PDF OCR 批次 ${idx + 1}/${batches.length}：第 ${first}–${last} 页`)
+      return this.processSinglePdfOcrBatch(batch)
+    })
+
+    const failedAll: number[] = []
+    const sections: string[] = []
+    for (const br of batchResults) {
+      sections.push(br.section)
+      failedAll.push(...br.failedPages)
+    }
+
+    const uniqFail = [...new Set(failedAll)].sort((a, b) => a - b)
+    const parts: string[] = []
+    if (embeddedText.trim()) {
+      parts.push(
+        `【PDF 内置文本层（质量不足或为空；已启用分页 OCR）】\n${embeddedText.trim()}`,
+      )
+    }
+    parts.push(`【PDF 分页识别】\n${sections.join('\n\n')}`)
+    if (uniqFail.length) {
+      parts.push(
+        `【PDF 解析备注】以下页面自动识别失败，建议对照原稿核对：第 ${uniqFail.join('、')} 页`,
+      )
+    }
+    return parts.join('\n\n')
+  }
+
+  private async processSinglePdfOcrBatch(
+    pages: { pageNum: number; buffer: Buffer }[],
+  ): Promise<{ section: string; failedPages: number[] }> {
+    const first = pages[0].pageNum
+    const last = pages[pages.length - 1].pageNum
+    const header = `--- PDF 第 ${first}–${last} 页 ---`
+    const skipVision = this.config.get<string>('PDF_OCR_SKIP_VISION') === '1'
+
+    let visionText = ''
+    if (!skipVision) {
+      const cfg = await this.documentVision.resolveVisionModel()
+      if (cfg) {
+        try {
+          visionText = await this.retryPdfShard(`PDF 视觉批次 ${first}-${last}`, () =>
+            this.documentVision.transcribeMultiplePngBuffers(
+              cfg,
+              pages.map((p) => p.buffer),
+            ),
+          )
+        } catch (e) {
+          this.logger.warn(`PDF 视觉批次 ${first}-${last} 最终失败，将使用 Tesseract: ${(e as Error).message}`)
+        }
       }
     }
 
-    if (visionBlock && text.trim()) {
-      return `${visionBlock}\n\n---\n【PDF 文本提取】\n${text.trim()}`
+    if (visionText.trim()) {
+      return { section: `${header}\n${visionText.trim()}`, failedPages: [] }
     }
-    if (visionBlock) return visionBlock
-    if (text.trim()) return `【PDF 文本提取】\n${text.trim()}`
 
-    if (!hasVision) {
-      return (
-        '【解析失败】PDF 几乎无可选中文本层（多为扫描件）。请在「系统设置 → AI 模型」中配置支持视觉的模型并勾选「文档视觉解析」，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID；服务器部署还需成功编译 node-canvas（Dockerfile 已含 cairo 等依赖）。'
-      )
+    const failedPages: number[] = []
+    const chunks: string[] = []
+    for (const { pageNum, buffer } of pages) {
+      try {
+        const t = await this.retryPdfShard(`PDF Tesseract 第 ${pageNum} 页`, () =>
+          this.ocrPngBuffer(buffer),
+        )
+        chunks.push(`（第 ${pageNum} 页）\n${t.trim() || '（本页无文本）'}`)
+      } catch {
+        failedPages.push(pageNum)
+        chunks.push(`（第 ${pageNum} 页）\n（本页 OCR 失败）`)
+      }
     }
-    if (pdfVisionOutcome?.outcome === 'pdf_render') {
-      const hint =
-        '容器内需中文字体与 cairo/pango 运行时库（镜像已尽量预装）；可尝试调低环境变量 VISION_PDF_RENDER_SCALE（如 1.0）或查看日志「PDF 转图失败」。'
-      return `【解析失败】PDF 首页转图失败：${pdfVisionOutcome.error}。${hint}`
+
+    return {
+      section: `${header}\n${chunks.join('\n\n')}`,
+      failedPages,
     }
-    if (pdfVisionOutcome?.outcome === 'vision_api') {
-      return `【解析失败】视觉模型调用失败：${pdfVisionOutcome.error}。请检查 baseUrl、modelId、Key 及多模态是否对该模型可用。`
-    }
-    return (
-      '【解析失败】已配置视觉模型，但未得到可用的首页理解结果。请查看服务日志中的「PDF 转图」/ 视觉调用详情；确认镜像已编译 canvas（pnpm.onlyBuiltDependencies 含 canvas）。'
-    )
+  }
+
+  /** PNG Buffer → Tesseract（与图片 OCR 共用语言配置） */
+  private async ocrPngBuffer(buffer: Buffer): Promise<string> {
+    const Tesseract = require('tesseract.js')
+    const langs =
+      (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
+      'chi_sim+chi_tra+eng'
+    const {
+      data: { text },
+    } = await Tesseract.recognize(buffer, langs)
+    return text || ''
   }
 
   private async parsePdf(filePath: string): Promise<string> {
