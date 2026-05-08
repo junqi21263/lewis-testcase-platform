@@ -56,6 +56,9 @@ importers:
       cos-nodejs-sdk-v5:
         specifier: ^2.15.4
         version: 2.15.4
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.4.5
       helmet:
         specifier: ^8.0.0
         version: 8.1.0
