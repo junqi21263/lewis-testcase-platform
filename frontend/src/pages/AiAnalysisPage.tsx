@@ -224,6 +224,36 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
 
 /* ──────────────────── 子组件 ──────────────────────── */
 
+/** 终端日志左侧状态图标：同一 icon 类型始终同一组件与同一像素尺寸，避免同页多种 Loader2 样式漂移 */
+const TERMINAL_LOG_ICON_PX = 14
+
+function TerminalLogStatusIcon({ status }: { status: LogEntry['icon'] }) {
+  const box = 'inline-flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center'
+  if (status === 'success') {
+    return (
+      <span className={box} aria-hidden>
+        <CheckCircle2 size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-green-400" />
+      </span>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <span className={box} aria-hidden>
+        <XCircle size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-red-400" />
+      </span>
+    )
+  }
+  return (
+    <span className={box} aria-hidden>
+      <Loader2
+        size={TERMINAL_LOG_ICON_PX}
+        strokeWidth={2}
+        className="text-blue-400 animate-spin"
+      />
+    </span>
+  )
+}
+
 function StatusBadge({
   status,
   labelOverride,
@@ -249,14 +279,9 @@ function StatusBadge({
 }
 
 function LogLine({ entry }: { entry: LogEntry }) {
-  const iconMap = {
-    loading: <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin flex-shrink-0" />,
-    success: <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />,
-    error: <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />,
-  }
   return (
     <div className="flex items-start gap-2.5 text-sm leading-relaxed font-mono py-0.5 animate-[fadeIn_0.3s_ease-out]">
-      {iconMap[entry.icon]}
+      <TerminalLogStatusIcon status={entry.icon} />
       <span className="text-gray-500 flex-shrink-0">[{entry.timestamp}]</span>
       <span className="text-gray-300 whitespace-pre-wrap break-words">{entry.text}</span>
     </div>
@@ -1029,7 +1054,7 @@ ${state.reportText}
             {state.status === 'parsing' && (
               <div className="flex flex-col gap-1 text-xs text-amber-400">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                  <TerminalLogStatusIcon status="loading" />
                   正在解析… 已等待 {parseElapsed}s
                 </div>
               </div>
