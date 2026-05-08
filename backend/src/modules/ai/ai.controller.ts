@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Body, Res } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
+import { Controller, Get, Post, Body, Res, Header } from '@nestjs/common'
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger'
 import { Response } from 'express'
 import { AiService } from './ai.service'
+import { AnalysisReportPdfService } from './analysis-report-pdf.service'
 import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
+import { ExportAnalysisPdfDto } from './dto/export-analysis-pdf.dto'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Roles } from '@/common/decorators/roles.decorator'
 import { UserRole } from '@prisma/client'
@@ -12,7 +14,10 @@ import { UserRole } from '@prisma/client'
 @ApiBearerAuth()
 @Controller('ai')
 export class AiController {
-  constructor(private aiService: AiService) {}
+  constructor(
+    private aiService: AiService,
+    private analysisReportPdf: AnalysisReportPdfService,
+  ) {}
 
   @Get('models')
   @ApiOperation({ summary: '获取可用模型列表' })
@@ -44,6 +49,22 @@ export class AiController {
     @Res() res: Response,
   ) {
     return this.aiService.analyzeStream(dto, userId, res)
+  }
+
+  @Post('analyze/export-pdf')
+  @ApiOperation({ summary: '导出 AI 需求分析报告为专业排版 PDF（pdfkit，适合打印与分享）' })
+  @ApiResponse({ status: 200, description: 'application/pdf 二进制流' })
+  @Header('Cache-Control', 'no-store')
+  async exportAnalysisPdf(@Body() dto: ExportAnalysisPdfDto, @Res({ passthrough: false }) res: Response) {
+    const pdf = await this.analysisReportPdf.render(dto)
+    const base =
+      (dto.documentTitle?.trim() &&
+        encodeURIComponent(dto.documentTitle.trim().replace(/[\\/:*?"<>|]/g, '_'))) ||
+      `analysis-report-${Date.now()}`
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${base}.pdf`)
+    res.setHeader('Content-Length', String(pdf.length))
+    res.end(pdf)
   }
 
   @Post('test')

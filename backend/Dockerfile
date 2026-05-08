@@ -106,6 +106,17 @@ COPY --from=builder /app/scripts/lightweight-cloud-cleanup.sh ./scripts/lightwei
 
 RUN chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh scripts/lightweight-cloud-cleanup.sh
 
+# pdfkit 需独立 OTF（.ttc 集合字体会导致 fontkit 嵌入失败）。仓库内文件名为 NotoSansCJKsc-*（非旧名 NotoSansSC-*）
+RUN apk add --no-cache wget ca-certificates \
+  && mkdir -p /app/fonts \
+  && wget -qO /app/fonts/NotoSansSC-Regular.otf \
+    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
+  && wget -qO /app/fonts/NotoSansSC-Bold.otf \
+    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"
+
+ENV ANALYSIS_REPORT_PDF_FONT_REGULAR=/app/fonts/NotoSansSC-Regular.otf \
+    ANALYSIS_REPORT_PDF_FONT_BOLD=/app/fonts/NotoSansSC-Bold.otf
+
 RUN mkdir -p uploads
 
 EXPOSE 3000

@@ -47,7 +47,7 @@ import { normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
-import { buildAnalysisPdfFileName, exportReportRegionToPdf } from '@/utils/exportAnalysisPdf'
+import { buildAnalysisPdfFileName, saveAnalysisReportPdf } from '@/utils/exportAnalysisPdf'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -562,15 +562,22 @@ function AiAnalysisPageInner() {
   }, [])
 
   const handleExportAnalysisPdf = useCallback(async () => {
-    const el = reportMarkdownRef.current
-    if (!el || !state.reportText.trim()) {
+    const markdown = state.reportText.trim()
+    if (!markdown) {
       toast.error('暂无可导出的分析报告')
       return
     }
     setExportingPdf(true)
     try {
       const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
-      await exportReportRegionToPdf(el, name)
+      await saveAnalysisReportPdf(
+        {
+          markdown,
+          documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
+          version: 'V1.0',
+        },
+        name,
+      )
       toast.success('PDF 已生成并开始下载')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '导出 PDF 失败')
