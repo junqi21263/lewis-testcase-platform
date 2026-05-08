@@ -559,16 +559,16 @@ function AiAnalysisPageInner() {
     if (dist > 50) setAutoScroll(false)
   }, [])
 
-  const copyLogs = useCallback(async () => {
-    const text = state.logs.map((l) => `[${l.timestamp}] ${l.text}`).join('\n')
-    if (!text.trim()) {
-      toast.error('暂无内容可复制')
+  const copyAnalysisReport = useCallback(async () => {
+    const text = state.reportText.trim()
+    if (!text) {
+      toast.error('暂无分析报告可复制')
       return
     }
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text)
-        toast.success('已复制到剪贴板')
+        toast.success('已复制分析报告')
         return
       }
     } catch {
@@ -586,12 +586,12 @@ function AiAnalysisPageInner() {
       ta.select()
       const ok = document.execCommand('copy')
       document.body.removeChild(ta)
-      if (ok) toast.success('已复制到剪贴板')
-      else toast.error('复制失败，请手动选中终端内文本复制')
+      if (ok) toast.success('已复制分析报告')
+      else toast.error('复制失败，请在下方报告中选中后手动复制')
     } catch {
-      toast.error('复制失败，请手动选中终端内文本复制')
+      toast.error('复制失败，请在下方报告中选中后手动复制')
     }
-  }, [state.logs])
+  }, [state.reportText])
 
   const pollUntilParsed = useCallback(
     async (
@@ -1401,7 +1401,7 @@ ${state.reportText}
                 variant="ghost"
                 size="sm"
                 className="h-8 text-xs text-gray-400 hover:text-gray-200"
-                onClick={copyLogs}
+                onClick={copyAnalysisReport}
               >
                 <Copy className="w-3.5 h-3.5 mr-1" />
                 复制文本
