@@ -189,6 +189,33 @@ function formatRelative(iso: string): string {
   return `${d} 天前`
 }
 
+/**
+ * 终端日志左侧图标仅由本行文案决定（与 dispatch 时写入的 icon 字段无关），避免全局阶段与文案语义不一致。
+ * 优先级：失败类 → 成功类 → 进行中类 → 默认进行中。
+ */
+function terminalLogIconFromText(text: string): LogEntry['icon'] {
+  const t = text
+  const errorLike =
+    t.includes('失败') || (t.includes('错误') && !t.includes('无错误'))
+  if (errorLike) return 'error'
+
+  const successLike =
+    t.includes('上传成功') ||
+    t.includes('解析成功') ||
+    t.includes('读取成功') ||
+    (t.includes('完成') && !t.includes('未完成'))
+  if (successLike) return 'success'
+
+  const loadingLike =
+    t.includes('正在上传') ||
+    t.includes('正在等待') ||
+    t.includes('等待解析') ||
+    t.includes('正在')
+  if (loadingLike) return 'loading'
+
+  return 'loading'
+}
+
 function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntry['icon']; text: string } {
   const s = stage ?? 'PENDING'
   switch (s) {
@@ -279,9 +306,10 @@ function StatusBadge({
 }
 
 function LogLine({ entry }: { entry: LogEntry }) {
+  const status = terminalLogIconFromText(entry.text)
   return (
     <div className="flex items-start gap-2.5 text-sm leading-relaxed font-mono py-0.5 animate-[fadeIn_0.3s_ease-out]">
-      <TerminalLogStatusIcon status={entry.icon} />
+      <TerminalLogStatusIcon status={status} />
       <span className="text-gray-500 flex-shrink-0">[{entry.timestamp}]</span>
       <span className="text-gray-300 whitespace-pre-wrap break-words">{entry.text}</span>
     </div>
