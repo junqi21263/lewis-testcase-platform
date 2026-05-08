@@ -6,6 +6,9 @@
 #     DEPLOY_PULL_FROM_MIRROR, CONTAINER_MIRROR_IMAGE_PREFIX, APK_MIRROR, DEPLOY_BUILD_ON_SERVER,
 #     MIRROR_STEP_TIMEOUT_MIN（可选，国内镜像同步「内层」超时分钟数，默认 90；勿超过 job 的 timeout-minutes）
 #
+# 推荐（最快部署路径）：VPS 能稳定拉 ghcr.io 时设 DEPLOY_PULL_FROM_MIRROR=false，并配置 GHCR_PULL_TOKEN，
+# 可跳过「Runner→国内仓」整段镜像同步。仅当 ghcr 不可达时才开启 mirror。
+#
 name: Deploy to VPS
 
 on:
@@ -13,9 +16,10 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+# develop：新推送取消未完成的旧部署，避免长时间排队；main：不打断，避免生产部署半截。
 concurrency:
   group: deploy-vps-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref == 'refs/heads/develop' }}
 
 # -----------------------------------------------------------------------------
 # 共享：解析分支环境（供多 job 使用 outputs）
@@ -209,6 +213,7 @@ jobs:
 
       - name: Mirror images to domestic registry (optional)
         if: ${{ vars.DEPLOY_PULL_FROM_MIRROR == 'true' }}
+        # backend / frontend 并行同步，缩短 wall-clock（仍受跨境带宽限制）。
         # 不设本步 timeout-minutes：否则会出现「内层 timeout 设为 120，但 GHA 在 95 分钟就杀步」。
         # 实际限时由内层 `timeout ${TM}m` + MIRROR_STEP_TIMEOUT_MIN 控制；上限见本 job 的 timeout-minutes。
         env:
@@ -231,12 +236,19 @@ jobs:
           TM="${MIRROR_TIMEOUT_MIN:-90}"
           set +e
           timeout "${TM}m" env GHCR_PREFIX="$GHCR_PREFIX" MIRROR_PREFIX="$MIRROR_PREFIX" SHA="$SHA" bash -eo pipefail -c '
-            for svc in backend frontend; do
+            mirror_one() {
+              local svc=$1
               echo "Mirroring ${svc}..."
               docker pull "${GHCR_PREFIX}/${svc}:${SHA}"
               docker tag "${GHCR_PREFIX}/${svc}:${SHA}" "${MIRROR_PREFIX}/${svc}:${SHA}"
               docker push "${MIRROR_PREFIX}/${svc}:${SHA}"
-            done
+            }
+            fail=0
+            mirror_one backend & pid_be=$!
+            mirror_one frontend & pid_fe=$!
+            wait "$pid_be" || fail=1
+            wait "$pid_fe" || fail=1
+            exit "$fail"
           '
           rc=$?
           set -e
