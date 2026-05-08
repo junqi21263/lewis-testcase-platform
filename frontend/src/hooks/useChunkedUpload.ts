@@ -9,6 +9,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { filesApi, CHUNK_THRESHOLD, CHUNK_SIZE } from '@/api/files'
 import type { UploadedFile } from '@/types'
+import { safeRandomUUID } from '@/utils/uuid'
 
 export type UploadStatus = 'idle' | 'uploading' | 'merging' | 'done' | 'error' | 'cancelled'
 
@@ -68,7 +69,7 @@ export function useChunkedUpload() {
   /** 分片上传大文件 */
   const uploadLarge = useCallback(async (file: File, signal: AbortSignal): Promise<UploadedFile> => {
     const chunkTotal = Math.ceil(file.size / CHUNK_SIZE)
-    const fileId = crypto.randomUUID()
+    const fileId = safeRandomUUID()
     let uploadedBytes = 0
 
     for (let i = 0; i < chunkTotal; i++) {
