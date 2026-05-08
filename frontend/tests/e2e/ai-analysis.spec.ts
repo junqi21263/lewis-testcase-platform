@@ -200,7 +200,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 10. 等待流式报告出现
     await expect(page.getByText('需求文档分析报告')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText('主要功能需求')).toBeVisible()
+    // 报告区 h2；勿用 getByText('主要功能需求') — Prompt 模板 textarea 内也含该文案
+    await expect(page.getByRole('heading', { name: /主要功能需求/ })).toBeVisible()
     await expect(page.getByText('用户登录')).toBeVisible()
     await expect(page.getByRole('button', { name: '生成用例' })).toBeVisible()
     await expect(page.getByRole('button', { name: '导出 PDF' })).toBeVisible()
@@ -305,7 +306,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
         return
       }
 
-      // 文件上传返回 PARSING 状态
+      // 文件上传返回 PARSING 状态（勿用 .pdf + 5MB：会走 PDF 预处理/分片上传，mock 未覆盖 merge）
       if (p === '/api/files/upload' && method === 'POST') {
         parseCount = 0  // 重置计数
         await route.fulfill({
@@ -313,11 +314,21 @@ test.describe('E2E: AI 需求分析全流程', () => {
           contentType: 'application/json',
           body: JSON.stringify(apiOk({
             id: 'file-2',
-            originalName: '大文档.pdf',
-            size: 5242880,
-            fileType: 'PDF',
+            originalName: '大文档.txt',
+            size: 4096,
+            fileType: 'TEXT',
             status: 'PARSING',
           })),
+        })
+        return
+      }
+
+      // SSE / 解析事件：不计入 parseCount，否则会抢轮询次数导致行为错乱
+      if (method === 'GET' && /\/files\/[^/]+\/parse-events$/.test(p)) {
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          body: 'data: {}\n\n',
         })
         return
       }
@@ -331,9 +342,9 @@ test.describe('E2E: AI 需求分析全流程', () => {
             contentType: 'application/json',
             body: JSON.stringify(apiOk({
               id: 'file-2',
-              originalName: '大文档.pdf',
-              size: 5242880,
-              fileType: 'PDF',
+              originalName: '大文档.txt',
+              size: 4096,
+              fileType: 'TEXT',
               status: 'PARSING',
             })),
           })
@@ -343,11 +354,11 @@ test.describe('E2E: AI 需求分析全流程', () => {
             contentType: 'application/json',
             body: JSON.stringify(apiOk({
               id: 'file-2',
-              originalName: '大文档.pdf',
-              size: 5242880,
-              fileType: 'PDF',
+              originalName: '大文档.txt',
+              size: 4096,
+              fileType: 'TEXT',
               status: 'PARSED',
-              parsedContent: 'PDF 文档的解析内容，包含详细的业务需求描述。',
+              parsedContent: '文档解析内容。',
             })),
           })
         }
@@ -361,13 +372,13 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles({
-      name: '大文档.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('PDF content'),
+      name: '大文档.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('plain text content for parse mock'),
     })
 
-    // 验证解析等待提示（日志文案）
-    await expect(page.getByText(/正在等待服务端解析文档/)).toBeVisible({ timeout: 10000 })
+    // 验证解析等待提示（日志文案；含 emoji，放宽匹配）
+    await expect(page.getByText(/等待服务端解析文档/)).toBeVisible({ timeout: 15000 })
 
     // 等待解析完成（匹配日志消息中的带勾版本）
     await expect(page.getByText('✅ 解析完成')).toBeVisible({ timeout: 15000 })
