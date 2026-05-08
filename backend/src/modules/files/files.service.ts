@@ -89,7 +89,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   } | null> {
     // 只认领 PENDING；避免并发争抢，用 updateMany 做原子认领
     const next = await this.prisma.uploadedFile.findFirst({
-      where: { status: FileStatus.PENDING },
+      where: { status: FileStatus.PENDING, path: { not: null } },
       orderBy: { createdAt: 'asc' },
       select: { id: true, path: true, fileType: true, mimeType: true },
     })
@@ -108,7 +108,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
     if (updated.count !== 1) return null
-    return next
+    if (!next.path) return null
+    return { ...next, path: next.path }
   }
 
   /** 保存上传记录并触发异步解析 */
@@ -168,6 +169,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     })
     const parseRetryHint = hintRow?.parseRetryHint ?? null
 
+    try {
     const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
       try {
         await this.prisma.uploadedFile.update({
@@ -287,6 +289,27 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         throw e
       }
       this.logger.error(`文件解析失败: ${fileId}`, err as Error)
+    }
+    } finally {
+      await this.cleanupChunkDirAfterParse(fileId)
+    }
+  }
+
+  /** 解析结束（成功/失败）后删除本分片上传临时目录，释放轻量云磁盘 */
+  private async cleanupChunkDirAfterParse(fileId: string): Promise<void> {
+    try {
+      const row = await this.prisma.uploadedFile.findUnique({
+        where: { id: fileId },
+        select: { uploaderId: true },
+      })
+      if (!row) return
+      const chunkDir = this.chunkSessionDir(row.uploaderId, fileId)
+      if (fs.existsSync(chunkDir)) {
+        fs.rmSync(chunkDir, { recursive: true, force: true })
+        this.logger.debug(`解析后已清理分片目录: ${chunkDir}`)
+      }
+    } catch (e) {
+      this.logger.warn(`解析后清理分片目录失败 fileId=${fileId}`, e as Error)
     }
   }
 
@@ -822,7 +845,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
 
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
+    if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path)
 
     await this.prisma.uploadedFile.delete({ where: { id } })
   }
@@ -865,7 +888,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   async retryParse(id: string, userId: string, opts?: { textOnly?: boolean }) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
-    if (!fs.existsSync(file.path)) throw new BadRequestException('本地文件已不存在，请重新上传')
+    if (!file.path || !fs.existsSync(file.path)) {
+      throw new BadRequestException('源文件已按存储策略删除或不存在，无法重新解析，请重新上传')
+    }
 
     await this.prisma.uploadedFile.update({
       where: { id },

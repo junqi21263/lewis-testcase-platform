@@ -101,8 +101,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/start.sh ./start.sh
 COPY --from=builder /app/migrate-release.sh ./migrate-release.sh
 COPY --from=builder /app/prisma-resolve-stuck-migrations.sh ./prisma-resolve-stuck-migrations.sh
+COPY --from=builder /app/scripts/lightweight-cloud-cleanup.sh ./scripts/lightweight-cloud-cleanup.sh
 
-RUN chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh
+RUN chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh scripts/lightweight-cloud-cleanup.sh
 
 RUN mkdir -p uploads
 

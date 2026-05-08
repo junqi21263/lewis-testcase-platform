@@ -231,7 +231,10 @@ model UploadedFile {
   id                     String     @id @default(cuid())
   name                   String     @db.VarChar(255)
   originalName           String     @db.VarChar(255)
-  path                   String     @db.VarChar(500)
+  /// 本地绝对路径；按策略清理 PDF 源文件后为 null，parsedContent 仍保留
+  path                   String?    @db.VarChar(500)
+  /// 本地文件已按轻量云策略删除的时间
+  storagePurgedAt        DateTime?
   size                   Int
   mimeType               String     @db.VarChar(100)
   fileType               FileType
