@@ -4,7 +4,7 @@
 #   Secrets (required): SSH_HOST, SSH_USER, SSH_KEY
 #   Variables (optional): DEPLOY_PATH, DEV_DEPLOY_PATH, DEPLOY_REGION=cn（大陆 VPS 拉 Docker Hub 加速）,
 #     DEPLOY_PULL_FROM_MIRROR, CONTAINER_MIRROR_IMAGE_PREFIX, APK_MIRROR, DEPLOY_BUILD_ON_SERVER,
-#     MIRROR_STEP_TIMEOUT_MIN（可选，国内镜像同步步骤超时分钟数，默认 90）
+#     MIRROR_STEP_TIMEOUT_MIN（可选，国内镜像同步「内层」超时分钟数，默认 90；勿超过 job 的 timeout-minutes）
 #
 name: Deploy to VPS
 
@@ -209,8 +209,8 @@ jobs:
 
       - name: Mirror images to domestic registry (optional)
         if: ${{ vars.DEPLOY_PULL_FROM_MIRROR == 'true' }}
-        # 与 job timeout 衔接；实际 pull/push 时长由下方 timeout 命令与 MIRROR_STEP_TIMEOUT_MIN 控制
-        timeout-minutes: 95
+        # 不设本步 timeout-minutes：否则会出现「内层 timeout 设为 120，但 GHA 在 95 分钟就杀步」。
+        # 实际限时由内层 `timeout ${TM}m` + MIRROR_STEP_TIMEOUT_MIN 控制；上限见本 job 的 timeout-minutes。
         env:
           GHCR_PREFIX: ghcr.io/${{ needs.setup.outputs.ghcr_repo }}
           MIRROR_PREFIX: ${{ vars.CONTAINER_MIRROR_IMAGE_PREFIX }}
