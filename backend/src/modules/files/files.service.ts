@@ -133,22 +133,61 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   /** 保存上传记录并触发异步解析 */
   async saveUploadedFile(file: Express.Multer.File, uploaderId: string) {
     const fileType = this.detectFileType(file.mimetype, file.originalname)
+    const safeName =
+      (file.filename && String(file.filename).trim()) ||
+      `${uuid()}${path.extname(file.originalname) || ''}`
 
-    // 以落盘文件为准（部分平台/代理可能导致 file.size 与实际不一致）
+    // COS：优先内存 Buffer 直传对象存储，不写 UPLOAD_DIR
+    if (this.cosStorage.isConfigured() && file.buffer && file.buffer.length > 0) {
+      try {
+        const uri = await this.cosStorage.uploadBuffer(file.buffer, file.originalname)
+        const created = await this.prisma.uploadedFile.create({
+          data: {
+            name: safeName,
+            originalName: file.originalname,
+            path: uri,
+            size: file.buffer.length,
+            mimeType: file.mimetype,
+            fileType,
+            status: FileStatus.PENDING,
+            parseStage: 'PENDING',
+            uploaderId,
+          },
+        })
+        return this.getFileById(created.id)
+      } catch (e) {
+        this.logger.error(`COS 直传失败: ${(e as Error).message}`, e as Error)
+        throw new BadRequestException(`文件上传到对象存储失败：${(e as Error).message}`)
+      }
+    }
+
+    // 未启用 COS：磁盘路径，或将内存 buffer 写入 UPLOAD_DIR
     let diskSize = file.size
+    let resolvedPath = file.path
+    if (!resolvedPath && file.buffer?.length) {
+      resolvedPath = path.join(this.uploadDir, `${uuid()}${path.extname(file.originalname) || ''}`)
+      try {
+        fs.writeFileSync(resolvedPath, file.buffer)
+        diskSize = file.buffer.length
+      } catch (e) {
+        this.logger.error(`写入本地上传目录失败: ${resolvedPath}`, e as Error)
+        throw new BadRequestException('无法保存上传文件到服务器磁盘')
+      }
+    }
+
     try {
-      if (file.path && fs.existsSync(file.path)) {
-        diskSize = fs.statSync(file.path).size
+      if (resolvedPath && fs.existsSync(resolvedPath)) {
+        diskSize = fs.statSync(resolvedPath).size
       }
     } catch (e) {
-      this.logger.warn(`读取上传文件大小失败: ${file.path}`, e as Error)
+      this.logger.warn(`读取上传文件大小失败: ${resolvedPath}`, e as Error)
     }
 
     const record = await this.prisma.uploadedFile.create({
       data: {
-        name: file.filename,
+        name: safeName,
         originalName: file.originalname,
-        path: file.path,
+        path: resolvedPath,
         size: diskSize,
         mimeType: file.mimetype,
         fileType,
@@ -158,35 +197,17 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
 
-    if (!file.path || !fs.existsSync(file.path) || diskSize < 1) {
-      const msg = !file.path
+    if (!resolvedPath || !fs.existsSync(resolvedPath) || diskSize < 1) {
+      const msg = !resolvedPath
         ? '【解析失败】上传文件路径为空（服务端未落盘）。请重试上传。'
-        : !fs.existsSync(file.path)
-          ? `【解析失败】上传文件未落盘或已丢失：${file.path}。请重试上传。`
-          : `【解析失败】上传文件为空（0 bytes）：${file.path}。请重试上传。`
+        : !fs.existsSync(resolvedPath)
+          ? `【解析失败】上传文件未落盘或已丢失：${resolvedPath}。请重试上传。`
+          : `【解析失败】上传文件为空（0 bytes）：${resolvedPath}。请重试上传。`
       await this.prisma.uploadedFile.update({
         where: { id: record.id },
         data: { status: FileStatus.FAILED, parseError: msg, parseStage: 'UPLOAD_CHECK' },
       })
       return this.getFileById(record.id)
-    }
-
-    if (this.cosStorage.isConfigured() && file.path && fs.existsSync(file.path)) {
-      try {
-        const uri = await this.cosStorage.uploadLocalFile(file.path, file.originalname)
-        await this.prisma.uploadedFile.update({
-          where: { id: record.id },
-          data: { path: uri },
-        })
-        try {
-          fs.unlinkSync(file.path)
-        } catch (e) {
-          this.logger.warn(`COS 上传成功但删除本地临时文件失败: ${file.path}`, e as Error)
-        }
-        return this.getFileById(record.id)
-      } catch (e) {
-        this.logger.warn(`COS 上传失败，已保留本地文件: ${(e as Error).message}`)
-      }
     }
 
     return this.getFileById(record.id)
@@ -1151,14 +1172,27 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     const ext = path.extname(dto.originalName) || '.bin'
     const filename = `${uuid()}${ext}`
-    const destPath = path.join(this.uploadDir, filename)
-    fs.writeFileSync(destPath, final)
 
     try {
       fs.rmSync(dir, { recursive: true, force: true })
     } catch (e) {
       this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
     }
+
+    // COS：合并结果直接内存上传，不向 UPLOAD_DIR 写入整文件
+    if (this.cosStorage.isConfigured()) {
+      const multerLike = {
+        buffer: final,
+        filename,
+        originalname: dto.originalName,
+        mimetype: dto.mimeType,
+        size: final.length,
+      } as Express.Multer.File
+      return this.saveUploadedFile(multerLike, uploaderId)
+    }
+
+    const destPath = path.join(this.uploadDir, filename)
+    fs.writeFileSync(destPath, final)
 
     const multerLike = {
       path: destPath,

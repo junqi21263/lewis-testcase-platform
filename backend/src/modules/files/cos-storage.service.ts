@@ -4,7 +4,6 @@ import * as fs from 'fs'
 import { createWriteStream } from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { pipeline } from 'stream/promises'
 import { v4 as uuid } from 'uuid'
 import COS from 'cos-nodejs-sdk-v5'
 
@@ -47,6 +46,44 @@ export class CosStorageService {
 
   buildUri(region: string, bucket: string, key: string): string {
     return `cos://${region}/${bucket}/${key}`
+  }
+
+  /** 解析前临时文件目录（默认 os.tmpdir()，Linux 多为 /tmp）；可设 COS_PARSE_TEMP_DIR */
+  private parseTempDir(): string {
+    const d = this.config.get<string>('COS_PARSE_TEMP_DIR')?.trim()
+    if (d) {
+      if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+      return d
+    }
+    return os.tmpdir()
+  }
+
+  /** 内存直传 COS（不落本地 uploads） */
+  async uploadBuffer(buffer: Buffer, originalName: string): Promise<string> {
+    if (!this.cos || !this.isConfigured()) {
+      throw new Error('COS 未配置完整')
+    }
+    const region = this.config.get<string>('COS_REGION')!.trim()
+    const bucket = this.config.get<string>('COS_BUCKET')!.trim()
+    let prefix = (this.config.get<string>('COS_PREFIX') ?? '').trim()
+    if (prefix && !prefix.endsWith('/')) prefix += '/'
+    const ext = path.extname(originalName) || ''
+    const key = `${prefix}${uuid()}${ext}`
+
+    await new Promise<void>((resolve, reject) => {
+      this.cos!.putObject(
+        {
+          Bucket: bucket,
+          Region: region,
+          Key: key,
+          Body: buffer,
+          ContentLength: buffer.length,
+        },
+        (err) => (err ? reject(err) : resolve()),
+      )
+    })
+
+    return this.buildUri(region, bucket, key)
   }
 
   /**
@@ -94,36 +131,27 @@ export class CosStorageService {
     })
   }
 
-  /** 下载到临时文件，调用方须在使用后删除 */
+  /** 流式下载到临时文件（默认在系统临时目录 / COS_PARSE_TEMP_DIR），调用方须在使用后删除 */
   async downloadToTempFile(storedPath: string): Promise<string> {
     if (!this.cos) throw new Error('COS 未配置')
     const parsed = this.parseUri(storedPath)
     if (!parsed) throw new Error('无效的 COS 路径')
     const ext = path.extname(parsed.key) || '.bin'
-    const tmp = path.join(os.tmpdir(), `cos-dl-${uuid()}${ext}`)
+    const tmp = path.join(this.parseTempDir(), `cos-dl-${uuid()}${ext}`)
+    const ws = createWriteStream(tmp)
 
     await new Promise<void>((resolve, reject) => {
+      ws.once('error', reject)
+      ws.once('finish', resolve)
       this.cos!.getObject(
         {
           Bucket: parsed.bucket,
           Region: parsed.region,
           Key: parsed.key,
+          Output: ws,
         },
-        async (err, data) => {
-          if (err) return reject(err)
-          const body = data?.Body
-          try {
-            if (Buffer.isBuffer(body)) {
-              fs.writeFileSync(tmp, body)
-            } else if (body && typeof (body as NodeJS.ReadableStream).pipe === 'function') {
-              await pipeline(body as NodeJS.ReadableStream, createWriteStream(tmp))
-            } else {
-              throw new Error('COS 返回体无法解析')
-            }
-            resolve()
-          } catch (e) {
-            reject(e)
-          }
+        (err) => {
+          if (err) reject(err)
         },
       )
     })
