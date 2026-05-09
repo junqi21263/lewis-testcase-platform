@@ -8,25 +8,36 @@
 
 ## 2. 迁入代码
 
+**重要：** CNB **不提供 SSH 克隆/推送**（官方说明见 [Git 地址与认证](https://docs.cnb.cool/zh/guide/git-access.html)）。远程须用 **HTTPS**，用户名固定 **`cnb`**，密码为你在 CNB 创建的**访问令牌**（个人设置里生成；与仓库「部署令牌」用途不同，但同属令牌体系）。
+
 任选其一：
 
 - **官方迁移镜像**：例如使用 `cnbcool/code-import`，配置 GitHub Token、CNB Token、根组织等，将 GitHub 侧仓库批量导入（参见 CNB 文档与社区「迁移工具」文章）。
-- **裸克隆推送**：
+- **裸克隆推送**（HTTPS 示例）：
 
 ```bash
 git clone --mirror git@github.com:OWNER/REPO.git
 cd REPO.git
-git remote add cnb git@cnb.cool:GROUP/REPO.git   # 按你在 CNB 上的 SSH 地址修改
-git push cnb --mirror
+git remote add cnb https://cnb.cool/GROUP/REPO.git
+git -c http.extraHeader="AUTHORIZATION: Basic $(echo -n 'cnb:YOUR_CNB_TOKEN' | base64)" push cnb --mirror
 ```
 
-之后在常用工作副本里增加远程：`git remote add cnb …`，日常推送到 `cnb` 的 `develop` / `main`。
+或在交互环境下：`git push cnb --mirror`，提示用户名填 **`cnb`**，密码填 **令牌**。
+
+之后在常用工作副本里：
+
+```bash
+git remote add cnb https://cnb.cool/lewis-test/lewis-testcase-platform.git
+git push -u cnb develop
+```
+
+若曾误加 `git@cnb.cool:...`，请改为：`git remote set-url cnb https://cnb.cool/lewis-test/lewis-testcase-platform.git`。
 
 ## 3. 开通流水线并配置密钥/变量
 
 仓库根目录已有 `.cnb.yml`，推送 `develop`/`main` 会执行 `scripts/ci/cnb-deploy-vps.sh`。
 
-在 CNB 仓库设置中为流水线注入密钥与变量（名称尽量与 GitHub **Secrets / Variables** 一致，便于对照迁移）：
+在 CNB 网页：**仓库 → 设置 → 左侧「云原生构建」**（或同类「流水线密钥 / 变量」入口）为构建注入密钥与变量。名称尽量与 GitHub **Secrets / Variables** 一致，便于对照迁移：
 
 | 用途 | 建议名称 |
 | --- | --- |
