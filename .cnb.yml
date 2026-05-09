@@ -4,14 +4,18 @@
 # 推送 main / develop 时触发；脚本路径 scripts/ci/cnb-deploy-vps.sh（顺序构建前端、
 # 推送 GHCR 镜像、可选同步国内容器镜像仓、rsync、远端 docker compose）。
 #
-# 仍使用 ghcr.io/<仓库>/backend|frontend:<sha>：需在 GitHub 创建 PAT（write:packages），
-# 并填入下方密钥；若 CNB 仓库 slug 与 GitHub 不一致，请设置变量 GHCR_REPO_LOWER=owner/repo（小写）。
+# 镜像仓库（二选一，脚本自动判断）：
+#   A) 不配 GHCR：在 CNB 云原生构建内由平台注入 CNB_TOKEN + CNB_DOCKER_REGISTRY，推送到
+#      docker.cnb.cool/<仓库路径>/backend|frontend:<sha>；VPS 拉取需 docker login，默认传流水线
+#      CNB_TOKEN，可选密钥 CNB_REGISTRY_PULL_TOKEN（长期只读令牌）。
+#   B) 配 GHCR：密钥 GHCR_PUSH_TOKEN + GHCR_LOGIN_USER（GitHub PAT write:packages）；可选变量
+#      GHCR_REPO_LOWER=owner/repo（小写）。VPS 拉私有 GHCR 时用 GHCR_PULL_TOKEN。
 #
-# 建议在 CNB「密钥仓库」或仓库密钥中配置（与 GitHub Actions 对齐便于迁移）：
+# 建议在 CNB「密钥仓库」或仓库密钥中配置：
 #   — SSH_HOST, SSH_USER, SSH_KEY [, SSH_PORT]
-#   — GHCR_PUSH_TOKEN（GitHub PAT，推送镜像）, GHCR_LOGIN_USER（GitHub 用户名）
-#   — [, GHCR_PULL_TOKEN]（VPS 拉私有 GHCR 时使用）
-#   — [, CONTAINER_MIRROR_REGISTRY, USERNAME, PASSWORD]（DEPLOY_PULL_FROM_MIRROR=true 时）
+#   — [, GHCR_PUSH_TOKEN, GHCR_LOGIN_USER] [, GHCR_PULL_TOKEN]
+#   — [, CNB_REGISTRY_PULL_TOKEN]（VPS 拉 CNB 制品库时可选，优于把流水线 CNB_TOKEN 传到机器）
+#   — [, CONTAINER_MIRROR_*]（DEPLOY_PULL_FROM_MIRROR=true 时）
 #
 # 仓库变量（可选）：
 #   — DEPLOY_PATH, DEV_DEPLOY_PATH — 与 GitHub Actions Variables 相同

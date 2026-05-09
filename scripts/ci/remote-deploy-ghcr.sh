@@ -7,7 +7,10 @@ set -euo pipefail
 : "${DEPLOY_PATH:?}"
 : "${ENV_FILE:?}"
 : "${DEPLOY_SHA:?}"
-: "${GHCR_REPO_LOWER:?}"
+# 使用 PRESET_* 或国内镜像仓时不需要 GHCR_REPO_LOWER
+if [ -z "${PRESET_BACKEND_IMAGE:-}" ] && [ -z "${PRESET_FRONTEND_IMAGE:-}" ] && [ "${DEPLOY_PULL_FROM_MIRROR:-false}" != "true" ]; then
+  : "${GHCR_REPO_LOWER:?}"
+fi
 
 cd "$DEPLOY_PATH"
 echo "🚀 Deploying to ${DEPLOY_ENV} environment at $DEPLOY_PATH"
@@ -72,7 +75,14 @@ export STACK_PREFIX
 export COMPOSE_ENV_FILE="$ENV_FILE"
 
 SHA="$DEPLOY_SHA"
-if [ "${DEPLOY_PULL_FROM_MIRROR:-false}" = "true" ]; then
+if [ -n "${PRESET_BACKEND_IMAGE:-}" ] && [ -n "${PRESET_FRONTEND_IMAGE:-}" ]; then
+  echo "📦 Preset images (e.g. CNB docker.cnb.cool); VPS pull from registry."
+  export BACKEND_IMAGE="$PRESET_BACKEND_IMAGE"
+  export FRONTEND_IMAGE="$PRESET_FRONTEND_IMAGE"
+  if [ -n "${PRESET_REGISTRY_LOGIN_PASSWORD:-}" ] && [ -n "${PRESET_REGISTRY_LOGIN_URL:-}" ]; then
+    echo "$PRESET_REGISTRY_LOGIN_PASSWORD" | sudo docker login "$PRESET_REGISTRY_LOGIN_URL" -u "${PRESET_REGISTRY_LOGIN_USER:-cnb}" --password-stdin
+  fi
+elif [ "${DEPLOY_PULL_FROM_MIRROR:-false}" = "true" ]; then
   echo "📦 Domestic mirror pull (no ghcr.io on VPS)."
   : "${CONTAINER_MIRROR_IMAGE_PREFIX:?}"
   : "${CONTAINER_MIRROR_REGISTRY:?}"
