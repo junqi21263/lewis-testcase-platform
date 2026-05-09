@@ -1,0 +1,20 @@
+develop:
+  push:
+    - name: deploy-vps
+      docker:
+        image: node:20-bookworm
+      services:
+        - docker
+      stages:
+        - name: deploy
+          script: bash scripts/ci/cnb-deploy-vps.sh
+main:
+  push:
+    - name: deploy-vps
+      docker:
+        image: node:20-bookworm
+      services:
+        - docker
+      stages:
+        - name: deploy
+          script: bash scripts/ci/cnb-deploy-vps.sh
