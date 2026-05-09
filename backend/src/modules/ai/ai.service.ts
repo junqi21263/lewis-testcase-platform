@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -763,17 +764,59 @@ export class AiService {
    * 完成后仅存一条轻量 GenerationRecord（generationSource = FILE_PARSE / MANUAL_INPUT）。
    */
   async analyzeStream(dto: CreateAnalysisDto, userId: string, res: Response) {
-    this.logger.log(`analyzeStream: sourceType=${dto.sourceType}, fileId=${dto.fileId}, modelConfigId=${dto.modelConfigId}`)
+    const extra = dto.additionalFileIds ?? []
+    const rawIds = [dto.fileId, ...extra].filter((x): x is string => typeof x === 'string' && x.length > 0)
+    const orderedIds = [...new Set(rawIds)]
+    this.logger.log(
+      `analyzeStream: sourceType=${dto.sourceType}, fileIds=${orderedIds.join(',') || '(none)'}, modelConfigId=${dto.modelConfigId}`,
+    )
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    // 获取文件内容
+    // 获取文件内容（单文件或多图拼接）
     let fileContent: string | undefined
-    if (dto.sourceType === 'file' && dto.fileId) {
-      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成')
-      fileContent = file.parsedContent
+    if (dto.sourceType === 'file') {
+      if (!dto.fileId || orderedIds.length === 0) {
+        throw new BadRequestException('请先上传并解析文件后再分析')
+      }
+      if (orderedIds.length > 5) {
+        throw new BadRequestException('一次最多分析 5 个文件')
+      }
+
+      const rows = await this.prisma.uploadedFile.findMany({
+        where: { id: { in: orderedIds }, uploaderId: userId },
+      })
+      if (rows.length !== orderedIds.length) {
+        throw new ForbiddenException('部分文件不存在或无权访问')
+      }
+
+      const byId = new Map(rows.map((r) => [r.id, r]))
+      const ordered = orderedIds.map((id) => byId.get(id)!)
+
+      if (ordered.length > 1) {
+        for (const f of ordered) {
+          if (!f.mimeType.startsWith('image/')) {
+            throw new BadRequestException('多文件分析仅支持全部为图片')
+          }
+        }
+      }
+
+      for (const f of ordered) {
+        if (!f.parsedContent?.trim()) {
+          throw new BadRequestException(`文件尚未解析完成：${f.originalName}`)
+        }
+      }
+
+      if (ordered.length === 1) {
+        fileContent = ordered[0].parsedContent ?? undefined
+      } else {
+        fileContent = ordered
+          .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
+          .join('\n\n---\n\n')
+      }
     }
+
+    const primaryFileId = dto.fileId
 
     // 构建轻量记录
     const record = await this.prisma.generationRecord.create({
@@ -783,11 +826,11 @@ export class AiService {
         sourceType: dto.sourceType,
         prompt: dto.customPrompt || '',
         demandContent: fileContent || dto.text || '',
-        generationSource: dto.fileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT,
+        generationSource: primaryFileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT,
         modelId,
         modelName,
         creatorId: userId,
-        fileId: dto.fileId,
+        fileId: primaryFileId,
       },
     })
 
@@ -818,7 +861,11 @@ export class AiService {
       const stream = await client.chat.completions.create({
         model: modelId,
         messages: [
-          { role: 'system', content: '你是需求分析专家，请根据用户提供的需求文档或描述，输出结构化的需求分析报告。用 Markdown 格式输出，层次清晰、内容完整。' },
+          {
+            role: 'system',
+            content:
+              '你是资深系统架构师与高级产品经理，擅长需求分析与结构化输出。请严格按用户给出的指令与文档内容，使用 Markdown 排版，层次清晰。',
+          },
           { role: 'user', content: userContent },
         ],
         temperature: 0.7,

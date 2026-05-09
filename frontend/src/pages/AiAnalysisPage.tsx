@@ -32,6 +32,7 @@ import {
   WifiOff,
   FileDown,
   Sparkles,
+  History,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -41,9 +42,12 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { filesApi } from '@/api/files'
 import { subscribeFileParseEvents } from '@/api/fileParseSse'
 import { aiApi } from '@/api/ai'
-import type { AIModel, UploadedFile } from '@/types'
+import type { AIModel, UploadedFile, GenerationRecord } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
-import { normalizeUploadedFilename } from '@/utils/filenameDisplay'
+import { displayUploadedFilename, normalizeUploadedFilename } from '@/utils/filenameDisplay'
+import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
+import { recordsApi } from '@/api/records'
+import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromptDefault'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
@@ -89,6 +93,7 @@ type Action =
   | { type: 'GO_IDLE' }
   | { type: 'ERROR'; log: LogEntry }
   | { type: 'STOP_TO_IDLE' }
+  | { type: 'LOAD_SAVED_REPORT'; text: string }
 
 const initialPageState: PageState = {
   status: 'idle',
@@ -144,31 +149,20 @@ function pageReducer(state: PageState, action: Action): PageState {
       return { ...state, logs: [...state.logs, action.log], status: 'error' }
     case 'STOP_TO_IDLE':
       return { ...state, status: 'idle' }
+    case 'LOAD_SAVED_REPORT':
+      return {
+        ...state,
+        status: 'review',
+        reportText: action.text,
+        reviewText: '',
+        logs: [],
+      }
     default:
       return state
   }
 }
 
-const ANALYSIS_PROMPT = `请对以下需求文档进行详细的结构化分析，输出包含以下部分：
-
-## 1. 主要功能需求
-列出所有核心功能点，每条用加粗标注关键术语。
-
-## 2. 非功能需求
-包括性能、安全、可用性、兼容性等方面的要求。
-
-## 3. 接口需求
-列出需要的 API 接口，包含方法、路径和简要说明。
-
-## 4. 数据模型
-列出主要数据实体及其关键字段。
-
-## 5. 风险与建议
-标注高/中/低风险项，并给出可行建议。
-
-请用 Markdown 格式输出，层次清晰、内容完整。`
-
-const PROMPT_TEMPLATE_STORAGE_KEY = 'ai-analysis-prompt-template-v1'
+const PROMPT_TEMPLATE_STORAGE_KEY = 'ai-analysis-prompt-template-v2'
 
 function loadStoredPromptTemplate(): string {
   try {
@@ -191,6 +185,14 @@ function nowTime(): string {
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms))
+}
+
+/** 多图批量上传：允许的扩展名（与后端图片解析一致） */
+const IMAGE_BATCH_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
+
+function isImageBatchFile(file: File): boolean {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_BATCH_EXT.has(ext)
 }
 
 function formatRelative(iso: string): string {
@@ -387,6 +389,9 @@ function AiAnalysisPageInner() {
   const setPendingGenerateHandoff = useGenerateStore((s) => s.setPendingGenerateHandoff)
   const [state, dispatch] = useReducer(pageReducer, initialPageState)
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
+  /** 与 uploadedFile 同属一批多图分析时的其余图片（最多再 4 张，合计 ≤5） */
+  const [additionalAnalysisFiles, setAdditionalAnalysisFiles] = useState<UploadedFile[]>([])
+  const [analysisRecords, setAnalysisRecords] = useState<GenerationRecord[]>([])
   const [requirementText, setRequirementText] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
   const [exportingPdf, setExportingPdf] = useState(false)
@@ -454,6 +459,24 @@ function AiAnalysisPageInner() {
   useEffect(() => {
     void loadFileHistory()
   }, [loadFileHistory])
+
+  const loadAnalysisRecords = useCallback(async () => {
+    try {
+      const res = await recordsApi.getRecords({
+        page: 1,
+        pageSize: 15,
+        keyword: '需求分析',
+        sortOrder: 'desc',
+      })
+      setAnalysisRecords(res.list)
+    } catch {
+      setAnalysisRecords([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAnalysisRecords()
+  }, [loadAnalysisRecords])
 
   useEffect(() => {
     const onOff = () => {
@@ -717,6 +740,103 @@ function AiAnalysisPageInner() {
     return () => ac.abort()
   }, [uploadedFile?.id, uploadedFile?.status])
 
+  const applyAnalysisRecord = useCallback(async (id: string) => {
+    try {
+      const r = await recordsApi.getRecordById(id)
+      const text = r.demandContent?.trim() ?? ''
+      if (!text) {
+        toast.error('该记录无可展示内容')
+        return
+      }
+      dispatch({ type: 'LOAD_SAVED_REPORT', text })
+      toast.success('已载入分析结果')
+    } catch {
+      toast.error('加载记录失败')
+    }
+  }, [])
+
+  const handleBatchImageUpload = useCallback(
+    async (files: File[]) => {
+      const arr = Array.from(files).slice(0, 5)
+      if (arr.length < 2) return
+      if (!arr.every(isImageBatchFile)) {
+        toast.error('一次选择多张时仅支持图片（png/jpg/jpeg/webp/gif），最多 5 张')
+        return
+      }
+
+      operationAbortRef.current?.abort()
+      operationAbortRef.current = new AbortController()
+      const signal = operationAbortRef.current.signal
+
+      dispatch({ type: 'START_UPLOAD' })
+      resetUploadProgress()
+      uploadStartedAtRef.current = Date.now()
+      setUploadDisplayName(null)
+      setAdditionalAnalysisFiles([])
+      setUploadedFile(null)
+      setEditedParsedText('')
+      setParsePreviewDirty(false)
+
+      addLog('loading', `📤 批量上传 ${arr.length} 张图片…`)
+
+      try {
+        const results: UploadedFile[] = []
+        for (let i = 0; i < arr.length; i++) {
+          const file = arr[i]
+          addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+          let cur = await uploadFile(file)
+          if (signal.aborted) return
+          stashUploadedOriginalName(cur.id, file.name)
+          if (cur.status !== 'PARSED') {
+            dispatch({ type: 'UPLOAD_DONE' })
+            addLog('loading', `📄 正在解析图片 ${i + 1}/${arr.length}…`)
+            cur = await pollUntilParsed(cur.id, signal)
+          }
+          if (signal.aborted) return
+          results.push(cur)
+          setUploadedFile(results[0])
+          setAdditionalAnalysisFiles(results.slice(1))
+        }
+
+        const joined = results
+          .map((r) => r.parsedContent ?? '')
+          .filter(Boolean)
+          .join('\n\n---\n\n')
+        setEditedParsedText(joined)
+        setParsePreviewDirty(false)
+
+        if (results.every((r) => r.status === 'PARSED')) {
+          addLog('success', `✅ ${results.length} 张图片已就绪，可开始分析`)
+          dispatch({ type: 'GO_IDLE' })
+          void loadFileHistory()
+        } else {
+          const failed = results.find((r) => r.status === 'FAILED')
+          addLog('error', `❌ 图片解析失败：${failed?.parseError ?? '未知错误'}`)
+          dispatch({
+            type: 'ERROR',
+            log: makeLog('error', failed?.parseError ?? '解析失败'),
+          })
+          toast.error('部分图片解析失败')
+        }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') {
+          addLog('loading', '⏹ 已取消上传/解析')
+          dispatch({ type: 'STOP_TO_IDLE' })
+          setUploadedFile(null)
+          setAdditionalAnalysisFiles([])
+          setUploadDisplayName(null)
+          return
+        }
+        addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
+        dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
+        toast.error('批量上传失败')
+      } finally {
+        operationAbortRef.current = null
+      }
+    },
+    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed, resetUploadProgress, uploadFile],
+  )
+
   const handleFileSelect = useCallback(
     async (file: File) => {
       const v = validateFile(file)
@@ -733,6 +853,7 @@ function AiAnalysisPageInner() {
       resetUploadProgress()
       uploadStartedAtRef.current = Date.now()
       setUploadDisplayName(file.name)
+      setAdditionalAnalysisFiles([])
 
       addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
@@ -740,6 +861,7 @@ function AiAnalysisPageInner() {
         const result = await uploadFile(file)
         if (signal.aborted) return
 
+        stashUploadedOriginalName(result.id, file.name)
         setUploadedFile(result)
         setParsePreviewDirty(false)
         setEditedParsedText(result.parsedContent ?? '')
@@ -777,6 +899,7 @@ function AiAnalysisPageInner() {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
           setUploadedFile(null)
+          setAdditionalAnalysisFiles([])
           setUploadDisplayName(null)
           return
         }
@@ -811,25 +934,36 @@ function AiAnalysisPageInner() {
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
-      const file = e.dataTransfer.files[0]
-      if (file) void handleFileSelect(file)
+      const { files } = e.dataTransfer
+      if (!files?.length) return
+      if (files.length > 1) {
+        void handleBatchImageUpload(Array.from(files))
+      } else if (files[0]) {
+        void handleFileSelect(files[0])
+      }
     },
-    [handleFileSelect],
+    [handleFileSelect, handleBatchImageUpload],
   )
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) void handleFileSelect(file)
+      const list = e.target.files
+      if (!list?.length) return
+      if (list.length > 1) {
+        void handleBatchImageUpload(Array.from(list))
+      } else if (list[0]) {
+        void handleFileSelect(list[0])
+      }
       e.target.value = ''
     },
-    [handleFileSelect],
+    [handleFileSelect, handleBatchImageUpload],
   )
 
   const handleRemoveFile = useCallback(() => {
     operationAbortRef.current?.abort()
     abortUpload()
     setUploadedFile(null)
+    setAdditionalAnalysisFiles([])
     setUploadDisplayName(null)
     setEditedParsedText('')
     setParsePreviewDirty(false)
@@ -838,6 +972,7 @@ function AiAnalysisPageInner() {
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
     setUploadDisplayName(null)
+    setAdditionalAnalysisFiles([])
     setUploadedFile(f)
     setEditedParsedText(f.parsedContent ?? '')
     setParsePreviewDirty(false)
@@ -896,8 +1031,12 @@ function AiAnalysisPageInner() {
         addLog('loading', '🔄 正在根据修改意见重新分析...')
       }
 
+      const multiFile = additionalAnalysisFiles.length > 0
       const useText =
-        parsePreviewDirty && editedParsedText.trim().length > 0 && uploadedFile?.status === 'PARSED'
+        !multiFile &&
+        parsePreviewDirty &&
+        editedParsedText.trim().length > 0 &&
+        uploadedFile?.status === 'PARSED'
 
       const payload =
         useText && editedParsedText.trim()
@@ -912,6 +1051,9 @@ function AiAnalysisPageInner() {
             ? {
                 sourceType: 'file' as const,
                 fileId: uploadedFile.id,
+                ...(additionalAnalysisFiles.length > 0
+                  ? { additionalFileIds: additionalAnalysisFiles.map((f) => f.id) }
+                  : {}),
                 customPrompt,
                 stream: true as const,
                 modelConfigId: selectedModelId,
@@ -931,6 +1073,7 @@ function AiAnalysisPageInner() {
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
             () => {
+              void loadAnalysisRecords()
               if (humanReview) {
                 addLog(
                   'success',
@@ -960,12 +1103,14 @@ function AiAnalysisPageInner() {
     },
     [
       uploadedFile,
+      additionalAnalysisFiles,
       parsePreviewDirty,
       editedParsedText,
       humanReview,
       addLog,
       selectedModelId,
       makeLog,
+      loadAnalysisRecords,
     ],
   )
 
@@ -974,12 +1119,22 @@ function AiAnalysisPageInner() {
       toast.error('请先上传并等待文档解析完成')
       return
     }
+    if (additionalAnalysisFiles.some((f) => f.status !== 'PARSED')) {
+      toast.error('请等待全部图片解析完成')
+      return
+    }
     if (!analysisPromptTemplate.trim()) {
       toast.error('分析指令模板不能为空')
       return
     }
     await runAnalyzeStream(buildCustomPrompt(), false)
-  }, [uploadedFile, analysisPromptTemplate, buildCustomPrompt, runAnalyzeStream])
+  }, [
+    uploadedFile,
+    additionalAnalysisFiles,
+    analysisPromptTemplate,
+    buildCustomPrompt,
+    runAnalyzeStream,
+  ])
 
   const handleSubmitRevision = useCallback(async () => {
     if (!state.reviewText.trim()) {
@@ -1018,18 +1173,20 @@ ${state.reportText}
     abortUpload()
     streamAbortRef.current?.abort()
 
-    const fid = uploadedFile?.id
-    if (
-      fid &&
-      uploadedFile &&
-      (uploadedFile.status === 'PENDING' || uploadedFile.status === 'PARSING')
-    ) {
-      try {
-        await filesApi.cancelTask(fid)
-      } catch {
-        /* 可能已结束 */
+    const parsingChain = [uploadedFile, ...additionalAnalysisFiles].filter(
+      (f): f is UploadedFile =>
+        !!f && (f.status === 'PENDING' || f.status === 'PARSING'),
+    )
+    if (parsingChain.length > 0) {
+      for (const f of parsingChain) {
+        try {
+          await filesApi.cancelTask(f.id)
+        } catch {
+          /* 可能已结束 */
+        }
       }
       setUploadedFile(null)
+      setAdditionalAnalysisFiles([])
       setUploadDisplayName(null)
       addLog('loading', '⏹ 已请求取消解析任务')
       dispatch({ type: 'STOP_TO_IDLE' })
@@ -1047,7 +1204,7 @@ ${state.reportText}
 
     dispatch({ type: 'STOP_TO_IDLE' })
     toast('已停止', { icon: '⏹' })
-  }, [abortUpload, uploadedFile, addLog, state.status, loadFileHistory])
+  }, [abortUpload, uploadedFile, additionalAnalysisFiles, addLog, state.status, loadFileHistory])
 
   const handleApprove = useCallback(() => {
     dispatch({ type: 'APPROVE' })
@@ -1064,7 +1221,10 @@ ${state.reportText}
     [handleSubmitRevision],
   )
 
-  const canStartAnalysis = Boolean(uploadedFile && uploadedFile.status === 'PARSED')
+  const allSourcesParsed =
+    uploadedFile?.status === 'PARSED' &&
+    additionalAnalysisFiles.every((f) => f.status === 'PARSED')
+  const canStartAnalysis = Boolean(uploadedFile && allSourcesParsed)
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
@@ -1133,7 +1293,8 @@ ${state.reportText}
               ref={fileInputRef}
               type="file"
               className="hidden"
-              accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.md,.yaml,.yml,.png,.jpg,.jpeg"
+              multiple
+              accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.md,.yaml,.yml,.png,.jpg,.jpeg,.webp,.gif"
               onChange={handleInputChange}
             />
 
@@ -1147,24 +1308,51 @@ ${state.reportText}
                 <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">拖拽文件到此处，或点击选择</p>
                 <p className="text-[11px] text-muted-foreground/60 mt-1">
-                  PDF / Word / Excel / TXT / MD / YAML / 图片 · 单文件 ≤ 100MB · 大于 5MB 自动分片
+                  PDF / Word / Excel / TXT / MD / YAML / 图片 · 单文件 ≤ 100MB · 大于 5MB 自动分片 ·
+                  可多选最多 5 张图片一次性分析
                 </p>
               </div>
             ) : (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                <FileText className="w-5 h-5 text-green-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-green-300 truncate" title={uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)}>
-                    {uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)}
-                  </p>
-                  <p className="text-xs text-green-400/60">
-                    {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
-                    {uploadedFile.status === 'PARSED'
-                      ? '解析完成'
-                      : uploadedFile.status === 'PARSING'
-                        ? `解析中 ${uploadedFile.parseStage ?? ''}`
-                        : uploadedFile.status}
-                  </p>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 space-y-1">
+                  {additionalAnalysisFiles.length === 0 ? (
+                    <>
+                      <p
+                        className="text-sm text-green-300 truncate"
+                        title={
+                          uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)
+                        }
+                      >
+                        {uploadDisplayName ??
+                          normalizeUploadedFilename(uploadedFile.originalName)}
+                      </p>
+                      <p className="text-xs text-green-400/60">
+                        {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
+                        {uploadedFile.status === 'PARSED'
+                          ? '解析完成'
+                          : uploadedFile.status === 'PARSING'
+                            ? `解析中 ${uploadedFile.parseStage ?? ''}`
+                            : uploadedFile.status}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-medium text-green-200">
+                        多图分析 · 共 {1 + additionalAnalysisFiles.length} 张
+                      </p>
+                      <ul className="text-xs text-green-300 space-y-0.5 max-h-28 overflow-y-auto">
+                        {[uploadedFile, ...additionalAnalysisFiles].map((f) => (
+                          <li key={f.id} className="truncate" title={displayUploadedFilename(f.id, f.originalName)}>
+                            · {displayUploadedFilename(f.id, f.originalName)}{' '}
+                            <span className="text-green-400/70">
+                              {f.status === 'PARSED' ? '✓' : f.status}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -1297,9 +1485,14 @@ ${state.reportText}
                         已修改 · 分析时将作为文本输入
                       </Badge>
                     )}
+                    {additionalAnalysisFiles.length > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700 dark:text-amber-300">
+                        多图模式下不可单独编辑合并文本 · 分析使用各图解析结果合并
+                      </Badge>
+                    )}
                   </div>
                   <textarea
-                    readOnly={!previewEditable}
+                    readOnly={!previewEditable || additionalAnalysisFiles.length > 0}
                     className="w-full min-h-[120px] max-h-[240px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
                     value={editedParsedText}
                     onChange={(e) => {
@@ -1309,6 +1502,36 @@ ${state.reportText}
                   />
                 </div>
               )}
+            </div>
+          )}
+
+          {analysisRecords.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <History className="w-4 h-4 text-muted-foreground" />
+                分析记录
+              </label>
+              <p className="text-[11px] text-muted-foreground">
+                以下为已成功落库的「需求分析」生成记录（关键词检索）；点击查看完整报告。
+              </p>
+              <div className="max-h-[160px] overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
+                {analysisRecords.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => void applyAnalysisRecord(r.id)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-muted/30"
+                  >
+                    <span className="flex-1 truncate text-foreground">{r.title}</span>
+                    <span className="text-muted-foreground whitespace-nowrap shrink-0">
+                      {formatRelative(r.createdAt)}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {r.status}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1332,8 +1555,11 @@ ${state.reportText}
                       uploadedFile?.id === f.id ? 'bg-primary/10' : ''
                     }`}
                   >
-                    <span className="flex-1 truncate text-left" title={normalizeUploadedFilename(f.originalName)}>
-                      {normalizeUploadedFilename(f.originalName)}
+                    <span
+                      className="flex-1 truncate text-left"
+                      title={displayUploadedFilename(f.id, f.originalName)}
+                    >
+                      {displayUploadedFilename(f.id, f.originalName)}
                     </span>
                     <span className="text-muted-foreground whitespace-nowrap">
                       {formatRelative(f.createdAt)}

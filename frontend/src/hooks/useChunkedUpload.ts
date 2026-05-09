@@ -27,7 +27,7 @@ export interface UploadProgress {
 
 const MAX_RETRY = 3
 const SUPPORTED_EXTENSIONS = new Set([
-  'pdf', 'doc', 'docx', 'xlsx', 'xls', 'txt', 'md', 'yaml', 'yml', 'png', 'jpg', 'jpeg',
+  'pdf', 'doc', 'docx', 'xlsx', 'xls', 'txt', 'md', 'yaml', 'yml', 'png', 'jpg', 'jpeg', 'webp', 'gif',
 ])
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
@@ -46,7 +46,7 @@ export function useChunkedUpload() {
   const validateFile = useCallback((file: File): string | null => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
-      return `不支持的文件格式 .${ext}，请上传 PDF/DOCX/XLSX/TXT/MD/YAML/PNG/JPG`
+      return `不支持的文件格式 .${ext}，请上传 PDF/DOCX/XLSX/TXT/MD/YAML/PNG/JPG/WebP/GIF`
     }
     if (file.size > MAX_FILE_SIZE) {
       return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 100 MB`

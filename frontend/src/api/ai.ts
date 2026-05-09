@@ -54,7 +54,11 @@ export const aiApi = {
 
   /** 需求分析专用流式（SSE，不走用例管线） */
   analyzeStream: (
-    payload: Omit<GenerateTestCasesPayload, 'sourceType'> & { sourceType: 'file' | 'text' },
+    payload: Omit<GenerateTestCasesPayload, 'sourceType'> & {
+      sourceType: 'file' | 'text'
+      /** 与 fileId 合计 ≤5；多文件时需均为图片 */
+      additionalFileIds?: string[]
+    },
     onChunk: (chunk: string) => void,
     onDone?: (meta?: StreamDoneMeta) => void,
     onError?: (error: Error) => void,

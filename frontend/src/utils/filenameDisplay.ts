@@ -1,3 +1,5 @@
+import { getClientOriginalName } from '@/utils/uploadFilenameMemory'
+
 /**
  * 尝试修复「UTF-8 字节被当作 Latin-1 解码」导致的文件名乱码（常见于部分网关/存储链路）。
  * 若字符串已是正常 BMP 汉字则原样返回。
@@ -16,4 +18,10 @@ export function normalizeUploadedFilename(name: string): string {
   if (!hadWide && recoveredWide) return recovered
   if (recovered !== name && recoveredWide) return recovered
   return name
+}
+
+/** 列表展示：优先使用本机记住的文件名，再做乱码修复 */
+export function displayUploadedFilename(fileId: string, serverOriginalName: string): string {
+  const raw = getClientOriginalName(fileId) ?? serverOriginalName
+  return normalizeUploadedFilename(raw)
 }
