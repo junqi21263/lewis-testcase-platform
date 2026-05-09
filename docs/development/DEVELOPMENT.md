@@ -54,11 +54,13 @@ cp .env.example .env
 
 ### 4. 启动数据库（可选）
 
-使用 Docker Compose 启动 PostgreSQL 和 Redis：
+使用仓库根目录 **`docker-compose.yml`** 启动 PostgreSQL 和 Redis（仅依赖服务，不含前后端容器）：
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+根目录多个 Compose 文件的含义见 [docs/deployment/COMPOSE_FILES.md](../deployment/COMPOSE_FILES.md)。
 
 ### 5. 初始化数据库
 
@@ -200,8 +202,7 @@ pnpm test
 ### 集成测试
 
 ```bash
-# 使用 Docker Compose 启动完整环境
-docker-compose -f docker-compose.full.yml up -d
+docker compose -f docker-compose.full.yml up -d
 ```
 
 ## 部署
@@ -209,15 +210,13 @@ docker-compose -f docker-compose.full.yml up -d
 ### 开发环境部署
 
 ```bash
-# 使用 Docker Compose 开发环境
-docker-compose -f docker-compose.dev.full.yml up -d
+docker compose -f docker-compose.dev.full.yml up -d
 ```
 
 ### 生产环境部署
 
 ```bash
-# 使用 Docker Compose 生产环境
-docker-compose -f docker-compose.full.yml up -d
+docker compose -f docker-compose.full.yml up -d
 
 # 或者使用 Railway（已配置）
 git push origin main
@@ -228,11 +227,8 @@ git push origin main
 ### 数据库连接问题
 
 ```bash
-# 检查数据库状态
-docker-compose ps
-
-# 查看数据库日志
-docker-compose logs postgres
+docker compose ps
+docker compose logs postgres
 ```
 
 ### 前端构建问题

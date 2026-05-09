@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-05-09
+
+### 仓库整理
+
+- 根目录环境模板合并为 **`docker-compose.full.env.example`**（删除 `.env.development.example`、`.env.production.example`）；补充 COS 与「仅起 DB」说明。
+- 删除根目录重复且已失效的 **`test.sh`**、**`simple_test.sh`**（请用各包内 `pnpm test` / E2E）。
+- 新增 **`docs/deployment/COMPOSE_FILES.md`**，说明各 Compose 文件职责；**`docker-compose.ghcr.yml`** 前端 `depends_on` 与 `full` 对齐为 `service_started`。
+
 ## 2026-04-13
 
 ### API 响应
