@@ -68,6 +68,6 @@ git push -u cnb develop
 | 方式 | 必填 |
 |------|------|
 | **GHCR** | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER`、**变量** `GHCR_REPO_LOWER`（小写 `owner/repo`）；VPS 拉镜像可选 `GHCR_PULL_TOKEN` |
-| **CNB 制品库** | `CNB_TOKEN`、**变量** `CNB_DOCKER_REGISTRY`（完整前缀，如 `docker.cnb.cool/group/repo`，勿仅填主机名） |
+| **CNB 制品库** | `CNB_TOKEN`；**变量** `CNB_DOCKER_REGISTRY`：可为 **完整前缀**（`docker.cnb.cool/group/repo`），也可仅为 **`docker.cnb.cool`**（此时流水线须带有 **`CNB_REPO_SLUG_LOWERCASE`**，脚本会自动拼成 `docker.cnb.cool/group/repo`）。若只填主机名且没有 slug，会得到非法镜像名 `docker.cnb.cool/backend`，推送时出现 **400 Bad Request**。 |
 
 其余与文档前文一致：`SSH_HOST`、`SSH_USER`、`SSH_KEY`，可选 `DEPLOY_PATH` / `DEV_DEPLOY_PATH`、`VITE_*`、`APK_MIRROR` 等。

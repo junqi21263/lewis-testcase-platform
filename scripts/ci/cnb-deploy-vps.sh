@@ -92,12 +92,27 @@ push_ghcr() {
 
 push_cnb_registry() {
   : "${CNB_TOKEN:?Set secret CNB_TOKEN for docker.cnb.cool}"
-  : "${CNB_DOCKER_REGISTRY:?Set variable CNB_DOCKER_REGISTRY to image prefix e.g. docker.cnb.cool/group/repo}"
-  REG_HOST="${CNB_DOCKER_REGISTRY%%/*}"
+  : "${CNB_DOCKER_REGISTRY:?Set variable CNB_DOCKER_REGISTRY (see docs)}"
+  # CNB 常把 CNB_DOCKER_REGISTRY 注入成「仅主机名」docker.cnb.cool。若直接拼 /backend
+  # 会得到 docker.cnb.cool/backend，仓库 API 为 /v2/backend/ → 400 Bad Request。
+  # 完整前缀须为 docker.cnb.cool/<组织>/<仓库名>；流水线通常另有 CNB_REPO_SLUG_LOWERCASE。
+  local raw="${CNB_DOCKER_REGISTRY}"
+  local PREFIX
+  if [[ "$raw" == */* ]]; then
+    PREFIX="$raw"
+  else
+    if [[ -z "${CNB_REPO_SLUG_LOWERCASE:-}" ]]; then
+      echo "::error::CNB_DOCKER_REGISTRY is host-only (${raw}). Either set full prefix (docker.cnb.cool/group/repo) as Variable, or ensure CNB injects CNB_REPO_SLUG_LOWERCASE."
+      exit 1
+    fi
+    PREFIX="${raw}/${CNB_REPO_SLUG_LOWERCASE}"
+  fi
+  echo "📌 CNB image prefix: ${PREFIX}"
+  REG_HOST="${PREFIX%%/*}"
   echo "$CNB_TOKEN" | docker login "$REG_HOST" -u cnb --password-stdin
 
-  BE_BASE="${CNB_DOCKER_REGISTRY}/backend"
-  FE_BASE="${CNB_DOCKER_REGISTRY}/frontend"
+  BE_BASE="${PREFIX}/backend"
+  FE_BASE="${PREFIX}/frontend"
 
   docker build \
     --platform linux/amd64 \
