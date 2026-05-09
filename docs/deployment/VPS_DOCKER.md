@@ -32,6 +32,17 @@
 2. 宿主机探活：`curl -fsS http://127.0.0.1/health`（经 Nginx 到后端裸 `/health`，应返回 `ok`）、`curl -fsS http://127.0.0.1/api/health`（JSON）。
 3. 前端已配置为 **仅等待后端容器启动**（`service_started`），避免「后端一时起不来则整站 80 无服务」；若静态页能开但登录/接口报错，仍以后端日志为准。
 
+## 故障排查：HTTP 502 Bad Gateway
+
+502 一般表示 **Nginx（frontend 容器）已响应**，但 **反代到 `backend:3000` 失败**（连接被拒绝、上游无响应、或上游立即断开）。
+
+1. **对比路径**（在服务器上执行，把地址换成本机或公网 IP）：
+   - `curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1/` — SPA 首页，正常多为 **200**（不经过后端）。
+   - `curl -sS http://127.0.0.1/health` — 应返回纯文本 **`ok`**；若此处已是 502，重点查后端是否在监听、是否与 Nginx 同网络。
+2. **`docker compose … logs backend --tail 150`**：看是否 **迁移失败**、`JWT_SECRET` 未设、数据库连不上导致进程退出；容器反复重启时 Nginx 会间歇 502。
+3. **勿在 `.env` 为后端设置 `HOST=127.0.0.1` / `localhost`**：在 Compose 内会令进程只监听回环，其它容器无法连 `backend:3000`（代码已尽量自动纠正为 `0.0.0.0`，仍建议在配置中删除 `HOST`）。
+4. 若前有 **云负载均衡 / CDN**，确认回源端口与协议（80/443）与容器映射一致，且空闲超时对流式接口足够（见上文 SSE 说明）。
+
 ## CI（GitHub Actions）
 
 在仓库 Secrets/Variables 配置 SSH 与路径占位符（如 `<DEPLOY_SSH_HOST>`、`<DEPLOY_PATH>`），**勿**在文档中写真实主机与密钥。
