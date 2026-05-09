@@ -8,7 +8,7 @@
 
 ## 2. 迁入代码
 
-**重要：** CNB **不提供 SSH 克隆/推送**（官方说明见 [Git 地址与认证](https://docs.cnb.cool/zh/guide/git-access.html)）。远程须用 **HTTPS**，用户名固定 **`cnb`**，密码为你在 CNB 创建的**访问令牌**（个人设置里生成；与仓库「部署令牌」用途不同，但同属令牌体系）。
+**重要：** CNB **不提供 SSH 克隆/推送**（官方说明见 [Git 地址与认证](https://docs.cnb.cool/zh/guide/git-access.html)）。远程须用 **HTTPS**，用户名固定 **`cnb`**，密码须为 **[个人访问令牌](https://cnb.cool/profile/token)**（**不是**仓库里的「[部署令牌](https://docs.cnb.cool/zh/guide/deploy-key.html)」——部署令牌**只读**，用于拉代码；用于 `git push` 会 **403**）。
 
 任选其一：
 
