@@ -41,4 +41,5 @@
 ## 相关文件
 
 - `docker-compose.full.yml`、`docker-compose.full.env.example`
+- 根目录其它 Compose 说明见 [COMPOSE_FILES.md](COMPOSE_FILES.md)
 - `scripts/smoke.sh`、`docs/cnb-migration.md`（CNB 迁移）

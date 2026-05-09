@@ -63,6 +63,7 @@ cd ../frontend && pnpm dev   # 终端2，:5173
 | [docs/development/GIT_WORKFLOW.md](docs/development/GIT_WORKFLOW.md) | 分支与发布流程 |
 | [docs/development/ENVIRONMENT_VARIABLES.md](docs/development/ENVIRONMENT_VARIABLES.md) | 环境变量 |
 | [docs/deployment/VPS_DOCKER.md](docs/deployment/VPS_DOCKER.md) | 自托管 Docker 全栈与 CI |
+| [docs/deployment/COMPOSE_FILES.md](docs/deployment/COMPOSE_FILES.md) | 根目录各 `docker-compose*.yml` 说明 |
 | [docs/development/QA_RELEASE_CHECKLIST.md](docs/development/QA_RELEASE_CHECKLIST.md) | 发布前自检 |
 | [docs/development/ROADMAP.md](docs/development/ROADMAP.md) | 优化与迭代计划（存档） |
 | [docs/history/MILESTONES.md](docs/history/MILESTONES.md) | 里程碑细述（存档） |
@@ -74,7 +75,7 @@ cd ../frontend && pnpm dev   # 终端2，:5173
 ```
 ├── frontend/          # Web 前端
 ├── backend/           # Nest API
-├── docker-compose.full.yml
+├── docker-compose*.yml    # 全栈 / GHCR / 本机依赖等，见 docs/deployment/COMPOSE_FILES.md
 ├── docker-compose.full.env.example
 ├── scripts/           # smoke.sh、dev-integration-check.sh、CI 部署脚本
 └── docs/              # 专题文档

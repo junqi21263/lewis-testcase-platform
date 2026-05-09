@@ -4,7 +4,7 @@
 
 ## 分层约定
 
-- `deployment/`：部署、发布、平台配置、环境接入与上线验证（如 [deployment/VPS_DOCKER.md](deployment/VPS_DOCKER.md)）。
+- `deployment/`：部署、发布、平台配置、环境接入与上线验证（如 [deployment/VPS_DOCKER.md](deployment/VPS_DOCKER.md)、[deployment/COMPOSE_FILES.md](deployment/COMPOSE_FILES.md)）。
 - `deployment/edgeone/`：EdgeOne 相关文档，按 `guides/`、`configs/`、`scripts/` 分类。
 - `development/`：研发流程、分支策略、环境变量、联调清单、路线图等。
 - `history/`：里程碑长文存档（`MILESTONES.md`），日常变更以根目录 `CHANGELOG.md` 为准。

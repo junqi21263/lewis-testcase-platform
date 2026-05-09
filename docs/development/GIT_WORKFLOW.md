@@ -8,13 +8,13 @@
 ## 推荐流程
 
 1. **开发**：`git checkout develop` → 提交 → `git push origin develop`
-2. **本地全栈**：`cp .env.development.example .env.development`，编辑后  
+2. **本地全栈**：`cp docker-compose.full.env.example .env.development`，编辑后  
    `docker compose -f docker-compose.full.yml --env-file .env.development up -d`
 3. **进生产**：Review 通过后合并 `develop` → `main`；推送 `main` 触发 `.github/workflows/deploy-vps.yml`（构建前端、rsync、`docker compose`、冒烟）。
 
 ## 环境模板
 
-- 仓库根目录：`.env.development.example`、`.env.production.example`
-- 全栈 Compose：`docker-compose.full.env.example` → 复制为部署目录下的 `.env`
+- **Compose 全栈（开发/生产）**：`docker-compose.full.env.example` → 复制为 `.env.development` 或 `.env`
+- **本机前后端分离**：`backend/.env.example`、`frontend/.env.example`
 
 **勿将真实密钥、密码、API Key 提交到 Git。**
