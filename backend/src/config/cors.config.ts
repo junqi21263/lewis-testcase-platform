@@ -20,13 +20,19 @@ function normalizeOrigin(origin: string): string {
   }
 }
 
-/** 本地开发：Vite 在 5173 被占用时会改用随机端口，无法用固定列表枚举 */
-function isNonProductionLocalBrowserOrigin(normalized: string): boolean {
-  if (process.env.NODE_ENV === 'production') return false
+/**
+ * localhost / 127.0.0.1 任意端口：
+ * - 默认在非 production 放行（本地 `pnpm start:dev`）
+ * - 若 .env 误设 `NODE_ENV=production`，须显式 `CORS_ALLOW_LOCALHOST=1`，或在 `CORS_ORIGINS` 写全量 Origin（含端口）
+ */
+function isLocalLoopbackBrowserOriginAllowed(normalized: string): boolean {
   try {
     const u = new URL(normalized)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
-    return u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+    if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return false
+    if (process.env.NODE_ENV !== 'production') return true
+    const v = process.env.CORS_ALLOW_LOCALHOST?.trim().toLowerCase()
+    return v === '1' || v === 'true' || v === 'yes'
   } catch {
     return false
   }
@@ -64,7 +70,7 @@ export function corsOriginDelegate(): (
     }
     try {
       const { hostname, protocol, host } = new URL(normalized)
-      if (isNonProductionLocalBrowserOrigin(normalized)) {
+      if (isLocalLoopbackBrowserOriginAllowed(normalized)) {
         callback(null, `${protocol}//${host}`)
         return
       }
@@ -81,9 +87,13 @@ export function corsOriginDelegate(): (
       callback(new Error('Not allowed by CORS'))
       return
     }
+    const hintLocalhost =
+      normalized.includes('localhost') || normalized.includes('127.0.0.1')
+        ? ' Local NODE_ENV=production: set CORS_ALLOW_LOCALHOST=1 or list the full Origin in CORS_ORIGINS.'
+        : ''
     callback(
       new Error(
-        `Not allowed by CORS (origin=${normalized}). Set CORS_ORIGINS (comma-separated) or FRONTEND_URL to allow it.`,
+        `Not allowed by CORS (origin=${normalized}). Set CORS_ORIGINS (comma-separated) or FRONTEND_URL.${hintLocalhost}`,
       ),
     )
   }

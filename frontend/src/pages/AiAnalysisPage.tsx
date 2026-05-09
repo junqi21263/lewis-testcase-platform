@@ -1285,7 +1285,7 @@ ${state.reportText}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 lg:items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-start content-start">
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
@@ -1691,7 +1691,7 @@ ${state.reportText}
           </div>
         </div>
 
-        <div className="flex flex-col w-full min-w-0 lg:self-start">
+        <div className="flex flex-col w-full min-w-0 h-fit lg:self-start">
           <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
@@ -1750,11 +1750,15 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col">
+          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col h-fit">
             <div
               ref={logContainerRef}
               onScroll={handleLogScroll}
-              className="overflow-y-auto px-4 py-3 space-y-0.5 min-h-[120px] max-h-[220px] shrink-0"
+              className={`overflow-y-auto px-4 py-3 space-y-0.5 shrink-0 ${
+                state.reportText.trim().length > 0
+                  ? 'min-h-0 max-h-[140px]'
+                  : 'min-h-[120px] max-h-[220px]'
+              }`}
             >
               {state.logs.length === 0 && (
                 <div className="text-sm text-gray-500 font-mono py-4 text-center">
@@ -1767,13 +1771,13 @@ ${state.reportText}
             </div>
 
             {state.reportText && (
-              <div className="px-4 py-3 border-t border-border/20 bg-[#111125]/80 max-h-[360px] overflow-y-auto">
-                <div className="mb-3">
+              <div className="h-fit min-h-0 max-h-[min(360px,55vh)] overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80">
+                <div className="mb-2">
                   <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
                     需求文档分析报告
                   </h3>
                 </div>
-                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text">
+                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text pb-0">
                   <AnalysisMarkdownReport text={state.reportText} />
                 </div>
               </div>
