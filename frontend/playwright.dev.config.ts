@@ -10,7 +10,16 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'dot' : 'list',
+  reporter: [
+    [process.env.CI ? 'dot' : 'list'],
+    [
+      'allure-playwright',
+      {
+        outputFolder: 'allure-results',
+        detail: true,
+      },
+    ],
+  ],
   use: {
     baseURL: 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',

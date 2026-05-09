@@ -5,6 +5,7 @@
  * 1. pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
  * 2. 后端已启动且 DATABASE_URL 与本脚本读取的 .env 一致（与 API 连同一数据库）
  * 3. 可选环境变量 VERIFY_API_URL，默认 http://127.0.0.1:3000/api
+ * 4. 必填环境变量 VERIFY_AUTH_TEST_PASSWORD：本地一次性测试账号口令（勿提交真实生产密码）
  *
  * 说明：发送验证码后真实 OTP 在邮件或 dev 日志中；脚本通过 Prisma 将验证码行改为已知值以完成自动化。
  *
@@ -41,6 +42,13 @@ async function main() {
     console.error('缺少 DATABASE_URL（请在 backend/.env 中配置）')
     process.exit(1)
   }
+  const password = process.env.VERIFY_AUTH_TEST_PASSWORD?.trim()
+  if (!password) {
+    console.error(
+      '缺少 VERIFY_AUTH_TEST_PASSWORD（仅用于本脚本注册的临时用户口令，export 后重试；勿写入仓库）',
+    )
+    process.exit(1)
+  }
 
   const apiBase = (process.env.VERIFY_API_URL || 'http://127.0.0.1:3000/api').replace(
     /\/$/,
@@ -50,7 +58,6 @@ async function main() {
   const stamp = Date.now()
   const email = `verify_${stamp}@example.com`
   const username = `u_${stamp}`
-  const password = 'Test@123456'
   const knownCode = '424242'
 
   try {
