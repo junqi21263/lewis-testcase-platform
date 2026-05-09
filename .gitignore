@@ -11,6 +11,7 @@ out/
 
 # Environment files
 .env
+backend/.env.production
 .env.local
 .env.development
 .env.development.local
@@ -66,6 +67,7 @@ lewis-testcase-platform/
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
+.cursor/agent-images/
 .cursor-images/
 
 # Development files
