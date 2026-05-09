@@ -42,8 +42,9 @@ git push -u cnb develop
 | 用途 | 建议名称 |
 | --- | --- |
 | SSH 部署 | `SSH_HOST`, `SSH_USER`, `SSH_KEY`，可选 `SSH_PORT` |
-| 向 GHCR 推送镜像 | `GHCR_PUSH_TOKEN`（GitHub PAT，`write:packages`）、`GHCR_LOGIN_USER`（GitHub 用户名） |
-| VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选）、远端登录用户在脚本中为 `GHCR_LOGIN_USER` |
+| 向 GHCR 推送镜像（可选；不配则流水线用 **CNB 内置制品库** + `CNB_TOKEN`） | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER` |
+| VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选） |
+| VPS 拉 CNB 制品（私有或需登录时） | `CNB_REGISTRY_PULL_TOKEN`（可选；不配则脚本会传当次流水线的 `CNB_TOKEN`） |
 | 国内镜像同步 | `DEPLOY_PULL_FROM_MIRROR=true` + `CONTAINER_MIRROR_*` 变量（与 GitHub 一致） |
 | 路径 | `DEPLOY_PATH`、`DEV_DEPLOY_PATH` 等 |
 
