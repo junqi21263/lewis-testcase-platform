@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# 腾讯云 CNB（cnb.cool）云原生构建 — VPS 部署
+# 腾讯云 CNB（cnb.cool）云原生构建 — VPS 部署（本仓库默认唯一自动部署入口）
 #
 # 推送 main / develop 时触发；脚本路径 scripts/ci/cnb-deploy-vps.sh（顺序构建前端、
 # 推送 GHCR 镜像、可选同步国内容器镜像仓、rsync、远端 docker compose）。

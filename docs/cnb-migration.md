@@ -40,8 +40,8 @@ git push cnb --mirror
 
 ## 4. 与 GitHub Actions 的关系
 
-- **迁初期**：可同时保留 GitHub 推送；在 CNB 验证流水线通过后，再在 GitHub 关闭或限制 `Deploy to VPS` workflow，避免双轨部署。
-- **镜像**：当前流水线仍构建并推送到 **GHCR**（与 `.github/workflows/deploy-vps.yml` 同一坐标），VPS 逻辑无需改 `docker-compose.ghcr.yml`。若将来改为只使用腾讯云 CCR，可在脚本中改为推送 CCR 并调整 `BACKEND_IMAGE`/`FRONTEND_IMAGE` 来源。
+- **当前策略**：**自动部署仅以 CNB 为准**。GitHub 上的 `Deploy to VPS` workflow **已关闭 push 触发**，仅在 Actions 里 **手动 Run workflow** 时执行（避免与 CNB 重复部署）。
+- **镜像**：CNB 流水线仍构建并推送到 **GHCR**（与原先 Actions 同一坐标），VPS 仍用 `docker-compose.ghcr.yml`。若将来改为只使用腾讯云 CCR，需改推送目标与环境变量。
 
 ## 5. 服务器端脚本
 

@@ -1,4 +1,7 @@
-# 云服务器生产部署：推送 main/develop 时 rsync + docker compose 全栈。
+# 云服务器部署（GitHub Actions）：默认已改为仅在仓库手动触发，避免与腾讯 CNB 流水线重复部署。
+# 日常自动部署请使用仓库根目录 .cnb.yml（CNB 推送 main/develop）。
+#
+# 手动运行本 workflow：Actions → Deploy to VPS → Run workflow。
 #
 # GitHub → Repository → Settings → Secrets and variables → Actions
 #   Secrets (required): SSH_HOST, SSH_USER, SSH_KEY
@@ -12,8 +15,7 @@
 name: Deploy to VPS
 
 on:
-  push:
-    branches: [main, develop]
+  # 已迁移主 CI 至腾讯 CNB（.cnb.yml）；此处不再在 push 时自动跑，防止双轨部署。
   workflow_dispatch:
 
 # develop：新推送取消未完成的旧部署，避免长时间排队；main：不打断，避免生产部署半截。

@@ -20,5 +20,5 @@ alwaysApply: true
 
 ## 与部署环境的关系
 
-- MCP 只负责把提交推到 **GitHub**；是否自动部署取决于项目绑定的 **Actions / PaaS** 等配置。
-- 推送成功后可提醒用户在对应平台查看最新构建或部署状态。
+- MCP 只负责把提交推到 **GitHub**；**本项目的自动部署以腾讯 CNB**（根目录 `.cnb.yml`）为主；GitHub Actions 的 `Deploy to VPS` 已改为仅 **workflow_dispatch** 手动触发，避免与 CNB 双轨。
+- 若用户日常 **`git push` 到 CNB 远程**，部署状态在 **cnb.cool 流水线**查看；若仍向 GitHub 推送镜像/备份代码，GitHub 侧不再因 push 自动部署。
