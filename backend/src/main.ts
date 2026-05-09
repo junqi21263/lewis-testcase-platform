@@ -67,12 +67,11 @@ async function bootstrap() {
 
   const port = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10)
   let host = process.env.HOST || '0.0.0.0'
-  if (
-    process.env.RAILWAY_ENVIRONMENT &&
-    (host === '127.0.0.1' || host === 'localhost' || host === '::1')
-  ) {
+  // Docker Compose / Railway：若监听 127.0.0.1，仅容器内回环可连，Nginx 或其它容器访问 backend:3000
+  // 会连接被拒绝，浏览器经反代常见为 502。
+  if (host === '127.0.0.1' || host === 'localhost' || host === '::1') {
     logger.warn(
-      `HOST=${host} 仅本机可访问，Railway 边缘会 502；已改为 0.0.0.0。请删除 Variables 中的 HOST。`,
+      `HOST=${host} 会导致仅本机可连入；上游（Nginx、负载均衡）无法访问 → 常表现为 502。已改为 0.0.0.0，请从环境变量中移除 HOST 或显式设为 0.0.0.0。`,
     )
     host = '0.0.0.0'
   }

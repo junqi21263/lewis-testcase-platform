@@ -8,6 +8,10 @@
 - 删除根目录重复且已失效的 **`test.sh`**、**`simple_test.sh`**（请用各包内 `pnpm test` / E2E）。
 - 新增 **`docs/deployment/COMPOSE_FILES.md`**，说明各 Compose 文件职责；**`docker-compose.ghcr.yml`** 前端 `depends_on` 与 `full` 对齐为 `service_started`。
 
+### 部署
+
+- 后端：若 **`HOST` 为回环地址**，启动时改为监听 **`0.0.0.0`**，避免 Docker 内 Nginx 反代 **`502`**；**`VPS_DOCKER.md`** 增补 502 排查步骤。
+
 ## 2026-04-13
 
 ### API 响应
