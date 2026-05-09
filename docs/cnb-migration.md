@@ -58,3 +58,16 @@ git push -u cnb develop
 ## 5. 服务器端脚本
 
 远端主机执行的是仓库中的 `scripts/ci/remote-deploy-ghcr.sh`（由 rsync 同步上去）。GitHub Actions 与 CNB 共用该脚本，避免两套编排分叉。
+
+## 6. CNB 流水线脚本（`scripts/ci/cnb-deploy-vps.sh`）
+
+推送 `develop` / `main` 时执行：本地 **`pnpm build`** → **`docker build`** 前后端镜像并推送 → **`rsync`** 到 VPS → SSH 执行 **`remote-deploy-ghcr.sh`**（拉镜像并 `compose up`）。
+
+**镜像仓库二选一**（在 CNB「密钥 / 变量」中配置）：
+
+| 方式 | 必填 |
+|------|------|
+| **GHCR** | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER`、**变量** `GHCR_REPO_LOWER`（小写 `owner/repo`）；VPS 拉镜像可选 `GHCR_PULL_TOKEN` |
+| **CNB 制品库** | `CNB_TOKEN`、**变量** `CNB_DOCKER_REGISTRY`（完整前缀，如 `docker.cnb.cool/group/repo`，勿仅填主机名） |
+
+其余与文档前文一致：`SSH_HOST`、`SSH_USER`、`SSH_KEY`，可选 `DEPLOY_PATH` / `DEV_DEPLOY_PATH`、`VITE_*`、`APK_MIRROR` 等。
