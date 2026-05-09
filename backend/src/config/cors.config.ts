@@ -20,6 +20,18 @@ function normalizeOrigin(origin: string): string {
   }
 }
 
+/** 本地开发：Vite 在 5173 被占用时会改用随机端口，无法用固定列表枚举 */
+function isNonProductionLocalBrowserOrigin(normalized: string): boolean {
+  if (process.env.NODE_ENV === 'production') return false
+  try {
+    const u = new URL(normalized)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
 export function buildCorsOrigins(): string[] {
   const origins = new Set<string>([...DEFAULT_BROWSER_ORIGINS].map(normalizeOrigin))
   const extra = process.env.FRONTEND_URL?.trim()
@@ -52,6 +64,10 @@ export function corsOriginDelegate(): (
     }
     try {
       const { hostname, protocol, host } = new URL(normalized)
+      if (isNonProductionLocalBrowserOrigin(normalized)) {
+        callback(null, `${protocol}//${host}`)
+        return
+      }
       const edgeOne =
         hostname.endsWith('.edgeone.cool') ||
         hostname.endsWith('.edgeone.site') ||

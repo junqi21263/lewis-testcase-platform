@@ -1285,7 +1285,7 @@ ${state.reportText}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 min-h-[600px]">
+      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 lg:items-start">
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
@@ -1691,7 +1691,7 @@ ${state.reportText}
           </div>
         </div>
 
-        <div className="flex flex-col">
+        <div className="flex flex-col w-full min-w-0 lg:self-start">
           <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
@@ -1750,11 +1750,11 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="flex-1 rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col min-h-[550px]">
+          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col">
             <div
               ref={logContainerRef}
               onScroll={handleLogScroll}
-              className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5 min-h-[120px] max-h-[220px]"
+              className="overflow-y-auto px-4 py-3 space-y-0.5 min-h-[120px] max-h-[220px] shrink-0"
             >
               {state.logs.length === 0 && (
                 <div className="text-sm text-gray-500 font-mono py-4 text-center">
