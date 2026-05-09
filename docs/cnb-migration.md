@@ -71,3 +71,5 @@ git push -u cnb develop
 | **CNB 制品库** | `CNB_TOKEN`；**变量** `CNB_DOCKER_REGISTRY`：可为 **完整前缀**（`docker.cnb.cool/group/repo`），也可仅为 **`docker.cnb.cool`**（此时流水线须带有 **`CNB_REPO_SLUG_LOWERCASE`**，脚本会自动拼成 `docker.cnb.cool/group/repo`）。若只填主机名且没有 slug，会得到非法镜像名 `docker.cnb.cool/backend`，推送时出现 **400 Bad Request**。 |
 
 其余与文档前文一致：`SSH_HOST`、`SSH_USER`、`SSH_KEY`，可选 `DEPLOY_PATH` / `DEV_DEPLOY_PATH`、`VITE_*`、`APK_MIRROR` 等。
+
+**构建拉基础镜像超时**：大陆 Runner 访问 **AWS Public ECR** 易出现 TLS 超时；仓库内 **`frontend`/`backend` Dockerfile** 已默认使用 **Docker Hub** 的 `node` / `nginx`（可通过 build-arg `NODE_IMAGE` / `NGINX_IMAGE` 改回 Public ECR）。

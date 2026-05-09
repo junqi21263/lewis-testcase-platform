@@ -1,7 +1,11 @@
 # 与仓库根目录 backend 服务分离部署时使用（Railway Root Directory = frontend，或 VPS compose 中的 frontend 服务）。
 # 构建期注入 Vite 环境变量（须以 VITE_ 前缀）；默认 /api 适用于同源反代（docker-compose.full / Nginx 同域）。
-# Public ECR：与 main 一致，避免部分环境拉取 docker.io 失败
-FROM public.ecr.aws/docker/library/node:20-alpine AS build
+# 默认 Docker Hub library（CNB/大陆 Runner 常对 docker.io 配加速）；Public ECR 易 TLS 超时时勿改即可。
+# 海外若 docker.io 不通：docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine --build-arg NGINX_IMAGE=public.ecr.aws/docker/library/nginx:alpine .
+ARG NODE_IMAGE=node:20-alpine
+ARG NGINX_IMAGE=nginx:alpine
+
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 
@@ -26,7 +30,7 @@ RUN if [ -f dist/index.html ]; then \
       pnpm run build; \
     fi
 
-FROM public.ecr.aws/docker/library/nginx:alpine
+FROM ${NGINX_IMAGE}
 
 # 与 backend/Dockerfile 相同策略：默认官方 CDN；国内慢时 compose 传 APK_MIRROR
 ARG APK_MIRROR=

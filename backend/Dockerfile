@@ -1,10 +1,13 @@
-# 使用 Public ECR 上的 library 镜像，避免部分构建环境访问 docker.io（IPv6）时出现 network unreachable（与 main 生产路径一致）
+# 默认 Docker Hub node:20-alpine（CNB/大陆访问 public.ecr.aws 易 TLS 超时）。
+# 海外若 docker.io 不通：docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine ...
 #
 # 多阶段：编译期安装 build-base/gcc（153+ 包、极慢）；运行期仅装 cairo/pango 等 runtime .so（几十包、通常分钟级），
 # 避免每次部署都在同一层「卡在 gcc」。canvas 在 builder 内编译后随 node_modules 拷入 runner。
 
+ARG NODE_IMAGE=node:20-alpine
+
 # ---------- build canvas + Nest ----------
-FROM public.ecr.aws/docker/library/node:20-alpine AS builder
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -56,7 +59,7 @@ RUN ls -la dist/src/main.js && echo "[build] dist OK"
 RUN pnpm prune --prod
 
 # ---------- runtime：无 gcc；canvas 仅依赖动态库 ----------
-FROM public.ecr.aws/docker/library/node:20-alpine AS runner
+FROM ${NODE_IMAGE} AS runner
 
 WORKDIR /app
 
