@@ -1,0 +1,16 @@
+---
+description: 腾讯 CNB 为默认 CI/部署入口（与 GitHub Actions 分工）
+alwaysApply: true
+---
+
+# 腾讯 CNB 为主 CI / 部署
+
+## 默认流程
+
+- **自动部署**：推送 **`develop` / `main`** 到 **cnb.cool** 远程时，由仓库根目录 **`.cnb.yml`** 触发 **`scripts/ci/cnb-deploy-vps.sh`**（构建、推 GHCR、可选国内镜像、rsync、VPS compose）。
+- **GitHub Actions**：`.github/workflows/deploy-vps.yml` **不在 push 时运行**；仅在 GitHub 上 **手动 Run workflow** 时使用（应急或对照）。
+
+## 协作提示
+
+- 本地可将 **`origin`** 改为指向 CNB，或保留 **`origin`=GitHub、`cnb`=CNB** 双远程；向用户说明部署绑在哪个远程上。
+- 收尾提交/推送时：若用户声明「只推 CNB」，使用其配置的 **CNB 远程与分支**（通常为 `git push <cnb-remote> develop`），勿假定仍推 `origin` 到 GitHub。

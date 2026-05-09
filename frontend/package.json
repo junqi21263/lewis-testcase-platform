@@ -10,6 +10,7 @@
     "test:ct": "node scripts/run-playwright.mjs test -c playwright-ct.config.ts",
     "test:ct:ui": "node scripts/run-playwright.mjs test -c playwright-ct.config.ts --ui",
     "test:e2e": "node scripts/run-playwright.mjs test -c playwright.config.ts",
+    "test:e2e:allure": "node scripts/run-playwright.mjs test -c playwright.config.ts",
     "test:e2e:dev": "node scripts/run-playwright.mjs test -c playwright.dev.config.ts",
     "test:pw:install": "node scripts/run-playwright.mjs install chromium chromium-headless-shell",
     "test:pw:all": "pnpm test:unit && pnpm test:ct && pnpm test:e2e",
@@ -19,7 +20,7 @@
     "test:ct:allure": "node scripts/run-playwright.mjs test -c playwright-ct.config.ts",
     "allure:generate": "allure generate allure-results -o allure-report --clean",
     "allure:open": "allure open allure-report",
-    "allure:report": "pnpm test:unit && pnpm test:ct:allure && pnpm allure:generate && node scripts/print-allure-url.mjs",
+    "allure:report": "pnpm test:pw:install && pnpm test:unit && pnpm test:ct:allure && pnpm test:e2e:allure && pnpm allure:generate && node scripts/print-allure-url.mjs",
     "integrate:smoke": "pnpm -C ../backend smoke:enhancements",
     "lint": "eslint . --ext ts,tsx --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
@@ -41,20 +42,22 @@
     "@tiptap/extension-placeholder": "^2.6.6",
     "@tiptap/react": "^2.6.6",
     "@tiptap/starter-kit": "^2.6.6",
-    "axios": "^1.7.4",
+    "axios": "^1.15.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
-    "echarts": "^6.0.0",
-    "echarts-for-react": "^3.0.6",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "lucide-react": "^0.441.0",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",
     "react-hot-toast": "^2.4.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.26.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "zustand": "^4.5.4"
@@ -87,7 +90,8 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "5.4.21"
+      "vite": "5.4.21",
+      "postcss": "^8.5.10"
     }
   }
 }

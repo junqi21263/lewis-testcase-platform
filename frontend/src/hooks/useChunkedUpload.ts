@@ -9,6 +9,8 @@
 import { useState, useCallback, useRef } from 'react'
 import { filesApi, CHUNK_THRESHOLD, CHUNK_SIZE } from '@/api/files'
 import type { UploadedFile } from '@/types'
+import { safeRandomUUID } from '@/utils/uuid'
+import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
 
 export type UploadStatus = 'idle' | 'uploading' | 'merging' | 'done' | 'error' | 'cancelled'
 
@@ -25,7 +27,7 @@ export interface UploadProgress {
 
 const MAX_RETRY = 3
 const SUPPORTED_EXTENSIONS = new Set([
-  'pdf', 'doc', 'docx', 'xlsx', 'xls', 'txt', 'md', 'yaml', 'yml', 'png', 'jpg', 'jpeg',
+  'pdf', 'doc', 'docx', 'xlsx', 'xls', 'txt', 'md', 'yaml', 'yml', 'png', 'jpg', 'jpeg', 'webp', 'gif',
 ])
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
@@ -44,7 +46,7 @@ export function useChunkedUpload() {
   const validateFile = useCallback((file: File): string | null => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
-      return `不支持的文件格式 .${ext}，请上传 PDF/DOCX/XLSX/TXT/MD/YAML/PNG/JPG`
+      return `不支持的文件格式 .${ext}，请上传 PDF/DOCX/XLSX/TXT/MD/YAML/PNG/JPG/WebP/GIF`
     }
     if (file.size > MAX_FILE_SIZE) {
       return `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），单文件不超过 100 MB`
@@ -68,7 +70,7 @@ export function useChunkedUpload() {
   /** 分片上传大文件 */
   const uploadLarge = useCallback(async (file: File, signal: AbortSignal): Promise<UploadedFile> => {
     const chunkTotal = Math.ceil(file.size / CHUNK_SIZE)
-    const fileId = crypto.randomUUID()
+    const fileId = safeRandomUUID()
     let uploadedBytes = 0
 
     for (let i = 0; i < chunkTotal; i++) {
@@ -124,19 +126,30 @@ export function useChunkedUpload() {
       throw new Error(error)
     }
 
+    let fileToUpload = file
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      try {
+        fileToUpload = await preprocessPdfForUpload(file)
+      } catch (e) {
+        const msg = (e as Error).message || 'PDF 预处理失败'
+        setProgress({ status: 'error', percent: 0, loaded: 0, total: file.size, error: msg })
+        throw new Error(msg)
+      }
+    }
+
     const controller = new AbortController()
     abortRef.current = controller
 
-    setProgress({ status: 'uploading', percent: 0, loaded: 0, total: file.size })
+    setProgress({ status: 'uploading', percent: 0, loaded: 0, total: fileToUpload.size })
 
     let retries = 0
     while (retries < MAX_RETRY) {
       try {
-        const result = file.size > CHUNK_THRESHOLD
-          ? await uploadLarge(file, controller.signal)
-          : await uploadSmall(file, controller.signal)
+        const result = fileToUpload.size > CHUNK_THRESHOLD
+          ? await uploadLarge(fileToUpload, controller.signal)
+          : await uploadSmall(fileToUpload, controller.signal)
 
-        setProgress({ status: 'done', percent: 100, loaded: file.size, total: file.size })
+        setProgress({ status: 'done', percent: 100, loaded: fileToUpload.size, total: fileToUpload.size })
         abortRef.current = null
         return result
       } catch (err) {
@@ -148,7 +161,7 @@ export function useChunkedUpload() {
         retries++
         if (retries >= MAX_RETRY) {
           const msg = (err as Error).message || '上传失败'
-          setProgress({ status: 'error', percent: 0, loaded: 0, total: file.size, error: msg })
+          setProgress({ status: 'error', percent: 0, loaded: 0, total: fileToUpload.size, error: msg })
           abortRef.current = null
           throw err
         }

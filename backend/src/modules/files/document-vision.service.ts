@@ -70,8 +70,14 @@ export class DocumentVisionService {
       const m = await this.prisma.aIModelConfig.findFirst({
         where: { id: envId, isActive: true },
       })
-      if (m?.apiKey && m.apiKey !== 'placeholder') return m
-      this.logger.warn(`VISION_PARSE_MODEL_CONFIG_ID=${envId} 未找到、已停用或未配置 Key`)
+      if (m?.apiKey && m.apiKey !== 'placeholder') {
+        if (m.supportsVision) return m
+        this.logger.warn(
+          `VISION_PARSE_MODEL_CONFIG_ID=${envId} 对应模型未勾选「支持视觉」，已忽略（避免出现 404 / No endpoints ... image input）。请在数据库中勾选 supportsVision 或改用支持图片输入的模型。`,
+        )
+      } else {
+        this.logger.warn(`VISION_PARSE_MODEL_CONFIG_ID=${envId} 未找到、已停用或未配置 Key`)
+      }
     }
 
     const designated = await this.prisma.aIModelConfig.findFirst({
@@ -88,9 +94,13 @@ export class DocumentVisionService {
   }
 
   private openaiFor(cfg: AIModelConfig) {
+    const timeoutRaw = this.config.get<string>('VISION_API_TIMEOUT_MS')
+    const timeoutMs = parseInt(timeoutRaw || '120000', 10)
+    const timeout = Number.isFinite(timeoutMs) && timeoutMs >= 10000 ? timeoutMs : 120000
     return new OpenAI({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseUrl.replace(/\/+$/, ''),
+      timeout,
     })
   }
 
@@ -123,6 +133,59 @@ export class DocumentVisionService {
       return VISION_NO_RESULT_HINT
     } catch {
       return trimmed
+    }
+  }
+
+  /**
+   * 同一请求内多张 PNG（例如 PDF 连续页）；detail 使用 low 以降低体积与超时风险。
+   */
+  async transcribeMultiplePngBuffers(cfg: AIModelConfig, buffers: Buffer[]): Promise<string> {
+    if (buffers.length === 0) return ''
+    if (buffers.length === 1) return this.transcribeImageBuffer(cfg, buffers[0], 'image/png')
+
+    const client = this.openaiFor(cfg)
+    const maxTokens = Math.min(Math.max(cfg.maxTokens || 8192, 4096), 16384)
+    const parts: OpenAI.Chat.ChatCompletionContentPart[] = [
+      {
+        type: 'text',
+        text: `以下为同一 PDF 的 ${buffers.length} 页截图（按顺序）。请合并理解业务需求，并仅输出约定的一个 JSON 对象（不要其它说明文字）。`,
+      },
+      ...buffers.map((buf) => {
+        const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
+        return {
+          type: 'image_url' as const,
+          image_url: { url: dataUrl, detail: 'low' as const },
+        }
+      }),
+    ]
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: VISION_STRUCTURE_SYSTEM },
+      { role: 'user', content: parts },
+    ]
+    const temperature = Math.min(cfg.temperature ?? 0.3, 0.7)
+
+    try {
+      const completion = await client.chat.completions.create({
+        model: cfg.modelId,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+        response_format: { type: 'json_object' },
+      })
+      const raw = (completion.choices[0]?.message?.content || '').trim()
+      return this.visionResponseToDocumentText(raw)
+    } catch (e) {
+      this.logger.warn(
+        `视觉解析（多图 json_object）不可用或失败，回退为普通输出: ${(e as Error).message}`,
+      )
+      const completion = await client.chat.completions.create({
+        model: cfg.modelId,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+      })
+      const raw = (completion.choices[0]?.message?.content || '').trim()
+      return this.visionResponseToDocumentText(raw)
     }
   }
 
@@ -200,6 +263,21 @@ export class DocumentVisionService {
       specifier: string,
     ) => Promise<typeof import('pdf-to-img')>
     return runImport('pdf-to-img')
+  }
+
+  /** 按页迭代渲染整本 PDF（pdf-to-img）；用于分页 OCR / 分批视觉理解 */
+  async *iteratePdfPagesAsPng(
+    pdfPath: string,
+  ): AsyncGenerator<{ pageNum: number; buffer: Buffer }, void, unknown> {
+    const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')
+    const scale = Math.min(Math.max(parseFloat(scaleRaw || '1.2') || 1.2, 0.5), 3)
+    const { pdf } = await this.importPdfToImg()
+    const document = await pdf(pdfPath, { scale })
+    let pageNum = 0
+    for await (const image of document) {
+      pageNum++
+      yield { pageNum, buffer: Buffer.from(image) }
+    }
   }
 
   /** 将 PDF 首页渲成 PNG；失败时返回 error 文案（会进入 parseError 便于排障） */

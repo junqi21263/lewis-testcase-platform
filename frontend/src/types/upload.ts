@@ -50,7 +50,7 @@ export interface SensitiveMatch {
 
 /** 单个上传文件的完整状态 */
 export interface UploadTask {
-  /** 浏览器本地唯一 id（用 crypto.randomUUID） */
+  /** 浏览器本地唯一 id（与 safeRandomUUID 一致，HTTP 非安全上下文也可用） */
   id: string
   /** 原始 File 对象 */
   file: File

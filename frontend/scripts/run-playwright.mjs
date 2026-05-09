@@ -1,8 +1,14 @@
 /**
  * Run local Playwright CLI with a sanitized environment so IDE/sandbox injections
  * of PLAYWRIGHT_BROWSERS_PATH do not hide already-installed Chromium / headless shell.
+ *
+ * By default we only *remove* PLAYWRIGHT_BROWSERS_PATH so `pnpm exec playwright install`
+ * (or official Playwright Docker images + install) control browser location.
+ *
+ * To force `node_modules/.playwright` (legacy local layout), set PW_LOCAL_PLAYWRIGHT_PATH=1.
  */
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -11,16 +17,13 @@ const exe = process.platform === 'win32' ? 'playwright.cmd' : 'playwright'
 const bin = path.join(root, 'node_modules', '.bin', exe)
 
 const env = { ...process.env }
-delete env.PLAYWRIGHT_BROWSERS_PATH // <--- Key change here
+delete env.PLAYWRIGHT_BROWSERS_PATH
 
-// Use the installed Playwright browsers path from node_modules
-const pwPkgPath = path.join(root, 'node_modules', '@playwright', 'test', 'package.json')
-try {
-  const pwPkg = JSON.parse(require('fs').readFileSync(pwPkgPath, 'utf8'))
-  const browsersPath = path.join(root, 'node_modules', '.playwright')
-  env.PLAYWRIGHT_BROWSERS_PATH = browsersPath
-} catch {
-  // Fallback: use default
+if (process.env.PW_LOCAL_PLAYWRIGHT_PATH === '1') {
+  const bundled = path.join(root, 'node_modules', '.playwright')
+  if (fs.existsSync(bundled)) {
+    env.PLAYWRIGHT_BROWSERS_PATH = bundled
+  }
 }
 
 const child = spawn(bin, process.argv.slice(2), {

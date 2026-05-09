@@ -6,6 +6,7 @@ import { ScheduleModule } from '@nestjs/schedule'
 
 // 公共模块
 import { PrismaModule } from './prisma/prisma.module'
+import { RedisModule } from './redis/redis.module'
 import { HttpExceptionFilter, AllExceptionsFilter } from './common/filters/http-exception.filter'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
@@ -47,6 +48,8 @@ import { WeatherModule } from './modules/weather/weather.module'
 
     // 数据库
     PrismaModule,
+
+    RedisModule,
 
     ScheduleModule.forRoot(),
 

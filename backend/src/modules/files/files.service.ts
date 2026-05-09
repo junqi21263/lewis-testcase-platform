@@ -16,7 +16,9 @@ import { DocumentVisionService } from './document-vision.service'
 import { RequirementStructureService } from './requirement-structure.service'
 import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
 import { v4 as uuid } from 'uuid'
+import axios from 'axios'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
+import { CosStorageService } from './cos-storage.service'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -34,6 +36,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private config: ConfigService,
     private documentVision: DocumentVisionService,
     private requirementStructure: RequirementStructureService,
+    private cosStorage: CosStorageService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -88,11 +91,28 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   } | null> {
     // 只认领 PENDING；避免并发争抢，用 updateMany 做原子认领
     const next = await this.prisma.uploadedFile.findFirst({
-      where: { status: FileStatus.PENDING },
+      where: { status: FileStatus.PENDING, path: { not: null } },
       orderBy: { createdAt: 'asc' },
       select: { id: true, path: true, fileType: true, mimeType: true },
     })
     if (!next) return null
+    if (!next.path?.trim()) {
+      try {
+        await this.prisma.uploadedFile.update({
+          where: { id: next.id },
+          data: {
+            status: FileStatus.FAILED,
+            parseError: '【解析失败】文件路径无效，请重新上传',
+            parseStage: 'FAILED',
+            parseFinishedAt: new Date(),
+            lastHeartbeatAt: new Date(),
+          },
+        })
+      } catch (e) {
+        if (!this.isNotFoundUpdateError(e)) throw e
+      }
+      return null
+    }
 
     const now = new Date()
     const updated = await this.prisma.uploadedFile.updateMany({
@@ -107,28 +127,67 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
     if (updated.count !== 1) return null
-    return next
+    return { ...next, path: next.path as string }
   }
 
   /** 保存上传记录并触发异步解析 */
   async saveUploadedFile(file: Express.Multer.File, uploaderId: string) {
     const fileType = this.detectFileType(file.mimetype, file.originalname)
+    const safeName =
+      (file.filename && String(file.filename).trim()) ||
+      `${uuid()}${path.extname(file.originalname) || ''}`
 
-    // 以落盘文件为准（部分平台/代理可能导致 file.size 与实际不一致）
+    // COS：优先内存 Buffer 直传对象存储，不写 UPLOAD_DIR
+    if (this.cosStorage.isConfigured() && file.buffer && file.buffer.length > 0) {
+      try {
+        const uri = await this.cosStorage.uploadBuffer(file.buffer, file.originalname)
+        const created = await this.prisma.uploadedFile.create({
+          data: {
+            name: safeName,
+            originalName: file.originalname,
+            path: uri,
+            size: file.buffer.length,
+            mimeType: file.mimetype,
+            fileType,
+            status: FileStatus.PENDING,
+            parseStage: 'PENDING',
+            uploaderId,
+          },
+        })
+        return this.getFileById(created.id)
+      } catch (e) {
+        this.logger.error(`COS 直传失败: ${(e as Error).message}`, e as Error)
+        throw new BadRequestException(`文件上传到对象存储失败：${(e as Error).message}`)
+      }
+    }
+
+    // 未启用 COS：磁盘路径，或将内存 buffer 写入 UPLOAD_DIR
     let diskSize = file.size
+    let resolvedPath = file.path
+    if (!resolvedPath && file.buffer?.length) {
+      resolvedPath = path.join(this.uploadDir, `${uuid()}${path.extname(file.originalname) || ''}`)
+      try {
+        fs.writeFileSync(resolvedPath, file.buffer)
+        diskSize = file.buffer.length
+      } catch (e) {
+        this.logger.error(`写入本地上传目录失败: ${resolvedPath}`, e as Error)
+        throw new BadRequestException('无法保存上传文件到服务器磁盘')
+      }
+    }
+
     try {
-      if (file.path && fs.existsSync(file.path)) {
-        diskSize = fs.statSync(file.path).size
+      if (resolvedPath && fs.existsSync(resolvedPath)) {
+        diskSize = fs.statSync(resolvedPath).size
       }
     } catch (e) {
-      this.logger.warn(`读取上传文件大小失败: ${file.path}`, e as Error)
+      this.logger.warn(`读取上传文件大小失败: ${resolvedPath}`, e as Error)
     }
 
     const record = await this.prisma.uploadedFile.create({
       data: {
-        name: file.filename,
+        name: safeName,
         originalName: file.originalname,
-        path: file.path,
+        path: resolvedPath,
         size: diskSize,
         mimeType: file.mimetype,
         fileType,
@@ -138,12 +197,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
 
-    if (!file.path || !fs.existsSync(file.path) || diskSize < 1) {
-      const msg = !file.path
+    if (!resolvedPath || !fs.existsSync(resolvedPath) || diskSize < 1) {
+      const msg = !resolvedPath
         ? '【解析失败】上传文件路径为空（服务端未落盘）。请重试上传。'
-        : !fs.existsSync(file.path)
-          ? `【解析失败】上传文件未落盘或已丢失：${file.path}。请重试上传。`
-          : `【解析失败】上传文件为空（0 bytes）：${file.path}。请重试上传。`
+        : !fs.existsSync(resolvedPath)
+          ? `【解析失败】上传文件未落盘或已丢失：${resolvedPath}。请重试上传。`
+          : `【解析失败】上传文件为空（0 bytes）：${resolvedPath}。请重试上传。`
       await this.prisma.uploadedFile.update({
         where: { id: record.id },
         data: { status: FileStatus.FAILED, parseError: msg, parseStage: 'UPLOAD_CHECK' },
@@ -151,7 +210,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(record.id)
     }
 
-    return record
+    return this.getFileById(record.id)
   }
 
   /** 异步解析文件内容（图片/PDF 优先多模态视觉理解，再 OCR/文本提取） */
@@ -161,11 +220,38 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     fileType: FileType,
     mimeType: string,
   ) {
-    const heartbeat = async (stage: string) => {
+    const hintRow = await this.prisma.uploadedFile.findUnique({
+      where: { id: fileId },
+      select: { parseRetryHint: true },
+    })
+    const parseRetryHint = hintRow?.parseRetryHint ?? null
+
+    let effectivePath = filePath
+    let cosTempFile: string | null = null
+    if (CosStorageService.isCosUri(filePath)) {
+      if (!this.cosStorage.isConfigured()) {
+        throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
+      }
+      try {
+        cosTempFile = await this.cosStorage.downloadToTempFile(filePath)
+        effectivePath = cosTempFile
+      } catch (e) {
+        throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
+      }
+    }
+
+    try {
+    const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
       try {
         await this.prisma.uploadedFile.update({
           where: { id: fileId },
-          data: { lastHeartbeatAt: new Date(), parseStage: stage },
+          data: {
+            lastHeartbeatAt: new Date(),
+            parseStage: stage,
+            ...(progress && Object.keys(progress).length > 0
+              ? { parseProgress: progress as Prisma.InputJsonValue }
+              : {}),
+          },
         })
       } catch (e) {
         if (this.isNotFoundUpdateError(e)) return
@@ -177,39 +263,49 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       let content = ''
 
       // 再次确认文件存在且非空（避免零字节文件进入 pdf-to-img 等链路）
-      if (!filePath || !fs.existsSync(filePath)) {
-        throw new Error(`【解析失败】本地文件不存在：${filePath || '(empty path)'}。请重新上传。`)
+      if (!effectivePath || !fs.existsSync(effectivePath)) {
+        throw new Error(`【解析失败】本地文件不存在：${effectivePath || '(empty path)'}。请重新上传。`)
       }
-      const st = fs.statSync(filePath)
+      const st = fs.statSync(effectivePath)
       if (st.size < 1) {
-        throw new Error(`【解析失败】本地文件为空（0 bytes）：${filePath}。请重新上传。`)
+        throw new Error(`【解析失败】本地文件为空（0 bytes）：${effectivePath}。请重新上传。`)
       }
       await heartbeat('FILE_OK')
 
       switch (fileType) {
-        case FileType.PDF:
-          await heartbeat('PDF')
-          content = await this.parsePdfWithVisionFallback(filePath)
+        case FileType.PDF: {
+          const sizeMb = st.size / (1024 * 1024)
+          await heartbeat('PDF', {
+            phase: 'PDF',
+            fileBytes: st.size,
+            ...(sizeMb > 5 ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf' } : {}),
+          })
+          content = await this.parsePdfWithVisionFallback(effectivePath, heartbeat, {
+            fileId,
+            fileBytes: st.size,
+            parseRetryHint,
+          })
           break
+        }
         case FileType.WORD:
           await heartbeat('WORD')
-          content = await this.parseWord(filePath)
+          content = await this.parseWord(effectivePath)
           break
         case FileType.EXCEL:
           await heartbeat('EXCEL')
-          content = await this.parseExcel(filePath)
+          content = await this.parseExcel(effectivePath)
           break
         case FileType.YAML:
           await heartbeat('YAML')
-          content = fs.readFileSync(filePath, 'utf-8')
+          content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.TEXT:
           await heartbeat('TEXT')
-          content = fs.readFileSync(filePath, 'utf-8')
+          content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
           await heartbeat('IMAGE')
-          content = await this.parseImageVisionThenOcr(filePath, mimeType)
+          content = await this.parseImageVisionThenOcr(effectivePath, mimeType)
           break
         default:
           content = '不支持的文件格式'
@@ -220,7 +316,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         throw new Error(trimmed || '内容为空，无法完成解析')
       }
 
-      await heartbeat('STRUCTURE')
+      await heartbeat('STRUCTURE', { phase: 'STRUCTURE' })
       const masked = maskSensitivePlainText(content)
       const { requirements: structured, cleanedText } =
         await this.requirementStructure.structureRequirements(masked)
@@ -237,6 +333,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           parseStage: 'DONE',
           parseFinishedAt: new Date(),
           lastHeartbeatAt: new Date(),
+          parseProgress: Prisma.DbNull,
+          parseRetryHint: null,
         },
       })
       this.logger.log(`文件解析完成: ${fileId}`)
@@ -251,6 +349,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             parseStage: 'FAILED',
             parseFinishedAt: new Date(),
             lastHeartbeatAt: new Date(),
+            parseProgress: Prisma.DbNull,
           },
         })
       } catch (e) {
@@ -261,6 +360,34 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         throw e
       }
       this.logger.error(`文件解析失败: ${fileId}`, err as Error)
+    }
+    } finally {
+      if (cosTempFile && fs.existsSync(cosTempFile)) {
+        try {
+          fs.unlinkSync(cosTempFile)
+        } catch {
+          /* ignore */
+        }
+      }
+      await this.cleanupChunkDirAfterParse(fileId)
+    }
+  }
+
+  /** 解析结束（成功/失败）后删除本分片上传临时目录，释放轻量云磁盘 */
+  private async cleanupChunkDirAfterParse(fileId: string): Promise<void> {
+    try {
+      const row = await this.prisma.uploadedFile.findUnique({
+        where: { id: fileId },
+        select: { uploaderId: true },
+      })
+      if (!row) return
+      const chunkDir = this.chunkSessionDir(row.uploaderId, fileId)
+      if (fs.existsSync(chunkDir)) {
+        fs.rmSync(chunkDir, { recursive: true, force: true })
+        this.logger.debug(`解析后已清理分片目录: ${chunkDir}`)
+      }
+    } catch (e) {
+      this.logger.warn(`解析后清理分片目录失败 fileId=${fileId}`, e as Error)
     }
   }
 
@@ -291,59 +418,425 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     )
   }
 
-  /** PDF：先文本提取；文本过少或强制开关时，对首页做视觉理解 */
-  private async parsePdfWithVisionFallback(filePath: string): Promise<string> {
+  /**
+   * PDF：第一层 pdf-parse 文本层；足够则直接返回。
+   * 否则分页 OCR（视觉 / Paddle / Tesseract）；支持增量快照与 parseProgress 回写。
+   */
+  private async parsePdfWithVisionFallback(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null },
+  ): Promise<string> {
+    if (ctx.parseRetryHint === 'text_only') {
+      await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
+      const { text, numpages } = await this.parsePdfWithMeta(filePath)
+      if (!text.trim()) {
+        throw new Error(
+          '【解析失败】「仅内置文本」模式下未读取到文本层，可能为扫描版 PDF。请重新解析并取消「仅内置文本」，以启用完整 OCR。',
+        )
+      }
+      await heartbeat('PDF_TEXT_LAYER_OK', {
+        phase: 'TEXT_LAYER',
+        pageTotal: numpages,
+        message: 'text_only_ok',
+      })
+      return `【PDF 文本提取｜仅内置文本】\n${text.trim()}`
+    }
+
+    const sizeMb = ctx.fileBytes / (1024 * 1024)
+    await heartbeat('PDF_TEXT_LAYER', {
+      phase: 'TEXT_LAYER',
+      fileBytes: ctx.fileBytes,
+      ...(sizeMb > 5
+        ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf_eta' }
+        : {}),
+    })
+
     let text = ''
+    let numpages = 0
     try {
-      text = await this.parsePdf(filePath)
+      const meta = await this.parsePdfWithMeta(filePath)
+      text = meta.text
+      numpages = meta.numpages
     } catch (e) {
       this.logger.warn(`pdf-parse 失败: ${(e as Error).message}`)
     }
 
+    await heartbeat('PDF_TEXT_LAYER', {
+      phase: 'TEXT_LAYER',
+      extractedChars: text.trim().length,
+      pageTotal: numpages,
+    })
+
     const minLen = parseInt(this.config.get<string>('VISION_PDF_MIN_TEXT_CHARS') || '120', 10)
+    const garbledMaxRaw = this.config.get<string>('PDF_TEXT_GARBLED_RATIO_MAX')
+    const garbledMax = parseFloat(garbledMaxRaw || '0.3')
+    const garbledRatio = this.estimateGarbledRatio(text)
     const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
 
-    let visionBlock = ''
-    let pdfVisionOutcome: Awaited<
-      ReturnType<DocumentVisionService['transcribePdfFirstPageVision']>
-    > | null = null
-    const hasVision = !!(await this.documentVision.resolveVisionModel())
-    if (hasVision && (text.trim().length < minLen || forceVision)) {
-      pdfVisionOutcome = await this.documentVision.transcribePdfFirstPageVision(filePath)
-      if (pdfVisionOutcome.outcome === 'success') {
-        visionBlock = `【PDF 首页视觉理解｜${pdfVisionOutcome.modelName}】\n${pdfVisionOutcome.text.trim()}`
+    const gm = Number.isFinite(garbledMax) && garbledMax > 0 && garbledMax <= 1 ? garbledMax : 0.3
+    const textSufficient = text.trim().length >= minLen && garbledRatio <= gm
+
+    if (textSufficient && !forceVision) {
+      await heartbeat('PDF_TEXT_LAYER_OK', {
+        phase: 'TEXT_LAYER',
+        pageTotal: numpages,
+        message: 'skip_ocr',
+      })
+      this.logger.log(
+        `PDF 文本层可用（${text.trim().length} 字，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），跳过多模态/OCR`,
+      )
+      return `【PDF 文本提取】\n${text.trim()}`
+    }
+
+    if (textSufficient && forceVision) {
+      await heartbeat('PDF_TEXT_LAYER_OK', { phase: 'TEXT_LAYER', pageTotal: numpages })
+      this.logger.log(
+        `PDF 文本层已充足；忽略 VISION_PDF_ALWAYS，避免对大文件发起多余视觉调用（${text.trim().length} 字）`,
+      )
+      return `【PDF 文本提取】\n${text.trim()}`
+    }
+
+    this.logger.warn(
+      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），启用分页 OCR 管线`,
+    )
+    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat, ctx.fileId, numpages)
+  }
+
+  /** 乱码/替换符占比，用于判断是否需要 OCR */
+  private estimateGarbledRatio(raw: string): number {
+    if (!raw || raw.length === 0) return 1
+    let bad = 0
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw.charCodeAt(i)
+      if (c === 0xfffd) bad++
+      else if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++
+    }
+    return bad / raw.length
+  }
+
+  private getOcrBatchSize(): number {
+    const n = parseInt(this.config.get<string>('PDF_OCR_BATCH_SIZE') || '5', 10)
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.max(n, 1), 20) : 5
+  }
+
+  private getOcrMaxConcurrentBatches(): number {
+    const n = parseInt(this.config.get<string>('PDF_OCR_MAX_CONCURRENT_BATCHES') || '2', 10)
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 8) : 2
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms))
+  }
+
+  private async retryPdfShard<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    const retries = parseInt(this.config.get<string>('PDF_OCR_SHARD_RETRIES') || '2', 10)
+    const delayMs = parseInt(this.config.get<string>('PDF_OCR_SHARD_RETRY_DELAY_MS') || '5000', 10)
+    const maxAttempts = Number.isFinite(retries) && retries >= 0 ? retries + 1 : 3
+    const delay = Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 5000
+    let lastErr: Error | undefined
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn()
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e))
+        this.logger.warn(`${label} 第 ${attempt}/${maxAttempts} 次失败: ${lastErr.message}`)
+        if (attempt < maxAttempts) await this.sleep(delay)
+      }
+    }
+    throw lastErr ?? new Error(`${label} 失败`)
+  }
+
+  private async runPool<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T, idx: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) return []
+    const results = new Array<R>(items.length)
+    let nextIndex = 0
+    const workerFn = async () => {
+      while (true) {
+        const idx = nextIndex++
+        if (idx >= items.length) break
+        results[idx] = await worker(items[idx], idx)
+      }
+    }
+    const pool = Math.min(Math.max(limit, 1), items.length)
+    await Promise.all(Array.from({ length: pool }, () => workerFn()))
+    return results
+  }
+
+  /** 增量解析：拆出前若干页的批次，便于先落库快照再继续后台识别 */
+  private splitBatchesForIncremental(
+    batches: { pageNum: number; buffer: Buffer }[][],
+    snapshotThroughPage: number,
+  ): [{ pageNum: number; buffer: Buffer }[][], { pageNum: number; buffer: Buffer }[][]] {
+    if (!batches.length) return [[], []]
+    let cut = 0
+    let maxP = 0
+    for (let i = 0; i < batches.length; i++) {
+      const batchMax = Math.max(...batches[i].map((x) => x.pageNum))
+      maxP = Math.max(maxP, batchMax)
+      cut = i + 1
+      if (maxP >= snapshotThroughPage) break
+    }
+    if (cut >= batches.length) return [batches, []]
+    return [batches.slice(0, cut), batches.slice(cut)]
+  }
+
+  private combineOcrBatchSections(results: { section: string; failedPages: number[] }[]): {
+    sectionsText: string
+    failedPages: number[]
+  } {
+    const failed: number[] = []
+    const sections: string[] = []
+    for (const br of results) {
+      sections.push(br.section)
+      failed.push(...br.failedPages)
+    }
+    return {
+      sectionsText: sections.join('\n\n'),
+      failedPages: [...new Set(failed)].sort((a, b) => a - b),
+    }
+  }
+
+  private buildPdfOcrBody(
+    embeddedText: string,
+    ocrSections: string,
+    failedPages: number[],
+  ): string {
+    const parts: string[] = []
+    if (embeddedText.trim()) {
+      parts.push(
+        `【PDF 内置文本层（质量不足或为空；已启用分页 OCR）】\n${embeddedText.trim()}`,
+      )
+    }
+    parts.push(`【PDF 分页识别】\n${ocrSections}`)
+    if (failedPages.length) {
+      parts.push(
+        `【PDF 解析备注】以下页面自动识别失败，建议对照原稿核对：第 ${failedPages.join('、')} 页`,
+      )
+    }
+    return parts.join('\n\n')
+  }
+
+  private async saveIncrementalSnapshot(
+    fileId: string,
+    markdown: string,
+    meta: Record<string, unknown>,
+  ) {
+    try {
+      await this.prisma.uploadedFile.update({
+        where: { id: fileId },
+        data: {
+          parsedContent:
+            markdown +
+            '\n\n---\n【增量解析】剩余页面仍在后台识别中，完成后将自动替换为完整结果；也可稍后刷新页面。',
+          structuredRequirements: Prisma.DbNull,
+          status: FileStatus.PARSING,
+          parseStage: 'PDF_OCR_PARTIAL',
+          parseProgress: { ...meta, incremental: true, phase: 'OCR' } as Prisma.InputJsonValue,
+          lastHeartbeatAt: new Date(),
+        },
+      })
+      this.logger.log(`PDF 增量快照已写入 file=${fileId}`)
+    } catch (e) {
+      this.logger.warn(`增量快照写入失败: ${(e as Error).message}`)
+    }
+  }
+
+  private async parsePdfOcrBatchedPipeline(
+    filePath: string,
+    embeddedText: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    fileId: string,
+    totalPagesHint: number,
+  ): Promise<string> {
+    await heartbeat('PDF_OCR_PIPELINE', {
+      phase: 'OCR',
+      pageTotal: totalPagesHint,
+      pageCurrent: 0,
+      message: 'ocr_start',
+    })
+    const batchSize = this.getOcrBatchSize()
+    const maxConc = this.getOcrMaxConcurrentBatches()
+
+    const batches: { pageNum: number; buffer: Buffer }[][] = []
+    let cur: { pageNum: number; buffer: Buffer }[] = []
+
+    try {
+      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath)) {
+        cur.push(page)
+        if (cur.length >= batchSize) {
+          batches.push(cur)
+          cur = []
+        }
+      }
+      if (cur.length) batches.push(cur)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      this.logger.error(`PDF 分页渲染失败: ${msg}`)
+      throw new Error(`【解析失败】PDF 分页渲染失败：${msg}`)
+    }
+
+    if (batches.length === 0) {
+      throw new Error('【解析失败】PDF 无页面或无法渲染（0 页）。')
+    }
+
+    const lastPageNum = batches[batches.length - 1][batches[batches.length - 1].length - 1].pageNum
+    const incrementalThreshold = parseInt(
+      this.config.get<string>('PDF_INCREMENTAL_THRESHOLD_PAGES') || '50',
+      10,
+    )
+    const snapshotPages = parseInt(this.config.get<string>('PDF_INCREMENTAL_SNAPSHOT_PAGES') || '10', 10)
+    const thr = Number.isFinite(incrementalThreshold) && incrementalThreshold > 0 ? incrementalThreshold : 50
+    const snap = Number.isFinite(snapshotPages) && snapshotPages > 0 ? snapshotPages : 10
+
+    this.logger.log(`PDF OCR：共 ${batches.length} 批，每批最多 ${batchSize} 页，并发 ${maxConc}，约 ${lastPageNum} 页`)
+
+    const globalBatchTotal = batches.length
+
+    const runBatch = async (
+      batch: { pageNum: number; buffer: Buffer }[],
+      idx: number,
+    ) => {
+      const first = batch[0].pageNum
+      const last = batch[batch.length - 1].pageNum
+      await heartbeat(`PDF_OCR_P${first}_${last}`, {
+        phase: 'OCR',
+        pageCurrent: last,
+        pageTotal: lastPageNum || totalPagesHint,
+        batchIndex: idx + 1,
+        batchTotal: globalBatchTotal,
+        etaMinutes: Math.max(1, Math.ceil(((globalBatchTotal - idx - 1) * 45) / 60)),
+      })
+      this.logger.log(`PDF OCR 批次 ${idx + 1}/${globalBatchTotal}：第 ${first}–${last} 页`)
+      return this.processSinglePdfOcrBatch(batch)
+    }
+
+    let batchResults: { section: string; failedPages: number[] }[]
+
+    if (lastPageNum >= thr && batches.length > 1) {
+      const [firstPart, restPart] = this.splitBatchesForIncremental(batches, snap)
+      if (firstPart.length && restPart.length) {
+        const firstRes = await this.runPool(firstPart, maxConc, (b, i) => runBatch(b, i))
+        const mergedFirst = this.combineOcrBatchSections(firstRes)
+        const interimMd = this.buildPdfOcrBody(
+          embeddedText,
+          mergedFirst.sectionsText,
+          mergedFirst.failedPages,
+        )
+        await this.saveIncrementalSnapshot(fileId, interimMd, {
+          pageCurrent: Math.max(...firstPart.flatMap((b) => b.map((p) => p.pageNum))),
+          pageTotal: lastPageNum,
+        })
+        const restRes = await this.runPool(restPart, maxConc, (b, i) =>
+          runBatch(b, firstPart.length + i),
+        )
+        batchResults = [...firstRes, ...restRes]
+      } else {
+        batchResults = await this.runPool(batches, maxConc, (b, i) => runBatch(b, i))
+      }
+    } else {
+      batchResults = await this.runPool(batches, maxConc, (b, i) => runBatch(b, i))
+    }
+
+    const merged = this.combineOcrBatchSections(batchResults)
+    return this.buildPdfOcrBody(embeddedText, merged.sectionsText, merged.failedPages)
+  }
+
+  private async processSinglePdfOcrBatch(
+    pages: { pageNum: number; buffer: Buffer }[],
+  ): Promise<{ section: string; failedPages: number[] }> {
+    const first = pages[0].pageNum
+    const last = pages[pages.length - 1].pageNum
+    const header = `--- PDF 第 ${first}–${last} 页 ---`
+    const skipVision = this.config.get<string>('PDF_OCR_SKIP_VISION') === '1'
+
+    let visionText = ''
+    if (!skipVision) {
+      const cfg = await this.documentVision.resolveVisionModel()
+      if (cfg) {
+        try {
+          visionText = await this.retryPdfShard(`PDF 视觉批次 ${first}-${last}`, () =>
+            this.documentVision.transcribeMultiplePngBuffers(
+              cfg,
+              pages.map((p) => p.buffer),
+            ),
+          )
+        } catch (e) {
+          this.logger.warn(`PDF 视觉批次 ${first}-${last} 最终失败，将使用 Tesseract: ${(e as Error).message}`)
+        }
       }
     }
 
-    if (visionBlock && text.trim()) {
-      return `${visionBlock}\n\n---\n【PDF 文本提取】\n${text.trim()}`
+    if (visionText.trim()) {
+      return { section: `${header}\n${visionText.trim()}`, failedPages: [] }
     }
-    if (visionBlock) return visionBlock
-    if (text.trim()) return `【PDF 文本提取】\n${text.trim()}`
 
-    if (!hasVision) {
-      return (
-        '【解析失败】PDF 几乎无可选中文本层（多为扫描件）。请在「系统设置 → AI 模型」中配置支持视觉的模型并勾选「文档视觉解析」，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID；服务器部署还需成功编译 node-canvas（Dockerfile 已含 cairo 等依赖）。'
-      )
+    const failedPages: number[] = []
+    const chunks: string[] = []
+    for (const { pageNum, buffer } of pages) {
+      try {
+        const t = await this.retryPdfShard(`PDF Tesseract 第 ${pageNum} 页`, () =>
+          this.ocrPngBuffer(buffer),
+        )
+        chunks.push(`（第 ${pageNum} 页）\n${t.trim() || '（本页无文本）'}`)
+      } catch {
+        failedPages.push(pageNum)
+        chunks.push(`（第 ${pageNum} 页）\n（本页 OCR 失败）`)
+      }
     }
-    if (pdfVisionOutcome?.outcome === 'pdf_render') {
-      const hint =
-        '容器内需中文字体与 cairo/pango 运行时库（镜像已尽量预装）；可尝试调低环境变量 VISION_PDF_RENDER_SCALE（如 1.0）或查看日志「PDF 转图失败」。'
-      return `【解析失败】PDF 首页转图失败：${pdfVisionOutcome.error}。${hint}`
+
+    return {
+      section: `${header}\n${chunks.join('\n\n')}`,
+      failedPages,
     }
-    if (pdfVisionOutcome?.outcome === 'vision_api') {
-      return `【解析失败】视觉模型调用失败：${pdfVisionOutcome.error}。请检查 baseUrl、modelId、Key 及多模态是否对该模型可用。`
-    }
-    return (
-      '【解析失败】已配置视觉模型，但未得到可用的首页理解结果。请查看服务日志中的「PDF 转图」/ 视觉调用详情；确认镜像已编译 canvas（pnpm.onlyBuiltDependencies 含 canvas）。'
-    )
   }
 
-  private async parsePdf(filePath: string): Promise<string> {
+  /**
+   * PNG Buffer：可选 Paddle OCR HTTP 服务 → Tesseract
+   * 期望 Paddle 服务 POST JSON `{ image_base64 }` 返回 `{ text }`
+   */
+  private async ocrPngBuffer(buffer: Buffer): Promise<string> {
+    const paddleBase = this.config.get<string>('PADDLE_OCR_SERVICE_URL')?.trim()
+    if (paddleBase) {
+      try {
+        const timeoutMs = parseInt(this.config.get<string>('PADDLE_OCR_TIMEOUT_MS') || '120000', 10)
+        const { data } = await axios.post<{ text?: string }>(
+          `${paddleBase.replace(/\/+$/, '')}/ocr`,
+          { image_base64: buffer.toString('base64') },
+          { timeout: Number.isFinite(timeoutMs) && timeoutMs > 5000 ? timeoutMs : 120000 },
+        )
+        const t = typeof data?.text === 'string' ? data.text : ''
+        if (t.trim()) return t
+      } catch (e) {
+        this.logger.warn(`Paddle OCR 不可用，降级 Tesseract: ${(e as Error).message}`)
+      }
+    }
+
+    const Tesseract = require('tesseract.js')
+    const langs =
+      (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
+      'chi_sim+chi_tra+eng'
+    const {
+      data: { text },
+    } = await Tesseract.recognize(buffer, langs)
+    return text || ''
+  }
+
+  private async parsePdfWithMeta(filePath: string): Promise<{ text: string; numpages: number }> {
     const pdfParse = require('pdf-parse')
     const buffer = fs.readFileSync(filePath)
     const data = await pdfParse(buffer)
-    return data.text
+    const numpages =
+      typeof data.numpages === 'number'
+        ? data.numpages
+        : typeof (data as { numPages?: number }).numPages === 'number'
+          ? (data as { numPages: number }).numPages
+          : 0
+    return { text: data.text || '', numpages }
   }
 
   private async parseWord(filePath: string): Promise<string> {
@@ -430,7 +923,19 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
 
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
+    if (file.path) {
+      if (CosStorageService.isCosUri(file.path)) {
+        if (this.cosStorage.isConfigured()) {
+          try {
+            await this.cosStorage.deleteObject(file.path)
+          } catch (e) {
+            this.logger.warn(`删除 COS 对象失败 ${file.path}`, e as Error)
+          }
+        }
+      } else if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path)
+      }
+    }
 
     await this.prisma.uploadedFile.delete({ where: { id } })
   }
@@ -469,11 +974,16 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return updated
   }
 
-  /** 重新排队解析（上传页「重试」） */
-  async retryParse(id: string, userId: string) {
+  /** 重新排队解析（上传页「重试」）；可选仅内置文本层 */
+  async retryParse(id: string, userId: string, opts?: { textOnly?: boolean }) {
     const file = await this.getFileById(id)
     if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
-    if (!fs.existsSync(file.path)) throw new BadRequestException('本地文件已不存在，请重新上传')
+    const canRetry =
+      !!file.path &&
+      (CosStorageService.isCosUri(file.path) || fs.existsSync(file.path))
+    if (!canRetry) {
+      throw new BadRequestException('源文件已按存储策略删除或不存在，无法重新解析，请重新上传')
+    }
 
     await this.prisma.uploadedFile.update({
       where: { id },
@@ -483,10 +993,65 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         parseError: null,
         parsedContent: null,
         structuredRequirements: Prisma.DbNull,
+        parseProgress: Prisma.DbNull,
+        parseRetryHint: opts?.textOnly ? 'text_only' : null,
       },
     })
 
     return this.getFileById(id)
+  }
+
+  /** SSE：订阅解析进度（每秒轮询 DB，终端状态或客户端断开时结束） */
+  async streamParseEvents(
+    id: string,
+    userId: string,
+    res: import('express').Response,
+    req?: import('express').Request,
+  ): Promise<void> {
+    const file = await this.getFileById(id)
+    if (file.uploaderId !== userId) {
+      res.status(403).end()
+      return
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders?.()
+
+    let iv: ReturnType<typeof setInterval> | undefined
+    const cleanup = () => {
+      if (iv) clearInterval(iv)
+      iv = undefined
+      try {
+        if (!res.writableEnded) res.end()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    req?.on('close', cleanup)
+
+    const tick = async () => {
+      try {
+        const f = await this.getFileById(id)
+        const payload = {
+          status: f.status,
+          parseStage: f.parseStage,
+          parseProgress: (f as { parseProgress?: unknown }).parseProgress ?? null,
+          parseError: f.parseError,
+        }
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+        if (f.status !== FileStatus.PENDING && f.status !== FileStatus.PARSING) {
+          cleanup()
+        }
+      } catch {
+        cleanup()
+      }
+    }
+
+    void tick()
+    iv = setInterval(() => void tick(), 1000)
   }
 
   /**
@@ -607,14 +1172,27 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     const ext = path.extname(dto.originalName) || '.bin'
     const filename = `${uuid()}${ext}`
-    const destPath = path.join(this.uploadDir, filename)
-    fs.writeFileSync(destPath, final)
 
     try {
       fs.rmSync(dir, { recursive: true, force: true })
     } catch (e) {
       this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
     }
+
+    // COS：合并结果直接内存上传，不向 UPLOAD_DIR 写入整文件
+    if (this.cosStorage.isConfigured()) {
+      const multerLike = {
+        buffer: final,
+        filename,
+        originalname: dto.originalName,
+        mimetype: dto.mimeType,
+        size: final.length,
+      } as Express.Multer.File
+      return this.saveUploadedFile(multerLike, uploaderId)
+    }
+
+    const destPath = path.join(this.uploadDir, filename)
+    fs.writeFileSync(destPath, final)
 
     const multerLike = {
       path: destPath,

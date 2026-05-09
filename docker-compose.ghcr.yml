@@ -1,0 +1,118 @@
+# 与 docker-compose.full.yml 等价，但 frontend/backend 使用预构建镜像（GHCR），不在 VPS 上 docker build。
+# 由 CI 注入 BACKEND_IMAGE / FRONTEND_IMAGE；本地/VPS 应急可在仓库 Variables 设 DEPLOY_BUILD_ON_SERVER=true 改回 full + build。
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE from CI or env}
+    container_name: ${STACK_PREFIX:-testcase}_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - testcase_network
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE from CI or env}
+    container_name: ${STACK_PREFIX:-testcase}_backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/testcase_db}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
+      - DEFAULT_AI_MODEL=${DEFAULT_AI_MODEL:-glm-4.5}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - AUTH_ALLOW_PLAINTEXT_PASSWORD=${AUTH_ALLOW_PLAINTEXT_PASSWORD:-}
+      - UPLOAD_DIR=${UPLOAD_DIR:-./uploads}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
+      - APP_PORT=${APP_PORT:-3000}
+      - THROTTLE_TTL=${THROTTLE_TTL:-60}
+      - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
+      - AUTH_ADMIN_ONLY=${AUTH_ADMIN_ONLY:-}
+      # 不设则走后端默认（生产 30s / 非生产关闭）；显式 0=关闭
+      - TEMPLATES_LIST_CACHE_TTL_MS=${TEMPLATES_LIST_CACHE_TTL_MS}
+      - FILE_PARSE_WORKER_ENABLED=${FILE_PARSE_WORKER_ENABLED:-1}
+      - FILE_PARSE_WORKER_INTERVAL_MS=${FILE_PARSE_WORKER_INTERVAL_MS:-1500}
+      - FILE_PARSE_TIMEOUT_MINUTES=${FILE_PARSE_TIMEOUT_MINUTES:-15}
+      - VISION_PARSE_MODEL_CONFIG_ID=${VISION_PARSE_MODEL_CONFIG_ID:-}
+      - VISION_PDF_MIN_TEXT_CHARS=${VISION_PDF_MIN_TEXT_CHARS:-120}
+      - VISION_PDF_ALWAYS=${VISION_PDF_ALWAYS:-0}
+      - VISION_PDF_RENDER_SCALE=${VISION_PDF_RENDER_SCALE:-1.2}
+      - OCR_LANGS=${OCR_LANGS:-chi_sim+chi_tra+eng}
+      - SKIP_PRISMA_MIGRATE_ON_START=${SKIP_PRISMA_MIGRATE_ON_START:-}
+      - AUTO_ARCHIVE_IDLE_DAYS=${AUTO_ARCHIVE_IDLE_DAYS:-0}
+      # 默认指向 compose 内 redis 服务；多副本时可设 TEMPLATES_LIST_CACHE_REDIS=1 使模板列表缓存跨实例一致失效
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - TEMPLATES_LIST_CACHE_REDIS=${TEMPLATES_LIST_CACHE_REDIS:-}
+      # 腾讯云 COS（可选；主机 env / —env-file 中配置；四项齐全时单文件上传内存直传 COS）
+      - COS_SECRET_ID=${COS_SECRET_ID:-}
+      - COS_SECRET_KEY=${COS_SECRET_KEY:-}
+      - COS_BUCKET=${COS_BUCKET:-}
+      - COS_REGION=${COS_REGION:-}
+      - COS_PREFIX=${COS_PREFIX:-}
+      - COS_PARSE_TEMP_DIR=${COS_PARSE_TEMP_DIR:-}
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # migrate deploy 完成后才 listen；start_period 内失败不计入 retries
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "require(''http'').get(''http://127.0.0.1:3000/health'',(r)=>process.exit(r.statusCode===200?0:1)).on(''error'',()=>process.exit(1))"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 180s
+    networks:
+      - testcase_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ${STACK_PREFIX:-testcase}_postgres
+    restart: unless-stopped
+    ports:
+      - '${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432'
+    environment:
+      POSTGRES_USER: ${DB_USER:-testcase_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-testcase_pass}
+      POSTGRES_DB: ${DB_NAME:-testcase_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-testcase_user}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - testcase_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${STACK_PREFIX:-testcase}_redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_HOST_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - testcase_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  testcase_network:
+    driver: bridge

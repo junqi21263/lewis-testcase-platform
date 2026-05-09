@@ -20,8 +20,8 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  Circle,
   Square,
+  Terminal,
   User,
   ArrowRight,
   X,
@@ -30,16 +30,28 @@ import {
   ChevronDown,
   ChevronUp,
   WifiOff,
+  FileDown,
+  Sparkles,
+  History,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { filesApi } from '@/api/files'
+import { subscribeFileParseEvents } from '@/api/fileParseSse'
 import { aiApi } from '@/api/ai'
-import type { AIModel, UploadedFile } from '@/types'
+import type { AIModel, UploadedFile, GenerationRecord } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
+import { displayUploadedFilename, normalizeUploadedFilename } from '@/utils/filenameDisplay'
+import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
+import { recordsApi } from '@/api/records'
+import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromptDefault'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
+import { useGenerateStore } from '@/store/generateStore'
+import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
+import { buildAnalysisPdfFileName, saveAnalysisReportPdf } from '@/utils/exportAnalysisPdf'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -81,6 +93,7 @@ type Action =
   | { type: 'GO_IDLE' }
   | { type: 'ERROR'; log: LogEntry }
   | { type: 'STOP_TO_IDLE' }
+  | { type: 'LOAD_SAVED_REPORT'; text: string }
 
 const initialPageState: PageState = {
   status: 'idle',
@@ -136,32 +149,34 @@ function pageReducer(state: PageState, action: Action): PageState {
       return { ...state, logs: [...state.logs, action.log], status: 'error' }
     case 'STOP_TO_IDLE':
       return { ...state, status: 'idle' }
+    case 'LOAD_SAVED_REPORT':
+      return {
+        ...state,
+        status: 'review',
+        reportText: action.text,
+        reviewText: '',
+        logs: [],
+      }
     default:
       return state
   }
 }
 
-const ANALYSIS_PROMPT = `请对以下需求文档进行详细的结构化分析，输出包含以下部分：
+const PROMPT_TEMPLATE_STORAGE_KEY = 'ai-analysis-prompt-template-v2'
 
-## 1. 主要功能需求
-列出所有核心功能点，每条用加粗标注关键术语。
-
-## 2. 非功能需求
-包括性能、安全、可用性、兼容性等方面的要求。
-
-## 3. 接口需求
-列出需要的 API 接口，包含方法、路径和简要说明。
-
-## 4. 数据模型
-列出主要数据实体及其关键字段。
-
-## 5. 风险与建议
-标注高/中/低风险项，并给出可行建议。
-
-请用 Markdown 格式输出，层次清晰、内容完整。`
+function loadStoredPromptTemplate(): string {
+  try {
+    const s = localStorage.getItem(PROMPT_TEMPLATE_STORAGE_KEY)
+    if (s?.trim()) return s
+  } catch {
+    /* 隐私模式等 */
+  }
+  return ANALYSIS_PROMPT
+}
 
 const POLL_INTERVAL_MS = 1000
-const POLL_MAX_ROUNDS = 120
+/** 与后端 FILE_PARSE_TIMEOUT_MINUTES（默认 15）对齐：约 15 分钟内每秒轮询一次 */
+const POLL_MAX_ROUNDS = 900
 
 function nowTime(): string {
   const d = new Date()
@@ -170,6 +185,14 @@ function nowTime(): string {
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms))
+}
+
+/** 多图批量上传：允许的扩展名（与后端图片解析一致） */
+const IMAGE_BATCH_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
+
+function isImageBatchFile(file: File): boolean {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_BATCH_EXT.has(ext)
 }
 
 function formatRelative(iso: string): string {
@@ -186,6 +209,33 @@ function formatRelative(iso: string): string {
   return `${d} 天前`
 }
 
+/**
+ * 终端日志左侧图标仅由本行文案决定（与 dispatch 时写入的 icon 字段无关），避免全局阶段与文案语义不一致。
+ * 优先级：失败类 → 成功类 → 进行中类 → 默认进行中。
+ */
+function terminalLogIconFromText(text: string): LogEntry['icon'] {
+  const t = text
+  const errorLike =
+    t.includes('失败') || (t.includes('错误') && !t.includes('无错误'))
+  if (errorLike) return 'error'
+
+  const successLike =
+    t.includes('上传成功') ||
+    t.includes('解析成功') ||
+    t.includes('读取成功') ||
+    (t.includes('完成') && !t.includes('未完成'))
+  if (successLike) return 'success'
+
+  const loadingLike =
+    t.includes('正在上传') ||
+    t.includes('正在等待') ||
+    t.includes('等待解析') ||
+    t.includes('正在')
+  if (loadingLike) return 'loading'
+
+  return 'loading'
+}
+
 function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntry['icon']; text: string } {
   const s = stage ?? 'PENDING'
   switch (s) {
@@ -194,9 +244,15 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
     case 'CLAIMED':
       return { icon: 'loading', text: '📝 开始解析文档...' }
     case 'FILE_OK':
-      return { icon: 'success', text: '✅ 文件读取成功' }
+      return { icon: 'loading', text: '✅ 文件读取成功，继续解析…' }
     case 'PDF':
       return { icon: 'loading', text: '📄 正在提取 PDF 文本...' }
+    case 'PDF_TEXT_LAYER':
+      return { icon: 'loading', text: '📄 正在提取 PDF 内置文本层...' }
+    case 'PDF_TEXT_LAYER_OK':
+      return { icon: 'loading', text: '✅ PDF 内置文本可用，跳过 OCR' }
+    case 'PDF_OCR_PIPELINE':
+      return { icon: 'loading', text: '🔍 扫描件或文本不足，正在分页 OCR（分批处理）...' }
     case 'WORD':
       return { icon: 'loading', text: '📄 正在提取 Word 文本...' }
     case 'EXCEL':
@@ -208,26 +264,56 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
       return { icon: 'loading', text: '🔍 检测到扫描件，正在 OCR 识别...' }
     case 'STRUCTURE':
       return { icon: 'loading', text: '⚙️ 正在结构化需求提取...' }
+    case 'PDF_OCR_PARTIAL':
+      return { icon: 'loading', text: '📎 已生成部分解析文本，后台继续识别剩余页面…' }
     case 'DONE':
       return { icon: 'success', text: '✅ 解析完成' }
     case 'FAILED':
       return { icon: 'error', text: '❌ 解析失败' }
     case 'CANCELLED':
       return { icon: 'error', text: '❌ 已取消解析' }
-    default:
+    default: {
+      const m = /^PDF_OCR_P(\d+)_(\d+)$/.exec(s || '')
+      if (m) {
+        return {
+          icon: 'loading',
+          text: `🔍 正在识别 PDF 第 ${m[1]}–${m[2]} 页（分批 OCR）...`,
+        }
+      }
       return { icon: 'loading', text: `📄 解析阶段：${s}` }
+    }
   }
 }
 
 /* ──────────────────── 子组件 ──────────────────────── */
 
-function TrafficLights() {
+/** 终端日志左侧状态图标：同一 icon 类型始终同一组件与同一像素尺寸，避免同页多种 Loader2 样式漂移 */
+const TERMINAL_LOG_ICON_PX = 14
+
+function TerminalLogStatusIcon({ status }: { status: LogEntry['icon'] }) {
+  const box = 'inline-flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center'
+  if (status === 'success') {
+    return (
+      <span className={box} aria-hidden>
+        <CheckCircle2 size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-green-400" />
+      </span>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <span className={box} aria-hidden>
+        <XCircle size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-red-400" />
+      </span>
+    )
+  }
   return (
-    <div className="flex items-center gap-1.5">
-      <Circle className="w-3 h-3 fill-red-500 text-red-500" />
-      <Circle className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-      <Circle className="w-3 h-3 fill-green-500 text-green-500" />
-    </div>
+    <span className={box} aria-hidden>
+      <Loader2
+        size={TERMINAL_LOG_ICON_PX}
+        strokeWidth={2}
+        className="text-blue-400 animate-spin"
+      />
+    </span>
   )
 }
 
@@ -256,81 +342,12 @@ function StatusBadge({
 }
 
 function LogLine({ entry }: { entry: LogEntry }) {
-  const iconMap = {
-    loading: <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin flex-shrink-0" />,
-    success: <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />,
-    error: <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />,
-  }
+  const status = terminalLogIconFromText(entry.text)
   return (
     <div className="flex items-start gap-2.5 text-sm leading-relaxed font-mono py-0.5 animate-[fadeIn_0.3s_ease-out]">
-      {iconMap[entry.icon]}
+      <TerminalLogStatusIcon status={status} />
       <span className="text-gray-500 flex-shrink-0">[{entry.timestamp}]</span>
       <span className="text-gray-300 whitespace-pre-wrap break-words">{entry.text}</span>
-    </div>
-  )
-}
-
-function MarkdownReport({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div className="space-y-1 text-sm leading-[1.7] font-mono">
-      {lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed) return <div key={i} className="h-2" />
-
-        if (trimmed.startsWith('## ')) {
-          return (
-            <h3
-              key={i}
-              className="text-base font-bold text-foreground mt-4 mb-1 border-b border-border/30 pb-1"
-            >
-              {trimmed.slice(3)}
-            </h3>
-          )
-        }
-        if (trimmed.startsWith('### ')) {
-          return (
-            <h4 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1">
-              {trimmed.slice(4)}
-            </h4>
-          )
-        }
-        if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
-          return (
-            <p key={i} className="text-foreground font-semibold">
-              {trimmed.slice(2, -2)}
-            </p>
-          )
-        }
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const content = trimmed
-            .slice(2)
-            .replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
-          return (
-            <div key={i} className="flex gap-2 pl-2">
-              <span className="text-primary flex-shrink-0">•</span>
-              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-            </div>
-          )
-        }
-        if (/^\d+\.\s/.test(trimmed)) {
-          const content = trimmed
-            .replace(/^\d+\.\s/, '')
-            .replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>')
-          const num = trimmed.match(/^(\d+)\./)?.[1]
-          return (
-            <div key={i} className="flex gap-2 pl-2">
-              <span className="text-primary flex-shrink-0 font-semibold">{num}.</span>
-              <span className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-            </div>
-          )
-        }
-        const content = trimmed.replace(
-          /\*\*(.+?)\*\*/g,
-          '<strong class="text-foreground font-semibold">$1</strong>',
-        )
-        return <p key={i} className="text-gray-300" dangerouslySetInnerHTML={{ __html: content }} />
-      })}
     </div>
   )
 }
@@ -368,9 +385,16 @@ class AiAnalysisErrorBoundary extends Component<{ children: ReactNode }, { err: 
 /* ──────────────────── 内页 ──────────────────────── */
 
 function AiAnalysisPageInner() {
+  const navigate = useNavigate()
+  const setPendingGenerateHandoff = useGenerateStore((s) => s.setPendingGenerateHandoff)
   const [state, dispatch] = useReducer(pageReducer, initialPageState)
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
+  /** 与 uploadedFile 同属一批多图分析时的其余图片（最多再 4 张，合计 ≤5） */
+  const [additionalAnalysisFiles, setAdditionalAnalysisFiles] = useState<UploadedFile[]>([])
+  const [analysisRecords, setAnalysisRecords] = useState<GenerationRecord[]>([])
   const [requirementText, setRequirementText] = useState('')
+  const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
+  const [exportingPdf, setExportingPdf] = useState(false)
   const [humanReview, setHumanReview] = useState(true)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
@@ -384,8 +408,11 @@ function AiAnalysisPageInner() {
   const [parseElapsed, setParseElapsed] = useState(0)
   const [analysisElapsed, setAnalysisElapsed] = useState(0)
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  /** 本机选择的 File.name，避免接口 originalName 编码异常导致列表乱码 */
+  const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
 
   const logContainerRef = useRef<HTMLDivElement>(null)
+  const reportMarkdownRef = useRef<HTMLDivElement>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
   const operationAbortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -432,6 +459,24 @@ function AiAnalysisPageInner() {
   useEffect(() => {
     void loadFileHistory()
   }, [loadFileHistory])
+
+  const loadAnalysisRecords = useCallback(async () => {
+    try {
+      const res = await recordsApi.getRecords({
+        page: 1,
+        pageSize: 15,
+        keyword: '需求分析',
+        sortOrder: 'desc',
+      })
+      setAnalysisRecords(res.list)
+    } catch {
+      setAnalysisRecords([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAnalysisRecords()
+  }, [loadAnalysisRecords])
 
   useEffect(() => {
     const onOff = () => {
@@ -492,22 +537,135 @@ function AiAnalysisPageInner() {
     if (dist > 50) setAutoScroll(false)
   }, [])
 
-  const copyLogs = useCallback(() => {
-    const text = state.logs.map((l) => `[${l.timestamp}] ${l.text}`).join('\n')
-    void navigator.clipboard.writeText(text).then(
-      () => toast.success('日志已复制'),
-      () => toast.error('复制失败'),
-    )
-  }, [state.logs])
+  const copyAnalysisReport = useCallback(async () => {
+    const text = state.reportText.trim()
+    if (!text) {
+      toast.error('暂无分析报告可复制')
+      return
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        toast.success('已复制分析报告')
+        return
+      }
+    } catch {
+      /* HTTP 或非安全上下文常失败，走 fallback */
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.top = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) toast.success('已复制分析报告')
+      else toast.error('复制失败，请在下方报告中选中后手动复制')
+    } catch {
+      toast.error('复制失败，请在下方报告中选中后手动复制')
+    }
+  }, [state.reportText])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROMPT_TEMPLATE_STORAGE_KEY, analysisPromptTemplate)
+    } catch {
+      /* ignore */
+    }
+  }, [analysisPromptTemplate])
+
+  const resetAnalysisPromptTemplate = useCallback(() => {
+    setAnalysisPromptTemplate(ANALYSIS_PROMPT)
+    toast.success('已恢复默认分析指令模板')
+  }, [])
+
+  const handleExportAnalysisPdf = useCallback(async () => {
+    const markdown = state.reportText.trim()
+    if (!markdown) {
+      toast.error('暂无可导出的分析报告')
+      return
+    }
+    setExportingPdf(true)
+    try {
+      const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
+      await saveAnalysisReportPdf(
+        {
+          markdown,
+          documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
+          version: 'V1.0',
+        },
+        name,
+      )
+      toast.success('PDF 已生成并开始下载')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '导出 PDF 失败')
+    } finally {
+      setExportingPdf(false)
+    }
+  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+
+  const handleSendToGenerate = useCallback(() => {
+    const report = state.reportText.trim()
+    if (!report) {
+      toast.error('请先生成并通过分析报告后再跳转')
+      return
+    }
+    const parts: string[] = []
+    if (uploadedFile?.originalName) {
+      parts.push(`来源文档：${normalizeUploadedFilename(uploadedFile.originalName)}`)
+    }
+    if (requirementText.trim()) {
+      parts.push(`【补充说明】\n${requirementText.trim()}`)
+    }
+    const edited = editedParsedText.trim()
+    if (edited && parsePreviewDirty) {
+      parts.push(`【解析原文（当前编辑）】\n${edited}`)
+    } else if (uploadedFile?.parsedContent?.trim()) {
+      const pc = uploadedFile.parsedContent
+      const cap = 12000
+      parts.push(
+        `【解析原文摘录】\n${pc.length > cap ? `${pc.slice(0, cap)}\n…（共 ${pc.length} 字，已截断）` : pc}`,
+      )
+    }
+    const ctx = parts.filter(Boolean).join('\n\n')
+    const filledPrompt = `请根据以下材料生成完整、可执行的测试用例（遵守平台模板与输出格式要求）。\n\n${ctx ? `${ctx}\n\n` : ''}【AI 需求分析报告】\n${report}`
+    setPendingGenerateHandoff({
+      filledPrompt,
+      templateId: null,
+      parseRecordId: null,
+      fileIds: uploadedFile?.id ? [uploadedFile.id] : [],
+      rawText: report,
+      handoffSource: 'ai-analysis',
+    })
+    navigate('/generate')
+  }, [
+    editedParsedText,
+    navigate,
+    parsePreviewDirty,
+    requirementText,
+    setPendingGenerateHandoff,
+    state.reportText,
+    uploadedFile,
+  ])
 
   const pollUntilParsed = useCallback(
-    async (fileId: string, signal: AbortSignal): Promise<UploadedFile> => {
+    async (
+      fileId: string,
+      signal: AbortSignal,
+      onTick?: (f: UploadedFile) => void,
+    ): Promise<UploadedFile> => {
       let lastStage: string | undefined
       for (let i = 0; i < POLL_MAX_ROUNDS; i++) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         await sleep(POLL_INTERVAL_MS)
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         const f = await filesApi.getFileById(fileId)
+        onTick?.(f)
         const stage = f.parseStage ?? undefined
         if (stage !== lastStage) {
           lastStage = stage
@@ -532,6 +690,153 @@ function AiAnalysisPageInner() {
     [addLog],
   )
 
+  const retryParseFlow = useCallback(
+    async (fileId: string, signal: AbortSignal, textOnly?: boolean) => {
+      const r = await filesApi.retryParse(fileId, textOnly ? { textOnly: true } : undefined)
+      setUploadedFile(r)
+      dispatch({ type: 'UPLOAD_DONE' })
+      addLog(
+        'loading',
+        textOnly ? '📄 已提交「仅内置文本」重新解析…' : '📄 已提交重新解析…',
+      )
+      const parsed = await pollUntilParsed(fileId, signal, setUploadedFile)
+      setUploadedFile(parsed)
+      if (parsed.status === 'PARSED') {
+        setEditedParsedText(parsed.parsedContent ?? '')
+        dispatch({ type: 'GO_IDLE' })
+        void loadFileHistory()
+      } else {
+        addLog('error', `❌ ${parsed.parseError ?? '解析失败'}`)
+        dispatch({
+          type: 'ERROR',
+          log: makeLog('error', parsed.parseError ?? '解析失败'),
+        })
+      }
+    },
+    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed],
+  )
+
+  useEffect(() => {
+    if (!uploadedFile?.id || uploadedFile.status !== 'PARSING') return
+    const id = uploadedFile.id
+    const ac = new AbortController()
+    subscribeFileParseEvents(
+      id,
+      (p) => {
+        setUploadedFile((prev) =>
+          prev?.id === id
+            ? {
+                ...prev,
+                status: p.status as UploadedFile['status'],
+                parseStage: p.parseStage,
+                parseError: p.parseError,
+                parseProgress: p.parseProgress as UploadedFile['parseProgress'],
+              }
+            : prev,
+        )
+      },
+      { signal: ac.signal },
+    )
+    return () => ac.abort()
+  }, [uploadedFile?.id, uploadedFile?.status])
+
+  const applyAnalysisRecord = useCallback(async (id: string) => {
+    try {
+      const r = await recordsApi.getRecordById(id)
+      const text = r.demandContent?.trim() ?? ''
+      if (!text) {
+        toast.error('该记录无可展示内容')
+        return
+      }
+      dispatch({ type: 'LOAD_SAVED_REPORT', text })
+      toast.success('已载入分析结果')
+    } catch {
+      toast.error('加载记录失败')
+    }
+  }, [])
+
+  const handleBatchImageUpload = useCallback(
+    async (files: File[]) => {
+      const arr = Array.from(files).slice(0, 5)
+      if (arr.length < 2) return
+      if (!arr.every(isImageBatchFile)) {
+        toast.error('一次选择多张时仅支持图片（png/jpg/jpeg/webp/gif），最多 5 张')
+        return
+      }
+
+      operationAbortRef.current?.abort()
+      operationAbortRef.current = new AbortController()
+      const signal = operationAbortRef.current.signal
+
+      dispatch({ type: 'START_UPLOAD' })
+      resetUploadProgress()
+      uploadStartedAtRef.current = Date.now()
+      setUploadDisplayName(null)
+      setAdditionalAnalysisFiles([])
+      setUploadedFile(null)
+      setEditedParsedText('')
+      setParsePreviewDirty(false)
+
+      addLog('loading', `📤 批量上传 ${arr.length} 张图片…`)
+
+      try {
+        const results: UploadedFile[] = []
+        for (let i = 0; i < arr.length; i++) {
+          const file = arr[i]
+          addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+          let cur = await uploadFile(file)
+          if (signal.aborted) return
+          stashUploadedOriginalName(cur.id, file.name)
+          if (cur.status !== 'PARSED') {
+            dispatch({ type: 'UPLOAD_DONE' })
+            addLog('loading', `📄 正在解析图片 ${i + 1}/${arr.length}…`)
+            cur = await pollUntilParsed(cur.id, signal)
+          }
+          if (signal.aborted) return
+          results.push(cur)
+          setUploadedFile(results[0])
+          setAdditionalAnalysisFiles(results.slice(1))
+        }
+
+        const joined = results
+          .map((r) => r.parsedContent ?? '')
+          .filter(Boolean)
+          .join('\n\n---\n\n')
+        setEditedParsedText(joined)
+        setParsePreviewDirty(false)
+
+        if (results.every((r) => r.status === 'PARSED')) {
+          addLog('success', `✅ ${results.length} 张图片已就绪，可开始分析`)
+          dispatch({ type: 'GO_IDLE' })
+          void loadFileHistory()
+        } else {
+          const failed = results.find((r) => r.status === 'FAILED')
+          addLog('error', `❌ 图片解析失败：${failed?.parseError ?? '未知错误'}`)
+          dispatch({
+            type: 'ERROR',
+            log: makeLog('error', failed?.parseError ?? '解析失败'),
+          })
+          toast.error('部分图片解析失败')
+        }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') {
+          addLog('loading', '⏹ 已取消上传/解析')
+          dispatch({ type: 'STOP_TO_IDLE' })
+          setUploadedFile(null)
+          setAdditionalAnalysisFiles([])
+          setUploadDisplayName(null)
+          return
+        }
+        addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
+        dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
+        toast.error('批量上传失败')
+      } finally {
+        operationAbortRef.current = null
+      }
+    },
+    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed, resetUploadProgress, uploadFile],
+  )
+
   const handleFileSelect = useCallback(
     async (file: File) => {
       const v = validateFile(file)
@@ -547,6 +852,8 @@ function AiAnalysisPageInner() {
       dispatch({ type: 'START_UPLOAD' })
       resetUploadProgress()
       uploadStartedAtRef.current = Date.now()
+      setUploadDisplayName(file.name)
+      setAdditionalAnalysisFiles([])
 
       addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
@@ -554,6 +861,7 @@ function AiAnalysisPageInner() {
         const result = await uploadFile(file)
         if (signal.aborted) return
 
+        stashUploadedOriginalName(result.id, file.name)
         setUploadedFile(result)
         setParsePreviewDirty(false)
         setEditedParsedText(result.parsedContent ?? '')
@@ -570,7 +878,7 @@ function AiAnalysisPageInner() {
         dispatch({ type: 'UPLOAD_DONE' })
         addLog('loading', '📄 正在等待服务端解析文档（OCR / 文本提取）...')
 
-        const parsed = await pollUntilParsed(result.id, signal)
+        const parsed = await pollUntilParsed(result.id, signal, setUploadedFile)
         if (signal.aborted) return
 
         setUploadedFile(parsed)
@@ -591,8 +899,11 @@ function AiAnalysisPageInner() {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
           setUploadedFile(null)
+          setAdditionalAnalysisFiles([])
+          setUploadDisplayName(null)
           return
         }
+        setUploadDisplayName(null)
         addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
         dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
         toast.error('文件上传失败')
@@ -623,38 +934,52 @@ function AiAnalysisPageInner() {
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
-      const file = e.dataTransfer.files[0]
-      if (file) void handleFileSelect(file)
+      const { files } = e.dataTransfer
+      if (!files?.length) return
+      if (files.length > 1) {
+        void handleBatchImageUpload(Array.from(files))
+      } else if (files[0]) {
+        void handleFileSelect(files[0])
+      }
     },
-    [handleFileSelect],
+    [handleFileSelect, handleBatchImageUpload],
   )
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) void handleFileSelect(file)
+      const list = e.target.files
+      if (!list?.length) return
+      if (list.length > 1) {
+        void handleBatchImageUpload(Array.from(list))
+      } else if (list[0]) {
+        void handleFileSelect(list[0])
+      }
       e.target.value = ''
     },
-    [handleFileSelect],
+    [handleFileSelect, handleBatchImageUpload],
   )
 
   const handleRemoveFile = useCallback(() => {
     operationAbortRef.current?.abort()
     abortUpload()
     setUploadedFile(null)
+    setAdditionalAnalysisFiles([])
+    setUploadDisplayName(null)
     setEditedParsedText('')
     setParsePreviewDirty(false)
     dispatch({ type: 'RESET' })
   }, [abortUpload])
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
+    setUploadDisplayName(null)
+    setAdditionalAnalysisFiles([])
     setUploadedFile(f)
     setEditedParsedText(f.parsedContent ?? '')
     setParsePreviewDirty(false)
     setPreviewEditable(false)
     dispatch({ type: 'GO_IDLE' })
     if (f.status === 'PARSED') {
-      toast.success(`已选择：${f.originalName}`)
+      toast.success(`已选择：${normalizeUploadedFilename(f.originalName)}`)
     } else {
       toast('该文件尚未解析完成', { icon: 'ℹ️' })
     }
@@ -668,6 +993,7 @@ function AiAnalysisPageInner() {
         setFileHistory((prev) => prev.filter((x) => x.id !== id))
         if (uploadedFile?.id === id) {
           setUploadedFile(null)
+          setUploadDisplayName(null)
           setEditedParsedText('')
           dispatch({ type: 'RESET' })
         }
@@ -681,10 +1007,10 @@ function AiAnalysisPageInner() {
 
   const buildCustomPrompt = useCallback(() => {
     const base = requirementText.trim()
-      ? `${ANALYSIS_PROMPT}\n\n用户补充说明：\n${requirementText}`
-      : ANALYSIS_PROMPT
+      ? `${analysisPromptTemplate}\n\n用户补充说明：\n${requirementText}`
+      : analysisPromptTemplate
     return base
-  }, [requirementText])
+  }, [analysisPromptTemplate, requirementText])
 
   const runAnalyzeStream = useCallback(
     async (customPrompt: string, isRevision: boolean) => {
@@ -705,8 +1031,12 @@ function AiAnalysisPageInner() {
         addLog('loading', '🔄 正在根据修改意见重新分析...')
       }
 
+      const multiFile = additionalAnalysisFiles.length > 0
       const useText =
-        parsePreviewDirty && editedParsedText.trim().length > 0 && uploadedFile?.status === 'PARSED'
+        !multiFile &&
+        parsePreviewDirty &&
+        editedParsedText.trim().length > 0 &&
+        uploadedFile?.status === 'PARSED'
 
       const payload =
         useText && editedParsedText.trim()
@@ -721,6 +1051,9 @@ function AiAnalysisPageInner() {
             ? {
                 sourceType: 'file' as const,
                 fileId: uploadedFile.id,
+                ...(additionalAnalysisFiles.length > 0
+                  ? { additionalFileIds: additionalAnalysisFiles.map((f) => f.id) }
+                  : {}),
                 customPrompt,
                 stream: true as const,
                 modelConfigId: selectedModelId,
@@ -740,6 +1073,7 @@ function AiAnalysisPageInner() {
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
             () => {
+              void loadAnalysisRecords()
               if (humanReview) {
                 addLog(
                   'success',
@@ -769,12 +1103,14 @@ function AiAnalysisPageInner() {
     },
     [
       uploadedFile,
+      additionalAnalysisFiles,
       parsePreviewDirty,
       editedParsedText,
       humanReview,
       addLog,
       selectedModelId,
       makeLog,
+      loadAnalysisRecords,
     ],
   )
 
@@ -783,8 +1119,22 @@ function AiAnalysisPageInner() {
       toast.error('请先上传并等待文档解析完成')
       return
     }
+    if (additionalAnalysisFiles.some((f) => f.status !== 'PARSED')) {
+      toast.error('请等待全部图片解析完成')
+      return
+    }
+    if (!analysisPromptTemplate.trim()) {
+      toast.error('分析指令模板不能为空')
+      return
+    }
     await runAnalyzeStream(buildCustomPrompt(), false)
-  }, [uploadedFile, buildCustomPrompt, runAnalyzeStream])
+  }, [
+    uploadedFile,
+    additionalAnalysisFiles,
+    analysisPromptTemplate,
+    buildCustomPrompt,
+    runAnalyzeStream,
+  ])
 
   const handleSubmitRevision = useCallback(async () => {
     if (!state.reviewText.trim()) {
@@ -793,7 +1143,7 @@ function AiAnalysisPageInner() {
     }
     if (!uploadedFile) return
 
-    const revisionPrompt = `${ANALYSIS_PROMPT}
+    const revisionPrompt = `${analysisPromptTemplate}
 
 以下是上一轮分析结果：
 ---
@@ -808,7 +1158,14 @@ ${state.reportText}
       ? `\n\n用户补充说明：\n${requirementText}`
       : ''
     await runAnalyzeStream(revisionPrompt + extra, true)
-  }, [state.reviewText, state.reportText, uploadedFile, requirementText, runAnalyzeStream])
+  }, [
+    analysisPromptTemplate,
+    state.reviewText,
+    state.reportText,
+    uploadedFile,
+    requirementText,
+    runAnalyzeStream,
+  ])
 
   const executeStop = useCallback(async () => {
     setConfirmStopOpen(false)
@@ -816,18 +1173,21 @@ ${state.reportText}
     abortUpload()
     streamAbortRef.current?.abort()
 
-    const fid = uploadedFile?.id
-    if (
-      fid &&
-      uploadedFile &&
-      (uploadedFile.status === 'PENDING' || uploadedFile.status === 'PARSING')
-    ) {
-      try {
-        await filesApi.cancelTask(fid)
-      } catch {
-        /* 可能已结束 */
+    const parsingChain = [uploadedFile, ...additionalAnalysisFiles].filter(
+      (f): f is UploadedFile =>
+        !!f && (f.status === 'PENDING' || f.status === 'PARSING'),
+    )
+    if (parsingChain.length > 0) {
+      for (const f of parsingChain) {
+        try {
+          await filesApi.cancelTask(f.id)
+        } catch {
+          /* 可能已结束 */
+        }
       }
       setUploadedFile(null)
+      setAdditionalAnalysisFiles([])
+      setUploadDisplayName(null)
       addLog('loading', '⏹ 已请求取消解析任务')
       dispatch({ type: 'STOP_TO_IDLE' })
       toast('已停止', { icon: '⏹' })
@@ -844,7 +1204,7 @@ ${state.reportText}
 
     dispatch({ type: 'STOP_TO_IDLE' })
     toast('已停止', { icon: '⏹' })
-  }, [abortUpload, uploadedFile, addLog, state.status, loadFileHistory])
+  }, [abortUpload, uploadedFile, additionalAnalysisFiles, addLog, state.status, loadFileHistory])
 
   const handleApprove = useCallback(() => {
     dispatch({ type: 'APPROVE' })
@@ -861,7 +1221,10 @@ ${state.reportText}
     [handleSubmitRevision],
   )
 
-  const canStartAnalysis = Boolean(uploadedFile && uploadedFile.status === 'PARSED')
+  const allSourcesParsed =
+    uploadedFile?.status === 'PARSED' &&
+    additionalAnalysisFiles.every((f) => f.status === 'PARSED')
+  const canStartAnalysis = Boolean(uploadedFile && allSourcesParsed)
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
@@ -930,7 +1293,8 @@ ${state.reportText}
               ref={fileInputRef}
               type="file"
               className="hidden"
-              accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.md,.yaml,.yml,.png,.jpg,.jpeg"
+              multiple
+              accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.md,.yaml,.yml,.png,.jpg,.jpeg,.webp,.gif"
               onChange={handleInputChange}
             />
 
@@ -944,22 +1308,51 @@ ${state.reportText}
                 <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">拖拽文件到此处，或点击选择</p>
                 <p className="text-[11px] text-muted-foreground/60 mt-1">
-                  PDF / Word / Excel / TXT / MD / YAML / 图片 · 单文件 ≤ 100MB · 大于 5MB 自动分片
+                  PDF / Word / Excel / TXT / MD / YAML / 图片 · 单文件 ≤ 100MB · 大于 5MB 自动分片 ·
+                  可多选最多 5 张图片一次性分析
                 </p>
               </div>
             ) : (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                <FileText className="w-5 h-5 text-green-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-green-300 truncate">{uploadedFile.originalName}</p>
-                  <p className="text-xs text-green-400/60">
-                    {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
-                    {uploadedFile.status === 'PARSED'
-                      ? '解析完成'
-                      : uploadedFile.status === 'PARSING'
-                        ? `解析中 ${uploadedFile.parseStage ?? ''}`
-                        : uploadedFile.status}
-                  </p>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 space-y-1">
+                  {additionalAnalysisFiles.length === 0 ? (
+                    <>
+                      <p
+                        className="text-sm text-green-300 truncate"
+                        title={
+                          uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)
+                        }
+                      >
+                        {uploadDisplayName ??
+                          normalizeUploadedFilename(uploadedFile.originalName)}
+                      </p>
+                      <p className="text-xs text-green-400/60">
+                        {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
+                        {uploadedFile.status === 'PARSED'
+                          ? '解析完成'
+                          : uploadedFile.status === 'PARSING'
+                            ? `解析中 ${uploadedFile.parseStage ?? ''}`
+                            : uploadedFile.status}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-medium text-green-200">
+                        多图分析 · 共 {1 + additionalAnalysisFiles.length} 张
+                      </p>
+                      <ul className="text-xs text-green-300 space-y-0.5 max-h-28 overflow-y-auto">
+                        {[uploadedFile, ...additionalAnalysisFiles].map((f) => (
+                          <li key={f.id} className="truncate" title={displayUploadedFilename(f.id, f.originalName)}>
+                            · {displayUploadedFilename(f.id, f.originalName)}{' '}
+                            <span className="text-green-400/70">
+                              {f.status === 'PARSED' ? '✓' : f.status}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -997,14 +1390,72 @@ ${state.reportText}
             {state.status === 'parsing' && (
               <div className="flex flex-col gap-1 text-xs text-amber-400">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                  <TerminalLogStatusIcon status="loading" />
                   正在解析… 已等待 {parseElapsed}s
                 </div>
+                {uploadedFile &&
+                  uploadedFile.size > 5 * 1024 * 1024 &&
+                  uploadedFile.parseProgress?.etaMinutes != null && (
+                    <p className="text-[11px] text-muted-foreground">
+                      大文件解析中，预计仍需约 {uploadedFile.parseProgress.etaMinutes} 分钟（仅供参考）
+                    </p>
+                  )}
+                {uploadedFile?.parseProgress?.pageTotal != null &&
+                  uploadedFile?.parseProgress?.pageCurrent != null &&
+                  (uploadedFile.parseProgress.phase === 'TEXT_LAYER' ||
+                    uploadedFile.parseProgress.phase === 'OCR') && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {uploadedFile.parseProgress.phase === 'TEXT_LAYER'
+                        ? '提取内置文本'
+                        : 'OCR 识别'}
+                      ：第 {uploadedFile.parseProgress.pageCurrent} / {uploadedFile.parseProgress.pageTotal} 页
+                    </p>
+                  )}
               </div>
             )}
           </div>
 
-          {uploadedFile?.status === 'PARSED' && (
+          {uploadedFile?.status === 'FAILED' && (
+            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 space-y-2 text-xs">
+              <p className="text-red-300 font-medium">解析失败</p>
+              <p className="text-muted-foreground whitespace-pre-wrap break-words">
+                {uploadedFile.parseError ?? '未知错误'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!uploadedFile?.id) return
+                    operationAbortRef.current?.abort()
+                    operationAbortRef.current = new AbortController()
+                    void retryParseFlow(uploadedFile.id, operationAbortRef.current.signal, false)
+                  }}
+                >
+                  手动重试
+                </Button>
+                {uploadedFile.fileType === 'PDF' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (!uploadedFile?.id) return
+                      operationAbortRef.current?.abort()
+                      operationAbortRef.current = new AbortController()
+                      void retryParseFlow(uploadedFile.id, operationAbortRef.current.signal, true)
+                    }}
+                  >
+                    仅提取内置文本
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(uploadedFile?.status === 'PARSED' ||
+            (uploadedFile?.status === 'PARSING' && uploadedFile.parsedContent?.trim())) && (
             <div className="rounded-lg border border-border/30 bg-muted/10 overflow-hidden">
               <button
                 type="button"
@@ -1034,9 +1485,14 @@ ${state.reportText}
                         已修改 · 分析时将作为文本输入
                       </Badge>
                     )}
+                    {additionalAnalysisFiles.length > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700 dark:text-amber-300">
+                        多图模式下不可单独编辑合并文本 · 分析使用各图解析结果合并
+                      </Badge>
+                    )}
                   </div>
                   <textarea
-                    readOnly={!previewEditable}
+                    readOnly={!previewEditable || additionalAnalysisFiles.length > 0}
                     className="w-full min-h-[120px] max-h-[240px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
                     value={editedParsedText}
                     onChange={(e) => {
@@ -1046,6 +1502,36 @@ ${state.reportText}
                   />
                 </div>
               )}
+            </div>
+          )}
+
+          {analysisRecords.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <History className="w-4 h-4 text-muted-foreground" />
+                分析记录
+              </label>
+              <p className="text-[11px] text-muted-foreground">
+                以下为已成功落库的「需求分析」生成记录（关键词检索）；点击查看完整报告。
+              </p>
+              <div className="max-h-[160px] overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
+                {analysisRecords.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => void applyAnalysisRecord(r.id)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-muted/30"
+                  >
+                    <span className="flex-1 truncate text-foreground">{r.title}</span>
+                    <span className="text-muted-foreground whitespace-nowrap shrink-0">
+                      {formatRelative(r.createdAt)}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {r.status}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1069,7 +1555,12 @@ ${state.reportText}
                       uploadedFile?.id === f.id ? 'bg-primary/10' : ''
                     }`}
                   >
-                    <span className="flex-1 truncate text-left">{f.originalName}</span>
+                    <span
+                      className="flex-1 truncate text-left"
+                      title={displayUploadedFilename(f.id, f.originalName)}
+                    >
+                      {displayUploadedFilename(f.id, f.originalName)}
+                    </span>
                     <span className="text-muted-foreground whitespace-nowrap">
                       {formatRelative(f.createdAt)}
                     </span>
@@ -1097,6 +1588,34 @@ ${state.reportText}
               placeholder="在此输入需求背景、业务描述或补充说明..."
               value={requirementText}
               onChange={(e) => setRequirementText(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
+                分析指令模板（Prompt）
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={resetAnalysisPromptTemplate}
+              >
+                恢复默认
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              作为发送给模型的分析指令；可与上方「补充说明」组合。修改后自动保存在本机浏览器。
+            </p>
+            <textarea
+              id="ai-analysis-prompt-template"
+              className="w-full min-h-[140px] max-h-[280px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
+              placeholder="编辑 AI 分析指令..."
+              value={analysisPromptTemplate}
+              onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
+              spellCheck={false}
             />
           </div>
 
@@ -1175,20 +1694,49 @@ ${state.reportText}
         <div className="flex flex-col">
           <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
-              <TrafficLights />
+              <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
               <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="h-8 text-xs text-gray-400 hover:text-gray-200"
-                onClick={copyLogs}
+                onClick={copyAnalysisReport}
               >
                 <Copy className="w-3.5 h-3.5 mr-1" />
-                复制日志
+                复制文本
               </Button>
+              {state.reportText.trim().length > 0 && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-violet-300 hover:text-violet-100 hover:bg-violet-500/15"
+                    onClick={() => void handleSendToGenerate()}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1" />
+                    生成用例
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={exportingPdf}
+                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
+                    onClick={() => void handleExportAnalysisPdf()}
+                  >
+                    {exportingPdf ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <FileDown className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    导出 PDF
+                  </Button>
+                </>
+              )}
               {!autoScroll && (
                 <button
                   type="button"
@@ -1225,7 +1773,9 @@ ${state.reportText}
                     需求文档分析报告
                   </h3>
                 </div>
-                <MarkdownReport text={state.reportText} />
+                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text">
+                  <AnalysisMarkdownReport text={state.reportText} />
+                </div>
               </div>
             )}
 

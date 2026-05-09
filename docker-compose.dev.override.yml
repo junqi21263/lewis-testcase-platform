@@ -4,33 +4,62 @@ services:
     ports:
       - "${FRONTEND_HOST_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-8080}:80"
 
+  # 勿在此声明 backend build：与 docker-compose.ghcr.yml 合并时会出现 image+build，
+  # compose pull 失败时会误报「须 docker compose build backend」。开发栈镜像由 CI 构建（develop 已 INSTALL_CJK_FONTS=0）。
+  # 若仅用 docker-compose.full.yml 本地构建且需跳过 CJK 字体：INSTALL_CJK_FONTS=0 docker compose ... build backend
   backend:
     container_name: ${STACK_PREFIX:-testcase_dev}_backend
     ports:
       - "${BACKEND_HOST_BIND:-0.0.0.0}:${BACKEND_HOST_PORT:-3000}:3000"
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/testcase_db}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://testcase_user:testcase_pass@postgres:5432/dev_testcase_db}
       - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-2024}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-dev-placeholder-api-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - DEFAULT_AI_MODEL=${DEFAULT_AI_MODEL:-gpt-4o}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - AUTH_ALLOW_PLAINTEXT_PASSWORD=${AUTH_ALLOW_PLAINTEXT_PASSWORD:-}
       - UPLOAD_DIR=${UPLOAD_DIR:-./uploads}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
       - APP_PORT=${APP_PORT:-3000}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
+      - AUTH_ADMIN_ONLY=${AUTH_ADMIN_ONLY:-}
+      # 不设则走后端默认（生产 30s / 非生产关闭）；显式 0=关闭
+      - TEMPLATES_LIST_CACHE_TTL_MS=${TEMPLATES_LIST_CACHE_TTL_MS}
+      - FILE_PARSE_WORKER_ENABLED=${FILE_PARSE_WORKER_ENABLED:-1}
+      - FILE_PARSE_WORKER_INTERVAL_MS=${FILE_PARSE_WORKER_INTERVAL_MS:-1500}
+      - FILE_PARSE_TIMEOUT_MINUTES=${FILE_PARSE_TIMEOUT_MINUTES:-15}
+      - VISION_PARSE_MODEL_CONFIG_ID=${VISION_PARSE_MODEL_CONFIG_ID:-}
+      - VISION_PDF_MIN_TEXT_CHARS=${VISION_PDF_MIN_TEXT_CHARS:-120}
+      - VISION_PDF_ALWAYS=${VISION_PDF_ALWAYS:-0}
+      - VISION_PDF_RENDER_SCALE=${VISION_PDF_RENDER_SCALE:-1.2}
+      - OCR_LANGS=${OCR_LANGS:-chi_sim+chi_tra+eng}
+      - SKIP_PRISMA_MIGRATE_ON_START=${SKIP_PRISMA_MIGRATE_ON_START:-}
+      - AUTO_ARCHIVE_IDLE_DAYS=${AUTO_ARCHIVE_IDLE_DAYS:-0}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - TEMPLATES_LIST_CACHE_REDIS=${TEMPLATES_LIST_CACHE_REDIS:-}
+      - COS_SECRET_ID=${COS_SECRET_ID:-}
+      - COS_SECRET_KEY=${COS_SECRET_KEY:-}
+      - COS_BUCKET=${COS_BUCKET:-}
+      - COS_REGION=${COS_REGION:-}
+      - COS_PREFIX=${COS_PREFIX:-}
+      - COS_PARSE_TEMP_DIR=${COS_PARSE_TEMP_DIR:-}
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - ./backend/uploads:/app/uploads
+      - ./backend/prisma:/app/prisma
 
   postgres:
     container_name: ${STACK_PREFIX:-testcase_dev}_postgres
     ports:
       - "${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dev_testcase_db}
 
   redis:
     container_name: ${STACK_PREFIX:-testcase_dev}_redis

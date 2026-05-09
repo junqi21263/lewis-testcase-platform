@@ -141,8 +141,8 @@ export function highlightSensitive(text: string, matches: SensitiveMatch[]): str
   return result
 }
 
-/** XSS 安全转义 */
-function escapeHtml(str: string): string {
+/** XSS 安全转义（导出供 AI 报告等富文本组装使用） */
+export function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

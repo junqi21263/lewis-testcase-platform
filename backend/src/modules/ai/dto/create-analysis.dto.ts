@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsIn, Max, Min } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsIn, Max, Min, IsArray, ArrayMaxSize } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateAnalysisDto {
@@ -10,6 +10,17 @@ export class CreateAnalysisDto {
   @IsOptional()
   @IsString()
   fileId?: string
+
+  @ApiProperty({
+    required: false,
+    description: '附加文件 ID（多图等）；与 fileId 合计不超过 5；多于 1 个文件时须全部为图片且均已解析',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsString({ each: true })
+  additionalFileIds?: string[]
 
   @ApiProperty({ required: false, description: '直接输入的需求文本（sourceType=text 时必填）' })
   @IsOptional()

@@ -1,0 +1,20 @@
+# docker build context=./frontend；排除宿主 node_modules，避免重复 pnpm install 与超大上下文。
+# dist/ 必须保留：CI 先于镜像构建执行 pnpm build 时，镜像内可直接使用预构建产物。
+node_modules
+.git
+coverage
+test-results
+playwright-report
+blob-report
+allure-results
+allure-report
+.eslintcache
+.cache
+# 测试与 Playwright：不参与 nginx 静态镜像，减小 docker build 上下文
+tests
+playwright.config.ts
+playwright-ct.config.ts
+playwright.dev.config.ts
+seed.spec.ts
+vitest.config.ts
+scripts/run-playwright.mjs

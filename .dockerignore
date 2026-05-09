@@ -1,0 +1,15 @@
+# docker build -f backend/Dockerfile 使用 context=仓库根目录；缩小传输量、加速 CI。
+.git
+.github
+frontend
+docs
+lewis-testcase-platform
+*.md
+.env
+.env.*
+**/node_modules
+backend/node_modules
+backend/uploads
+backend/dist
+backend/coverage
+backend/.eslintcache

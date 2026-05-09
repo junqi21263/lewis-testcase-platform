@@ -495,6 +495,7 @@ export default function UploadPage() {
           parseRecordId: record.id,
           fileIds: record.fileIds,
           rawText: raw,
+          handoffSource: 'document-parse',
         })
         toast.success('已保存解析记录，跳转生成页…')
         navigate('/generate')
