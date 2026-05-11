@@ -9,6 +9,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 . ./scripts/ci/cnb-require-ssh-deploy-env.sh
+# 避免在 Runner 上 docker login（日志易与 VPS 登录混淆）；仅需 REGISTRY_PREFIX
+CNB_SKIP_REGISTRY_LOGIN=1
+export CNB_SKIP_REGISTRY_LOGIN
 . ./scripts/ci/cnb-registry-env.sh
 
 REG_HOST="${REGISTRY_PREFIX%%/*}"
@@ -51,11 +54,16 @@ IMG="${REGISTRY_PREFIX}/${ISUFFIX}:${IMAGE_TAG}"
 
 printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
 
+# -T：关闭伪终端，stdin 才能可靠传给远端 docker login（否则易出现 login 假成功 / pull 仍 unauthorized）
 ssh_vps() {
-  ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "$@"
+  ssh -T -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "$@"
 }
 
-printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u cnb --password-stdin
+echo "cnb-vps-remote-deploy: docker login on VPS ${REG_HOST} (user cnb)..."
+if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u cnb --password-stdin; then
+  echo "cnb-vps-remote-deploy: docker login on VPS failed. Try repo variable CNB_REGISTRY_PULL_TOKEN (read-only)." >&2
+  exit 1
+fi
 
 ssh_vps "
   set -e

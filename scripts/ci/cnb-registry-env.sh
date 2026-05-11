@@ -26,8 +26,9 @@ export REGISTRY_PREFIX
 echo "REGISTRY_PREFIX=${REGISTRY_PREFIX}"
 
 # CNB 流水线推送制品库前需登录（见制品库文档）；与 cnb-deploy-vps.sh push_cnb_registry 一致。
+# 部署脚本若仅需 REGISTRY_PREFIX、已在远端登录时：export CNB_SKIP_REGISTRY_LOGIN=1 再 source。
 REG_HOST="${REGISTRY_PREFIX%%/*}"
 export REG_HOST
-if [ -n "${CNB_TOKEN:-}" ]; then
+if [ "${CNB_SKIP_REGISTRY_LOGIN:-}" != "1" ] && [ -n "${CNB_TOKEN:-}" ]; then
   echo "${CNB_TOKEN}" | docker login "${REG_HOST}" -u cnb --password-stdin
 fi
