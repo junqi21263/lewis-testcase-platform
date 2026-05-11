@@ -36,7 +36,6 @@ main:
   push:
     # ==================================
     # 🚀 生产环境：main分支（已注释，暂不触发）
-    # 后续合并到main时，取消下面这段的注释即可
     # ==================================
     # - branches: main
     #   docker:
@@ -51,13 +50,15 @@ main:
     #     - name: 构建后端生产镜像
     #       script:
     #         - echo "开始构建后端生产镜像 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}"
-    #         - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} ./backend
+    #         # 关键修正：上下文用根目录，指定Dockerfile位置
+    #         - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} -f backend/Dockerfile .
     #         - docker push ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}
     #
     #     - name: 构建前端生产镜像
     #       script:
     #         - echo "开始构建前端生产镜像 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}"
-    #         - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} ./frontend
+    #         # 前端同样修正
+    #         - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} -f frontend/Dockerfile .
     #         - docker push ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
     #
     #     - name: 部署后端到生产服务器
@@ -84,9 +85,6 @@ main:
 
     # ==================================
     # 🧪 开发环境：develop分支（自动触发）
-    # 访问地址：
-    # 前端：http://139.199.69.115:8080
-    # 后端API：http://139.199.69.115:8081
     # ==================================
     - branches: develop
       docker:
@@ -101,13 +99,15 @@ main:
         - name: 构建后端开发镜像
           script:
             - echo "开始构建后端开发镜像 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}"
-            - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} ./backend
+            # ✅ 关键修正：上下文用根目录，指定Dockerfile位置
+            - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} -f backend/Dockerfile .
             - docker push ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}
 
         - name: 构建前端开发镜像
           script:
             - echo "开始构建前端开发镜像 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}"
-            - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} ./frontend
+            # ✅ 前端同样修正
+            - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} -f frontend/Dockerfile .
             - docker push ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
 
         - name: 部署后端到开发服务器
