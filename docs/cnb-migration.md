@@ -46,7 +46,7 @@ git push -u cnb develop
 | SSH 部署 | `SSH_HOST`, `SSH_USER`, `SSH_KEY`，可选 `SSH_PORT`；**开发机**若与生产拆分时可在密钥文件中使用 `DEV_SSH_HOST` / `DEV_SSH_USER` / `DEV_SSH_KEY` / `DEV_SSH_PORT`（`.cnb.yml` 的 develop 流水线会优先读这些，见 `scripts/ci/cnb-require-ssh-deploy-env.sh`） |
 | 向 GHCR 推送镜像（可选；不配则流水线用 **CNB 内置制品库** + `CNB_TOKEN`） | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER` |
 | VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选） |
-| VPS 拉 CNB 制品（私有或需登录时） | `CNB_REGISTRY_PULL_TOKEN`（可选；不配则 `.cnb.yml` 部署步会用当次流水线的 **`CNB_TOKEN`** 在远端执行 `docker login` 后再 `docker pull`；若仍 `unauthorized`，多为令牌权限或须单独配置只读拉取令牌） |
+| VPS 拉 CNB 制品（私有） | **`CNB_REGISTRY_PULL_TOKEN`（强烈建议）**：在 https://cnb.cool/profile/token 创建访问令牌并勾选**制品库读取**，写入业务仓库变量；详见 [Docker 制品库](https://docs.cnb.cool/zh/artifact/docker.html)。流水线内置 **`CNB_TOKEN` 在 VPS 上 `docker login` 经常出现 `unauthorized`**，不宜单独依赖。可选 **`CNB_REGISTRY_LOGIN_USER`**（默认 `cnb`）。 |
 | 后端运行时环境（`.cnb.yml` 直部署） | **`DEPLOY_BACKEND_ENV_FILE`**：VPS 上 env 文件**绝对路径**（含 `DATABASE_URL`、`JWT_SECRET` 等），由 `docker run --env-file` 注入；见 `backend/start.sh`。未设置时流水线会告警，容器会因缺 `DATABASE_URL` 退出 |
 | 国内镜像同步 | `DEPLOY_PULL_FROM_MIRROR=true` + `CONTAINER_MIRROR_*` 变量（与 GitHub 一致） |
 | 路径 | `DEPLOY_PATH`、`DEV_DEPLOY_PATH` 等（主要用于 **cnb-deploy-vps.sh + compose** 路径；与「仅 docker run 两个容器」的 `.cnb.yml` 方案不同） |

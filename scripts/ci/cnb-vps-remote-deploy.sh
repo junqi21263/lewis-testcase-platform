@@ -15,9 +15,12 @@ export CNB_SKIP_REGISTRY_LOGIN
 . ./scripts/ci/cnb-registry-env.sh
 
 REG_HOST="${REGISTRY_PREFIX%%/*}"
-REG_PULL_TOKEN="${CNB_REGISTRY_PULL_TOKEN:-${CNB_TOKEN:-}}"
+REG_USER="${CNB_REGISTRY_LOGIN_USER:-cnb}"
+# 优先专用拉取令牌；流水线内置 CNB_TOKEN 常在「非 Runner 环境」下无法完成 docker login（VPS 上 unauthorized）
+REG_PULL_TOKEN_EXPLICIT="${CNB_REGISTRY_PULL_TOKEN:-}"
+REG_PULL_TOKEN="${REG_PULL_TOKEN_EXPLICIT:-${CNB_TOKEN:-}}"
 if [ -z "$REG_PULL_TOKEN" ]; then
-  echo "cnb-vps-remote-deploy: set CNB_REGISTRY_PULL_TOKEN or CNB_TOKEN for docker pull on VPS" >&2
+  echo "cnb-vps-remote-deploy: set CNB_REGISTRY_PULL_TOKEN (recommended) or CNB_TOKEN" >&2
   exit 1
 fi
 
@@ -79,9 +82,14 @@ ssh_vps() {
   ssh -T -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "$@"
 }
 
-echo "cnb-vps-remote-deploy: docker login on VPS ${REG_HOST} (user cnb)..."
-if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u cnb --password-stdin; then
-  echo "cnb-vps-remote-deploy: docker login on VPS failed. Try repo variable CNB_REGISTRY_PULL_TOKEN (read-only)." >&2
+echo "cnb-vps-remote-deploy: docker login on VPS ${REG_HOST} (user ${REG_USER})..."
+if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u "${REG_USER}" --password-stdin; then
+  echo "cnb-vps-remote-deploy: docker login on VPS failed (unauthorized on /v2/)." >&2
+  echo "  1) 在 CNB 创建访问令牌 https://cnb.cool/profile/token （勾选制品库读权限），仓库变量名：CNB_REGISTRY_PULL_TOKEN。" >&2
+  echo "  2) 流水线内置 CNB_TOKEN 在 VPS 上常无法拉私有镜像；见 https://docs.cnb.cool/zh/artifact/docker.html" >&2
+  if [ -z "$REG_PULL_TOKEN_EXPLICIT" ]; then
+    echo "  3) 当前回退使用了 CNB_TOKEN 而非 CNB_REGISTRY_PULL_TOKEN，若仍失败请显式配置后者。" >&2
+  fi
   exit 1
 fi
 
