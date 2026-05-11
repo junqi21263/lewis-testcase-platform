@@ -16,6 +16,7 @@
     "verify:auth-flow": "pnpm exec prisma generate --schema=./prisma/schema.prod.prisma && ts-node scripts/verify-auth-flow.ts",
     "test:smtp": "ts-node scripts/test-smtp-send.ts",
     "smoke:enhancements": "ts-node scripts/smoke-enhancements.ts",
+    "smoke:export-analysis-pdf": "pnpm exec ts-node -r tsconfig-paths/register scripts/smoke-export-analysis-pdf.ts",
     "user:reset-password": "ts-node scripts/reset-user-password.ts"
   },
   "dependencies": {
