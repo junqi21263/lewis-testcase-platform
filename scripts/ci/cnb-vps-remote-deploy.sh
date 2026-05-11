@@ -27,28 +27,31 @@ fi
 FLAVOR="${DEPLOY_FLAVOR:?DEPLOY_FLAVOR must be backend-dev|frontend-dev|backend-prod|frontend-prod}"
 
 # 后端 Nest 监听 PORT（默认 3000），见 backend/start.sh；前端 nginx 默认 80，见 frontend/docker-entrypoint.sh
+# 宿主机映射端口可被占用（Bind ... failed: port is already allocated）。可在 CNB 变量中覆盖：
+# CNB_BACKEND_DEV_HOST_PORT（默认 8081）、CNB_FRONTEND_DEV_HOST_PORT（默认 8080）、
+# CNB_BACKEND_PROD_HOST_PORT（默认 8081）、CNB_FRONTEND_PROD_HOST_PORT（默认 80）。
 case "$FLAVOR" in
   backend-dev)
     CNAME="your-app-backend-dev"
-    HPORT="8081"
+    HPORT="${CNB_BACKEND_DEV_HOST_PORT:-8081}"
     ISUFFIX="backend"
     CPORT="3000"
     ;;
   frontend-dev)
     CNAME="your-app-frontend-dev"
-    HPORT="8080"
+    HPORT="${CNB_FRONTEND_DEV_HOST_PORT:-8080}"
     ISUFFIX="frontend"
     CPORT="80"
     ;;
   backend-prod)
     CNAME="your-app-backend-prod"
-    HPORT="8081"
+    HPORT="${CNB_BACKEND_PROD_HOST_PORT:-8081}"
     ISUFFIX="backend"
     CPORT="3000"
     ;;
   frontend-prod)
     CNAME="your-app-frontend-prod"
-    HPORT="80"
+    HPORT="${CNB_FRONTEND_PROD_HOST_PORT:-80}"
     ISUFFIX="frontend"
     CPORT="80"
     ;;
@@ -82,6 +85,7 @@ ssh_vps() {
   ssh -T -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "$@"
 }
 
+echo "cnb-vps-remote-deploy: mapping host ${HPORT} -> container ${CPORT} for ${FLAVOR}"
 echo "cnb-vps-remote-deploy: docker login on VPS ${REG_HOST} (user ${REG_USER})..."
 if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u "${REG_USER}" --password-stdin; then
   echo "cnb-vps-remote-deploy: docker login on VPS failed (unauthorized on /v2/)." >&2
