@@ -1,103 +1,28 @@
 # -----------------------------------------------------------------------------
-# 腾讯云 CNB（cnb.cool）云原生构建 — VPS 部署（1本仓库默认唯一自动部署入口）
+# 腾讯云 CNB（cnb.cool）云原生构建 — 前后端镜像构建 + SSH 部署同一流水线内顺序执行。
 #
-# 推送 main / develop 时触发；脚本路径 scripts/ci/cnb-deploy-vps.sh（顺序构建前端、
-# 推送 GHCR 镜像、可选同步国内容器镜像仓、rsync、远端 docker compose）。
+# 分支策略（见 https://docs.cnb.cool/zh/build/trigger-rule.html ）：
+# — 顶层键名 = 触发分支；push 到 develop 时仅使用「当前分支上的」.cnb.yml 里与 develop 匹配的块。
+# — 因此 develop / main 各自一条流水线；勿仅写在 main: 下用 branches 过滤，否则 develop 推送不会按预期触发。
 #
-# 镜像仓库（二选一，脚本自动判断）：
-#   A) 不配 GHCR：在 CNB 云原生构建内由平台注入 CNB_TOKEN + CNB_DOCKER_REGISTRY，推送到
-#      docker.cnb.cool/<仓库路径>/backend|frontend:<sha>；VPS 拉取需 docker login，默认传流水线
-#      CNB_TOKEN，可选密钥 CNB_REGISTRY_PULL_TOKEN（长期只读令牌）。
-#   B) 配 GHCR：密钥 GHCR_PUSH_TOKEN + GHCR_LOGIN_USER（GitHub PAT write:packages）；可选变量
-#      GHCR_REPO_LOWER=owner/repo（小写）。VPS 拉私有 GHCR 时用 GHCR_PULL_TOKEN。
+# 推荐流程：先 push 到 develop（本文件含 develop:）验证前后端一体部署；确认无误后再合并到 main 触发生产。
 #
-# 建议在 CNB「密钥仓库」或仓库密钥中配置：
-#   — SSH_HOST, SSH_USER, SSH_KEY [, SSH_PORT]
-#   — [, GHCR_PUSH_TOKEN, GHCR_LOGIN_USER] [, GHCR_PULL_TOKEN]
-#   — [, CNB_REGISTRY_PULL_TOKEN]（VPS 拉 CNB 制品库时可选，优于把流水线 CNB_TOKEN 传到机器）
-#   — [, CONTAINER_MIRROR_*]（DEPLOY_PULL_FROM_MIRROR=true 时）
-#
-# 仓库变量（可选）：
-#   — DEPLOY_PATH, DEV_DEPLOY_PATH — 与 GitHub Actions Variables 相同
-#   — DEPLOY_REGION, APK_MIRROR, VITE_API_BASE_URL, VITE_APP_NAME
-#   — DEPLOY_PULL_FROM_MIRROR, CONTAINER_MIRROR_IMAGE_PREFIX, MIRROR_STEP_TIMEOUT_MIN
-#
-# 代码迁入：可用官方迁移工具（示例）
-#   docker run --rm -e PLUGIN_SOURCE_TOKEN -e PLUGIN_CNB_TOKEN ... cnbcool/code-import
-#   详见 https://docs.cnb.cool 与社区「CNB 迁移」说明。
+# 制品库：scripts/ci/cnb-registry-env.sh 解析 REGISTRY_PREFIX，并在有 CNB_TOKEN 时 docker login。
+# 密钥：imports；SSH / 变量见仓库说明与 docs/cnb-migration.md。
 # -----------------------------------------------------------------------------
 
-# 同时引用两个环境的密钥（权限自动隔离）
 imports:
   - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-prod-secret.yml
   - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-dev-secret.yml
 
-main:
+# =============================================================================
+# develop：开发环境（先在此分支验证）
+# =============================================================================
+develop:
   push:
-    # ==================================
-    # 🚀 生产环境：main 分支自动触发
-    # ==================================
-    - branches: main
-      docker:
-        image: docker:26-cli
-      services:
-        - docker:dind
-      env:
-        # 平台可能注入「仅主机名」；完整前缀由 scripts/ci/cnb-registry-env.sh 解析
-        CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
-        ENVIRONMENT: production
-        IMAGE_TAG: latest
-      stages:
-        - name: 构建后端生产镜像
-          script:
-            - |
-              set -eu
-              . ./scripts/ci/cnb-registry-env.sh
-              echo "开始构建后端生产镜像 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
-              docker build -t "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}" -f backend/Dockerfile .
-              docker push "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
-
-        - name: 构建前端生产镜像
-          script:
-            - |
-              set -eu
-              . ./scripts/ci/cnb-registry-env.sh
-              echo "开始构建前端生产镜像 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
-              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile .
-              docker push "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
-
-        - name: 部署后端到生产服务器
-          script:
-            - |
-              set -eu
-              . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
-              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
-                  docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
-                  docker stop your-app-backend-prod || true &&
-                  docker rm your-app-backend-prod || true &&
-                  docker run -d --name your-app-backend-prod --restart=always -p 8081:80 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
-                  docker system prune -af
-                "
-
-        - name: 部署前端到生产服务器
-          script:
-            - |
-              set -eu
-              . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
-              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
-                  docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
-                  docker stop your-app-frontend-prod || true &&
-                  docker rm your-app-frontend-prod || true &&
-                  docker run -d --name your-app-frontend-prod --restart=always -p 80:80 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
-                  docker system prune -af
-                "
-
-    # ==================================
-    # 🧪 开发环境：develop 分支（自动触发）
-    # ==================================
-    - branches: develop
+    - name: vps-docker-deploy-dev
+      runner:
+        cpus: 8
       docker:
         image: docker:26-cli
       services:
@@ -150,5 +75,68 @@ main:
                   docker stop your-app-frontend-dev || true &&
                   docker rm your-app-frontend-dev || true &&
                   docker run -d --name your-app-frontend-dev --restart=always -p 8080:80 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
+                  docker system prune -af
+                "
+
+# =============================================================================
+# main：生产环境（develop 验证通过后再合并至此分支触发）
+# =============================================================================
+main:
+  push:
+    - name: vps-docker-deploy-prod
+      runner:
+        cpus: 8
+      docker:
+        image: docker:26-cli
+      services:
+        - docker:dind
+      env:
+        CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
+        ENVIRONMENT: production
+        IMAGE_TAG: latest
+      stages:
+        - name: 构建后端生产镜像
+          script:
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "开始构建后端生产镜像 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
+              docker build -t "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}" -f backend/Dockerfile .
+              docker push "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
+
+        - name: 构建前端生产镜像
+          script:
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "开始构建前端生产镜像 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
+              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile .
+              docker push "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
+
+        - name: 部署后端到生产服务器
+          script:
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
+                  docker stop your-app-backend-prod || true &&
+                  docker rm your-app-backend-prod || true &&
+                  docker run -d --name your-app-backend-prod --restart=always -p 8081:80 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
+                  docker system prune -af
+                "
+
+        - name: 部署前端到生产服务器
+          script:
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
+                  docker stop your-app-frontend-prod || true &&
+                  docker rm your-app-frontend-prod || true &&
+                  docker run -d --name your-app-frontend-prod --restart=always -p 80:80 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
                   docker system prune -af
                 "

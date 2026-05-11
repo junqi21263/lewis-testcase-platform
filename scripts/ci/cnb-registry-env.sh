@@ -24,3 +24,10 @@ case "$RAW" in
 esac
 export REGISTRY_PREFIX
 echo "REGISTRY_PREFIX=${REGISTRY_PREFIX}"
+
+# CNB 流水线推送制品库前需登录（见制品库文档）；与 cnb-deploy-vps.sh push_cnb_registry 一致。
+REG_HOST="${REGISTRY_PREFIX%%/*}"
+export REG_HOST
+if [ -n "${CNB_TOKEN:-}" ]; then
+  echo "${CNB_TOKEN}" | docker login "${REG_HOST}" -u cnb --password-stdin
+fi
