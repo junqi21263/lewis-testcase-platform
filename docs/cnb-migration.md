@@ -63,6 +63,37 @@ git push -u cnb develop
 - **`allow_slugs`**：使用 glob。建议写成完整路径 **`lewis-test/lewis-testcase-platform`**，或 **`lewis-test/**`**；仅 **`lewis-test`** 往往**匹配不到**带 `/` 的仓库 slug，会导致整份密钥（含 `SSH_HOST`）未加载。
 - **`allow_events`**：develop 自动构建依赖 **`push`**，须包含在内。
 - **`allow_branches`**：开发密钥填 **`develop`**；若误填 **`main`**，则在 develop 上推送时无法读取该文件。
+- **生产（直接 push `main`）**：在密钥仓库编辑 **`vps-prod-secret.yml`**（与 `.cnb.yml` 里 `main → imports` 指向的路径一致）。除下文 **「生产密钥示例」** 中的 SSH / 拉制品 / 端口 / 后端 env 外，须在 YAML 顶层的 **`allow_branches`** 中包含 **`main`**，否则 main 流水线拿不到密钥，会报 `SSH_HOST` 为空或部署失败。
+
+### 生产密钥 `vps-prod-secret.yml` 示例（部署 main）
+
+在 **`lewis-test/secrets`**（或你方密钥仓）中维护，由业务仓 `.cnb.yml` 的 **`imports: .../vps-prod-secret.yml`** 注入为流水线环境变量。除 SSH 外，**端口与制品拉取建议写在这里**，避免宿主机 **80** 冲突与 VPS `docker pull` 未授权。
+
+```yaml
+allow_slugs: "lewis-test/**"
+allow_events: "push,tag_deploy"
+allow_branches: "main"
+
+SSH_HOST: "你的生产 VPS IP 或域名"
+SSH_USER: "ubuntu"
+SSH_PORT: "22"
+SSH_KEY: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  （私钥每行保持相对 SSH_KEY: 的缩进）
+  -----END OPENSSH PRIVATE KEY-----
+
+# VPS 上 docker login 拉私有镜像（强烈建议）
+CNB_REGISTRY_PULL_TOKEN: "cnb 访问令牌（勾选制品库读取）"
+
+# 宿主机 80 常被系统 Nginx 占用时报 Bind ... port is already allocated；改为其它端口并在 Nginx 反代
+CNB_FRONTEND_PROD_HOST_PORT: "8080"
+CNB_BACKEND_PROD_HOST_PORT: "8081"
+
+# VPS 上后端 env 文件绝对路径（含 DATABASE_URL 等）
+DEPLOY_BACKEND_ENV_FILE: "/home/ubuntu/backend.env"
+```
+
+合并到 **`main`** 并推送后，仅 **`main`** 流水线会加载该文件；无需再经过 develop，只要密钥与 **`allow_*`** 与仓库 slug、分支一致即可。
 
 ### 流水线报 `Failed to parse file: vps-*-secret.yml`（如 line 18:1）
 
