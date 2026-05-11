@@ -37,6 +37,7 @@ develop:
         - name: deploy
           script: bash scripts/ci/cnb-deploy-vps.sh
 
+imports: https://cnb.cool/lewis-test/secrets/-/blob/main/vps-ssh-secret.yml
 main:
   push:
     - name: deploy-vps
