@@ -91,6 +91,7 @@ main:
         ENVIRONMENT: production
         IMAGE_TAG: latest
         INSTALL_CJK_FONTS: "1"
+        # 若宿主机 80 已被系统 Nginx/Apache 占用，在 CNB 变量设 CNB_FRONTEND_PROD_HOST_PORT（如 8080）
         # 可选：CNB_FRONTEND_PROD_HOST_PORT、CNB_BACKEND_PROD_HOST_PORT — 默认 80 / 8081
       stages:
         - name: 构建后端生产镜像
