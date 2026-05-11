@@ -30,6 +30,8 @@ FLAVOR="${DEPLOY_FLAVOR:?DEPLOY_FLAVOR must be backend-dev|frontend-dev|backend-
 # 宿主机映射端口可被占用（Bind ... failed: port is already allocated）。可在 CNB 变量中覆盖：
 # CNB_BACKEND_DEV_HOST_PORT（默认 8081）、CNB_FRONTEND_DEV_HOST_PORT（默认 8080）、
 # CNB_BACKEND_PROD_HOST_PORT（默认 8081）、CNB_FRONTEND_PROD_HOST_PORT（默认 80）。
+# 后端容器启动后再接入已有网络（逗号分隔）：CNB_BACKEND_EXTRA_NETWORKS
+#   例：lewis_testcase_platform_testcase_network —— 使 DATABASE_URL 可用主机名 testcase_postgres（与 compose 库同网）。
 case "$FLAVOR" in
   backend-dev)
     CNAME="your-app-backend-dev"
@@ -125,6 +127,14 @@ case "$FLAVOR" in
     ;;
 esac
 
+# 后端额外接入已有 Docker 网络（仅 backend-*）；开发/生产可在密钥中分别配置。
+CONNECT_EXTRA=""
+case "$FLAVOR" in
+  backend-dev|backend-prod)
+    CONNECT_EXTRA="${CNB_BACKEND_EXTRA_NETWORKS:-}"
+    ;;
+esac
+
 ssh_vps "
   set -e
   docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
@@ -134,3 +144,16 @@ ssh_vps "
   docker run -d --name ${CNAME} --restart=always ${RUN_BACKEND_NET} ${RUN_FRONTEND_NET} ${BACKEND_ENV_ARGS} -p ${HPORT}:${CPORT} ${IMG} &&
   docker image prune -f >/dev/null 2>&1 || true
 "
+
+if [ -n "${CONNECT_EXTRA}" ]; then
+  echo "cnb-vps-remote-deploy: attaching ${CNAME} to extra network(s): ${CONNECT_EXTRA}"
+  OLD_IFS=${IFS}
+  IFS=','
+  for __net in ${CONNECT_EXTRA}; do
+    IFS=${OLD_IFS}
+    __trim=$(printf '%s\n' "${__net}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ -z "${__trim}" ] && continue
+    ssh_vps "docker network connect ${__trim} ${CNAME} || true"
+  done
+  IFS=${OLD_IFS}
+fi
