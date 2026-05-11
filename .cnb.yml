@@ -10,7 +10,8 @@
 # 制品库：scripts/ci/cnb-registry-env.sh 解析 REGISTRY_PREFIX，并在有 CNB_TOKEN 时 docker login。
 # 前端镜像：docker build 的 context 必须为目录 frontend（-f frontend/Dockerfile frontend）；根目录
 #   .dockerignore 会排除 frontend/，若用 context=. 则 COPY nginx.conf.template 等会报 not found。
-# 密钥：imports；SSH / 变量见仓库说明与 docs/cnb-migration.md。
+# 密钥：imports（如 vps-dev-secret.yml）；SSH 部署须在 CNB 注入 SSH_HOST、SSH_USER、SSH_KEY，可选 SSH_PORT。
+#   若缺省会报错；详见 docs/cnb-migration.md 第 3 节。
 # -----------------------------------------------------------------------------
 
 imports:
@@ -56,8 +57,9 @@ develop:
           script:
             - |
               set -eu
+              . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
                   docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
                   docker stop your-app-backend-dev || true &&
@@ -70,8 +72,9 @@ develop:
           script:
             - |
               set -eu
+              . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
                   docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
                   docker stop your-app-frontend-dev || true &&
@@ -119,8 +122,9 @@ main:
           script:
             - |
               set -eu
+              . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
                   docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
                   docker stop your-app-backend-prod || true &&
@@ -133,8 +137,9 @@ main:
           script:
             - |
               set -eu
+              . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
-              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
                   docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
                   docker stop your-app-frontend-prod || true &&
