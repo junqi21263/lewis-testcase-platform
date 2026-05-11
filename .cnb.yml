@@ -26,25 +26,76 @@
 #   docker run --rm -e PLUGIN_SOURCE_TOKEN -e PLUGIN_CNB_TOKEN ... cnbcool/code-import
 #   详见 https://docs.cnb.cool 与社区「CNB 迁移」说明。
 # -----------------------------------------------------------------------------
-develop:
-  push:
-    - name: deploy-vps
-      docker:
-        image: node:20-bookworm
-      services:
-        - docker
-      stages:
-        - name: deploy
-          script: bash scripts/ci/cnb-deploy-vps.sh
+# 同时引用两个环境的密钥（权限自动隔离）
+imports:
+  - https://cnb.cool/你的组织名/secrets/-/blob/main/vps-prod-secret.yml
+  - https://cnb.cool/你的组织名/secrets/-/blob/main/vps-dev-secret.yml
 
-imports: https://cnb.cool/lewis-test/secrets/-/blob/main/vps-ssh-secret.yml
 main:
+  # ==================================
+  # 🚀 生产环境：main分支自动触发
+  # 访问地址：http://139.199.69.115
+  # ==================================
   push:
-    - name: deploy-vps
+    - branches: main
       docker:
-        image: node:20-bookworm
+        image: docker:26-cli
       services:
-        - docker
+        - docker:dind
+      env:
+        CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
+        ENVIRONMENT: production
+        IMAGE_TAG: latest
+        CONTAINER_NAME: your-app-prod
+        HOST_PORT: 80
       stages:
-        - name: deploy
-          script: bash scripts/ci/cnb-deploy-vps.sh
+        - name: 构建生产镜像
+          script:
+            - echo "开始构建生产环境镜像 ${CNB_IMAGE}:${IMAGE_TAG}"
+            - docker build -t ${CNB_IMAGE}:${IMAGE_TAG} .
+            - docker push ${CNB_IMAGE}:${IMAGE_TAG}
+
+        - name: 部署到生产服务器
+          script:
+            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+                docker pull ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker stop ${CONTAINER_NAME} || true &&
+                docker rm ${CONTAINER_NAME} || true &&
+                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker system prune -af
+              "
+
+  # ==================================
+  # 🧪 开发环境：develop分支自动触发
+  # 访问地址：http://139.199.69.115:8080
+  # ==================================
+  push:
+    - branches: develop
+      docker:
+        image: docker:26-cli
+      services:
+        - docker:dind
+      env:
+        CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
+        ENVIRONMENT: development
+        IMAGE_TAG: dev
+        CONTAINER_NAME: your-app-dev
+        HOST_PORT: 8080
+      stages:
+        - name: 构建开发镜像
+          script:
+            - echo "开始构建开发环境镜像 ${CNB_IMAGE}:${IMAGE_TAG}"
+            - docker build -t ${CNB_IMAGE}:${IMAGE_TAG} .
+            - docker push ${CNB_IMAGE}:${IMAGE_TAG}
+
+        - name: 部署到开发服务器
+          script:
+            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+                docker pull ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker stop ${CONTAINER_NAME} || true &&
+                docker rm ${CONTAINER_NAME} || true &&
+                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker system prune -af
+              "
