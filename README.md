@@ -6,7 +6,7 @@
 
 - **仓库名**：`lewis-testcase-platform`
 - **CNB 远程示例**：见 [docs/cnb-migration.md](docs/cnb-migration.md)（命名空间与 `allow_slugs` 需与你在 CNB 上的路径一致）。
-- **GitHub 镜像**（自行添加远程时，将 `<OWNER>` 换成组织或用户名）：`git@github.com:<OWNER>/lewis-testcase-platform.git`
+- **GitHub**：<https://github.com/junqi21263/lewis-testcase-platform>（SSH：`git@github.com:junqi21263/lewis-testcase-platform.git`；若仓库在组织下请改用对应路径）
 
 ## 技术栈
 
