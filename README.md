@@ -2,6 +2,12 @@
 
 基于 AI 的测试用例生成与文档解析平台：多格式上传、多模型调用、团队与权限、生成记录与导出。
 
+## 仓库
+
+- **仓库名**：`lewis-testcase-platform`
+- **CNB 远程示例**：见 [docs/cnb-migration.md](docs/cnb-migration.md)（命名空间与 `allow_slugs` 需与你在 CNB 上的路径一致）。
+- **GitHub 镜像**（自行添加远程时，将 `<OWNER>` 换成组织或用户名）：`git@github.com:<OWNER>/lewis-testcase-platform.git`
+
 ## 技术栈
 
 | 层级 | 技术 |
