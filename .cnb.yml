@@ -33,7 +33,7 @@ develop:
         ENVIRONMENT: development
         IMAGE_TAG: dev
         INSTALL_CJK_FONTS: "0"
-        # 可选（CNB 仓库变量）：CNB_FRONTEND_DEV_HOST_PORT、CNB_BACKEND_DEV_HOST_PORT — 见 scripts/ci/cnb-vps-remote-deploy.sh
+        # 可选（CNB 仓库变量）：CNB_FRONTEND_DEV_HOST_PORT、CNB_BACKEND_DEV_HOST_PORT、CNB_BACKEND_EXTRA_NETWORKS — 见 scripts/ci/cnb-vps-remote-deploy.sh
       stages:
         - name: 构建后端开发镜像
           script:
@@ -91,7 +91,7 @@ main:
         ENVIRONMENT: production
         IMAGE_TAG: latest
         INSTALL_CJK_FONTS: "1"
-        # 生产端口、拉制品令牌、DEPLOY_BACKEND_ENV_FILE、SSH 等可写在 imports 的 vps-prod-secret.yml
+        # 生产端口、拉制品令牌、DEPLOY_BACKEND_ENV_FILE、CNB_BACKEND_EXTRA_NETWORKS、SSH 等可写在 imports 的 vps-prod-secret.yml
         # 若宿主机 80 已被系统 Nginx/Apache 占用，在密钥或变量设 CNB_FRONTEND_PROD_HOST_PORT（如 8080）
         # 可选：CNB_FRONTEND_PROD_HOST_PORT、CNB_BACKEND_PROD_HOST_PORT — 默认 80 / 8081
       stages:

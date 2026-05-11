@@ -48,6 +48,7 @@ git push -u cnb develop
 | VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选） |
 | VPS 拉 CNB 制品（私有） | **`CNB_REGISTRY_PULL_TOKEN`（强烈建议）**：在 https://cnb.cool/profile/token 创建访问令牌并勾选**制品库读取**，写入业务仓库变量；详见 [Docker 制品库](https://docs.cnb.cool/zh/artifact/docker.html)。流水线内置 **`CNB_TOKEN` 在 VPS 上 `docker login` 经常出现 `unauthorized`**，不宜单独依赖。可选 **`CNB_REGISTRY_LOGIN_USER`**（默认 `cnb`）。 |
 | 后端运行时环境（`.cnb.yml` 直部署） | **`DEPLOY_BACKEND_ENV_FILE`**：VPS 上 env 文件**绝对路径**（含 `DATABASE_URL`、`JWT_SECRET` 等），由 `docker run --env-file` 注入；见 `backend/start.sh`。未设置时流水线会告警，容器会因缺 `DATABASE_URL` 退出 |
+| 后端连 compose 里的 Postgres 容器 | **`DATABASE_URL` 主机名用容器名**（如 `testcase_postgres`）时，后端须与该容器在同一 Docker 网络。在 CNB 变量设置 **`CNB_BACKEND_EXTRA_NETWORKS`**（逗号分隔网络名，无空格），部署成功后脚本会对后端执行 **`docker network connect`**。示例：`lewis_testcase_platform_testcase_network` |
 | 宿主机端口冲突 | 开发默认 **`8080`/`8081`**；生产默认 **`80`/`8081`**。若报错 `Bind ... port is already allocated`，在仓库变量设置对应 **`CNB_*_DEV_HOST_PORT`** 或 **`CNB_*_PROD_HOST_PORT`**。生产机上 **80** 常被系统 Nginx 占用，可将 **`CNB_FRONTEND_PROD_HOST_PORT`** 设为 **`8080`** 等；或用宿主机 Nginx 反代到容器端口（见 `scripts/ci/cnb-vps-remote-deploy.sh`） |
 | 前端容器一直 **Restarting** / **`host not found in upstream "backend"`** | 须满足：`your-app-backend-*` 在同一 **`cnb-app-*`** 网络上且带别名 **`backend`**（脚本已处理）；且 **后端容器必须存在**。若后端因 **`DEPLOY_BACKEND_ENV_FILE`** 等未就绪而退出，切勿用 **`docker system prune -af`** 清理流水线——否则会删掉已停止的后端容器；脚本已改为仅 **`docker image prune -f`** |
 | 国内镜像同步 | `DEPLOY_PULL_FROM_MIRROR=true` + `CONTAINER_MIRROR_*` 变量（与 GitHub 一致） |
