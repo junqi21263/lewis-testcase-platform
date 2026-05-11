@@ -1794,7 +1794,30 @@ ${state.reportText}
               </div>
             ) : state.reportText ? (
               useTerminalFlexReport ? (
-                <div className="flex min-h-0 flex-1 flex-col border-t border-border/20 bg-[#111125]/80 px-4 py-3">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
+                  <div
+                    className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                    data-testid="ai-analysis-report-panel"
+                  >
+                    <div className="mb-2 shrink-0">
+                      <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                        需求文档分析报告
+                      </h3>
+                    </div>
+                    <div
+                      ref={reportMarkdownRef}
+                      data-testid="ai-analysis-report-markdown"
+                      className="min-w-0 max-w-full pb-1"
+                    >
+                      <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="ai-analysis-report-scroll box-border max-h-[min(360px,50vh)] shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/20 bg-[#111125]/80 px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                  data-testid="ai-analysis-report-panel"
+                >
                   <div className="mb-2 shrink-0">
                     <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
                       需求文档分析报告
@@ -1803,20 +1826,9 @@ ${state.reportText}
                   <div
                     ref={reportMarkdownRef}
                     data-testid="ai-analysis-report-markdown"
-                    className="min-h-0 flex-1 overflow-y-auto select-text pb-0"
+                    className="min-w-0 max-w-full pb-1"
                   >
-                    <AnalysisMarkdownReport text={state.reportText} />
-                  </div>
-                </div>
-              ) : (
-                <div className="max-h-[min(360px,50vh)] shrink-0 overflow-y-auto border-t border-border/20 bg-[#111125]/80 px-4 py-3">
-                  <div className="mb-2">
-                    <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
-                      需求文档分析报告
-                    </h3>
-                  </div>
-                  <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text pb-0">
-                    <AnalysisMarkdownReport text={state.reportText} />
+                    <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
                   </div>
                 </div>
               )
@@ -1885,6 +1897,25 @@ ${state.reportText}
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        /* 需求分析报告滚动区：深色主题窄滚动条（与人工审阅区对齐的整块区域内滚动） */
+        .ai-analysis-report-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: #475569 #1e293b;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-track {
+          background: #1e293b;
+          border-radius: 3px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-thumb {
+          background: #475569;
+          border-radius: 3px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
         }
       `}</style>
     </div>
