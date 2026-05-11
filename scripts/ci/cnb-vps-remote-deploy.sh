@@ -112,6 +112,8 @@ if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u "
 fi
 
 # 后端：--network-alias backend；前端：仅加入同一网络，以便 nginx 能解析 backend。
+# 勿使用 docker system prune -af：会删除「已退出」的容器；若后端因缺 DATABASE_URL 等瞬间退出，
+# 紧接着 prune 会清掉后端容器，下一阶段前端将无法解析 upstream backend。
 RUN_BACKEND_NET=""
 RUN_FRONTEND_NET=""
 case "$FLAVOR" in
@@ -130,5 +132,5 @@ ssh_vps "
   docker stop ${CNAME} || true &&
   docker rm ${CNAME} || true &&
   docker run -d --name ${CNAME} --restart=always ${RUN_BACKEND_NET} ${RUN_FRONTEND_NET} ${BACKEND_ENV_ARGS} -p ${HPORT}:${CPORT} ${IMG} &&
-  docker system prune -af
+  docker image prune -f >/dev/null 2>&1 || true
 "
