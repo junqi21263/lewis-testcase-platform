@@ -35,7 +35,9 @@ git push -u cnb develop
 
 ## 3. 开通流水线并配置密钥/变量
 
-仓库根目录已有 `.cnb.yml`，推送 `develop`/`main` 会执行 `scripts/ci/cnb-deploy-vps.sh`。
+仓库根目录已有 `.cnb.yml`：**推送 `develop` / `main`** 会触发 [云原生构建](https://docs.cnb.cool/zh/build/intro.html)，按 `.cnb.yml` 内对应分支流水线执行 **构建镜像 → 推送 CNB 制品库 → SSH 到 VPS `docker pull` / `docker run`**（脚本入口：`scripts/ci/cnb-vps-remote-deploy.sh`）。
+
+另有 **`scripts/ci/cnb-deploy-vps.sh`**（本地 pnpm build + docker + rsync + 远端 `remote-deploy-ghcr.sh` / compose），可作为 **备用编排**在自定义流水线或本地调用；**与当前 `.cnb.yml` 直跑 Docker 并行存在**，二者不要混为一谈。
 
 在 CNB 网页：**仓库 → 设置 → 左侧「云原生构建」**（或同类「流水线密钥 / 变量」入口）为构建注入密钥与变量。名称尽量与 GitHub **Secrets / Variables** 一致，便于对照迁移：
 
@@ -44,9 +46,10 @@ git push -u cnb develop
 | SSH 部署 | `SSH_HOST`, `SSH_USER`, `SSH_KEY`，可选 `SSH_PORT`；**开发机**若与生产拆分时可在密钥文件中使用 `DEV_SSH_HOST` / `DEV_SSH_USER` / `DEV_SSH_KEY` / `DEV_SSH_PORT`（`.cnb.yml` 的 develop 流水线会优先读这些，见 `scripts/ci/cnb-require-ssh-deploy-env.sh`） |
 | 向 GHCR 推送镜像（可选；不配则流水线用 **CNB 内置制品库** + `CNB_TOKEN`） | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER` |
 | VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选） |
-| VPS 拉 CNB 制品（私有或需登录时） | `CNB_REGISTRY_PULL_TOKEN`（可选；不配则 `.cnb.yml` 部署步会用当次流水线的 **`CNB_TOKEN`** 在远端执行 `docker login` 后再 `docker pull`） |
+| VPS 拉 CNB 制品（私有或需登录时） | `CNB_REGISTRY_PULL_TOKEN`（可选；不配则 `.cnb.yml` 部署步会用当次流水线的 **`CNB_TOKEN`** 在远端执行 `docker login` 后再 `docker pull`；若仍 `unauthorized`，多为令牌权限或须单独配置只读拉取令牌） |
+| 后端运行时环境（`.cnb.yml` 直部署） | **`DEPLOY_BACKEND_ENV_FILE`**：VPS 上 env 文件**绝对路径**（含 `DATABASE_URL`、`JWT_SECRET` 等），由 `docker run --env-file` 注入；见 `backend/start.sh`。未设置时流水线会告警，容器会因缺 `DATABASE_URL` 退出 |
 | 国内镜像同步 | `DEPLOY_PULL_FROM_MIRROR=true` + `CONTAINER_MIRROR_*` 变量（与 GitHub 一致） |
-| 路径 | `DEPLOY_PATH`、`DEV_DEPLOY_PATH` 等 |
+| 路径 | `DEPLOY_PATH`、`DEV_DEPLOY_PATH` 等（主要用于 **cnb-deploy-vps.sh + compose** 路径；与「仅 docker run 两个容器」的 `.cnb.yml` 方案不同） |
 
 若 CNB 上的仓库路径与 GitHub 包路径不一致，请在变量中设置 **`GHCR_REPO_LOWER=owner/repo`**（全小写），与 ghcr.io 上现有镜像命名一致。
 
@@ -89,11 +92,11 @@ SSH_KEY: |
 
 ## 5. 服务器端脚本
 
-远端主机执行的是仓库中的 `scripts/ci/remote-deploy-ghcr.sh`（由 rsync 同步上去）。GitHub Actions 与 CNB 共用该脚本，避免两套编排分叉。
+若使用 **`cnb-deploy-vps.sh` + rsync** 路径，远端会执行 `scripts/ci/remote-deploy-ghcr.sh`（docker compose、Postgres/Redis 等）。**当前默认 `.cnb.yml` 未走该路径**，而是仅在 VPS 上启动 **前后端两个独立容器**（名称见 `cnb-vps-remote-deploy.sh`），**不包含 compose 里的数据库/缓存**；数据库需自建或通过 **`DEPLOY_BACKEND_ENV_FILE`** 指向已有服务。
 
-## 6. CNB 流水线脚本（`scripts/ci/cnb-deploy-vps.sh`）
+## 6. 备用编排：`scripts/ci/cnb-deploy-vps.sh`
 
-推送 `develop` / `main` 时执行：本地 **`pnpm build`** → **`docker build`** 前后端镜像并推送 → **`rsync`** 到 VPS → SSH 执行 **`remote-deploy-ghcr.sh`**（拉镜像并 `compose up`）。
+该脚本执行：本地 **`pnpm build`** → **`docker build`** 前后端镜像并推送 → **`rsync`** 到 VPS → SSH 执行 **`remote-deploy-ghcr.sh`**（拉镜像并 **`compose up`**）。需自行在流水线或本地触发，**不是**根目录 `.cnb.yml` 的默认行为。
 
 **镜像仓库二选一**（在 CNB「密钥 / 变量」中配置）：
 

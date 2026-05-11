@@ -23,26 +23,31 @@ fi
 
 FLAVOR="${DEPLOY_FLAVOR:?DEPLOY_FLAVOR must be backend-dev|frontend-dev|backend-prod|frontend-prod}"
 
+# 后端 Nest 监听 PORT（默认 3000），见 backend/start.sh；前端 nginx 默认 80，见 frontend/docker-entrypoint.sh
 case "$FLAVOR" in
   backend-dev)
     CNAME="your-app-backend-dev"
     HPORT="8081"
     ISUFFIX="backend"
+    CPORT="3000"
     ;;
   frontend-dev)
     CNAME="your-app-frontend-dev"
     HPORT="8080"
     ISUFFIX="frontend"
+    CPORT="80"
     ;;
   backend-prod)
     CNAME="your-app-backend-prod"
     HPORT="8081"
     ISUFFIX="backend"
+    CPORT="3000"
     ;;
   frontend-prod)
     CNAME="your-app-frontend-prod"
     HPORT="80"
     ISUFFIX="frontend"
+    CPORT="80"
     ;;
   *)
     echo "cnb-vps-remote-deploy: unknown DEPLOY_FLAVOR=$FLAVOR" >&2
@@ -51,6 +56,21 @@ case "$FLAVOR" in
 esac
 
 IMG="${REGISTRY_PREFIX}/${ISUFFIX}:${IMAGE_TAG}"
+
+: "${IMAGE_TAG:?IMAGE_TAG must be set (from pipeline env)}"
+
+# 后端启动需要 DATABASE_URL 等（见 backend/start.sh）。在 VPS 上准备 env 文件后，在 CNB 变量中设置
+# DEPLOY_BACKEND_ENV_FILE=/绝对路径/backend.env，此处会把 --env-file 传给 docker run。
+BACKEND_ENV_ARGS=""
+case "$FLAVOR" in
+  backend-dev|backend-prod)
+    if [ -n "${DEPLOY_BACKEND_ENV_FILE:-}" ]; then
+      BACKEND_ENV_ARGS="--env-file ${DEPLOY_BACKEND_ENV_FILE}"
+    else
+      echo "cnb-vps-remote-deploy: WARN: DEPLOY_BACKEND_ENV_FILE unset — backend needs DATABASE_URL etc. (backend/start.sh). Set CNB variable to env file path on VPS or container will exit." >&2
+    fi
+    ;;
+esac
 
 printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
 
@@ -70,6 +90,6 @@ ssh_vps "
   docker pull ${IMG} &&
   docker stop ${CNAME} || true &&
   docker rm ${CNAME} || true &&
-  docker run -d --name ${CNAME} --restart=always -p ${HPORT}:80 ${IMG} &&
+  docker run -d --name ${CNAME} --restart=always ${BACKEND_ENV_ARGS} -p ${HPORT}:${CPORT} ${IMG} &&
   docker system prune -af
 "
