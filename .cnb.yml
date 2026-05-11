@@ -28,8 +28,8 @@
 # -----------------------------------------------------------------------------
 # 同时引用两个环境的密钥（权限自动隔离）
 imports:
-  - https://cnb.cool/你的组织名/secrets/-/blob/main/vps-prod-secret.yml
-  - https://cnb.cool/你的组织名/secrets/-/blob/main/vps-dev-secret.yml
+  - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-prod-secret.yml
+  - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-dev-secret.yml
 
 main:
   # ==================================
