@@ -1228,6 +1228,8 @@ ${state.reportText}
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
+  /** 人工审阅开启且处于可输入修改意见阶段：终端内纵向拉长报告区与审阅输入框 */
+  const isManualReviewEditing = humanReview && state.status === 'review'
   const showApprovedOnly = !humanReview && state.status === 'approved'
   const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
   const busy =
@@ -1755,38 +1757,54 @@ ${state.reportText}
           </div>
 
           <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="flex flex-col flex-1 min-h-0">
+            <div
+              className={`flex flex-col flex-1 min-h-0 ${isManualReviewEditing ? 'overflow-hidden' : ''}`}
+            >
               <div
                 ref={logContainerRef}
                 onScroll={handleLogScroll}
-                className="flex-1 min-h-0 basis-0 overflow-y-auto px-4 py-3 space-y-0.5"
+                className={
+                  isManualReviewEditing
+                    ? 'shrink-0 max-h-[min(220px,32vh)] overflow-y-auto px-4 py-3 space-y-0.5'
+                    : 'flex-1 min-h-0 basis-0 overflow-y-auto px-4 py-3 space-y-0.5'
+                }
               >
                 {state.logs.length === 0 && (
-                <div className="text-sm text-gray-500 font-mono py-4 text-center">
-                  等待操作或开始分析…
-                </div>
-              )}
+                  <div className="text-sm text-gray-500 font-mono py-4 text-center">
+                    等待操作或开始分析…
+                  </div>
+                )}
                 {state.logs.map((log) => (
                   <LogLine key={log.id} entry={log} />
                 ))}
               </div>
 
-            {state.reportText && (
-              <div className="max-h-[min(360px,50vh)] shrink-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80">
-                <div className="mb-2">
-                  <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
-                    需求文档分析报告
-                  </h3>
+              {state.reportText && (
+                <div
+                  className={
+                    isManualReviewEditing
+                      ? 'flex-1 min-h-[120px] basis-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80'
+                      : 'max-h-[min(360px,50vh)] shrink-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80'
+                  }
+                >
+                  <div className="mb-2">
+                    <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                      需求文档分析报告
+                    </h3>
+                  </div>
+                  <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text pb-0">
+                    <AnalysisMarkdownReport text={state.reportText} />
+                  </div>
                 </div>
-                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text pb-0">
-                  <AnalysisMarkdownReport text={state.reportText} />
-                </div>
-              </div>
-            )}
+              )}
             </div>
 
             {(showReviewArea || showApprovedOnly) && (
-              <div className="shrink-0 px-4 py-4 border-t border-border/20 bg-[#0d0d1a]">
+              <div
+                className={`px-4 py-4 border-t border-border/20 bg-[#0d0d1a] ${
+                  isManualReviewEditing ? 'flex flex-1 flex-col min-h-0' : 'shrink-0'
+                }`}
+              >
                 {state.status === 'approved' ? (
                   <div className="text-center py-3 space-y-2">
                     <div className="flex items-center justify-center gap-2 text-green-400">
@@ -1806,18 +1824,22 @@ ${state.reportText}
                   </div>
                 ) : (
                   <>
-                    <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                    <h4 className="mb-2 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
                       <User className="w-4 h-4 text-muted-foreground" />
                       人工审阅
                     </h4>
                     <textarea
-                      className="w-full h-[72px] p-3 text-sm border-0 rounded-lg bg-[#1a1a2e] shadow-sm ring-1 ring-inset ring-white/10 resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-500 text-gray-300"
+                      className={`w-full p-3 text-sm border-0 rounded-lg bg-[#1a1a2e] shadow-sm ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-500 text-gray-300 ${
+                        isManualReviewEditing
+                          ? 'min-h-[88px] flex-1 resize-y overflow-y-auto'
+                          : 'h-[72px] resize-none'
+                      }`}
                       placeholder={`请输入修改意见…（Ctrl+Enter 提交）`}
                       value={state.reviewText}
                       onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
                       onKeyDown={handleReviewKeyDown}
                     />
-                    <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-2 mt-3 shrink-0">
                       <Button
                         className="flex-1 h-10 text-sm font-medium gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white shadow-md"
                         type="button"
