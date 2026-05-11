@@ -92,42 +92,53 @@ main:
       services:
         - docker:dind
       env:
+        # 平台可能注入「仅主机名」并覆盖此处；制品库路径由 scripts/ci/cnb-registry-env.sh 解析为 REGISTRY_PREFIX
         CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
         ENVIRONMENT: development
         IMAGE_TAG: dev
       stages:
         - name: 构建后端开发镜像
           script:
-            - echo "开始构建后端开发镜像 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}"
-            # ✅ 关键修正：上下文用根目录，指定Dockerfile位置
-            - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} -f backend/Dockerfile .
-            - docker push ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "开始构建后端开发镜像 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
+              docker build -t "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}" -f backend/Dockerfile .
+              docker push "${REGISTRY_PREFIX}/backend:${IMAGE_TAG}"
 
         - name: 构建前端开发镜像
           script:
-            - echo "开始构建前端开发镜像 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}"
-            # ✅ 前端同样修正
-            - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} -f frontend/Dockerfile .
-            - docker push ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "开始构建前端开发镜像 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
+              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile .
+              docker push "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
 
         - name: 部署后端到开发服务器
           script:
-            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
-            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
-                docker pull ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
-                docker stop your-app-backend-dev || true &&
-                docker rm your-app-backend-dev || true &&
-                docker run -d --name your-app-backend-dev --restart=always -p 8081:80 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
-                docker system prune -af
-              "
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
+                  docker stop your-app-backend-dev || true &&
+                  docker rm your-app-backend-dev || true &&
+                  docker run -d --name your-app-backend-dev --restart=always -p 8081:80 ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
+                  docker system prune -af
+                "
 
         - name: 部署前端到开发服务器
           script:
-            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
-            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
-                docker pull ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
-                docker stop your-app-frontend-dev || true &&
-                docker rm your-app-frontend-dev || true &&
-                docker run -d --name your-app-frontend-dev --restart=always -p 8080:80 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
-                docker system prune -af
-              "
+            - |
+              set -eu
+              . ./scripts/ci/cnb-registry-env.sh
+              echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+              ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
+                  docker stop your-app-frontend-dev || true &&
+                  docker rm your-app-frontend-dev || true &&
+                  docker run -d --name your-app-frontend-dev --restart=always -p 8080:80 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
+                  docker system prune -af
+                "
