@@ -10,6 +10,11 @@ http {
         listen ${PORT};
         server_name localhost;
 
+        # Docker 内置 DNS（user-defined / compose 网络均有）；配合变量 proxy_pass，
+        # 在请求时再解析 upstream，避免容器启动瞬间 backend 未就绪导致 nginx 直接 [emerg] 退出。
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $backend_host ${BACKEND_HOST};
+
         # Allow larger uploads (PDF/Word/Excel/images). Default is 1m which triggers 413.
         client_max_body_size 50m;
 
@@ -18,7 +23,7 @@ http {
 
         # 与后端裸路由 GET /health 对齐（负载均衡 / 平台探活）
         location = /health {
-            proxy_pass http://backend:3000/health;
+            proxy_pass http://$backend_host:3000/health;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -32,7 +37,7 @@ http {
         # SSE / chunked 流式：须关闭缓冲与 gzip，并拉长读超时，否则浏览器常见
         # net::ERR_INCOMPLETE_CHUNKED_ENCODING（连接被代理提前关断）。
         location /api/ai/generate/stream {
-            proxy_pass http://backend:3000;
+            proxy_pass http://$backend_host:3000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -50,7 +55,7 @@ http {
 
         # 需求分析 SSE（与 generate/stream 相同代理策略，否则会被 location /api 缓冲截断）
         location /api/ai/analyze/stream {
-            proxy_pass http://backend:3000;
+            proxy_pass http://$backend_host:3000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -67,7 +72,7 @@ http {
         }
 
         location /api {
-            proxy_pass http://backend:3000;
+            proxy_pass http://$backend_host:3000;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
