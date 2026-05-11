@@ -5,6 +5,7 @@
 # — 顶层键名 = 触发分支；push 到 develop 时仅使用「当前分支上的」.cnb.yml 里与 develop 匹配的块。
 # — 因此 develop / main 各自一条流水线；勿仅写在 main: 下用 branches 过滤，否则 develop 推送不会按预期触发。
 #
+# 部署约定：后续变更须先在 develop 跑通（前后端一体部署验证），再合并进 main 上线生产。
 # 推荐流程：先 push 到 develop（本文件含 develop:）验证前后端一体部署；确认无误后再合并到 main 触发生产。
 #
 # 制品库：构建阶段 source cnb-registry-env.sh 后在 Runner 上 docker login 再 push；部署阶段见 cnb-vps-remote-deploy.sh。
