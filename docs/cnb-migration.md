@@ -41,7 +41,7 @@ git push -u cnb develop
 
 | 用途 | 建议名称 |
 | --- | --- |
-| SSH 部署 | `SSH_HOST`, `SSH_USER`, `SSH_KEY`，可选 `SSH_PORT` |
+| SSH 部署 | `SSH_HOST`, `SSH_USER`, `SSH_KEY`，可选 `SSH_PORT`；**开发机**若与生产拆分时可在密钥文件中使用 `DEV_SSH_HOST` / `DEV_SSH_USER` / `DEV_SSH_KEY` / `DEV_SSH_PORT`（`.cnb.yml` 的 develop 流水线会优先读这些，见 `scripts/ci/cnb-require-ssh-deploy-env.sh`） |
 | 向 GHCR 推送镜像（可选；不配则流水线用 **CNB 内置制品库** + `CNB_TOKEN`） | `GHCR_PUSH_TOKEN`、`GHCR_LOGIN_USER` |
 | VPS 拉 GHCR（私有） | `GHCR_PULL_TOKEN`（可选） |
 | VPS 拉 CNB 制品（私有或需登录时） | `CNB_REGISTRY_PULL_TOKEN`（可选；不配则脚本会传当次流水线的 `CNB_TOKEN`） |
