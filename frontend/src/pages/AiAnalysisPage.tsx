@@ -1285,8 +1285,9 @@ ${state.reportText}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-start content-start">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 lg:items-stretch lg:min-h-[calc(100dvh-9rem)]">
+        <div className="flex flex-col gap-4 min-h-0 lg:h-full">
+          <div className="space-y-4 shrink-0">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
             <input
@@ -1590,8 +1591,9 @@ ${state.reportText}
               onChange={(e) => setRequirementText(e.target.value)}
             />
           </div>
+          </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col flex-1 min-h-[200px] lg:min-h-0 gap-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
                 分析指令模板（Prompt）
@@ -1611,7 +1613,7 @@ ${state.reportText}
             </p>
             <textarea
               id="ai-analysis-prompt-template"
-              className="w-full min-h-[140px] max-h-[280px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
+              className="w-full flex-1 min-h-[140px] basis-[140px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
               placeholder="编辑 AI 分析指令..."
               value={analysisPromptTemplate}
               onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
@@ -1619,6 +1621,7 @@ ${state.reportText}
             />
           </div>
 
+          <div className="shrink-0 flex flex-col gap-2">
           <div className="flex items-center gap-3 py-2">
             <User className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-foreground" id="human-review-label">
@@ -1689,10 +1692,11 @@ ${state.reportText}
               </Button>
             )}
           </div>
+          </div>
         </div>
 
-        <div className="flex flex-col w-full min-w-0 h-fit lg:self-start">
-          <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
+        <div className="flex flex-col w-full min-w-0 min-h-0 lg:h-full">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
               <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
@@ -1750,28 +1754,25 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col h-fit">
-            <div
-              ref={logContainerRef}
-              onScroll={handleLogScroll}
-              className={`overflow-y-auto px-4 py-3 space-y-0.5 shrink-0 ${
-                state.reportText.trim().length > 0
-                  ? 'min-h-0 max-h-[140px]'
-                  : 'min-h-[120px] max-h-[220px]'
-              }`}
-            >
-              {state.logs.length === 0 && (
+          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0">
+              <div
+                ref={logContainerRef}
+                onScroll={handleLogScroll}
+                className="flex-1 min-h-0 basis-0 overflow-y-auto px-4 py-3 space-y-0.5"
+              >
+                {state.logs.length === 0 && (
                 <div className="text-sm text-gray-500 font-mono py-4 text-center">
                   等待操作或开始分析…
                 </div>
               )}
-              {state.logs.map((log) => (
-                <LogLine key={log.id} entry={log} />
-              ))}
-            </div>
+                {state.logs.map((log) => (
+                  <LogLine key={log.id} entry={log} />
+                ))}
+              </div>
 
             {state.reportText && (
-              <div className="h-fit min-h-0 max-h-[min(360px,55vh)] overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80">
+              <div className="max-h-[min(360px,50vh)] shrink-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80">
                 <div className="mb-2">
                   <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
                     需求文档分析报告
@@ -1782,9 +1783,10 @@ ${state.reportText}
                 </div>
               </div>
             )}
+            </div>
 
             {(showReviewArea || showApprovedOnly) && (
-              <div className="px-4 py-4 border-t border-border/20 bg-[#0d0d1a]">
+              <div className="shrink-0 px-4 py-4 border-t border-border/20 bg-[#0d0d1a]">
                 {state.status === 'approved' ? (
                   <div className="text-center py-3 space-y-2">
                     <div className="flex items-center justify-center gap-2 text-green-400">
