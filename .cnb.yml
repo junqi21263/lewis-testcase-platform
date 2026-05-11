@@ -10,8 +10,8 @@
 # 制品库：scripts/ci/cnb-registry-env.sh 解析 REGISTRY_PREFIX，并在有 CNB_TOKEN 时 docker login。
 # 前端镜像：docker build 的 context 必须为目录 frontend（-f frontend/Dockerfile frontend）；根目录
 #   .dockerignore 会排除 frontend/，若用 context=. 则 COPY nginx.conf.template 等会报 not found。
-# 密钥：写在各流水线的 imports 下（勿仅放在文件根；见 CNB 文件引用示例）。SSH 变量见
-#   scripts/ci/cnb-require-ssh-deploy-env.sh；详述见 docs/cnb-migration.md 第 3 节。
+# 密钥：写在各流水线的 imports 下。远端 VPS docker pull 私有镜像前会 docker login（令牌：
+#   CNB_REGISTRY_PULL_TOKEN 优先，否则流水线内置 CNB_TOKEN）。SSH 见 cnb-require-ssh-deploy-env.sh。
 # -----------------------------------------------------------------------------
 
 # =============================================================================
@@ -57,8 +57,13 @@ develop:
               set -eu
               . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
+              REG_HOST="${REGISTRY_PREFIX%%/*}"
+              REG_PULL_TOKEN="${CNB_REGISTRY_PULL_TOKEN:-${CNB_TOKEN:-}}"
+              if [ -z "$REG_PULL_TOKEN" ]; then echo "Need CNB_TOKEN or CNB_REGISTRY_PULL_TOKEN for VPS docker pull" >&2; exit 1; fi
               printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  set -e
+                  printf '%s\n' \"${REG_PULL_TOKEN}\" | docker login \"${REG_HOST}\" -u cnb --password-stdin &&
                   docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
                   docker stop your-app-backend-dev || true &&
                   docker rm your-app-backend-dev || true &&
@@ -72,8 +77,13 @@ develop:
               set -eu
               . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
+              REG_HOST="${REGISTRY_PREFIX%%/*}"
+              REG_PULL_TOKEN="${CNB_REGISTRY_PULL_TOKEN:-${CNB_TOKEN:-}}"
+              if [ -z "$REG_PULL_TOKEN" ]; then echo "Need CNB_TOKEN or CNB_REGISTRY_PULL_TOKEN for VPS docker pull" >&2; exit 1; fi
               printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  set -e
+                  printf '%s\n' \"${REG_PULL_TOKEN}\" | docker login \"${REG_HOST}\" -u cnb --password-stdin &&
                   docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
                   docker stop your-app-frontend-dev || true &&
                   docker rm your-app-frontend-dev || true &&
@@ -124,8 +134,13 @@ main:
               set -eu
               . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
+              REG_HOST="${REGISTRY_PREFIX%%/*}"
+              REG_PULL_TOKEN="${CNB_REGISTRY_PULL_TOKEN:-${CNB_TOKEN:-}}"
+              if [ -z "$REG_PULL_TOKEN" ]; then echo "Need CNB_TOKEN or CNB_REGISTRY_PULL_TOKEN for VPS docker pull" >&2; exit 1; fi
               printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  set -e
+                  printf '%s\n' \"${REG_PULL_TOKEN}\" | docker login \"${REG_HOST}\" -u cnb --password-stdin &&
                   docker pull ${REGISTRY_PREFIX}/backend:${IMAGE_TAG} &&
                   docker stop your-app-backend-prod || true &&
                   docker rm your-app-backend-prod || true &&
@@ -139,8 +154,13 @@ main:
               set -eu
               . ./scripts/ci/cnb-require-ssh-deploy-env.sh
               . ./scripts/ci/cnb-registry-env.sh
+              REG_HOST="${REGISTRY_PREFIX%%/*}"
+              REG_PULL_TOKEN="${CNB_REGISTRY_PULL_TOKEN:-${CNB_TOKEN:-}}"
+              if [ -z "$REG_PULL_TOKEN" ]; then echo "Need CNB_TOKEN or CNB_REGISTRY_PULL_TOKEN for VPS docker pull" >&2; exit 1; fi
               printf '%s\n' "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
               ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+                  set -e
+                  printf '%s\n' \"${REG_PULL_TOKEN}\" | docker login \"${REG_HOST}\" -u cnb --password-stdin &&
                   docker pull ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG} &&
                   docker stop your-app-frontend-prod || true &&
                   docker rm your-app-frontend-prod || true &&
