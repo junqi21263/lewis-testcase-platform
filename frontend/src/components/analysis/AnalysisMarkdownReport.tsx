@@ -1,9 +1,11 @@
 /**
  * AI 分析报告 Markdown 渲染：GFM（表格、任务列表等）+ 基础 XSS 消毒。
  */
+import { Children, isValidElement } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import { MermaidBlock } from './MermaidBlock'
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -58,6 +60,11 @@ const mdComponents: Components = {
   ),
   code: ({ className, children }) => {
     const inline = !className
+    const lang = /language-(\w+)/.exec(className ?? '')?.[1]
+    if (!inline && lang === 'mermaid') {
+      const chart = String(children).replace(/\n$/, '')
+      return <MermaidBlock chart={chart} />
+    }
     if (inline) {
       return (
         <code className="rounded bg-white/10 px-1.5 py-0.5 text-[0.85em] font-mono text-amber-200/95">{children}</code>
@@ -67,11 +74,23 @@ const mdComponents: Components = {
       <code className={`block font-mono text-xs text-gray-200 ${className ?? ''}`}>{children}</code>
     )
   },
-  pre: ({ children }) => (
-    <pre className="bg-black/45 rounded-lg p-3 overflow-x-auto text-xs font-mono mb-2 border border-white/10 shadow-inner">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const first = Children.toArray(children)[0]
+    if (
+      isValidElement(first) &&
+      typeof first.props === 'object' &&
+      first.props !== null &&
+      'className' in first.props &&
+      String((first.props as { className?: string }).className ?? '').includes('language-mermaid')
+    ) {
+      return <div className="mb-2">{children}</div>
+    }
+    return (
+      <pre className="mb-2 overflow-x-auto rounded-lg border border-white/10 bg-black/45 p-3 font-mono text-xs shadow-inner">
+        {children}
+      </pre>
+    )
+  },
   table: ({ children }) => (
     <div className="overflow-x-auto mb-2 rounded-md border border-white/10">
       <table className="min-w-full border-collapse text-sm text-gray-300">{children}</table>

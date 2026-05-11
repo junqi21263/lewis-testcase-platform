@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator'
+import { ArrayMaxSize, IsArray, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export class ExportAnalysisPdfDto {
@@ -19,4 +19,14 @@ export class ExportAnalysisPdfDto {
   @IsString()
   @MaxLength(50)
   version?: string
+
+  @ApiPropertyOptional({
+    description:
+      '与 markdown 中 mermaid 围栏代码块顺序一致的 PNG base64（不含 data URL 前缀）；用于 PDF 嵌入流程图',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  mermaidImagesBase64?: string[]
 }

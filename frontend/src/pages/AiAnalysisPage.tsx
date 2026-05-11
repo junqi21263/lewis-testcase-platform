@@ -33,6 +33,7 @@ import {
   FileDown,
   Sparkles,
   History,
+  Waypoints,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -51,7 +52,15 @@ import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromp
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
-import { buildAnalysisPdfFileName, saveAnalysisReportPdf } from '@/utils/exportAnalysisPdf'
+import { saveAs } from 'file-saver'
+import {
+  buildAnalysisExportBasename,
+  buildAnalysisPdfFileName,
+  buildAnalysisXmindFileName,
+  saveAnalysisReportPdf,
+} from '@/utils/exportAnalysisPdf'
+import { renderMermaidChartsToPngBase64 } from '@/utils/analysisMermaidPdf'
+import { buildAnalysisXmindBlob } from '@/utils/buildAnalysisXmind'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -395,6 +404,7 @@ function AiAnalysisPageInner() {
   const [requirementText, setRequirementText] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [exportingXmind, setExportingXmind] = useState(false)
   const [humanReview, setHumanReview] = useState(true)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
@@ -592,20 +602,45 @@ function AiAnalysisPageInner() {
     }
     setExportingPdf(true)
     try {
+      toast.loading('正在渲染流程图并生成 PDF…', { id: 'export-pdf' })
+      const mermaidImagesBase64 = await renderMermaidChartsToPngBase64(markdown).catch(() => [] as string[])
       const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
       await saveAnalysisReportPdf(
         {
           markdown,
           documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
           version: 'V1.0',
+          mermaidImagesBase64:
+            mermaidImagesBase64 && mermaidImagesBase64.length > 0 ? mermaidImagesBase64 : undefined,
         },
         name,
       )
-      toast.success('PDF 已生成并开始下载')
+      toast.success('PDF 已生成并开始下载', { id: 'export-pdf' })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导出 PDF 失败')
+      toast.error(e instanceof Error ? e.message : '导出 PDF 失败', { id: 'export-pdf' })
     } finally {
       setExportingPdf(false)
+    }
+  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+
+  const handleExportXmind = useCallback(async () => {
+    const markdown = state.reportText.trim()
+    if (!markdown) {
+      toast.error('暂无可导出的分析报告')
+      return
+    }
+    setExportingXmind(true)
+    try {
+      toast.loading('正在生成 XMind…', { id: 'export-xmind' })
+      const rootTitle = `${buildAnalysisExportBasename(uploadDisplayName ?? uploadedFile?.originalName)} — 需求分析`
+      const blob = await buildAnalysisXmindBlob(markdown, rootTitle)
+      const name = buildAnalysisXmindFileName(uploadDisplayName ?? uploadedFile?.originalName)
+      saveAs(blob, name.endsWith('.xmind') ? name : `${name}.xmind`)
+      toast.success('XMind 已生成并开始下载', { id: 'export-xmind' })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '导出 XMind 失败', { id: 'export-xmind' })
+    } finally {
+      setExportingXmind(false)
     }
   }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
 
@@ -1742,7 +1777,7 @@ ${state.reportText}
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={exportingPdf}
+                    disabled={exportingPdf || exportingXmind}
                     className="h-8 text-xs text-gray-300 hover:text-gray-100"
                     onClick={() => void handleExportAnalysisPdf()}
                   >
@@ -1752,6 +1787,21 @@ ${state.reportText}
                       <FileDown className="w-3.5 h-3.5 mr-1" />
                     )}
                     导出 PDF
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={exportingPdf || exportingXmind}
+                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
+                    onClick={() => void handleExportXmind()}
+                  >
+                    {exportingXmind ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Waypoints className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    导出 XMind
                   </Button>
                 </>
               )}

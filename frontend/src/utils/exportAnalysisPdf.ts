@@ -9,13 +9,33 @@ export interface ExportAnalysisPdfPayload {
   markdown: string
   documentTitle?: string
   version?: string
+  /** 与 markdown 中 \`\`\`mermaid 块顺序对应的 PNG base64（无 data URL 前缀） */
+  mermaidImagesBase64?: string[]
+}
+
+/** 去掉扩展名后的安全主文件名，用于拼接导出文件名 */
+export function buildAnalysisExportBasename(originalName?: string | null): string {
+  const raw = originalName?.trim() || '需求分析报告'
+  const safe = raw.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
+  const withoutExt = safe.replace(/\.[^./\\]+$/i, '')
+  return withoutExt || safe
+}
+
+export function formatAnalysisExportDateChinese(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}年${m}月${day}日`
 }
 
 export function buildAnalysisPdfFileName(originalName?: string | null): string {
-  const raw = originalName?.trim() || '需求分析报告'
-  const safe = raw.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
-  const day = new Date().toISOString().slice(0, 10)
-  return `${safe}_${day}.pdf`
+  const base = buildAnalysisExportBasename(originalName)
+  return `${base}需求分析${formatAnalysisExportDateChinese()}.pdf`
+}
+
+export function buildAnalysisXmindFileName(originalName?: string | null): string {
+  const base = buildAnalysisExportBasename(originalName)
+  return `${base}需求分析${formatAnalysisExportDateChinese()}.xmind`
 }
 
 /** 调用后端 POST /ai/analyze/export-pdf，返回 PDF Blob（不走 JSON 封装 axios，避免拦截器解析失败） */

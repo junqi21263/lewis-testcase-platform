@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, Logger } from '@nestjs/common'
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
 import type { Request, Response } from 'express'
+import express from 'express'
 import helmet from 'helmet'
 import { AppModule } from './app.module'
 import { corsOriginDelegate } from '@/config/cors.config'
@@ -19,6 +20,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap')
   // 在 create 时启用 CORS，保证 init() 中早于业务中间件注册，预检能带上 ACAO
   const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
     logger: ['log', 'error', 'warn', 'debug'],
     cors: {
       origin: corsOriginDelegate(),
@@ -32,6 +34,10 @@ async function bootstrap() {
   if (process.env.NODE_ENV === 'production') {
     app.use(helmet())
   }
+
+  const expressAppEarly = app.getHttpAdapter().getInstance()
+  expressAppEarly.use(express.json({ limit: '50mb' }))
+  expressAppEarly.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
   // 统一 API 前缀
   app.setGlobalPrefix('api')
