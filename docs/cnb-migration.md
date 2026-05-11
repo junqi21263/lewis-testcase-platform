@@ -60,6 +60,28 @@ git push -u cnb develop
 - **`allow_events`**：develop 自动构建依赖 **`push`**，须包含在内。
 - **`allow_branches`**：开发密钥填 **`develop`**；若误填 **`main`**，则在 develop 上推送时无法读取该文件。
 
+### 流水线报 `Failed to parse file: vps-*-secret.yml`（如 line 18:1）
+
+多为 **`SSH_KEY: |` 块标量**写错。YAML 要求：`|` 下面的**每一行私钥内容**都要比 `SSH_KEY:` **多缩进**（常用 2 个空格）；若 `BEGIN`/`END` 或某行顶格写，解析器会把它当成新的键，从而出现 `multiline key may not be an implicit key`。
+
+正确结构示例（缩进仅作示范，请替换为真实主机与密钥）：
+
+```yaml
+allow_slugs: "lewis-test/**"
+allow_events: "push,tag_deploy"
+allow_branches: "develop"
+
+SSH_HOST: "139.199.69.115"
+SSH_USER: "ubuntu"
+SSH_PORT: "22"
+SSH_KEY: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  <私钥的每一行都与上一行对齐缩进，勿顶格>
+  -----END OPENSSH PRIVATE KEY-----
+```
+
+若在编辑器里从别处粘贴私钥，务必选中整块后**统一增加缩进**，或用支持 YAML 块文字的编辑器保存后再提交。
+
 ## 4. 与 GitHub Actions 的关系
 
 - **当前策略**：**自动部署仅以 CNB 为准**。GitHub 上的 `Deploy to VPS` workflow **已关闭 push 触发**，仅在 Actions 里 **手动 Run workflow** 时执行（避免与 CNB 重复部署）。
