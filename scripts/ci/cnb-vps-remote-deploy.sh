@@ -61,6 +61,20 @@ case "$FLAVOR" in
     ;;
 esac
 
+# 前端 nginx 将 /api、/health 反代到主机名 backend:3000（见 frontend/nginx.conf.template）。
+# 独立 docker run 时默认 bridge 无 DNS，必须让前后端加入同一 user-defined 网络，并为后端设置别名 backend。
+case "$FLAVOR" in
+  backend-dev|frontend-dev)
+    NETWORK="${CNB_APP_DOCKER_NETWORK_DEV:-cnb-app-dev}"
+    ;;
+  backend-prod|frontend-prod)
+    NETWORK="${CNB_APP_DOCKER_NETWORK_PROD:-cnb-app-prod}"
+    ;;
+  *)
+    NETWORK="cnb-app-dev"
+    ;;
+esac
+
 IMG="${REGISTRY_PREFIX}/${ISUFFIX}:${IMAGE_TAG}"
 
 : "${IMAGE_TAG:?IMAGE_TAG must be set (from pipeline env)}"
@@ -97,11 +111,24 @@ if ! printf '%s\n' "${REG_PULL_TOKEN}" | ssh_vps docker login "${REG_HOST}" -u "
   exit 1
 fi
 
+# 后端：--network-alias backend；前端：仅加入同一网络，以便 nginx 能解析 backend。
+RUN_BACKEND_NET=""
+RUN_FRONTEND_NET=""
+case "$FLAVOR" in
+  backend-dev|backend-prod)
+    RUN_BACKEND_NET="--network ${NETWORK} --network-alias backend"
+    ;;
+  frontend-dev|frontend-prod)
+    RUN_FRONTEND_NET="--network ${NETWORK}"
+    ;;
+esac
+
 ssh_vps "
   set -e
+  docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
   docker pull ${IMG} &&
   docker stop ${CNAME} || true &&
   docker rm ${CNAME} || true &&
-  docker run -d --name ${CNAME} --restart=always ${BACKEND_ENV_ARGS} -p ${HPORT}:${CPORT} ${IMG} &&
+  docker run -d --name ${CNAME} --restart=always ${RUN_BACKEND_NET} ${RUN_FRONTEND_NET} ${BACKEND_ENV_ARGS} -p ${HPORT}:${CPORT} ${IMG} &&
   docker system prune -af
 "
