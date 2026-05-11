@@ -26,25 +26,108 @@
 #   docker run --rm -e PLUGIN_SOURCE_TOKEN -e PLUGIN_CNB_TOKEN ... cnbcool/code-import
 #   详见 https://docs.cnb.cool 与社区「CNB 迁移」说明。
 # -----------------------------------------------------------------------------
-develop:
-  push:
-    - name: deploy-vps
-      docker:
-        image: node:20-bookworm
-      services:
-        - docker
-      stages:
-        - name: deploy
-          script: bash scripts/ci/cnb-deploy-vps.sh
 
-imports: https://cnb.cool/lewis-test/secrets/-/blob/main/vps-ssh-secret.yml
+# 同时引用两个环境的密钥（权限自动隔离）
+imports:
+  - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-prod-secret.yml
+  - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-dev-secret.yml
+
 main:
   push:
-    - name: deploy-vps
+    # ==================================
+    # 🚀 生产环境：main分支（已注释，暂不触发）
+    # 后续合并到main时，取消下面这段的注释即可
+    # ==================================
+    # - branches: main
+    #   docker:
+    #     image: docker:26-cli
+    #   services:
+    #     - docker:dind
+    #   env:
+    #     CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
+    #     ENVIRONMENT: production
+    #     IMAGE_TAG: latest
+    #   stages:
+    #     - name: 构建后端生产镜像
+    #       script:
+    #         - echo "开始构建后端生产镜像 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}"
+    #         - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} ./backend
+    #         - docker push ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}
+    #
+    #     - name: 构建前端生产镜像
+    #       script:
+    #         - echo "开始构建前端生产镜像 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}"
+    #         - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} ./frontend
+    #         - docker push ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
+    #
+    #     - name: 部署后端到生产服务器
+    #       script:
+    #         - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+    #         - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+    #             docker pull ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
+    #             docker stop your-app-backend-prod || true &&
+    #             docker rm your-app-backend-prod || true &&
+    #             docker run -d --name your-app-backend-prod --restart=always -p 8081:80 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
+    #             docker system prune -af
+    #           "
+    #
+    #     - name: 部署前端到生产服务器
+    #       script:
+    #         - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+    #         - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+    #             docker pull ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
+    #             docker stop your-app-frontend-prod || true &&
+    #             docker rm your-app-frontend-prod || true &&
+    #             docker run -d --name your-app-frontend-prod --restart=always -p 80:80 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
+    #             docker system prune -af
+    #           "
+
+    # ==================================
+    # 🧪 开发环境：develop分支（自动触发）
+    # 访问地址：
+    # 前端：http://139.199.69.115:8080
+    # 后端API：http://139.199.69.115:8081
+    # ==================================
+    - branches: develop
       docker:
-        image: node:20-bookworm
+        image: docker:26-cli
       services:
-        - docker
+        - docker:dind
+      env:
+        CNB_DOCKER_REGISTRY: docker.cnb.cool/lewis-test/lewis-testcase-platform
+        ENVIRONMENT: development
+        IMAGE_TAG: dev
       stages:
-        - name: deploy
-          script: bash scripts/ci/cnb-deploy-vps.sh
+        - name: 构建后端开发镜像
+          script:
+            - echo "开始构建后端开发镜像 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}"
+            - docker build -t ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} ./backend
+            - docker push ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG}
+
+        - name: 构建前端开发镜像
+          script:
+            - echo "开始构建前端开发镜像 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}"
+            - docker build -t ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} ./frontend
+            - docker push ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG}
+
+        - name: 部署后端到开发服务器
+          script:
+            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+                docker pull ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
+                docker stop your-app-backend-dev || true &&
+                docker rm your-app-backend-dev || true &&
+                docker run -d --name your-app-backend-dev --restart=always -p 8081:80 ${CNB_DOCKER_REGISTRY}/backend:${IMAGE_TAG} &&
+                docker system prune -af
+              "
+
+        - name: 部署前端到开发服务器
+          script:
+            - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
+            - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
+                docker pull ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
+                docker stop your-app-frontend-dev || true &&
+                docker rm your-app-frontend-dev || true &&
+                docker run -d --name your-app-frontend-dev --restart=always -p 8080:80 ${CNB_DOCKER_REGISTRY}/frontend:${IMAGE_TAG} &&
+                docker system prune -af
+              "
