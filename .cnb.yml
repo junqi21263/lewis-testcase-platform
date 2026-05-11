@@ -8,6 +8,8 @@
 # 推荐流程：先 push 到 develop（本文件含 develop:）验证前后端一体部署；确认无误后再合并到 main 触发生产。
 #
 # 制品库：scripts/ci/cnb-registry-env.sh 解析 REGISTRY_PREFIX，并在有 CNB_TOKEN 时 docker login。
+# 前端镜像：docker build 的 context 必须为目录 frontend（-f frontend/Dockerfile frontend）；根目录
+#   .dockerignore 会排除 frontend/，若用 context=. 则 COPY nginx.conf.template 等会报 not found。
 # 密钥：imports；SSH / 变量见仓库说明与 docs/cnb-migration.md。
 # -----------------------------------------------------------------------------
 
@@ -47,7 +49,7 @@ develop:
               set -eu
               . ./scripts/ci/cnb-registry-env.sh
               echo "开始构建前端开发镜像 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
-              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile .
+              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile frontend
               docker push "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
 
         - name: 部署后端到开发服务器
@@ -110,7 +112,7 @@ main:
               set -eu
               . ./scripts/ci/cnb-registry-env.sh
               echo "开始构建前端生产镜像 ${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
-              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile .
+              docker build -t "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}" -f frontend/Dockerfile frontend
               docker push "${REGISTRY_PREFIX}/frontend:${IMAGE_TAG}"
 
         - name: 部署后端到生产服务器
