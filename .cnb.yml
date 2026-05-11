@@ -28,6 +28,8 @@
 # -----------------------------------------------------------------------------
 # 同时引用两个环境的密钥（权限自动隔离）
 # 同时引用两个环境的密钥（权限自动隔离）
+
+# 同时引用两个环境的密钥（权限自动隔离）
 imports:
   - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-prod-secret.yml
   - https://cnb.cool/lewis-test/secrets/-/blob/main/vps-dev-secret.yml
@@ -52,18 +54,18 @@ main:
       stages:
         - name: 构建生产镜像
           script:
-            - echo "开始构建生产环境镜像 ${CNB_IMAGE}:${IMAGE_TAG}"
-            - docker build -t ${CNB_IMAGE}:${IMAGE_TAG} .
-            - docker push ${CNB_IMAGE}:${IMAGE_TAG}
+            - echo "开始构建生产环境镜像 ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG}"
+            - docker build -t ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} .
+            - docker push ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG}
 
         - name: 部署到生产服务器
           script:
             - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
             - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
-                docker pull ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker pull ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} &&
                 docker stop ${CONTAINER_NAME} || true &&
                 docker rm ${CONTAINER_NAME} || true &&
-                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} &&
                 docker system prune -af
               "
 
@@ -85,17 +87,17 @@ main:
       stages:
         - name: 构建开发镜像
           script:
-            - echo "开始构建开发环境镜像 ${CNB_IMAGE}:${IMAGE_TAG}"
-            - docker build -t ${CNB_IMAGE}:${IMAGE_TAG} .
-            - docker push ${CNB_IMAGE}:${IMAGE_TAG}
+            - echo "开始构建开发环境镜像 ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG}"
+            - docker build -t ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} .
+            - docker push ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG}
 
         - name: 部署到开发服务器
           script:
             - echo "${SSH_KEY}" > /tmp/ssh_key && chmod 600 /tmp/ssh_key
             - ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} "
-                docker pull ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker pull ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} &&
                 docker stop ${CONTAINER_NAME} || true &&
                 docker rm ${CONTAINER_NAME} || true &&
-                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_IMAGE}:${IMAGE_TAG} &&
+                docker run -d --name ${CONTAINER_NAME} --restart=always -p ${HOST_PORT}:80 ${CNB_DOCKER_REGISTRY}:${IMAGE_TAG} &&
                 docker system prune -af
               "
