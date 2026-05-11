@@ -4,12 +4,12 @@ set -e
 # Railway 上若此处失败，平台会报 502 / Application failed to respond，请先看本服务 Logs 里以 [start] 开头的行。
 
 if [ -z "${DATABASE_URL:-}" ]; then
-  echo "[start] ERROR: DATABASE_URL 未设置。请在 Railway 后端 Web 服务 Variables 中配置（可从 Postgres 服务 Reference 引用）。"
+  echo "[start] ERROR: DATABASE_URL 未设置。与部署平台无关：请在进程环境中注入该变量（例如 Docker --env-file、或 CNB 的 DEPLOY_BACKEND_ENV_FILE 指向 VPS 上的 env 文件）。参见 backend/.env.example。"
   exit 1
 fi
 
 if [ "${NODE_ENV:-}" = "production" ] && [ -z "${JWT_SECRET:-}" ]; then
-  echo "[start] ERROR: NODE_ENV=production 但未设置 JWT_SECRET。请在 Variables 中添加 JWT_SECRET。"
+  echo "[start] ERROR: NODE_ENV=production 但未设置 JWT_SECRET。请在同上环境中设置 JWT_SECRET（须足够长的随机串）。"
   exit 1
 fi
 
