@@ -52,6 +52,8 @@ git push -u cnb develop
 
 ### 密钥文件 `imports` 已配置但流水线仍报 `SSH_HOST` 为空
 
+- **`imports` 写在流水线条目内**：按 [文件引用示例](https://docs.cnb.cool/zh/build/file-reference.html#示例)，应挂在 **`push` 下具体 pipeline**（与 `runner` / `stages` 同级），而不是仅放在 `.cnb.yml` 文件最顶层；多分支（`develop` / `main`）时，develop 流水线只 `import` **`vps-dev-secret.yml`**，main 只 `import` **`vps-prod-secret.yml`**，避免根级合并行为不一致。
+
 密钥仓库里的 YAML 若声明 [权限字段](https://docs.cnb.cool/zh/build/file-reference.html#权限检查)（`allow_slugs`、`allow_events`、`allow_branches`），必须与实际触发流水线的**仓库 slug、事件、分支**一致，否则该文件**不会**注入环境变量。
 
 - **`allow_slugs`**：使用 glob。建议写成完整路径 **`lewis-test/lewis-testcase-platform`**，或 **`lewis-test/**`**；仅 **`lewis-test`** 往往**匹配不到**带 `/` 的仓库 slug，会导致整份密钥（含 `SSH_HOST`）未加载。
