@@ -50,6 +50,14 @@ git push -u cnb develop
 
 若 CNB 上的仓库路径与 GitHub 包路径不一致，请在变量中设置 **`GHCR_REPO_LOWER=owner/repo`**（全小写），与 ghcr.io 上现有镜像命名一致。
 
+### 密钥文件 `imports` 已配置但流水线仍报 `SSH_HOST` 为空
+
+密钥仓库里的 YAML 若声明 [权限字段](https://docs.cnb.cool/zh/build/file-reference.html#权限检查)（`allow_slugs`、`allow_events`、`allow_branches`），必须与实际触发流水线的**仓库 slug、事件、分支**一致，否则该文件**不会**注入环境变量。
+
+- **`allow_slugs`**：使用 glob。建议写成完整路径 **`lewis-test/lewis-testcase-platform`**，或 **`lewis-test/**`**；仅 **`lewis-test`** 往往**匹配不到**带 `/` 的仓库 slug，会导致整份密钥（含 `SSH_HOST`）未加载。
+- **`allow_events`**：develop 自动构建依赖 **`push`**，须包含在内。
+- **`allow_branches`**：开发密钥填 **`develop`**；若误填 **`main`**，则在 develop 上推送时无法读取该文件。
+
 ## 4. 与 GitHub Actions 的关系
 
 - **当前策略**：**自动部署仅以 CNB 为准**。GitHub 上的 `Deploy to VPS` workflow **已关闭 push 触发**，仅在 Actions 里 **手动 Run workflow** 时执行（避免与 CNB 重复部署）。
