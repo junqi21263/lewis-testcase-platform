@@ -85,6 +85,16 @@ cd ../frontend && pnpm dev   # 终端2，:5173
 
 不在仓库中提供默认口令。本地请注册账号或通过 seed/运维流程创建管理员（见 `backend/.env.example` 中 `ADMIN_*` 说明）。
 
+## 最近更新（2026-05-04～2026-05-11）
+
+本周变更概要：**AI 需求分析**（XMind / PDF 含 Mermaid、报告内 Mermaid 渲染、六段模板）、**图片解析提速**（跳过冗余 OCR 与第二轮结构化 LLM，可配置）、**CNB CI/CD 与 VPS 部署**链路加固、安全依赖与示例脱敏。完整条目见 **[CHANGELOG.md](CHANGELOG.md)**。
+
 ## 更新日志
 
 见 [CHANGELOG.md](CHANGELOG.md)；里程碑叙事见 [docs/history/MILESTONES.md](docs/history/MILESTONES.md)。
+
+## 公开仓库与安全
+
+- **勿提交密钥**：真实 **JWT_SECRET、DATABASE_URL 口令、OpenAI/COS/邮件** 等只放在部署环境或私密配置中；仓库内仅保留 **`*.env.example`** 占位。
+- **日志与 Issue**：排障时勿粘贴完整 Cookie、Token、内网 IP；生产域名与端口以各环境为准，文档中的示例地址不代表实际部署。
+- **双远程**：若同时使用 **CNB** 与 **GitHub** 镜像，推送前确认不含上述敏感信息；镜像仓库权限按团队策略收紧。
