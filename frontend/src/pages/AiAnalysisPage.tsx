@@ -1228,9 +1228,21 @@ ${state.reportText}
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
-  /** 人工审阅开启且处于可输入修改意见阶段：终端内纵向拉长报告区与审阅输入框 */
-  const isManualReviewEditing = humanReview && state.status === 'review'
   const showApprovedOnly = !humanReview && state.status === 'approved'
+  /** 底部审阅/通过面板是否显示（报告区需为其预留纵向空间） */
+  const bottomPanelVisible = showReviewArea || showApprovedOnly
+  /** 流式生成中：日志仅占用内容高度，报告紧贴日志下方并占据中间弹性空间 */
+  const isAnalyzingStream = state.status === 'analyzing'
+  /**
+   * 日志区不再 flex 撑满空白：分析中；或已有报告且底部面板将占用空间时，日志封顶滚动。
+   */
+  const useTerminalCompactLogs =
+    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
+  /**
+   * 报告区占用日志与底部栏之间的全部剩余高度（生成中 / 生成完成且底部面板可见），内部滚动。
+   */
+  const useTerminalFlexReport =
+    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
   const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
   const busy =
     state.status === 'uploading' || state.status === 'parsing' || state.status === 'analyzing'
@@ -1758,35 +1770,46 @@ ${state.reportText}
 
           <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
             <div
-              className={`flex flex-col flex-1 min-h-0 ${isManualReviewEditing ? 'overflow-hidden' : ''}`}
+              ref={logContainerRef}
+              onScroll={handleLogScroll}
+              className={`overflow-y-auto px-4 py-3 space-y-0.5 ${
+                useTerminalCompactLogs
+                  ? 'max-h-[min(260px,38vh)] shrink-0'
+                  : 'min-h-0 flex-1 basis-0'
+              }`}
             >
-              <div
-                ref={logContainerRef}
-                onScroll={handleLogScroll}
-                className={
-                  isManualReviewEditing
-                    ? 'shrink-0 max-h-[min(220px,32vh)] overflow-y-auto px-4 py-3 space-y-0.5'
-                    : 'flex-1 min-h-0 basis-0 overflow-y-auto px-4 py-3 space-y-0.5'
-                }
-              >
-                {state.logs.length === 0 && (
-                  <div className="text-sm text-gray-500 font-mono py-4 text-center">
-                    等待操作或开始分析…
-                  </div>
-                )}
-                {state.logs.map((log) => (
-                  <LogLine key={log.id} entry={log} />
-                ))}
-              </div>
+              {state.logs.length === 0 && (
+                <div className="text-sm text-gray-500 font-mono py-4 text-center">
+                  等待操作或开始分析…
+                </div>
+              )}
+              {state.logs.map((log) => (
+                <LogLine key={log.id} entry={log} />
+              ))}
+            </div>
 
-              {state.reportText && (
-                <div
-                  className={
-                    isManualReviewEditing
-                      ? 'flex-1 min-h-[120px] basis-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80'
-                      : 'max-h-[min(360px,50vh)] shrink-0 overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80'
-                  }
-                >
+            {isAnalyzingStream && !state.reportText.trim() ? (
+              <div className="flex min-h-[100px] flex-1 flex-col justify-center border-t border-border/20 bg-[#111125]/40 px-4 py-5 text-center text-xs text-gray-500">
+                报告内容将在此处流式输出…
+              </div>
+            ) : state.reportText ? (
+              useTerminalFlexReport ? (
+                <div className="flex min-h-0 flex-1 flex-col border-t border-border/20 bg-[#111125]/80 px-4 py-3">
+                  <div className="mb-2 shrink-0">
+                    <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                      需求文档分析报告
+                    </h3>
+                  </div>
+                  <div
+                    ref={reportMarkdownRef}
+                    data-testid="ai-analysis-report-markdown"
+                    className="min-h-0 flex-1 overflow-y-auto select-text pb-0"
+                  >
+                    <AnalysisMarkdownReport text={state.reportText} />
+                  </div>
+                </div>
+              ) : (
+                <div className="max-h-[min(360px,50vh)] shrink-0 overflow-y-auto border-t border-border/20 bg-[#111125]/80 px-4 py-3">
                   <div className="mb-2">
                     <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
                       需求文档分析报告
@@ -1796,15 +1819,11 @@ ${state.reportText}
                     <AnalysisMarkdownReport text={state.reportText} />
                   </div>
                 </div>
-              )}
-            </div>
+              )
+            ) : null}
 
             {(showReviewArea || showApprovedOnly) && (
-              <div
-                className={`px-4 py-4 border-t border-border/20 bg-[#0d0d1a] ${
-                  isManualReviewEditing ? 'flex flex-1 flex-col min-h-0' : 'shrink-0'
-                }`}
-              >
+              <div className="shrink-0 border-t border-border/20 bg-[#0d0d1a] px-4 py-4">
                 {state.status === 'approved' ? (
                   <div className="text-center py-3 space-y-2">
                     <div className="flex items-center justify-center gap-2 text-green-400">
@@ -1829,11 +1848,8 @@ ${state.reportText}
                       人工审阅
                     </h4>
                     <textarea
-                      className={`w-full p-3 text-sm border-0 rounded-lg bg-[#1a1a2e] shadow-sm ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-500 text-gray-300 ${
-                        isManualReviewEditing
-                          ? 'min-h-[88px] flex-1 resize-y overflow-y-auto'
-                          : 'h-[72px] resize-none'
-                      }`}
+                      rows={4}
+                      className="h-[100px] min-h-[72px] w-full resize-y overflow-y-auto rounded-lg border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-ring text-gray-300"
                       placeholder={`请输入修改意见…（Ctrl+Enter 提交）`}
                       value={state.reviewText}
                       onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
