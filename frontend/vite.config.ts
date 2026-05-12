@@ -34,6 +34,19 @@ export default defineConfig({
         timeout: 3_600_000,
         proxyTimeout: 3_600_000,
       },
+      '/api/ai/analyze/stream': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        timeout: 3_600_000,
+        proxyTimeout: 3_600_000,
+      },
+      // 含 GET /api/files/:id/parse-events（SSE）；与生产 Nginx 单独 location 对齐
+      '/api/files': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        timeout: 3_600_000,
+        proxyTimeout: 3_600_000,
+      },
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
