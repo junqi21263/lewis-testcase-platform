@@ -22,6 +22,10 @@ import { CosStorageService } from './cos-storage.service'
 import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.service'
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
+import {
+  analyzeCosFileWithHunyuanMultimodal,
+  canTryHunyuanCosMultimodalParse,
+} from '@/utils/multimodalAnalysis'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -311,7 +315,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
-          content = await this.parseImageVisionThenOcr(effectivePath, mimeType, heartbeat)
+          content = await this.parseImageVisionThenOcr(effectivePath, mimeType, heartbeat, filePath)
           break
         default:
           content = '不支持的文件格式'
@@ -405,10 +409,60 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     filePath: string,
     mimeType: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    /** 数据库 path（可能为 cos://…），用于混元直读 COS 公网 URL */
+    storedPathForCos: string,
   ): Promise<string> {
     const tempFiles: string[] = []
     let visionPath = filePath
     try {
+      const stImg = fs.statSync(filePath)
+      if (
+        canTryHunyuanCosMultimodalParse(
+          this.config,
+          this.cosStorage,
+          storedPathForCos,
+          'image',
+          stImg.size,
+        )
+      ) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_start',
+          source: 'image',
+        })
+        try {
+          const body = await analyzeCosFileWithHunyuanMultimodal({
+            config: this.config,
+            cosStorage: this.cosStorage,
+            storedPath: storedPathForCos,
+            fileKind: 'image',
+          })
+          const minChars = parseInt(
+            this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS') || '40',
+            10,
+          )
+          const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
+          if (body.trim().length >= floor) {
+            await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+              phase: 'VISION',
+              message: 'hunyuan_cos_done',
+              chars: body.length,
+            })
+            return `【混元多模态直读｜COS】\n${body.trim()}`
+          }
+          this.logger.warn(
+            `混元 COS 图片多模态正文过短（${body.trim().length}），降级本地视觉/OCR`,
+          )
+        } catch (e) {
+          const msg = (e as Error).message || String(e)
+          this.logger.warn(`混元 COS 图片多模态失败，降级视觉/OCR: ${msg}`)
+          await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
+            phase: 'VISION',
+            message: 'hunyuan_cos_fallback',
+            errorHint: msg.slice(0, 240),
+          })
+        }
+      }
       const preBuf = await this.imagePreprocess.preprocessToJpegBuffer(filePath)
       if (preBuf?.length) {
         const tmp = this.imagePreprocess.writeTempJpeg(preBuf, 'vision-in')
@@ -578,8 +632,65 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.warn(
-      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；优先尝试腾讯云全本 OCR，否则走原视觉/Tesseract 分批管线`,
+      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将依次尝试：混元 COS 多模态直读（若已开启）、腾讯云全本 OCR、分页视觉/Tesseract 管线`,
     )
+
+    if (
+      ctx.originalStoredPath &&
+      canTryHunyuanCosMultimodalParse(
+        this.config,
+        this.cosStorage,
+        ctx.originalStoredPath,
+        'pdf',
+        ctx.fileBytes,
+      )
+    ) {
+      await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+        phase: 'VISION',
+        message: 'hunyuan_cos_start',
+        source: 'pdf',
+      })
+      try {
+        const body = await analyzeCosFileWithHunyuanMultimodal({
+          config: this.config,
+          cosStorage: this.cosStorage,
+          storedPath: ctx.originalStoredPath,
+          fileKind: 'pdf',
+        })
+        const minChars = parseInt(
+          this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '80',
+          10,
+        )
+        const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 80
+        if (body.trim().length >= floor) {
+          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+            phase: 'VISION',
+            message: 'hunyuan_cos_done',
+            chars: body.length,
+          })
+          const embedded = text.trim()
+          const parts: string[] = []
+          if (embedded) {
+            parts.push(
+              `【PDF 内置文本层（质量不足；已并行保留）】\n${embedded}`,
+            )
+          }
+          parts.push(`【混元多模态直读｜COS PDF】\n${body.trim()}`)
+          return parts.join('\n\n')
+        }
+        this.logger.warn(
+          `混元 COS PDF 多模态正文过短（${body.trim().length}），降级腾讯云 OCR/分页管线`,
+        )
+      } catch (e) {
+        const msg = (e as Error).message || String(e)
+        this.logger.warn(`混元 COS PDF 多模态失败，降级: ${msg}`)
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_pdf_fallback',
+          errorHint: msg.slice(0, 240),
+        })
+      }
+    }
 
     try {
       const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(

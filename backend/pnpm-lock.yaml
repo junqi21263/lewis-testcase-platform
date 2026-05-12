@@ -133,6 +133,9 @@ importers:
       tencentcloud-sdk-nodejs:
         specifier: ^4.1.0
         version: 4.1.229
+      tencentcloud-sdk-nodejs-hunyuan:
+        specifier: ^4.1.188
+        version: 4.1.188
       tesseract.js:
         specifier: ^5.1.0
         version: 5.1.1
@@ -2711,6 +2714,14 @@ packages:
   tar-stream@2.2.0:
     resolution: {integrity: sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ==}
     engines: {node: '>=6'}
+
+  tencentcloud-sdk-nodejs-common@4.1.220:
+    resolution: {integrity: sha512-FlRJzgFYqSz1blKyN39Jhy/WdK3VuyFkn2+naKJfpwWcSpLF0F9AqSzPAtgorb5/Ezs8sLmFSCuaqFcCw+uIWw==}
+    engines: {node: '>=10'}
+
+  tencentcloud-sdk-nodejs-hunyuan@4.1.188:
+    resolution: {integrity: sha512-RxIeL5XryfeiwL5DCVoAbRFhi4WBXrS4JbqBUr0Ugn2tKLgfr60fvENXosFUNwh0hTll+teYZOTiPRzrSkQMdQ==}
+    engines: {node: '>=10'}
 
   tencentcloud-sdk-nodejs@4.1.229:
     resolution: {integrity: sha512-yvDBC1AkBE4UdSVuEupE17bWZynUJBSUevx4TVU+p/HY/vHlpCyIWO6HYg5+8JhjqLeOo/SPHEyBBfVmZkyarg==}
@@ -5705,6 +5716,29 @@ snapshots:
       fs-constants: 1.0.0
       inherits: 2.0.4
       readable-stream: 3.6.2
+
+  tencentcloud-sdk-nodejs-common@4.1.220:
+    dependencies:
+      form-data: 3.0.4
+      get-stream: 6.0.1
+      https-proxy-agent: 5.0.1
+      ini: 2.0.0
+      is-stream: 2.0.1
+      json-bigint: 1.0.0
+      node-fetch: 2.7.0
+      tslib: 1.13.0
+      uuid: 11.1.1
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+
+  tencentcloud-sdk-nodejs-hunyuan@4.1.188:
+    dependencies:
+      tencentcloud-sdk-nodejs-common: 4.1.220
+      tslib: 1.13.0
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
 
   tencentcloud-sdk-nodejs@4.1.229:
     dependencies:
