@@ -5,8 +5,10 @@ import { DocumentVisionService } from './document-vision.service'
 import { RequirementStructureService } from './requirement-structure.service'
 import { LightweightCloudCleanupService } from './lightweight-cloud-cleanup.service'
 import { CosStorageService } from './cos-storage.service'
+import { OcrModule } from '@/modules/ocr/ocr.module'
 
 @Module({
+  imports: [OcrModule],
   providers: [
     FilesService,
     DocumentVisionService,

@@ -19,6 +19,8 @@ import { v4 as uuid } from 'uuid'
 import axios from 'axios'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
 import { CosStorageService } from './cos-storage.service'
+import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.service'
+import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -37,6 +39,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private documentVision: DocumentVisionService,
     private requirementStructure: RequirementStructureService,
     private cosStorage: CosStorageService,
+    private readonly imageOcrPipeline: ImageOcrPipelineService,
+    private readonly imagePreprocess: ImagePreprocessService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -392,67 +396,107 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 图片：多模态视觉为主；成功且未禁用时可跳过 Tesseract（后者对大 PNG 常耗时数分钟）。
-   * STRUCTURE 阶段另见 RequirementStructureService：视觉正文默认不再跑第二轮结构化 LLM。
+   * 视觉与 OCR 前对原图做 sharp 预处理（限宽/JPEG/EXIF），OCR 走 ImageOcrPipeline（缓存/分块/队列/重试）。
    */
   private async parseImageVisionThenOcr(
     filePath: string,
     mimeType: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
   ): Promise<string> {
-    await heartbeat('VISION', { phase: 'VISION', message: 'vision_start' })
-    const vision = await this.documentVision.transcribeImageFileAuto(filePath, mimeType)
-    await heartbeat('VISION_DONE', {
-      phase: 'VISION',
-      message: 'vision_done',
-      visionChars: vision?.text?.trim().length ?? 0,
-    })
-
-    const skipOcrWhenVisionOk = this.config.get<string>('IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK') !== '0'
-    const shouldRunOcr = !(skipOcrWhenVisionOk && Boolean(vision?.text?.trim()))
-
-    let ocr = ''
-    if (shouldRunOcr) {
-      await heartbeat('OCR', { phase: 'OCR', message: 'ocr_start' })
-      try {
-        const rawMs = this.config.get<string>('IMAGE_OCR_TIMEOUT_MS')
-        const ocrMs = parseInt(rawMs || '60000', 10)
-        const timeoutMs = Number.isFinite(ocrMs) && ocrMs >= 8000 ? ocrMs : 60000
-        ocr = await Promise.race([
-          this.parseImageOCR(filePath),
-          new Promise<string>((_, reject) =>
-            setTimeout(() => reject(new Error(`OCR 超过 ${timeoutMs}ms`)), timeoutMs),
-          ),
-        ])
-      } catch (e) {
-        this.logger.warn(`OCR 失败或超时: ${(e as Error).message}`)
+    const tempFiles: string[] = []
+    let visionPath = filePath
+    try {
+      const preBuf = await this.imagePreprocess.preprocessToJpegBuffer(filePath)
+      if (preBuf?.length) {
+        const tmp = this.imagePreprocess.writeTempJpeg(preBuf, 'vision-in')
+        tempFiles.push(tmp)
+        visionPath = tmp
       }
-      await heartbeat('OCR_DONE', {
-        phase: 'OCR',
-        message: 'ocr_done',
-        ocrChars: ocr.trim().length,
-      })
-    } else {
-      await heartbeat('OCR_SKIPPED', {
-        phase: 'OCR',
-        message: 'skip_tesseract_vision_ok',
-      })
-    }
 
-    if (vision?.text) {
-      let body = `【多模态视觉理解｜${vision.modelName}】\n${vision.text.trim()}`
-      if (ocr.trim() && ocr.trim() !== vision.text.trim()) {
-        body += `\n\n【OCR 辅助（Tesseract）】\n${ocr.trim()}`
+      await heartbeat('VISION', { phase: 'VISION', message: 'vision_start' })
+      const visionMime = preBuf?.length ? 'image/jpeg' : mimeType || 'image/jpeg'
+      const vision = await this.documentVision.transcribeImageFileAuto(visionPath, visionMime)
+      await heartbeat('VISION_DONE', {
+        phase: 'VISION',
+        message: 'vision_done',
+        visionChars: vision?.text?.trim().length ?? 0,
+      })
+
+      const skipOcrWhenVisionOk = this.config.get<string>('IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK') !== '0'
+      const shouldRunOcr = !(skipOcrWhenVisionOk && Boolean(vision?.text?.trim()))
+
+      let ocr = ''
+      if (shouldRunOcr) {
+        await heartbeat('OCR', { phase: 'OCR', message: 'ocr_start' })
+        try {
+          const rawMs = this.config.get<string>('IMAGE_OCR_TIMEOUT_MS')
+          const ocrMs = parseInt(rawMs || '60000', 10)
+          const timeoutMs = Number.isFinite(ocrMs) && ocrMs >= 8000 ? ocrMs : 60000
+          ocr = await Promise.race([
+            this.imageOcrPipeline.recognizeFilePath(filePath, {
+              onProgress: async (ev) => {
+                await heartbeat('OCR', {
+                  phase: 'OCR',
+                  ocrStripCurrent: ev.ocrStripCurrent,
+                  ocrStripTotal: ev.ocrStripTotal,
+                  message: ev.message,
+                })
+              },
+            }),
+            new Promise<string>((_, reject) =>
+              setTimeout(() => reject(new Error(`OCR 超过 ${timeoutMs}ms`)), timeoutMs),
+            ),
+          ])
+        } catch (e) {
+          const hint = this.classifyOcrFailureMessage(e)
+          this.logger.warn(`OCR 失败或超时: ${(e as Error).message}`)
+          await heartbeat('OCR', { phase: 'OCR', message: 'ocr_error', errorHint: hint })
+        }
+        await heartbeat('OCR_DONE', {
+          phase: 'OCR',
+          message: 'ocr_done',
+          ocrChars: ocr.trim().length,
+        })
+      } else {
+        await heartbeat('OCR_SKIPPED', {
+          phase: 'OCR',
+          message: 'skip_tesseract_vision_ok',
+        })
       }
-      return body
-    }
 
-    if (ocr.trim()) {
-      return `【OCR｜Tesseract】\n${ocr.trim()}`
-    }
+      if (vision?.text) {
+        let body = `【多模态视觉理解｜${vision.modelName}】\n${vision.text.trim()}`
+        if (ocr.trim() && ocr.trim() !== vision.text.trim()) {
+          body += `\n\n【OCR 辅助（Tesseract）】\n${ocr.trim()}`
+        }
+        return body
+      }
 
-    return (
-      '【解析失败】未配置可用的视觉解析模型，且 OCR 无结果。请在「系统设置」中为支持 image 的模型勾选「支持视觉」并指定「文档视觉解析」模型，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID。'
-    )
+      if (ocr.trim()) {
+        return `【OCR｜Tesseract】\n${ocr.trim()}`
+      }
+
+      return (
+        '【解析失败】未配置可用的视觉解析模型，且 OCR 无结果。请在「系统设置」中为支持 image 的模型勾选「支持视觉」并指定「文档视觉解析」模型，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID。'
+      )
+    } finally {
+      for (const p of tempFiles) {
+        try {
+          if (fs.existsSync(p)) fs.unlinkSync(p)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  /** 将底层 OCR 异常映射为前端可展示的简短原因 */
+  private classifyOcrFailureMessage(err: unknown): string {
+    const m = (err as Error)?.message ?? ''
+    if (/timeout|超过|ETIMEDOUT/i.test(m)) return '网络或处理超时'
+    if (/sharp|预处理/i.test(m)) return '图片预处理失败'
+    if (/empty|结果为空/i.test(m)) return '未识别到文字，可能图片模糊或对比度过低'
+    return '识别失败'
   }
 
   /**
@@ -833,8 +877,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * PNG Buffer：可选 Paddle OCR HTTP 服务 → Tesseract
-   * 期望 Paddle 服务 POST JSON `{ image_base64 }` 返回 `{ text }`
+   * PNG Buffer：可选 Paddle OCR HTTP → ImageOcrPipeline（预处理/缓存/分块/Tesseract 池）
    */
   private async ocrPngBuffer(buffer: Buffer): Promise<string> {
     const paddleBase = this.config.get<string>('PADDLE_OCR_SERVICE_URL')?.trim()
@@ -849,18 +892,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         const t = typeof data?.text === 'string' ? data.text : ''
         if (t.trim()) return t
       } catch (e) {
-        this.logger.warn(`Paddle OCR 不可用，降级 Tesseract: ${(e as Error).message}`)
+        this.logger.warn(`Paddle OCR 不可用，降级本机 OCR 管线: ${(e as Error).message}`)
       }
     }
 
-    const Tesseract = require('tesseract.js')
-    const langs =
-      (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
-      'chi_sim+chi_tra+eng'
-    const {
-      data: { text },
-    } = await Tesseract.recognize(buffer, langs)
-    return text || ''
+    return this.imageOcrPipeline.recognizeBuffer(buffer)
   }
 
   private async parsePdfWithMeta(filePath: string): Promise<{ text: string; numpages: number }> {
@@ -892,19 +928,6 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       sheets.push(`[Sheet: ${sheetName}]\n${csv}`)
     })
     return sheets.join('\n\n')
-  }
-
-  private async parseImageOCR(filePath: string): Promise<string> {
-    const Tesseract = require('tesseract.js')
-    // 繁体图片仅用 chi_sim 容易乱码；默认同时启用 chi_sim + chi_tra + eng
-    // 可在部署环境通过 OCR_LANGS 覆盖，例如：OCR_LANGS=chi_tra+eng
-    const langs =
-      (this.config.get<string>('OCR_LANGS') || 'chi_sim+chi_tra+eng').trim() ||
-      'chi_sim+chi_tra+eng'
-    const {
-      data: { text },
-    } = await Tesseract.recognize(filePath, langs)
-    return text
   }
 
   private detectFileType(mimeType: string, filename: string): FileType {

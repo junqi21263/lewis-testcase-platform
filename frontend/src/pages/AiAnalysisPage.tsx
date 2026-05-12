@@ -482,6 +482,34 @@ function AiAnalysisPageInner() {
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
   /** 本机选择的 File.name，避免接口 originalName 编码异常导致列表乱码 */
   const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
+  /** 本地上传图片缩略图（Object URL），顺序与 [uploadedFile, ...additionalAnalysisFiles] 一致 */
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([])
+  const imagePreviewUrlsRef = useRef<string[]>([])
+  const wasFileParsingRef = useRef(false)
+
+  const replaceImagePreviews = useCallback((next: string[]) => {
+    imagePreviewUrlsRef.current.forEach((u) => {
+      try {
+        URL.revokeObjectURL(u)
+      } catch {
+        /* ignore */
+      }
+    })
+    imagePreviewUrlsRef.current = next
+    setImagePreviewUrls(next)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      imagePreviewUrlsRef.current.forEach((u) => {
+        try {
+          URL.revokeObjectURL(u)
+        } catch {
+          /* ignore */
+        }
+      })
+    }
+  }, [])
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const reportMarkdownRef = useRef<HTMLDivElement>(null)
@@ -803,6 +831,12 @@ function AiAnalysisPageInner() {
     uploadedFile,
   ])
 
+  /** 多图并行轮询时同步更新主文件或附加列表中的同一条记录 */
+  const updateFileInPlace = useCallback((f: UploadedFile) => {
+    setUploadedFile((prev) => (prev?.id === f.id ? f : prev))
+    setAdditionalAnalysisFiles((prev) => prev.map((p) => (p.id === f.id ? f : p)))
+  }, [])
+
   const pollUntilParsed = useCallback(
     async (
       fileId: string,
@@ -839,6 +873,24 @@ function AiAnalysisPageInner() {
     },
     [addLog],
   )
+
+  useEffect(() => {
+    if (uploadedFile?.status === 'PARSING') wasFileParsingRef.current = true
+    if (uploadedFile?.status === 'FAILED') wasFileParsingRef.current = false
+    if (
+      uploadedFile?.status === 'PARSED' &&
+      wasFileParsingRef.current &&
+      additionalAnalysisFiles.every((f) => f.status === 'PARSED')
+    ) {
+      wasFileParsingRef.current = false
+      toast.success(
+        additionalAnalysisFiles.length > 0
+          ? `全部 ${1 + additionalAnalysisFiles.length} 张图片解析完成`
+          : '文档解析完成，可展开查看解析文本',
+        { id: 'parse-done-toast', duration: 4000 },
+      )
+    }
+  }, [uploadedFile?.status, uploadedFile?.id, additionalAnalysisFiles])
 
   const retryParseFlow = useCallback(
     async (fileId: string, signal: AbortSignal, textOnly?: boolean) => {
@@ -926,25 +978,47 @@ function AiAnalysisPageInner() {
       setUploadedFile(null)
       setEditedParsedText('')
       setParsePreviewDirty(false)
+      replaceImagePreviews(arr.map((f) => URL.createObjectURL(f)))
 
       addLog('loading', `📤 批量上传 ${arr.length} 张图片…`)
 
       try {
-        const results: UploadedFile[] = []
-        for (let i = 0; i < arr.length; i++) {
-          const file = arr[i]
-          addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
-          let cur = await uploadFile(file)
-          if (signal.aborted) return
-          stashUploadedOriginalName(cur.id, file.name)
-          if (cur.status !== 'PARSED') {
-            dispatch({ type: 'UPLOAD_DONE' })
-            addLog('loading', `📄 正在解析图片 ${i + 1}/${arr.length}…`)
-            cur = await pollUntilParsed(cur.id, signal)
-          }
-          if (signal.aborted) return
-          results.push(cur)
-          setUploadedFile(results[0])
+        const uploadedRows = await Promise.all(
+          arr.map(async (file, i) => {
+            addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+            const cur = await uploadFile(file)
+            if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+            stashUploadedOriginalName(cur.id, file.name)
+            return cur
+          }),
+        )
+
+        if (signal.aborted) return
+
+        const first = uploadedRows[0]
+        if (first) {
+          setUploadedFile(first)
+          setAdditionalAnalysisFiles(uploadedRows.slice(1))
+        }
+
+        const needParse = uploadedRows.filter((u) => u.status !== 'PARSED')
+        if (needParse.length > 0) {
+          dispatch({ type: 'UPLOAD_DONE' })
+          addLog('loading', `📄 并行解析 ${needParse.length} 张图片…`)
+        }
+
+        const results: UploadedFile[] = await Promise.all(
+          uploadedRows.map(async (cur) => {
+            if (cur.status === 'PARSED') return cur
+            return pollUntilParsed(cur.id, signal, updateFileInPlace)
+          }),
+        )
+
+        if (signal.aborted) return
+
+        const firstR = results[0]
+        if (firstR) {
+          setUploadedFile(firstR)
           setAdditionalAnalysisFiles(results.slice(1))
         }
 
@@ -972,6 +1046,7 @@ function AiAnalysisPageInner() {
         if ((e as Error).name === 'AbortError') {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
+          replaceImagePreviews([])
           setUploadedFile(null)
           setAdditionalAnalysisFiles([])
           setUploadDisplayName(null)
@@ -984,7 +1059,17 @@ function AiAnalysisPageInner() {
         operationAbortRef.current = null
       }
     },
-    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed, resetUploadProgress, uploadFile],
+    [
+      addLog,
+      dispatch,
+      loadFileHistory,
+      makeLog,
+      pollUntilParsed,
+      replaceImagePreviews,
+      resetUploadProgress,
+      updateFileInPlace,
+      uploadFile,
+    ],
   )
 
   const handleFileSelect = useCallback(
@@ -1004,6 +1089,11 @@ function AiAnalysisPageInner() {
       uploadStartedAtRef.current = Date.now()
       setUploadDisplayName(file.name)
       setAdditionalAnalysisFiles([])
+      if (isImageBatchFile(file)) {
+        replaceImagePreviews([URL.createObjectURL(file)])
+      } else {
+        replaceImagePreviews([])
+      }
 
       addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
@@ -1048,6 +1138,7 @@ function AiAnalysisPageInner() {
         if ((e as Error).name === 'AbortError') {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
+          replaceImagePreviews([])
           setUploadedFile(null)
           setAdditionalAnalysisFiles([])
           setUploadDisplayName(null)
@@ -1069,6 +1160,7 @@ function AiAnalysisPageInner() {
       pollUntilParsed,
       loadFileHistory,
       makeLog,
+      replaceImagePreviews,
     ],
   )
 
@@ -1112,16 +1204,18 @@ function AiAnalysisPageInner() {
   const handleRemoveFile = useCallback(() => {
     operationAbortRef.current?.abort()
     abortUpload()
+    replaceImagePreviews([])
     setUploadedFile(null)
     setAdditionalAnalysisFiles([])
     setUploadDisplayName(null)
     setEditedParsedText('')
     setParsePreviewDirty(false)
     dispatch({ type: 'RESET' })
-  }, [abortUpload])
+  }, [abortUpload, replaceImagePreviews])
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
     setUploadDisplayName(null)
+    replaceImagePreviews([])
     setAdditionalAnalysisFiles([])
     setUploadedFile(f)
     setEditedParsedText(f.parsedContent ?? '')
@@ -1133,7 +1227,7 @@ function AiAnalysisPageInner() {
     } else {
       toast('该文件尚未解析完成', { icon: 'ℹ️' })
     }
-  }, [])
+  }, [replaceImagePreviews])
 
   const deleteHistoryFile = useCallback(
     async (id: string, e: React.MouseEvent) => {
@@ -1474,7 +1568,20 @@ ${state.reportText}
               </div>
             ) : (
               <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                {imagePreviewUrls.length > 0 && uploadedFile.fileType === 'IMAGE' ? (
+                  <div className="flex flex-wrap gap-1 flex-shrink-0 max-w-[3.75rem] content-start">
+                    {imagePreviewUrls.map((url) => (
+                      <img
+                        key={url}
+                        src={url}
+                        alt=""
+                        className="w-11 h-11 object-cover rounded border border-green-500/30"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                )}
                 <div className="flex-1 min-w-0 space-y-1">
                   {additionalAnalysisFiles.length === 0 ? (
                     <>
@@ -1501,12 +1608,21 @@ ${state.reportText}
                       <p className="text-xs font-medium text-green-200">
                         多图分析 · 共 {1 + additionalAnalysisFiles.length} 张
                       </p>
-                      <ul className="text-xs text-green-300 space-y-0.5 max-h-28 overflow-y-auto">
-                        {[uploadedFile, ...additionalAnalysisFiles].map((f) => (
-                          <li key={f.id} className="truncate" title={displayUploadedFilename(f.id, f.originalName)}>
-                            · {displayUploadedFilename(f.id, f.originalName)}{' '}
-                            <span className="text-green-400/70">
-                              {f.status === 'PARSED' ? '✓' : f.status}
+                      <ul className="text-xs text-green-300 space-y-1 max-h-36 overflow-y-auto">
+                        {[uploadedFile, ...additionalAnalysisFiles].map((f, idx) => (
+                          <li key={f.id} className="flex items-center gap-2 min-w-0">
+                            {imagePreviewUrls[idx] ? (
+                              <img
+                                src={imagePreviewUrls[idx]}
+                                alt=""
+                                className="w-8 h-8 object-cover rounded border border-green-500/25 shrink-0"
+                              />
+                            ) : null}
+                            <span className="truncate min-w-0" title={displayUploadedFilename(f.id, f.originalName)}>
+                              · {displayUploadedFilename(f.id, f.originalName)}{' '}
+                              <span className="text-green-400/70">
+                                {f.status === 'PARSED' ? '✓' : f.status === 'PARSING' ? '解析中' : f.status}
+                              </span>
                             </span>
                           </li>
                         ))}
@@ -1571,6 +1687,65 @@ ${state.reportText}
                       ：第 {uploadedFile.parseProgress.pageCurrent} / {uploadedFile.parseProgress.pageTotal} 页
                     </p>
                   )}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const imgs = batch.filter((f) => f.fileType === 'IMAGE')
+                  if (
+                    state.status !== 'parsing' ||
+                    imgs.length === 0 ||
+                    imgs.every((f) => f.status !== 'PARSING')
+                  ) {
+                    return null
+                  }
+                  const done = imgs.filter((f) => f.status === 'PARSED').length
+                  return (
+                    <p className="text-[11px] text-muted-foreground">
+                      图片识别进度：{done} / {imgs.length} 张已完成
+                    </p>
+                  )
+                })()}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const focus = batch.find(
+                    (f) => f.status === 'PARSING' && f.fileType === 'IMAGE',
+                  )
+                  const pp = focus?.parseProgress
+                  if (
+                    !pp ||
+                    pp.phase !== 'OCR' ||
+                    pp.ocrStripTotal == null ||
+                    pp.ocrStripCurrent == null
+                  ) {
+                    return null
+                  }
+                  return (
+                    <p className="text-[11px] text-muted-foreground">
+                      当前图 OCR 分条：第 {pp.ocrStripCurrent} / {pp.ocrStripTotal} 条
+                      {pp.message ? `（${pp.message}）` : ''}
+                    </p>
+                  )
+                })()}
+                {uploadedFile?.fileType === 'IMAGE' &&
+                  uploadedFile.status === 'PARSING' &&
+                  uploadedFile.parseProgress?.phase === 'OCR' &&
+                  uploadedFile.parseProgress?.ocrStripTotal == null &&
+                  uploadedFile.parseProgress?.message && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {uploadedFile.parseProgress.message}
+                    </p>
+                  )}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const hint = batch.find((f) => f.parseProgress?.errorHint)?.parseProgress?.errorHint
+                  if (!hint || state.status !== 'parsing') return null
+                  return <p className="text-[11px] text-amber-200/85">提示：{hint}</p>
+                })()}
               </div>
             )}
           </div>
@@ -1581,6 +1756,9 @@ ${state.reportText}
               <p className="text-muted-foreground whitespace-pre-wrap break-words">
                 {uploadedFile.parseError ?? '未知错误'}
               </p>
+              {uploadedFile.parseProgress?.errorHint ? (
+                <p className="text-amber-200/90 text-[11px]">识别阶段提示：{uploadedFile.parseProgress.errorHint}</p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
