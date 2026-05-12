@@ -108,11 +108,11 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
         {children}
       </ol>
     ),
-    li: ({ children }) => <li className="leading-[1.6] [&>p]:mb-0">{children}</li>,
+    li: ({ children }) => <li className="min-w-0 leading-[1.6] break-words [overflow-wrap:anywhere] [&>p]:mb-0">{children}</li>,
     strong: ({ children }) => <strong className="font-semibold text-[#E2E8F0]">{children}</strong>,
     em: ({ children }) => <em className="italic text-[#CBD5E1]">{children}</em>,
     blockquote: ({ children }) => (
-      <blockquote className="rounded bg-[#1E293B] border border-[#334155] pl-3 pr-3 py-3 my-3 text-[13px] text-[#94A3B8] leading-[1.6] not-italic">
+      <blockquote className="my-3 max-w-full break-words rounded border border-[#334155] bg-[#1E293B] px-3 py-3 text-[13px] leading-[1.6] text-[#94A3B8] not-italic [overflow-wrap:anywhere]">
         {children}
       </blockquote>
     ),
@@ -228,7 +228,7 @@ function CollapsibleH2Section({ heading, body }: { heading: string; body: string
         className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div id={panelId} className="min-h-0 overflow-hidden">
-          <div className="pl-8 pt-1">
+          <div className="max-w-full pt-1 pl-8 pr-0 sm:pr-1">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdNested}>
               {body}
             </ReactMarkdown>
