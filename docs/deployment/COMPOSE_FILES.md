@@ -12,4 +12,6 @@
 
 环境变量模板统一为 **`docker-compose.full.env.example`**（复制为 `.env` 或 `.env.development`）。
 
+同一 VPS 上 **开发目录 + 生产目录** 如何同步改 env、如何 `git pull` 与手动 `docker compose` 应用，见 [VPS_GHCR_DUAL_ENV.md](VPS_GHCR_DUAL_ENV.md)。
+
 更细的上线步骤见 [VPS_DOCKER.md](VPS_DOCKER.md)。
