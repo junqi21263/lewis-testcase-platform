@@ -133,10 +133,14 @@ export class AnalysisReportPdfService {
     cursorY += 14
 
     // ── 正文：逐块解析 Markdown ──
+    const mermaidImages = dto.mermaidImagesBase64 ?? []
+    let mermaidIdx = 0
+
     const lines = bodyMarkdown.replace(/\r\n/g, '\n').split('\n')
     let i = 0
     let inFence = false
     let fenceBuf: string[] = []
+    let fenceLang = ''
 
     while (i < lines.length) {
       const raw = lines[i]
@@ -146,17 +150,32 @@ export class AnalysisReportPdfService {
         if (!inFence) {
           inFence = true
           fenceBuf = []
+          fenceLang = line.trim().replace(/^```/, '').trim()
         } else {
           inFence = false
-          cursorY = this.flushCodeBlock(doc, {
-            marginPt,
-            contentWidth,
-            contentTop,
-            contentBottom,
-            lines: fenceBuf,
-            cursorY,
-            setFont,
-          })
+          const lang = fenceLang.toLowerCase()
+          if (lang === 'mermaid' && mermaidImages[mermaidIdx]) {
+            cursorY = this.drawMermaidImage(doc, mermaidImages[mermaidIdx], {
+              marginPt,
+              contentWidth,
+              contentTop,
+              contentBottom,
+              cursorY,
+            })
+            mermaidIdx++
+          } else {
+            cursorY = this.flushCodeBlock(doc, {
+              marginPt,
+              contentWidth,
+              contentTop,
+              contentBottom,
+              lines: fenceBuf,
+              cursorY,
+              setFont,
+            })
+          }
+          fenceLang = ''
+          fenceBuf = []
         }
         i++
         continue
@@ -430,6 +449,43 @@ export class AnalysisReportPdfService {
     }
 
     return cursorY + PARAGRAPH_GAP_PT
+  }
+
+  /** 将前端渲染的 Mermaid PNG 嵌入 PDF */
+  private drawMermaidImage(
+    doc: InstanceType<typeof PDFDocument>,
+    base64Png: string,
+    ctx: {
+      marginPt: number
+      contentWidth: number
+      contentTop: number
+      contentBottom: number
+      cursorY: number
+    },
+  ): number {
+    let cursorY = ctx.cursorY
+    try {
+      const buf = Buffer.from(base64Png, 'base64')
+      if (buf.length < 24) {
+        this.logger.warn('Mermaid PNG base64 无效，跳过嵌入')
+        return cursorY
+      }
+      const ensureBottom = (need: number) => {
+        if (cursorY + need > ctx.contentBottom) {
+          doc.addPage()
+          cursorY = ctx.contentTop
+        }
+      }
+      ensureBottom(440)
+      doc.image(buf, ctx.marginPt, cursorY, {
+        fit: [ctx.contentWidth, 400],
+        align: 'center',
+      })
+      cursorY = doc.y + PARAGRAPH_GAP_PT
+    } catch (e) {
+      this.logger.warn(`嵌入 Mermaid 图片失败: ${(e as Error).message}`)
+    }
+    return cursorY
   }
 
   private flushCodeBlock(

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { PrismaService } from '@/prisma/prisma.service'
 
@@ -40,7 +41,10 @@ export type StructureRequirementsResult = {
 export class RequirementStructureService {
   private readonly logger = new Logger(RequirementStructureService.name)
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   /**
    * 将脱敏后的文档全文转为结构化需求条目；LLM 不可用时走规则兜底。
@@ -48,6 +52,15 @@ export class RequirementStructureService {
   async structureRequirements(maskedDocumentText: string): Promise<StructureRequirementsResult> {
     const text = maskedDocumentText.trim()
     if (!text) return { requirements: [] }
+
+    /** 视觉链路已在 DocumentVision 中输出 JSON→正文，再跑一轮默认模型会重复耗时 */
+    const forceSecondLlm = this.config.get<string>('STRUCTURE_LLM_FOR_VISION_DOC') === '1'
+    const looksLikeVisionBody =
+      text.startsWith('【多模态视觉理解｜') || text.startsWith('【多模态视觉理解|')
+    if (!forceSecondLlm && looksLikeVisionBody) {
+      this.logger.log('需求结构化：跳过多模态后的第二轮 LLM，采用规则拆分 structuredRequirements')
+      return { requirements: this.fallbackStructure(text) }
+    }
 
     const cfg = await this.prisma.aIModelConfig.findFirst({
       where: { isDefault: true, isActive: true },

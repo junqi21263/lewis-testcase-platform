@@ -205,6 +205,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText('用户登录')).toBeVisible()
     await expect(page.getByRole('button', { name: '生成用例' })).toBeVisible()
     await expect(page.getByRole('button', { name: '导出 PDF' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '导出 XMind' })).toBeVisible()
 
     // 11. 等待分析完成 → 进入审阅状态
     await expect(page.getByText('等待审阅')).toBeVisible({ timeout: 15000 })

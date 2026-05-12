@@ -93,15 +93,32 @@ export class DocumentVisionService {
     return null
   }
 
-  private openaiFor(cfg: AIModelConfig) {
-    const timeoutRaw = this.config.get<string>('VISION_API_TIMEOUT_MS')
-    const timeoutMs = parseInt(timeoutRaw || '120000', 10)
-    const timeout = Number.isFinite(timeoutMs) && timeoutMs >= 10000 ? timeoutMs : 120000
+  /** 单张图片视觉调用使用较短超时，避免与全局 PDF 管线共用 120s 默认值导致排队感过重 */
+  private visionTimeoutMs(kind: 'image' | 'default'): number {
+    if (kind === 'image') {
+      const raw = this.config.get<string>('VISION_IMAGE_TIMEOUT_MS')
+      const ms = parseInt(raw || '90000', 10)
+      return Number.isFinite(ms) && ms >= 15000 ? ms : 90000
+    }
+    const raw = this.config.get<string>('VISION_API_TIMEOUT_MS')
+    const ms = parseInt(raw || '120000', 10)
+    return Number.isFinite(ms) && ms >= 10000 ? ms : 120000
+  }
+
+  private openaiFor(cfg: AIModelConfig, kind: 'image' | 'default' = 'default') {
     return new OpenAI({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseUrl.replace(/\/+$/, ''),
-      timeout,
+      timeout: this.visionTimeoutMs(kind),
     })
+  }
+
+  /** 控制上游 tokens 与延迟：high 更清晰但更慢；默认 low 适合截图/UI（见 VISION_IMAGE_DETAIL） */
+  private imageDetail(): 'low' | 'high' | 'auto' {
+    const raw = (this.config.get<string>('VISION_IMAGE_DETAIL') || 'low').trim().toLowerCase()
+    if (raw === 'high') return 'high'
+    if (raw === 'auto') return 'auto'
+    return 'low'
   }
 
   /**
@@ -143,7 +160,7 @@ export class DocumentVisionService {
     if (buffers.length === 0) return ''
     if (buffers.length === 1) return this.transcribeImageBuffer(cfg, buffers[0], 'image/png')
 
-    const client = this.openaiFor(cfg)
+    const client = this.openaiFor(cfg, 'default')
     const maxTokens = Math.min(Math.max(cfg.maxTokens || 8192, 4096), 16384)
     const parts: OpenAI.Chat.ChatCompletionContentPart[] = [
       {
@@ -192,8 +209,9 @@ export class DocumentVisionService {
   async transcribeImageBuffer(cfg: AIModelConfig, buffer: Buffer, mimeType: string): Promise<string> {
     const base64 = buffer.toString('base64')
     const dataUrl = `data:${mimeType};base64,${base64}`
-    const client = this.openaiFor(cfg)
+    const client = this.openaiFor(cfg, 'image')
     const maxTokens = Math.min(cfg.maxTokens || 4096, 8192)
+    const detail = this.imageDetail()
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: VISION_STRUCTURE_SYSTEM },
       {
@@ -203,7 +221,7 @@ export class DocumentVisionService {
             type: 'text',
             text: '请根据附图完成分析，并仅输出约定的一个 JSON 对象（不要其它说明文字）。',
           },
-          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
+          { type: 'image_url', image_url: { url: dataUrl, detail } },
         ],
       },
     ]

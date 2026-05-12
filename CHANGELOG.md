@@ -1,5 +1,38 @@
 # 更新日志
 
+## 2026-05-04～2026-05-11（周度摘要）
+
+### AI 需求分析（前端 / 后端）
+
+- **导出**：工具栏新增 **导出 XMind**（按报告章节生成 `.xmind`）；**导出 PDF** 支持将报告内 **Mermaid** 在前端渲染为 PNG 后由后端嵌入，文件名 `{原名}需求分析{YYYY年MM月DD日}`。
+- **报告展示**：Markdown 报告区 **自动渲染 Mermaid**（深色主题、缩放），默认分析指令模板调整为 **六段结构化输出**（功能 / 非功能 / 接口 / 数据模型 / 业务流程含 Mermaid / 风险）。
+- **界面**：流式终端与报告区布局、滚动条与审阅区交互多项优化（溢出、对齐、大屏适配）。
+- **后端**：`POST /api/ai/analyze/export-pdf` 请求体可携带 `mermaidImagesBase64`；`express.json` 体积上限提高以容纳多图 Base64。
+
+### 文件解析性能（后端）
+
+- **图片**：单图视觉默认 **`detail: low`**、独立 **`VISION_IMAGE_TIMEOUT_MS`**；多模态已有有效正文时 **默认跳过 Tesseract**（避免大图 OCR 数分钟）；OCR 可选超时 **`IMAGE_OCR_TIMEOUT_MS`**。
+- **结构化**：以「多模态视觉理解」为主的需求正文 **默认跳过第二轮「需求结构化」LLM**（可用 **`STRUCTURE_LLM_FOR_VISION_DOC=1`** 恢复）；解析阶段 heartbeat 区分 VISION / OCR / SKIP。
+- 详见 `backend/.env.example` 中 `VISION_IMAGE_*`、`IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK`、`IMAGE_OCR_TIMEOUT_MS` 等说明。
+
+### CI / 部署（腾讯云 CNB）
+
+- **`.cnb.yml`**：`develop` / `main` 流水线、镜像构建与 VPS 部署脚本串联；Secret 导入、`allow_slugs`、SSH 与 Registry 登录方式文档化。
+- **Docker / Compose**：后端监听 **`0.0.0.0`** 避免反代 502；可选 **`CNB_BACKEND_EXTRA_NETWORKS`**、主机端口映射避免冲突；**`FRONTEND_URL` / CORS** 与 nginx 上游 DNS defer 等部署修复。
+- **GitHub Actions**：`deploy-vps` 仍以 workflow 形式保留（多为手动触发）；日常构建部署以 **CNB + `scripts/ci/`** 为主（见根目录 `.cnb.yml` 注释）。
+
+### 安全与依赖
+
+- Compose 示例与环境模板脱敏；npm 依赖漏洞项 bump（见提交 `security:` / `fix(ci):` 系列）。
+- **仓库公开注意**：勿提交真实 `.env`、JWT、数据库口令、云密钥；仅用 `.env.example` 占位。
+
+### 测试与脚本
+
+- Playwright E2E：AI 分析流程覆盖「导出 XMind」按钮；部分环境需 **`playwright install-deps`**。
+- 后端 **`pnpm run smoke:export-analysis-pdf`**：离线验证 PDF 服务嵌入 Mermaid 图路径。
+
+---
+
 ## 2026-05-09
 
 ### 仓库整理

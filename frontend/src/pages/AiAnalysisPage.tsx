@@ -33,6 +33,7 @@ import {
   FileDown,
   Sparkles,
   History,
+  Waypoints,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -51,7 +52,15 @@ import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromp
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
-import { buildAnalysisPdfFileName, saveAnalysisReportPdf } from '@/utils/exportAnalysisPdf'
+import { saveAs } from 'file-saver'
+import {
+  buildAnalysisExportBasename,
+  buildAnalysisPdfFileName,
+  buildAnalysisXmindFileName,
+  saveAnalysisReportPdf,
+} from '@/utils/exportAnalysisPdf'
+import { renderMermaidChartsToPngBase64 } from '@/utils/analysisMermaidPdf'
+import { buildAnalysisXmindBlob } from '@/utils/buildAnalysisXmind'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -395,6 +404,7 @@ function AiAnalysisPageInner() {
   const [requirementText, setRequirementText] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [exportingXmind, setExportingXmind] = useState(false)
   const [humanReview, setHumanReview] = useState(true)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
@@ -592,20 +602,45 @@ function AiAnalysisPageInner() {
     }
     setExportingPdf(true)
     try {
+      toast.loading('正在渲染流程图并生成 PDF…', { id: 'export-pdf' })
+      const mermaidImagesBase64 = await renderMermaidChartsToPngBase64(markdown).catch(() => [] as string[])
       const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
       await saveAnalysisReportPdf(
         {
           markdown,
           documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
           version: 'V1.0',
+          mermaidImagesBase64:
+            mermaidImagesBase64 && mermaidImagesBase64.length > 0 ? mermaidImagesBase64 : undefined,
         },
         name,
       )
-      toast.success('PDF 已生成并开始下载')
+      toast.success('PDF 已生成并开始下载', { id: 'export-pdf' })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '导出 PDF 失败')
+      toast.error(e instanceof Error ? e.message : '导出 PDF 失败', { id: 'export-pdf' })
     } finally {
       setExportingPdf(false)
+    }
+  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+
+  const handleExportXmind = useCallback(async () => {
+    const markdown = state.reportText.trim()
+    if (!markdown) {
+      toast.error('暂无可导出的分析报告')
+      return
+    }
+    setExportingXmind(true)
+    try {
+      toast.loading('正在生成 XMind…', { id: 'export-xmind' })
+      const rootTitle = `${buildAnalysisExportBasename(uploadDisplayName ?? uploadedFile?.originalName)} — 需求分析`
+      const blob = await buildAnalysisXmindBlob(markdown, rootTitle)
+      const name = buildAnalysisXmindFileName(uploadDisplayName ?? uploadedFile?.originalName)
+      saveAs(blob, name.endsWith('.xmind') ? name : `${name}.xmind`)
+      toast.success('XMind 已生成并开始下载', { id: 'export-xmind' })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '导出 XMind 失败', { id: 'export-xmind' })
+    } finally {
+      setExportingXmind(false)
     }
   }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
 
@@ -1229,6 +1264,20 @@ ${state.reportText}
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
   const showApprovedOnly = !humanReview && state.status === 'approved'
+  /** 底部审阅/通过面板是否显示（报告区需为其预留纵向空间） */
+  const bottomPanelVisible = showReviewArea || showApprovedOnly
+  /** 流式生成中：日志仅占用内容高度，报告紧贴日志下方并占据中间弹性空间 */
+  const isAnalyzingStream = state.status === 'analyzing'
+  /**
+   * 日志区不再 flex 撑满空白：分析中；或已有报告且底部面板将占用空间时，日志封顶滚动。
+   */
+  const useTerminalCompactLogs =
+    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
+  /**
+   * 报告区占用日志与底部栏之间的全部剩余高度（生成中 / 生成完成且底部面板可见），内部滚动。
+   */
+  const useTerminalFlexReport =
+    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
   const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
   const busy =
     state.status === 'uploading' || state.status === 'parsing' || state.status === 'analyzing'
@@ -1285,8 +1334,9 @@ ${state.reportText}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 items-start content-start">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 lg:items-stretch lg:min-h-[calc(100dvh-9rem)]">
+        <div className="flex flex-col gap-4 min-h-0 lg:h-full">
+          <div className="space-y-4 shrink-0">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
             <input
@@ -1590,8 +1640,9 @@ ${state.reportText}
               onChange={(e) => setRequirementText(e.target.value)}
             />
           </div>
+          </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col flex-1 min-h-[200px] lg:min-h-0 gap-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
                 分析指令模板（Prompt）
@@ -1611,7 +1662,7 @@ ${state.reportText}
             </p>
             <textarea
               id="ai-analysis-prompt-template"
-              className="w-full min-h-[140px] max-h-[280px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
+              className="w-full flex-1 min-h-[140px] basis-[140px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
               placeholder="编辑 AI 分析指令..."
               value={analysisPromptTemplate}
               onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
@@ -1619,6 +1670,7 @@ ${state.reportText}
             />
           </div>
 
+          <div className="shrink-0 flex flex-col gap-2">
           <div className="flex items-center gap-3 py-2">
             <User className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-foreground" id="human-review-label">
@@ -1689,10 +1741,11 @@ ${state.reportText}
               </Button>
             )}
           </div>
+          </div>
         </div>
 
-        <div className="flex flex-col w-full min-w-0 h-fit lg:self-start">
-          <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
+        <div className="flex flex-col w-full min-w-0 min-h-0 lg:h-full">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
               <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
@@ -1724,7 +1777,7 @@ ${state.reportText}
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={exportingPdf}
+                    disabled={exportingPdf || exportingXmind}
                     className="h-8 text-xs text-gray-300 hover:text-gray-100"
                     onClick={() => void handleExportAnalysisPdf()}
                   >
@@ -1734,6 +1787,21 @@ ${state.reportText}
                       <FileDown className="w-3.5 h-3.5 mr-1" />
                     )}
                     导出 PDF
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={exportingPdf || exportingXmind}
+                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
+                    onClick={() => void handleExportXmind()}
+                  >
+                    {exportingXmind ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Waypoints className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    导出 XMind
                   </Button>
                 </>
               )}
@@ -1750,14 +1818,14 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col h-fit">
+          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
             <div
               ref={logContainerRef}
               onScroll={handleLogScroll}
-              className={`overflow-y-auto px-4 py-3 space-y-0.5 shrink-0 ${
-                state.reportText.trim().length > 0
-                  ? 'min-h-0 max-h-[140px]'
-                  : 'min-h-[120px] max-h-[220px]'
+              className={`overflow-y-auto px-4 py-3 space-y-0.5 ${
+                useTerminalCompactLogs
+                  ? 'max-h-[min(260px,38vh)] shrink-0'
+                  : 'min-h-0 flex-1 basis-0'
               }`}
             >
               {state.logs.length === 0 && (
@@ -1770,21 +1838,54 @@ ${state.reportText}
               ))}
             </div>
 
-            {state.reportText && (
-              <div className="h-fit min-h-0 max-h-[min(360px,55vh)] overflow-y-auto px-4 py-3 border-t border-border/20 bg-[#111125]/80">
-                <div className="mb-2">
-                  <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
-                    需求文档分析报告
-                  </h3>
-                </div>
-                <div ref={reportMarkdownRef} data-testid="ai-analysis-report-markdown" className="select-text pb-0">
-                  <AnalysisMarkdownReport text={state.reportText} />
-                </div>
+            {isAnalyzingStream && !state.reportText.trim() ? (
+              <div className="flex min-h-[100px] flex-1 flex-col justify-center border-t border-border/20 bg-[#111125]/40 px-4 py-5 text-center text-xs text-gray-500">
+                报告内容将在此处流式输出…
               </div>
-            )}
+            ) : state.reportText ? (
+              useTerminalFlexReport ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
+                  <div
+                    className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                    data-testid="ai-analysis-report-panel"
+                  >
+                    <div className="mb-2 shrink-0">
+                      <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                        需求文档分析报告
+                      </h3>
+                    </div>
+                    <div
+                      ref={reportMarkdownRef}
+                      data-testid="ai-analysis-report-markdown"
+                      className="min-w-0 max-w-full pb-1"
+                    >
+                      <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="ai-analysis-report-scroll box-border max-h-[min(360px,50vh)] shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/20 bg-[#111125]/80 px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                  data-testid="ai-analysis-report-panel"
+                >
+                  <div className="mb-2 shrink-0">
+                    <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                      需求文档分析报告
+                    </h3>
+                  </div>
+                  <div
+                    ref={reportMarkdownRef}
+                    data-testid="ai-analysis-report-markdown"
+                    className="min-w-0 max-w-full pb-1"
+                  >
+                    <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
+                  </div>
+                </div>
+              )
+            ) : null}
 
             {(showReviewArea || showApprovedOnly) && (
-              <div className="px-4 py-4 border-t border-border/20 bg-[#0d0d1a]">
+              <div className="shrink-0 border-t border-border/20 bg-[#0d0d1a] px-4 py-4">
                 {state.status === 'approved' ? (
                   <div className="text-center py-3 space-y-2">
                     <div className="flex items-center justify-center gap-2 text-green-400">
@@ -1804,18 +1905,19 @@ ${state.reportText}
                   </div>
                 ) : (
                   <>
-                    <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                    <h4 className="mb-2 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
                       <User className="w-4 h-4 text-muted-foreground" />
                       人工审阅
                     </h4>
                     <textarea
-                      className="w-full h-[72px] p-3 text-sm border-0 rounded-lg bg-[#1a1a2e] shadow-sm ring-1 ring-inset ring-white/10 resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-gray-500 text-gray-300"
+                      rows={4}
+                      className="h-[100px] min-h-[72px] w-full resize-y overflow-y-auto rounded-lg border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-ring text-gray-300"
                       placeholder={`请输入修改意见…（Ctrl+Enter 提交）`}
                       value={state.reviewText}
                       onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
                       onKeyDown={handleReviewKeyDown}
                     />
-                    <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-2 mt-3 shrink-0">
                       <Button
                         className="flex-1 h-10 text-sm font-medium gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white shadow-md"
                         type="button"
@@ -1845,6 +1947,25 @@ ${state.reportText}
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        /* 需求分析报告滚动区：深色主题窄滚动条（与人工审阅区对齐的整块区域内滚动） */
+        .ai-analysis-report-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: #475569 #1e293b;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-track {
+          background: #1e293b;
+          border-radius: 3px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-thumb {
+          background: #475569;
+          border-radius: 3px;
+        }
+        .ai-analysis-report-scroll::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
         }
       `}</style>
     </div>

@@ -304,8 +304,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
-          await heartbeat('IMAGE')
-          content = await this.parseImageVisionThenOcr(effectivePath, mimeType)
+          content = await this.parseImageVisionThenOcr(effectivePath, mimeType, heartbeat)
           break
         default:
           content = '不支持的文件格式'
@@ -391,14 +390,52 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** 图片：视觉模型理解 + Tesseract OCR 辅助 */
-  private async parseImageVisionThenOcr(filePath: string, mimeType: string): Promise<string> {
+  /**
+   * 图片：多模态视觉为主；成功且未禁用时可跳过 Tesseract（后者对大 PNG 常耗时数分钟）。
+   * STRUCTURE 阶段另见 RequirementStructureService：视觉正文默认不再跑第二轮结构化 LLM。
+   */
+  private async parseImageVisionThenOcr(
+    filePath: string,
+    mimeType: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+  ): Promise<string> {
+    await heartbeat('VISION', { phase: 'VISION', message: 'vision_start' })
     const vision = await this.documentVision.transcribeImageFileAuto(filePath, mimeType)
+    await heartbeat('VISION_DONE', {
+      phase: 'VISION',
+      message: 'vision_done',
+      visionChars: vision?.text?.trim().length ?? 0,
+    })
+
+    const skipOcrWhenVisionOk = this.config.get<string>('IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK') !== '0'
+    const shouldRunOcr = !(skipOcrWhenVisionOk && Boolean(vision?.text?.trim()))
+
     let ocr = ''
-    try {
-      ocr = await this.parseImageOCR(filePath)
-    } catch (e) {
-      this.logger.warn(`OCR 失败: ${(e as Error).message}`)
+    if (shouldRunOcr) {
+      await heartbeat('OCR', { phase: 'OCR', message: 'ocr_start' })
+      try {
+        const rawMs = this.config.get<string>('IMAGE_OCR_TIMEOUT_MS')
+        const ocrMs = parseInt(rawMs || '60000', 10)
+        const timeoutMs = Number.isFinite(ocrMs) && ocrMs >= 8000 ? ocrMs : 60000
+        ocr = await Promise.race([
+          this.parseImageOCR(filePath),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error(`OCR 超过 ${timeoutMs}ms`)), timeoutMs),
+          ),
+        ])
+      } catch (e) {
+        this.logger.warn(`OCR 失败或超时: ${(e as Error).message}`)
+      }
+      await heartbeat('OCR_DONE', {
+        phase: 'OCR',
+        message: 'ocr_done',
+        ocrChars: ocr.trim().length,
+      })
+    } else {
+      await heartbeat('OCR_SKIPPED', {
+        phase: 'OCR',
+        message: 'skip_tesseract_vision_ok',
+      })
     }
 
     if (vision?.text) {
