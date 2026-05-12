@@ -1116,7 +1116,10 @@ function AiAnalysisPageInner() {
         }
 
         dispatch({ type: 'UPLOAD_DONE' })
-        addLog('loading', '📄 正在等待服务端解析文档（OCR / 文本提取）...')
+        addLog(
+          'loading',
+          '📄 正在等待服务端解析文档（服务端会按文档自动选择：内置文本层 / 混元多模态直读 / OCR 等）...',
+        )
 
         const parsed = await pollUntilParsed(result.id, signal, setUploadedFile)
         if (signal.aborted) return
