@@ -554,6 +554,69 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * 尝试混元 COS 多模态直读 PDF；成功则返回「混元理解在前 + 可选内置文本层附录」，失败返回 null。
+   */
+  private async tryPdfHunyuanCosMultimodalBody(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    ctx: {
+      fileId: string
+      fileBytes: number
+      parseRetryHint: string | null
+      originalStoredPath?: string
+      uploaderId?: string | null
+    },
+    embeddedTextLayer: string,
+  ): Promise<string | null> {
+    if (!ctx.originalStoredPath) return null
+    await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+      phase: 'VISION',
+      message: 'hunyuan_cos_start',
+      source: 'pdf',
+    })
+    const res = await this.multimodal.tryDirectCosMultimodal({
+      moduleType: 'FILE_PARSE',
+      fileKind: 'PDF',
+      userId: ctx.uploaderId ?? 'system',
+      uploadedFileId: ctx.fileId,
+      storedPath: ctx.originalStoredPath,
+      localPath: filePath,
+      fileBytes: ctx.fileBytes,
+    })
+    if (res?.text?.trim()) {
+      const body = res.text
+      const minChars = parseInt(
+        this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '80',
+        10,
+      )
+      const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 80
+      if (body.trim().length >= floor) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_done',
+          chars: body.length,
+          cacheHit: res.cacheHit,
+        })
+        const embedded = embeddedTextLayer.trim()
+        const parts: string[] = [`【混元多模态直读｜COS PDF】\n${body.trim()}`]
+        if (embedded) {
+          parts.push(`【PDF 内置文本层（原文检索备用）】\n${embedded}`)
+        }
+        this.logger.log(
+          `PDF：混元 COS 多模态直读成功（${body.trim().length} 字），内置文本层约 ${embedded.length} 字已附录`,
+        )
+        return parts.join('\n\n')
+      }
+      this.logger.warn(`混元 COS PDF 多模态正文过短（${body.trim().length} < ${floor}），继续后续流程`)
+    }
+    await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
+      phase: 'VISION',
+      message: 'hunyuan_cos_pdf_fallback',
+    })
+    return null
+  }
+
+  /**
    * PDF：先 pdf-parse 文本层；字数与乱码率达标则直接返回。
    * 否则若配置 TENCENT_OCR_HTTP_URL 且未关闭 PDF_TENCENT_OCR_ENABLED，则逐页走腾讯云 OCR（进度见 heartbeat message）；
    * 再否则走原视觉 / Paddle / Tesseract 分批管线（含增量快照）。
@@ -613,6 +676,15 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const quality = this.pdfDocumentParse.evaluateTextLayerSufficiency(text, numpages)
     const { garbledRatio, sufficient: textSufficient } = quality
     const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
+    const pdfTextLayerFirst =
+      this.config.get<string>('HUNYUAN_COS_MULTIMODAL_PDF_TEXT_LAYER_FIRST')?.trim() === '1'
+
+    // 默认：在「文本层充足可跳过」判断之前先尝试混元多模态理解（与图片解析一致）。
+    // HUNYUAN_COS_MULTIMODAL_PDF_TEXT_LAYER_FIRST=1 时保留旧策略：先走文本快路径，文本不足时再尝试混元。
+    if (!pdfTextLayerFirst) {
+      const hunyuanEarly = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
+      if (hunyuanEarly) return hunyuanEarly
+    }
 
     if (textSufficient && !forceVision) {
       await heartbeat('PDF_TEXT_LAYER_OK', {
@@ -634,58 +706,15 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return `【PDF 文本提取】\n${text.trim()}`
     }
 
-    this.logger.warn(
-      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将依次尝试：混元 COS 多模态直读（若已开启）、腾讯云全本 OCR、分页视觉/Tesseract 管线`,
-    )
+    if (!textSufficient) {
+      this.logger.warn(
+        `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将依次尝试：混元 COS 多模态直读（若已开启）、腾讯云全本 OCR、分页视觉/Tesseract 管线`,
+      )
+    }
 
-    if (ctx.originalStoredPath) {
-      await heartbeat('HUNYUAN_COS_MULTIMODAL', {
-        phase: 'VISION',
-        message: 'hunyuan_cos_start',
-        source: 'pdf',
-      })
-      const res = await this.multimodal.tryDirectCosMultimodal({
-        moduleType: 'FILE_PARSE',
-        fileKind: 'PDF',
-        userId: ctx.uploaderId ?? 'system',
-        uploadedFileId: ctx.fileId,
-        storedPath: ctx.originalStoredPath,
-        localPath: filePath,
-        fileBytes: ctx.fileBytes,
-      })
-      if (res?.text?.trim()) {
-        const body = res.text
-        const minChars = parseInt(
-          this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '80',
-          10,
-        )
-        const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 80
-        if (body.trim().length >= floor) {
-          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
-            phase: 'VISION',
-            message: 'hunyuan_cos_done',
-            chars: body.length,
-            cacheHit: res.cacheHit,
-          })
-          const embedded = text.trim()
-          const parts: string[] = []
-          if (embedded) {
-            parts.push(
-              `【PDF 内置文本层（质量不足；已并行保留）】\n${embedded}`,
-            )
-          }
-          parts.push(`【混元多模态直读｜COS PDF】\n${body.trim()}`)
-          return parts.join('\n\n')
-        }
-        this.logger.warn(
-          `混元 COS PDF 多模态正文过短（${body.trim().length}），降级腾讯云 OCR/分页管线`,
-        )
-      } else {
-        await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
-          phase: 'VISION',
-          message: 'hunyuan_cos_pdf_fallback',
-        })
-      }
+    if (pdfTextLayerFirst) {
+      const hunyuanLate = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
+      if (hunyuanLate) return hunyuanLate
     }
 
     try {
