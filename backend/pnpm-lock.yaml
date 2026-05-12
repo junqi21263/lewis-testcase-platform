@@ -131,7 +131,7 @@ importers:
         specifier: ^0.33.5
         version: 0.33.5
       tencentcloud-sdk-nodejs:
-        specifier: ^4.0.952
+        specifier: ^4.1.0
         version: 4.1.229
       tesseract.js:
         specifier: ^5.1.0
