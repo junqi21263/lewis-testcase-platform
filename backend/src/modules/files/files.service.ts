@@ -21,6 +21,7 @@ import type { MergeChunksDto } from './dto/merge-chunks.dto'
 import { CosStorageService } from './cos-storage.service'
 import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.service'
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
+import { PdfDocumentParseService } from './pdf-document-parse.service'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -41,6 +42,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private cosStorage: CosStorageService,
     private readonly imageOcrPipeline: ImageOcrPipelineService,
     private readonly imagePreprocess: ImagePreprocessService,
+    private readonly pdfDocumentParse: PdfDocumentParseService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -500,8 +502,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * PDF：第一层 pdf-parse 文本层；足够则直接返回。
-   * 否则分页 OCR（视觉 / Paddle / Tesseract）；支持增量快照与 parseProgress 回写。
+   * PDF：先 pdf-parse 文本层；字数与乱码率达标则直接返回。
+   * 否则若配置 TENCENT_OCR_HTTP_URL 且未关闭 PDF_TENCENT_OCR_ENABLED，则逐页走腾讯云 OCR（进度见 heartbeat message）；
+   * 再否则走原视觉 / Paddle / Tesseract 分批管线（含增量快照）。
    */
   private async parsePdfWithVisionFallback(
     filePath: string,
@@ -510,7 +513,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   ): Promise<string> {
     if (ctx.parseRetryHint === 'text_only') {
       await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
-      const { text, numpages } = await this.parsePdfWithMeta(filePath)
+      const { text, numpages } = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
       if (!text.trim()) {
         throw new Error(
           '【解析失败】「仅内置文本」模式下未读取到文本层，可能为扫描版 PDF。请重新解析并取消「仅内置文本」，以启用完整 OCR。',
@@ -536,7 +539,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     let text = ''
     let numpages = 0
     try {
-      const meta = await this.parsePdfWithMeta(filePath)
+      const meta = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
       text = meta.text
       numpages = meta.numpages
     } catch (e) {
@@ -549,14 +552,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       pageTotal: numpages,
     })
 
-    const minLen = parseInt(this.config.get<string>('VISION_PDF_MIN_TEXT_CHARS') || '120', 10)
-    const garbledMaxRaw = this.config.get<string>('PDF_TEXT_GARBLED_RATIO_MAX')
-    const garbledMax = parseFloat(garbledMaxRaw || '0.3')
-    const garbledRatio = this.estimateGarbledRatio(text)
+    const quality = this.pdfDocumentParse.evaluateTextLayerSufficiency(text, numpages)
+    const { garbledRatio, sufficient: textSufficient } = quality
     const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
-
-    const gm = Number.isFinite(garbledMax) && garbledMax > 0 && garbledMax <= 1 ? garbledMax : 0.3
-    const textSufficient = text.trim().length >= minLen && garbledRatio <= gm
 
     if (textSufficient && !forceVision) {
       await heartbeat('PDF_TEXT_LAYER_OK', {
@@ -579,21 +577,27 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.warn(
-      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），启用分页 OCR 管线`,
+      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；优先尝试腾讯云全本 OCR，否则走原视觉/Tesseract 分批管线`,
     )
-    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat, ctx.fileId, numpages)
-  }
 
-  /** 乱码/替换符占比，用于判断是否需要 OCR */
-  private estimateGarbledRatio(raw: string): number {
-    if (!raw || raw.length === 0) return 1
-    let bad = 0
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw.charCodeAt(i)
-      if (c === 0xfffd) bad++
-      else if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++
+    try {
+      const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(
+        filePath,
+        text,
+        numpages,
+        heartbeat,
+      )
+      if (tencentMd) {
+        this.logger.log('PDF：已使用腾讯云 OCR 完成全本逐页识别')
+        return tencentMd
+      }
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      if (msg.startsWith('【解析失败】')) throw e
+      this.logger.warn(`腾讯云 PDF OCR 异常，降级原管线: ${msg}`)
     }
-    return bad / raw.length
+
+    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat, ctx.fileId, numpages)
   }
 
   private getOcrBatchSize(): number {
@@ -897,19 +901,6 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     return this.imageOcrPipeline.recognizeBuffer(buffer)
-  }
-
-  private async parsePdfWithMeta(filePath: string): Promise<{ text: string; numpages: number }> {
-    const pdfParse = require('pdf-parse')
-    const buffer = fs.readFileSync(filePath)
-    const data = await pdfParse(buffer)
-    const numpages =
-      typeof data.numpages === 'number'
-        ? data.numpages
-        : typeof (data as { numPages?: number }).numPages === 'number'
-          ? (data as { numPages: number }).numPages
-          : 0
-    return { text: data.text || '', numpages }
   }
 
   private async parseWord(filePath: string): Promise<string> {

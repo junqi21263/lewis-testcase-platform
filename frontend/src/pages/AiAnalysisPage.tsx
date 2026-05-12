@@ -1687,6 +1687,12 @@ ${state.reportText}
                       ：第 {uploadedFile.parseProgress.pageCurrent} / {uploadedFile.parseProgress.pageTotal} 页
                     </p>
                   )}
+                {uploadedFile?.fileType === 'PDF' &&
+                  uploadedFile.parseProgress?.phase === 'OCR' &&
+                  typeof uploadedFile.parseProgress.message === 'string' &&
+                  uploadedFile.parseProgress.message.includes('正在识别') && (
+                    <p className="text-[11px] text-amber-100/90">{uploadedFile.parseProgress.message}</p>
+                  )}
                 {(() => {
                   const batch = uploadedFile
                     ? [uploadedFile, ...additionalAnalysisFiles]

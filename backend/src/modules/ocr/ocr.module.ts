@@ -19,6 +19,12 @@ import { OcrController } from './ocr.controller'
     ImageOcrPipelineService,
     OcrTaskService,
   ],
-  exports: [ImageOcrPipelineService, OcrCacheService, OcrEngineService, ImagePreprocessService],
+  exports: [
+    ImageOcrPipelineService,
+    OcrCacheService,
+    OcrEngineService,
+    ImagePreprocessService,
+    TencentOcrClientService,
+  ],
 })
 export class OcrModule {}
