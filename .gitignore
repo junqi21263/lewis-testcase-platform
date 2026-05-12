@@ -73,6 +73,9 @@ PycharmProjects/
 .cursor/agent-images/
 .cursor-images/
 
+# Playwright MCP 等工具生成的页面快照（勿提交）
+.playwright-mcp/
+
 # Development files
 dev.db
 *.sqlite

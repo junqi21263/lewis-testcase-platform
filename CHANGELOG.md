@@ -1,5 +1,15 @@
 # 更新日志
 
+## 2026-05-12
+
+### 仓库整理
+
+- **`.gitignore`**：忽略 Playwright MCP 等生成的 **`.playwright-mcp/`** 目录。
+- **本地清理**：移除误嵌套的 **`lewis-testcase-platform/`** 子目录副本、根目录误装的 **`package.json` / `package-lock.json` / `node_modules`**（依赖请仅在 **`frontend/`**、**`backend/`** 使用 pnpm）；删除 **`.playwright-mcp/`** 下页面快照缓存。
+- **文档**：[`docs/deployment/COMPOSE_FILES.md`](docs/deployment/COMPOSE_FILES.md) 补充「为何 Compose 留在根目录」；[`README.md`](README.md) 增补仓库根目录约定（勿嵌套克隆、勿删 `docker-compose.full.env.example`）。
+
+---
+
 ## 2026-05-04～2026-05-11（周度摘要）
 
 ### AI 需求分析（前端 / 后端）

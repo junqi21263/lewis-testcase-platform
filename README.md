@@ -110,11 +110,13 @@ cd ../frontend && pnpm dev
 ```
 ├── frontend/          # Web 前端（Vitest / Playwright 见 frontend/README.md）
 ├── backend/           # Nest API（Prisma `schema.prod.prisma` 为准）
-├── docker-compose*.yml
-├── docker-compose.full.env.example
+├── docker-compose*.yml   # 全栈/依赖服务定义（路径与 build context 绑定根目录，勿随意挪目录）
+├── docker-compose.full.env.example  # 全栈环境变量模板（勿删；复制为 .env / .env.development）
 ├── scripts/           # 本地检查、CI 部署脚本
 └── docs/
 ```
+
+**目录约定**：勿在仓库内再克隆一份同名子目录 `lewis-testcase-platform/`（易与 `.gitignore` 中已忽略的误拷副本混淆）；Playwright MCP 等产生的 `.playwright-mcp/` 已忽略，不必提交。根目录勿单独 `npm install`（前后端分别在 `frontend/`、`backend/` 使用 pnpm）。
 
 ## 默认账号
 
