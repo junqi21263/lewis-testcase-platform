@@ -170,6 +170,8 @@ model User {
   generationRecordAuditLogs GenerationRecordAuditLog[]
   generationRecordShares    GenerationRecordShare[]
   generationRecordExports   GenerationRecordExport[]
+  multimodalUsageRecords    MultimodalUsageRecord[]
+  batchTasks                BatchTask[]
   adminAuditLogsAsOperator  AdminAuditLog[]             @relation("AdminAuditOperator")
   adminAuditLogsAsTarget    AdminAuditLog[]             @relation("AdminAuditTarget")
   preference                UserPreference?
@@ -295,6 +297,8 @@ model UploadedFile {
 
   uploader          User               @relation(fields: [uploaderId], references: [id])
   generationRecords GenerationRecord[]
+  multimodalUsageRecords MultimodalUsageRecord[]
+  batchTaskItems         BatchTaskItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -433,6 +437,7 @@ model GenerationRecord {
   auditLogs GenerationRecordAuditLog[]
   shares    GenerationRecordShare[]
   exports   GenerationRecordExport[]
+  multimodalUsageRecords MultimodalUsageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -230,9 +230,10 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   ) {
     const hintRow = await this.prisma.uploadedFile.findUnique({
       where: { id: fileId },
-      select: { parseRetryHint: true },
+      select: { parseRetryHint: true, uploaderId: true },
     })
     const parseRetryHint = hintRow?.parseRetryHint ?? null
+    const uploaderId = hintRow?.uploaderId ?? null
 
     let effectivePath = filePath
     let cosTempFile: string | null = null
@@ -293,6 +294,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             fileBytes: st.size,
             parseRetryHint,
             originalStoredPath: filePath,
+            uploaderId,
           })
           break
         }
@@ -313,7 +315,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
-          content = await this.parseImageVisionThenOcr(effectivePath, mimeType, heartbeat, filePath)
+          content = await this.parseImageVisionThenOcr(
+            effectivePath,
+            mimeType,
+            heartbeat,
+            filePath,
+            uploaderId,
+          )
           break
         default:
           content = '不支持的文件格式'
@@ -409,6 +417,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
     /** 数据库 path（可能为 cos://…），用于混元直读 COS 公网 URL */
     storedPathForCos: string,
+    uploaderId: string | null,
   ): Promise<string> {
     const tempFiles: string[] = []
     let visionPath = filePath
@@ -423,7 +432,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         const res = await this.multimodal.tryDirectCosMultimodal({
           moduleType: 'FILE_PARSE',
           fileKind: 'IMAGE',
-          userId: 'system-parse-worker',
+          userId: uploaderId ?? 'system',
           storedPath: storedPathForCos,
           localPath: filePath,
           fileBytes: stImg.size,
@@ -552,7 +561,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   private async parsePdfWithVisionFallback(
     filePath: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
-    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null; originalStoredPath?: string },
+    ctx: {
+      fileId: string
+      fileBytes: number
+      parseRetryHint: string | null
+      originalStoredPath?: string
+      uploaderId?: string | null
+    },
   ): Promise<string> {
     if (ctx.parseRetryHint === 'text_only') {
       await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
@@ -632,7 +647,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       const res = await this.multimodal.tryDirectCosMultimodal({
         moduleType: 'FILE_PARSE',
         fileKind: 'PDF',
-        userId: 'system-parse-worker',
+        userId: ctx.uploaderId ?? 'system',
         uploadedFileId: ctx.fileId,
         storedPath: ctx.originalStoredPath,
         localPath: filePath,
