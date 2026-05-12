@@ -11,16 +11,16 @@ const MARGIN_MM = 25
 /** A4 宽度(pt)、高度(pt) —— pdfkit 默认 A4 */
 const PAGE_W = 595.28
 const PAGE_H = 841.89
-/** 正文 12pt × 1.5 行距 → pdfkit lineGap 约为字号的一半作为额外间距 */
-const BODY_PT = 12
-const LINE_GAP_BODY = 6
-/** 一级标题 20pt；二级 16pt；三级 14pt —— 与需求文档层级对应 */
+/** 正文 13pt × 约 1.6 行距 */
+const BODY_PT = 13
+const LINE_GAP_BODY = Math.round(BODY_PT * 0.6)
+/** 一级标题 20pt；二级 16pt；三级 14pt —— 与前端报告区层级对齐 */
 const H1_PT = 20
 const H2_PT = 16
 const H3_PT = 14
-/** 段落间距（约 10px ≈ 7.5pt） */
-const PARAGRAPH_GAP_PT = 8
-/** 列表左侧缩进约 20px ≈ 15pt */
+/** 段落间距（8px 栅格 ≈ 6pt） */
+const PARAGRAPH_GAP_PT = 6
+/** 列表左侧缩进 */
 const LIST_INDENT_PT = 15
 /** 代码块字号 */
 const CODE_PT = 10
@@ -28,15 +28,18 @@ const CODE_PT = 10
 const HEADER_ZONE_PT = 38
 const FOOTER_ZONE_PT = 34
 
-/** 主题色 —— 正文与小标题 */
-const COLOR_BODY = '#2c3e50'
-const COLOR_H2 = '#2c3e50'
-const COLOR_H3 = '#34495e'
-const COLOR_MUTED = '#7f8c8d'
-const COLOR_TABLE_BORDER = '#dee2e6'
-const COLOR_TABLE_HEAD_BG = '#f8f9fa'
-const COLOR_TABLE_ROW_ALT = '#f3f4f6'
-const COLOR_CODE_BG = '#f8f9fa'
+/** 商务 PDF：白底 + 深色正文 + 蓝色层级点缀（与导出页 HTML 打印样式一致） */
+const COLOR_BODY = '#0f172a'
+const COLOR_H2 = '#0f172a'
+const COLOR_H3 = '#1e293b'
+const COLOR_MUTED = '#64748b'
+const COLOR_TABLE_BORDER = '#334155'
+const COLOR_TABLE_HEAD_BG = '#1e293b'
+const COLOR_TABLE_ROW_A = '#0f172a'
+const COLOR_TABLE_ROW_B = '#1e293b'
+const COLOR_TABLE_CELL_TEXT = '#e2e8f0'
+const COLOR_CODE_BG = '#f1f5f9'
+const COLOR_ACCENT_BLUE = '#2563eb'
 
 @Injectable()
 export class AnalysisReportPdfService {
@@ -54,6 +57,7 @@ export class AnalysisReportPdfService {
       dto.documentTitle?.trim(),
     )
     const version = dto.version?.trim() || 'V1.0'
+    const headerTitle = dto.documentTitle?.trim() || coverTitle
 
     /** 容器内由 Dockerfile 下载为 NotoSansSC-*.otf（源文件名为 NotoSansCJKsc-*）；勿使用 .ttc，pdfkit/fontkit 嵌入会失败 */
     const regular = this.resolveFontPath('REGULAR', [
@@ -109,7 +113,7 @@ export class AnalysisReportPdfService {
       }
     }
 
-    // ── 封面主标题（居中、加粗、下划线分隔）──
+    // ── 封面主标题（居中、加粗、下蓝色分隔线 2pt）──
     setFont('bold', H1_PT)
     doc.fillColor('#000000')
     const titleHeight = doc.heightOfString(coverTitle, {
@@ -125,7 +129,7 @@ export class AnalysisReportPdfService {
     })
     cursorY += titleHeight + 6
     doc
-      .strokeColor('#cccccc')
+      .strokeColor(COLOR_ACCENT_BLUE)
       .lineWidth(2)
       .moveTo(marginPt, cursorY)
       .lineTo(PAGE_W - marginPt, cursorY)
@@ -210,15 +214,28 @@ export class AnalysisReportPdfService {
           setFont('bold', H1_PT)
           doc.fillColor('#000000')
           const h = doc.heightOfString(cleaned, { width: contentWidth, lineGap: LINE_GAP_BODY })
-          ensureSpace(h + PARAGRAPH_GAP_PT)
+          ensureSpace(h + PARAGRAPH_GAP_PT + 6)
           doc.text(cleaned, marginPt, cursorY, { width: contentWidth, lineGap: LINE_GAP_BODY })
-          cursorY += h + PARAGRAPH_GAP_PT
+          cursorY += h + 4
+          doc
+            .strokeColor(COLOR_ACCENT_BLUE)
+            .lineWidth(2)
+            .moveTo(marginPt, cursorY)
+            .lineTo(PAGE_W - marginPt, cursorY)
+            .stroke()
+          cursorY += PARAGRAPH_GAP_PT + 4
         } else if (level === 2) {
+          const barW = 4
+          const textX = marginPt + barW + 6
+          const textW = contentWidth - barW - 6
           setFont('bold', H2_PT)
           doc.fillColor(COLOR_H2)
-          const h = doc.heightOfString(cleaned, { width: contentWidth, lineGap: LINE_GAP_BODY })
+          const h = doc.heightOfString(cleaned, { width: textW, lineGap: LINE_GAP_BODY })
           ensureSpace(h + 10)
-          doc.text(cleaned, marginPt, cursorY, { width: contentWidth, lineGap: LINE_GAP_BODY })
+          doc.save()
+          doc.rect(marginPt, cursorY, barW, h).fill(COLOR_ACCENT_BLUE)
+          doc.restore()
+          doc.text(cleaned, textX, cursorY, { width: textW, lineGap: LINE_GAP_BODY })
           cursorY += h + 10
         } else {
           setFont('bold', H3_PT)
@@ -296,7 +313,8 @@ export class AnalysisReportPdfService {
       const fp = regular
       if (fp) doc.font(fp)
       else doc.font('Helvetica')
-      doc.text('AI需求分析报告', marginPt, marginPt, {
+      const headLeft = headerTitle.length > 48 ? `${headerTitle.slice(0, 46)}…` : headerTitle
+      doc.text(headLeft, marginPt, marginPt, {
         width: contentWidth * 0.55,
         lineBreak: false,
       })
@@ -418,17 +436,15 @@ export class AnalysisReportPdfService {
         doc.save()
         if (header) {
           doc.rect(x, y0, colW, rowHeight).fill(COLOR_TABLE_HEAD_BG)
-        } else if (alt) {
-          doc.rect(x, y0, colW, rowHeight).fill(COLOR_TABLE_ROW_ALT)
         } else {
-          doc.rect(x, y0, colW, rowHeight).fill('#ffffff')
+          doc.rect(x, y0, colW, rowHeight).fill(alt ? COLOR_TABLE_ROW_B : COLOR_TABLE_ROW_A)
         }
         doc.strokeColor(COLOR_TABLE_BORDER).rect(x, y0, colW, rowHeight).stroke()
         opts.setFont(header ? 'bold' : 'regular', BODY_PT)
-        doc.fillColor(COLOR_BODY)
-        doc.text(cell, x + 6, y0 + 6, {
-          width: colW - 12,
-          height: rowHeight - 12,
+        doc.fillColor(header ? '#ffffff' : COLOR_TABLE_CELL_TEXT)
+        doc.text(cell, x + 8, y0 + 8, {
+          width: colW - 16,
+          height: rowHeight - 16,
           lineGap: 4,
           ellipsis: true,
         })
@@ -518,10 +534,11 @@ export class AnalysisReportPdfService {
     }
 
     doc.save()
+    const rr = 3
     doc.fillColor(COLOR_CODE_BG)
-    doc.rect(ctx.marginPt, cursorY, ctx.contentWidth, h).fill()
-    doc.strokeColor(COLOR_TABLE_BORDER).rect(ctx.marginPt, cursorY, ctx.contentWidth, h).stroke()
-    doc.fillColor('#000000')
+    doc.roundedRect(ctx.marginPt, cursorY, ctx.contentWidth, h, rr).fill()
+    doc.strokeColor(COLOR_TABLE_BORDER).lineWidth(1).roundedRect(ctx.marginPt, cursorY, ctx.contentWidth, h, rr).stroke()
+    doc.fillColor('#0f172a')
     doc.font('Courier').fontSize(CODE_PT)
     doc.text(code || ' ', ctx.marginPt + pad, cursorY + pad, {
       width: innerW,

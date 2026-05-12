@@ -14,7 +14,7 @@
 
 ### SSE / 流式生成
 
-`frontend/nginx.conf.template` 对 `/api/ai/generate/stream` 已配置 `proxy_buffering off`、`proxy_request_buffering off` 等。若前有负载均衡/CDN，空闲超时建议 ≥ **60s**，避免 `ERR_INCOMPLETE_CHUNKED_ENCODING`。
+`frontend/nginx.conf.template` 对 `/api/ai/generate/stream`、`/api/ai/analyze/stream` 以及 **`/api/files/…/parse-events`（解析进度 SSE）** 已配置 `proxy_buffering off`、`proxy_request_buffering off` 等。若前有负载均衡/CDN，空闲超时建议 ≥ **60s**，避免 `ERR_INCOMPLETE_CHUNKED_ENCODING`。
 
 独立 `docker run`（非 Compose）时，模板使用 **`resolver 127.0.0.11`** + **变量 `proxy_pass`**，避免启动瞬间解析不到 `backend` 导致 nginx `[emerg]` 退出；上游主机名可通过容器环境变量 **`BACKEND_HOST`**（默认 `backend`）覆盖。
 

@@ -93,10 +93,16 @@ export interface FileParseProgress {
   phase?: string
   pageCurrent?: number
   pageTotal?: number
+  /** 竖向分块 OCR：当前块序号（与 ocrStripTotal 成对出现） */
+  ocrStripCurrent?: number
+  /** 竖向分块 OCR：总块数 */
+  ocrStripTotal?: number
   etaMinutes?: number
   incremental?: boolean
   fileBytes?: number
   message?: string
+  /** 后端 heartbeat 给出的可读失败原因（如图片模糊） */
+  errorHint?: string
   extractedChars?: number
   batchIndex?: number
   batchTotal?: number

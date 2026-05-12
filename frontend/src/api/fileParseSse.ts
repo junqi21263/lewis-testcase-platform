@@ -1,7 +1,7 @@
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 import { useAuthStore } from '@/store/authStore'
 
-/** POST `data:` JSON 行；与后端 GET /files/:id/parse-events 对齐 */
+/** fetch 默认 GET；SSE `data:` 行；与后端 GET /files/:id/parse-events 对齐 */
 export function subscribeFileParseEvents(
   fileId: string,
   onPayload: (payload: {

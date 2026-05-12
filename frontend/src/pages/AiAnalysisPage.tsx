@@ -26,6 +26,7 @@ import {
   ArrowRight,
   X,
   Copy,
+  Printer,
   Trash2,
   ChevronDown,
   ChevronUp,
@@ -43,7 +44,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { filesApi } from '@/api/files'
 import { subscribeFileParseEvents } from '@/api/fileParseSse'
 import { aiApi } from '@/api/ai'
-import type { AIModel, UploadedFile, GenerationRecord } from '@/types'
+import type { AIModel, UploadedFile, GenerationRecord, GenerationStatus } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
 import { displayUploadedFilename, normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
@@ -103,6 +104,7 @@ type Action =
   | { type: 'ERROR'; log: LogEntry }
   | { type: 'STOP_TO_IDLE' }
   | { type: 'LOAD_SAVED_REPORT'; text: string }
+  | { type: 'CLEAR_LOGS' }
 
 const initialPageState: PageState = {
   status: 'idle',
@@ -166,6 +168,8 @@ function pageReducer(state: PageState, action: Action): PageState {
         reviewText: '',
         logs: [],
       }
+    case 'CLEAR_LOGS':
+      return { ...state, logs: [] }
     default:
       return state
   }
@@ -216,6 +220,55 @@ function formatRelative(iso: string): string {
   if (h < 24) return `${h} 小时前`
   const d = Math.floor(h / 24)
   return `${d} 天前`
+}
+
+function formatUploadTime(iso: string): string {
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime())) return ''
+  return t.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatFileSizeShort(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
+function fileHistoryStatusBadge(status: UploadedFile['status']): { label: string; cls: string } {
+  switch (status) {
+    case 'PARSED':
+      return { label: '已解析', cls: 'bg-blue-600 text-white border-transparent font-semibold' }
+    case 'PARSING':
+      return { label: '解析中', cls: 'bg-blue-600 text-white border-transparent font-semibold animate-pulse' }
+    case 'PENDING':
+      return { label: '待解析', cls: 'bg-slate-600 text-white border-transparent font-semibold' }
+    case 'FAILED':
+      return { label: '失败', cls: 'bg-red-600 text-white border-transparent font-semibold' }
+    default:
+      return { label: String(status), cls: 'bg-slate-600 text-white border-transparent font-semibold' }
+  }
+}
+
+function analysisRecordStatusBadge(status: GenerationStatus): { label: string; cls: string } {
+  switch (status) {
+    case 'SUCCESS':
+      return { label: 'SUCCESS', cls: 'bg-emerald-600 text-white border-transparent font-semibold' }
+    case 'PROCESSING':
+    case 'PENDING':
+      return { label: status, cls: 'bg-blue-600 text-white border-transparent font-semibold' }
+    case 'FAILED':
+    case 'CANCELLED':
+      return { label: status, cls: 'bg-red-600 text-white border-transparent font-semibold' }
+    default:
+      return { label: status, cls: 'bg-slate-600 text-white border-transparent font-semibold' }
+  }
 }
 
 /**
@@ -334,29 +387,38 @@ function StatusBadge({
   labelOverride?: string
 }) {
   const map: Record<AnalysisStatus, { label: string; cls: string }> = {
-    idle: { label: '等待上传', cls: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-    uploading: { label: '上传中', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
-    parsing: { label: '解析中...', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
-    analyzing: { label: '分析中...', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' },
-    review: { label: '等待审阅', cls: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-    approved: { label: '已通过', cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
-    error: { label: '分析失败', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
+    idle: { label: '等待上传', cls: 'bg-slate-600 text-white border-0 shadow-sm' },
+    uploading: { label: '上传中', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
+    parsing: { label: '解析中...', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
+    analyzing: { label: '分析中...', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
+    review: { label: '等待审阅', cls: 'bg-amber-500 text-white border-0 shadow-sm' },
+    approved: { label: '已通过', cls: 'bg-emerald-600 text-white border-0 shadow-sm' },
+    error: { label: '分析失败', cls: 'bg-red-600 text-white border-0 shadow-sm' },
   }
   const { label, cls } = map[status]
   return (
-    <Badge variant="outline" className={`text-xs border ${cls}`}>
+    <Badge variant="outline" className={`text-xs font-semibold border-transparent ${cls}`}>
       {labelOverride ?? label}
     </Badge>
   )
 }
 
+/** 日志行文案语义 → 文本颜色（与 icon 判断一致） */
+function terminalLogTextClass(text: string): string {
+  const kind = terminalLogIconFromText(text)
+  if (kind === 'error') return 'text-red-400'
+  if (kind === 'success') return 'text-emerald-400'
+  return 'text-blue-300'
+}
+
 function LogLine({ entry }: { entry: LogEntry }) {
   const status = terminalLogIconFromText(entry.text)
+  const textCls = terminalLogTextClass(entry.text)
   return (
-    <div className="flex items-start gap-2.5 text-sm leading-relaxed font-mono py-0.5 animate-[fadeIn_0.3s_ease-out]">
+    <div className="flex items-start gap-2 font-mono py-0.5 animate-[fadeIn_0.3s_ease-out] text-[12px] leading-[1.5]">
       <TerminalLogStatusIcon status={status} />
-      <span className="text-gray-500 flex-shrink-0">[{entry.timestamp}]</span>
-      <span className="text-gray-300 whitespace-pre-wrap break-words">{entry.text}</span>
+      <span className="text-slate-500 flex-shrink-0">[{entry.timestamp}]</span>
+      <span className={`whitespace-pre-wrap break-words ${textCls}`}>{entry.text}</span>
     </div>
   )
 }
@@ -420,6 +482,34 @@ function AiAnalysisPageInner() {
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
   /** 本机选择的 File.name，避免接口 originalName 编码异常导致列表乱码 */
   const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
+  /** 本地上传图片缩略图（Object URL），顺序与 [uploadedFile, ...additionalAnalysisFiles] 一致 */
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([])
+  const imagePreviewUrlsRef = useRef<string[]>([])
+  const wasFileParsingRef = useRef(false)
+
+  const replaceImagePreviews = useCallback((next: string[]) => {
+    imagePreviewUrlsRef.current.forEach((u) => {
+      try {
+        URL.revokeObjectURL(u)
+      } catch {
+        /* ignore */
+      }
+    })
+    imagePreviewUrlsRef.current = next
+    setImagePreviewUrls(next)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      imagePreviewUrlsRef.current.forEach((u) => {
+        try {
+          URL.revokeObjectURL(u)
+        } catch {
+          /* ignore */
+        }
+      })
+    }
+  }, [])
 
   const logContainerRef = useRef<HTMLDivElement>(null)
   const reportMarkdownRef = useRef<HTMLDivElement>(null)
@@ -581,6 +671,59 @@ function AiAnalysisPageInner() {
     }
   }, [state.reportText])
 
+  /** 新窗口打印：复用报告区 DOM，打印样式为白底便于纸质输出 */
+  const handlePrintAnalysisReport = useCallback(() => {
+    const text = state.reportText.trim()
+    if (!text) {
+      toast.error('暂无可打印内容')
+      return
+    }
+    const inner = reportMarkdownRef.current?.innerHTML
+    const title = uploadDisplayName ?? uploadedFile?.originalName ?? '需求分析报告'
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const safeTitle = esc(String(title))
+    const w = window.open('', '_blank')
+    if (!w) {
+      toast.error('请允许弹出窗口以使用打印')
+      return
+    }
+    const bodyInner =
+      inner ??
+      `<pre style="white-space:pre-wrap;font:13px/1.6 system-ui;padding:0;margin:0">${esc(text)}</pre>`
+    w.document.write(
+      `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"/><title>${safeTitle}</title>` +
+        `<style>body{margin:0;padding:24px;font:13px/1.6 system-ui,-apple-system,sans-serif;color:#0f172a;background:#fff;}` +
+        `.ai-analysis-print-root table{border-collapse:collapse;width:100%;}` +
+        `.ai-analysis-print-root th,.ai-analysis-print-root td{border:1px solid #334155;padding:8px;}` +
+        `.ai-analysis-print-root thead th{background:#1e293b;color:#fff;}` +
+        `@media print{body{padding:16px}}</style></head><body>` +
+        `<div class="ai-analysis-print-root">${bodyInner}</div></body></html>`,
+    )
+    w.document.close()
+    w.focus()
+    requestAnimationFrame(() => {
+      w.print()
+      w.close()
+    })
+  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+
+  const handleDeleteAnalysisRecord = useCallback(
+    async (recordId: string, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!window.confirm('确定删除该条分析记录？')) return
+      try {
+        await recordsApi.deleteRecord(recordId)
+        toast.success('已删除')
+        await loadAnalysisRecords()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '删除失败')
+      }
+    },
+    [loadAnalysisRecords],
+  )
+
   useEffect(() => {
     try {
       localStorage.setItem(PROMPT_TEMPLATE_STORAGE_KEY, analysisPromptTemplate)
@@ -688,6 +831,12 @@ function AiAnalysisPageInner() {
     uploadedFile,
   ])
 
+  /** 多图并行轮询时同步更新主文件或附加列表中的同一条记录 */
+  const updateFileInPlace = useCallback((f: UploadedFile) => {
+    setUploadedFile((prev) => (prev?.id === f.id ? f : prev))
+    setAdditionalAnalysisFiles((prev) => prev.map((p) => (p.id === f.id ? f : p)))
+  }, [])
+
   const pollUntilParsed = useCallback(
     async (
       fileId: string,
@@ -724,6 +873,24 @@ function AiAnalysisPageInner() {
     },
     [addLog],
   )
+
+  useEffect(() => {
+    if (uploadedFile?.status === 'PARSING') wasFileParsingRef.current = true
+    if (uploadedFile?.status === 'FAILED') wasFileParsingRef.current = false
+    if (
+      uploadedFile?.status === 'PARSED' &&
+      wasFileParsingRef.current &&
+      additionalAnalysisFiles.every((f) => f.status === 'PARSED')
+    ) {
+      wasFileParsingRef.current = false
+      toast.success(
+        additionalAnalysisFiles.length > 0
+          ? `全部 ${1 + additionalAnalysisFiles.length} 张图片解析完成`
+          : '文档解析完成，可展开查看解析文本',
+        { id: 'parse-done-toast', duration: 4000 },
+      )
+    }
+  }, [uploadedFile?.status, uploadedFile?.id, additionalAnalysisFiles])
 
   const retryParseFlow = useCallback(
     async (fileId: string, signal: AbortSignal, textOnly?: boolean) => {
@@ -811,25 +978,47 @@ function AiAnalysisPageInner() {
       setUploadedFile(null)
       setEditedParsedText('')
       setParsePreviewDirty(false)
+      replaceImagePreviews(arr.map((f) => URL.createObjectURL(f)))
 
       addLog('loading', `📤 批量上传 ${arr.length} 张图片…`)
 
       try {
-        const results: UploadedFile[] = []
-        for (let i = 0; i < arr.length; i++) {
-          const file = arr[i]
-          addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
-          let cur = await uploadFile(file)
-          if (signal.aborted) return
-          stashUploadedOriginalName(cur.id, file.name)
-          if (cur.status !== 'PARSED') {
-            dispatch({ type: 'UPLOAD_DONE' })
-            addLog('loading', `📄 正在解析图片 ${i + 1}/${arr.length}…`)
-            cur = await pollUntilParsed(cur.id, signal)
-          }
-          if (signal.aborted) return
-          results.push(cur)
-          setUploadedFile(results[0])
+        const uploadedRows = await Promise.all(
+          arr.map(async (file, i) => {
+            addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+            const cur = await uploadFile(file)
+            if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+            stashUploadedOriginalName(cur.id, file.name)
+            return cur
+          }),
+        )
+
+        if (signal.aborted) return
+
+        const first = uploadedRows[0]
+        if (first) {
+          setUploadedFile(first)
+          setAdditionalAnalysisFiles(uploadedRows.slice(1))
+        }
+
+        const needParse = uploadedRows.filter((u) => u.status !== 'PARSED')
+        if (needParse.length > 0) {
+          dispatch({ type: 'UPLOAD_DONE' })
+          addLog('loading', `📄 并行解析 ${needParse.length} 张图片…`)
+        }
+
+        const results: UploadedFile[] = await Promise.all(
+          uploadedRows.map(async (cur) => {
+            if (cur.status === 'PARSED') return cur
+            return pollUntilParsed(cur.id, signal, updateFileInPlace)
+          }),
+        )
+
+        if (signal.aborted) return
+
+        const firstR = results[0]
+        if (firstR) {
+          setUploadedFile(firstR)
           setAdditionalAnalysisFiles(results.slice(1))
         }
 
@@ -857,6 +1046,7 @@ function AiAnalysisPageInner() {
         if ((e as Error).name === 'AbortError') {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
+          replaceImagePreviews([])
           setUploadedFile(null)
           setAdditionalAnalysisFiles([])
           setUploadDisplayName(null)
@@ -869,7 +1059,17 @@ function AiAnalysisPageInner() {
         operationAbortRef.current = null
       }
     },
-    [addLog, dispatch, loadFileHistory, makeLog, pollUntilParsed, resetUploadProgress, uploadFile],
+    [
+      addLog,
+      dispatch,
+      loadFileHistory,
+      makeLog,
+      pollUntilParsed,
+      replaceImagePreviews,
+      resetUploadProgress,
+      updateFileInPlace,
+      uploadFile,
+    ],
   )
 
   const handleFileSelect = useCallback(
@@ -889,6 +1089,11 @@ function AiAnalysisPageInner() {
       uploadStartedAtRef.current = Date.now()
       setUploadDisplayName(file.name)
       setAdditionalAnalysisFiles([])
+      if (isImageBatchFile(file)) {
+        replaceImagePreviews([URL.createObjectURL(file)])
+      } else {
+        replaceImagePreviews([])
+      }
 
       addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
@@ -933,6 +1138,7 @@ function AiAnalysisPageInner() {
         if ((e as Error).name === 'AbortError') {
           addLog('loading', '⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
+          replaceImagePreviews([])
           setUploadedFile(null)
           setAdditionalAnalysisFiles([])
           setUploadDisplayName(null)
@@ -954,6 +1160,7 @@ function AiAnalysisPageInner() {
       pollUntilParsed,
       loadFileHistory,
       makeLog,
+      replaceImagePreviews,
     ],
   )
 
@@ -997,16 +1204,18 @@ function AiAnalysisPageInner() {
   const handleRemoveFile = useCallback(() => {
     operationAbortRef.current?.abort()
     abortUpload()
+    replaceImagePreviews([])
     setUploadedFile(null)
     setAdditionalAnalysisFiles([])
     setUploadDisplayName(null)
     setEditedParsedText('')
     setParsePreviewDirty(false)
     dispatch({ type: 'RESET' })
-  }, [abortUpload])
+  }, [abortUpload, replaceImagePreviews])
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
     setUploadDisplayName(null)
+    replaceImagePreviews([])
     setAdditionalAnalysisFiles([])
     setUploadedFile(f)
     setEditedParsedText(f.parsedContent ?? '')
@@ -1018,7 +1227,7 @@ function AiAnalysisPageInner() {
     } else {
       toast('该文件尚未解析完成', { icon: 'ℹ️' })
     }
-  }, [])
+  }, [replaceImagePreviews])
 
   const deleteHistoryFile = useCallback(
     async (id: string, e: React.MouseEvent) => {
@@ -1269,11 +1478,6 @@ ${state.reportText}
   /** 流式生成中：日志仅占用内容高度，报告紧贴日志下方并占据中间弹性空间 */
   const isAnalyzingStream = state.status === 'analyzing'
   /**
-   * 日志区不再 flex 撑满空白：分析中；或已有报告且底部面板将占用空间时，日志封顶滚动。
-   */
-  const useTerminalCompactLogs =
-    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
-  /**
    * 报告区占用日志与底部栏之间的全部剩余高度（生成中 / 生成完成且底部面板可见），内部滚动。
    */
   const useTerminalFlexReport =
@@ -1364,7 +1568,20 @@ ${state.reportText}
               </div>
             ) : (
               <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                {imagePreviewUrls.length > 0 && uploadedFile.fileType === 'IMAGE' ? (
+                  <div className="flex flex-wrap gap-1 flex-shrink-0 max-w-[3.75rem] content-start">
+                    {imagePreviewUrls.map((url) => (
+                      <img
+                        key={url}
+                        src={url}
+                        alt=""
+                        className="w-11 h-11 object-cover rounded border border-green-500/30"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                )}
                 <div className="flex-1 min-w-0 space-y-1">
                   {additionalAnalysisFiles.length === 0 ? (
                     <>
@@ -1391,12 +1608,21 @@ ${state.reportText}
                       <p className="text-xs font-medium text-green-200">
                         多图分析 · 共 {1 + additionalAnalysisFiles.length} 张
                       </p>
-                      <ul className="text-xs text-green-300 space-y-0.5 max-h-28 overflow-y-auto">
-                        {[uploadedFile, ...additionalAnalysisFiles].map((f) => (
-                          <li key={f.id} className="truncate" title={displayUploadedFilename(f.id, f.originalName)}>
-                            · {displayUploadedFilename(f.id, f.originalName)}{' '}
-                            <span className="text-green-400/70">
-                              {f.status === 'PARSED' ? '✓' : f.status}
+                      <ul className="text-xs text-green-300 space-y-1 max-h-36 overflow-y-auto">
+                        {[uploadedFile, ...additionalAnalysisFiles].map((f, idx) => (
+                          <li key={f.id} className="flex items-center gap-2 min-w-0">
+                            {imagePreviewUrls[idx] ? (
+                              <img
+                                src={imagePreviewUrls[idx]}
+                                alt=""
+                                className="w-8 h-8 object-cover rounded border border-green-500/25 shrink-0"
+                              />
+                            ) : null}
+                            <span className="truncate min-w-0" title={displayUploadedFilename(f.id, f.originalName)}>
+                              · {displayUploadedFilename(f.id, f.originalName)}{' '}
+                              <span className="text-green-400/70">
+                                {f.status === 'PARSED' ? '✓' : f.status === 'PARSING' ? '解析中' : f.status}
+                              </span>
                             </span>
                           </li>
                         ))}
@@ -1461,6 +1687,71 @@ ${state.reportText}
                       ：第 {uploadedFile.parseProgress.pageCurrent} / {uploadedFile.parseProgress.pageTotal} 页
                     </p>
                   )}
+                {uploadedFile?.fileType === 'PDF' &&
+                  uploadedFile.parseProgress?.phase === 'OCR' &&
+                  typeof uploadedFile.parseProgress.message === 'string' &&
+                  uploadedFile.parseProgress.message.includes('正在识别') && (
+                    <p className="text-[11px] text-amber-100/90">{uploadedFile.parseProgress.message}</p>
+                  )}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const imgs = batch.filter((f) => f.fileType === 'IMAGE')
+                  if (
+                    state.status !== 'parsing' ||
+                    imgs.length === 0 ||
+                    imgs.every((f) => f.status !== 'PARSING')
+                  ) {
+                    return null
+                  }
+                  const done = imgs.filter((f) => f.status === 'PARSED').length
+                  return (
+                    <p className="text-[11px] text-muted-foreground">
+                      图片识别进度：{done} / {imgs.length} 张已完成
+                    </p>
+                  )
+                })()}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const focus = batch.find(
+                    (f) => f.status === 'PARSING' && f.fileType === 'IMAGE',
+                  )
+                  const pp = focus?.parseProgress
+                  if (
+                    !pp ||
+                    pp.phase !== 'OCR' ||
+                    pp.ocrStripTotal == null ||
+                    pp.ocrStripCurrent == null
+                  ) {
+                    return null
+                  }
+                  return (
+                    <p className="text-[11px] text-muted-foreground">
+                      当前图 OCR 分条：第 {pp.ocrStripCurrent} / {pp.ocrStripTotal} 条
+                      {pp.message ? `（${pp.message}）` : ''}
+                    </p>
+                  )
+                })()}
+                {uploadedFile?.fileType === 'IMAGE' &&
+                  uploadedFile.status === 'PARSING' &&
+                  uploadedFile.parseProgress?.phase === 'OCR' &&
+                  uploadedFile.parseProgress?.ocrStripTotal == null &&
+                  uploadedFile.parseProgress?.message && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {uploadedFile.parseProgress.message}
+                    </p>
+                  )}
+                {(() => {
+                  const batch = uploadedFile
+                    ? [uploadedFile, ...additionalAnalysisFiles]
+                    : []
+                  const hint = batch.find((f) => f.parseProgress?.errorHint)?.parseProgress?.errorHint
+                  if (!hint || state.status !== 'parsing') return null
+                  return <p className="text-[11px] text-amber-200/85">提示：{hint}</p>
+                })()}
               </div>
             )}
           </div>
@@ -1471,6 +1762,9 @@ ${state.reportText}
               <p className="text-muted-foreground whitespace-pre-wrap break-words">
                 {uploadedFile.parseError ?? '未知错误'}
               </p>
+              {uploadedFile.parseProgress?.errorHint ? (
+                <p className="text-amber-200/90 text-[11px]">识别阶段提示：{uploadedFile.parseProgress.errorHint}</p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -1564,23 +1858,42 @@ ${state.reportText}
               <p className="text-[11px] text-muted-foreground">
                 以下为已成功落库的「需求分析」生成记录（关键词检索）；点击查看完整报告。
               </p>
-              <div className="max-h-[160px] overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
-                {analysisRecords.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => void applyAnalysisRecord(r.id)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-muted/30"
-                  >
-                    <span className="flex-1 truncate text-foreground">{r.title}</span>
-                    <span className="text-muted-foreground whitespace-nowrap shrink-0">
-                      {formatRelative(r.createdAt)}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] shrink-0">
-                      {r.status}
-                    </Badge>
-                  </button>
-                ))}
+              <div className="max-h-[160px] overflow-y-auto rounded border border-border/30">
+                {analysisRecords.map((r) => {
+                  const rb = analysisRecordStatusBadge(r.status)
+                  return (
+                    <div
+                      key={r.id}
+                      className="flex items-stretch gap-1 border-b border-border/20 last:border-0 hover:bg-[#1E293B] transition-colors rounded"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void applyAnalysisRecord(r.id)}
+                        className="flex flex-1 min-w-0 flex-col gap-1 p-3 text-left text-xs rounded"
+                      >
+                        <span className="truncate font-medium text-foreground">{r.title}</span>
+                        <span className="text-[12px] text-[#64748B]">
+                          {formatUploadTime(r.createdAt)}
+                          {r.file?.originalName ? ` · ${r.file.originalName}` : ''}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground">{formatRelative(r.createdAt)}</span>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${rb.cls}`}>
+                            {rb.label}
+                          </Badge>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 px-2 text-muted-foreground hover:text-red-500 transition-colors rounded"
+                        aria-label="删除分析记录"
+                        onClick={(e) => void handleDeleteAnalysisRecord(r.id, e)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1588,45 +1901,55 @@ ${state.reportText}
           {fileHistory.length > 0 && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">最近上传</label>
-              <div className="max-h-[180px] overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
-                {fileHistory.map((f) => (
-                  <div
-                    key={f.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => selectHistoryFile(f)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        selectHistoryFile(f)
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-muted/30 ${
-                      uploadedFile?.id === f.id ? 'bg-primary/10' : ''
-                    }`}
-                  >
-                    <span
-                      className="flex-1 truncate text-left"
-                      title={displayUploadedFilename(f.id, f.originalName)}
+              <div className="max-h-[180px] overflow-y-auto rounded border border-border/30">
+                {fileHistory.map((f) => {
+                  const fb = fileHistoryStatusBadge(f.status)
+                  return (
+                    <div
+                      key={f.id}
+                      className={`flex items-center gap-2 border-b border-border/20 last:border-0 p-3 rounded transition-colors hover:bg-[#1E293B] ${
+                        uploadedFile?.id === f.id ? 'bg-primary/10' : ''
+                      }`}
                     >
-                      {displayUploadedFilename(f.id, f.originalName)}
-                    </span>
-                    <span className="text-muted-foreground whitespace-nowrap">
-                      {formatRelative(f.createdAt)}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] shrink-0">
-                      {f.status}
-                    </Badge>
-                    <button
-                      type="button"
-                      className="p-1 text-muted-foreground hover:text-destructive"
-                      aria-label="删除文件"
-                      onClick={(ev) => void deleteHistoryFile(f.id, ev)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectHistoryFile(f)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            selectHistoryFile(f)
+                          }
+                        }}
+                        className="flex flex-1 min-w-0 cursor-pointer flex-col gap-1 text-left text-xs"
+                      >
+                        <span
+                          className="truncate text-foreground font-medium"
+                          title={displayUploadedFilename(f.id, f.originalName)}
+                        >
+                          {displayUploadedFilename(f.id, f.originalName)}
+                        </span>
+                        <span className="text-[12px] text-[#64748B]">
+                          {formatFileSizeShort(f.size)} · {formatUploadTime(f.createdAt)}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground">{formatRelative(f.createdAt)}</span>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${fb.cls}`}>
+                            {fb.label}
+                          </Badge>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 p-1.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
+                        aria-label="删除文件"
+                        onClick={(ev) => void deleteHistoryFile(f.id, ev)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1745,91 +2068,116 @@ ${state.reportText}
         </div>
 
         <div className="flex flex-col w-full min-w-0 min-h-0 lg:h-full">
-          <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20 flex-wrap">
-            <div className="flex items-center gap-3 min-w-0">
-              <Terminal className="w-4 h-4 text-gray-500 flex-shrink-0" aria-hidden />
-              <span className="text-sm font-mono text-gray-300 truncate">AI 需求分析终端</span>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-gray-400 hover:text-gray-200"
-                onClick={copyAnalysisReport}
-              >
-                <Copy className="w-3.5 h-3.5 mr-1" />
-                复制文本
-              </Button>
-              {state.reportText.trim().length > 0 && (
-                <>
-                  <Button
+          <div className="flex shrink-0 flex-col gap-0 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20">
+            <div className="flex min-h-[48px] flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Terminal className="h-4 w-4 flex-shrink-0 text-slate-500" aria-hidden />
+                <span className="truncate font-mono text-sm text-slate-300">AI 需求分析终端</span>
+              </div>
+              <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+                {state.reportText.trim().length > 0 && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 gap-1.5 text-xs text-violet-300 hover:bg-violet-500/15 hover:text-violet-100"
+                      onClick={() => void handleSendToGenerate()}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      生成用例
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={exportingPdf || exportingXmind}
+                      className="h-9 gap-1.5 text-xs text-slate-300 hover:bg-slate-700/50 hover:text-slate-100"
+                      onClick={() => void handleExportXmind()}
+                    >
+                      {exportingXmind ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Waypoints className="h-3.5 w-3.5" />
+                      )}
+                      导出 XMind
+                    </Button>
+                  </>
+                )}
+                {!autoScroll && (
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-violet-300 hover:text-violet-100 hover:bg-violet-500/15"
-                    onClick={() => void handleSendToGenerate()}
+                    className="text-[11px] text-amber-400 hover:underline"
+                    onClick={() => setAutoScroll(true)}
                   >
-                    <Sparkles className="w-3.5 h-3.5 mr-1" />
-                    生成用例
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={exportingPdf || exportingXmind}
-                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
-                    onClick={() => void handleExportAnalysisPdf()}
-                  >
-                    {exportingPdf ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <FileDown className="w-3.5 h-3.5 mr-1" />
-                    )}
-                    导出 PDF
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={exportingPdf || exportingXmind}
-                    className="h-8 text-xs text-gray-300 hover:text-gray-100"
-                    onClick={() => void handleExportXmind()}
-                  >
-                    {exportingXmind ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <Waypoints className="w-3.5 h-3.5 mr-1" />
-                    )}
-                    导出 XMind
-                  </Button>
-                </>
-              )}
-              {!autoScroll && (
-                <button
-                  type="button"
-                  className="text-[11px] text-amber-400 hover:underline"
-                  onClick={() => setAutoScroll(true)}
-                >
-                  恢复自动滚动
-                </button>
-              )}
-              <StatusBadge status={state.status} labelOverride={terminalBadgeLabel} />
+                    恢复自动滚动
+                  </button>
+                )}
+                <StatusBadge status={state.status} labelOverride={terminalBadgeLabel} />
+                {state.reportText.trim().length > 0 && (
+                  <>
+                    <div className="mx-1 hidden h-6 w-px bg-border/40 sm:block" aria-hidden />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded border-border/50 bg-transparent px-3 text-sm font-semibold text-slate-200 hover:bg-slate-800/80"
+                      onClick={copyAnalysisReport}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      复制文本
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded border-border/50 bg-transparent px-3 text-sm font-semibold text-slate-200 hover:bg-slate-800/80"
+                      onClick={handlePrintAnalysisReport}
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      打印
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={exportingPdf || exportingXmind}
+                      className="h-9 gap-1.5 rounded bg-[#2563EB] px-4 text-sm font-bold text-white shadow-md hover:bg-[#1D4ED8] disabled:opacity-60"
+                      onClick={() => void handleExportAnalysisPdf()}
+                    >
+                      {exportingPdf ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileDown className="h-3.5 w-3.5" />
+                      )}
+                      导出 PDF
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/20 px-4 py-2">
+              <span className="text-xs font-medium text-slate-500">分析日志</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-slate-400 hover:text-red-400"
+                disabled={state.logs.length === 0}
+                onClick={() => dispatch({ type: 'CLEAR_LOGS' })}
+              >
+                清空日志
+              </Button>
+            </div>
             <div
               ref={logContainerRef}
               onScroll={handleLogScroll}
-              className={`overflow-y-auto px-4 py-3 space-y-0.5 ${
-                useTerminalCompactLogs
-                  ? 'max-h-[min(260px,38vh)] shrink-0'
-                  : 'min-h-0 flex-1 basis-0'
-              }`}
+              className="h-[120px] shrink-0 overflow-y-auto space-y-0.5 px-4 py-2"
             >
               {state.logs.length === 0 && (
-                <div className="text-sm text-gray-500 font-mono py-4 text-center">
+                <div className="py-6 text-center font-mono text-[12px] leading-[1.5] text-slate-500">
                   等待操作或开始分析…
                 </div>
               )}
@@ -1846,18 +2194,18 @@ ${state.reportText}
               useTerminalFlexReport ? (
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
                   <div
-                    className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                    className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 py-4 pr-4 [scrollbar-gutter:stable] select-text"
                     data-testid="ai-analysis-report-panel"
                   >
-                    <div className="mb-2 shrink-0">
-                      <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                    <div className="mb-4 shrink-0">
+                      <h3 className="border-b-2 border-[#3B82F6] pb-2 text-[20px] font-bold leading-tight text-white">
                         需求文档分析报告
                       </h3>
                     </div>
                     <div
                       ref={reportMarkdownRef}
                       data-testid="ai-analysis-report-markdown"
-                      className="min-w-0 max-w-full pb-1"
+                      className="ai-analysis-print-root min-w-0 max-w-full pb-1"
                     >
                       <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
                     </div>
@@ -1865,18 +2213,18 @@ ${state.reportText}
                 </div>
               ) : (
                 <div
-                  className="ai-analysis-report-scroll box-border max-h-[min(360px,50vh)] shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/20 bg-[#111125]/80 px-4 py-3 pr-3 [scrollbar-gutter:stable] select-text"
+                  className="ai-analysis-report-scroll box-border max-h-[min(360px,50vh)] shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/20 bg-[#111125]/80 px-6 py-4 pr-4 [scrollbar-gutter:stable] select-text"
                   data-testid="ai-analysis-report-panel"
                 >
-                  <div className="mb-2 shrink-0">
-                    <h3 className="text-lg font-bold text-foreground border-b border-border/40 pb-2">
+                  <div className="mb-4 shrink-0">
+                    <h3 className="border-b-2 border-[#3B82F6] pb-2 text-[20px] font-bold leading-tight text-white">
                       需求文档分析报告
                     </h3>
                   </div>
                   <div
                     ref={reportMarkdownRef}
                     data-testid="ai-analysis-report-markdown"
-                    className="min-w-0 max-w-full pb-1"
+                    className="ai-analysis-print-root min-w-0 max-w-full pb-1"
                   >
                     <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
                   </div>
@@ -1885,18 +2233,18 @@ ${state.reportText}
             ) : null}
 
             {(showReviewArea || showApprovedOnly) && (
-              <div className="shrink-0 border-t border-border/20 bg-[#0d0d1a] px-4 py-4">
+              <div className="shrink-0 border-t border-[#334155] bg-[#0d0d1a] p-4">
                 {state.status === 'approved' ? (
-                  <div className="text-center py-3 space-y-2">
+                  <div className="space-y-2 py-3 text-center">
                     <div className="flex items-center justify-center gap-2 text-green-400">
-                      <CheckCircle2 className="w-5 h-5" />
+                      <CheckCircle2 className="h-5 w-5" />
                       <span className="text-sm font-medium">需求分析已通过</span>
                     </div>
-                    <p className="text-xs text-gray-500">可继续生成测试用例或重新分析</p>
+                    <p className="text-xs text-slate-500">可继续生成测试用例或重新分析</p>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-1.5 mt-2 border-primary/30 text-primary hover:bg-primary/10"
+                      className="mt-2 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
                       type="button"
                       onClick={() => dispatch({ type: 'RESET' })}
                     >
@@ -1905,33 +2253,33 @@ ${state.reportText}
                   </div>
                 ) : (
                   <>
-                    <h4 className="mb-2 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
-                      <User className="w-4 h-4 text-muted-foreground" />
+                    <h4 className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
+                      <User className="h-4 w-4 text-muted-foreground" />
                       人工审阅
                     </h4>
                     <textarea
-                      rows={4}
-                      className="h-[100px] min-h-[72px] w-full resize-y overflow-y-auto rounded-lg border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-ring text-gray-300"
-                      placeholder={`请输入修改意见…（Ctrl+Enter 提交）`}
+                      rows={5}
+                      className="min-h-[120px] w-full resize-y overflow-y-auto rounded border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed text-slate-200 shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="请输入修改意见…（Ctrl+Enter 提交）"
                       value={state.reviewText}
                       onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
                       onKeyDown={handleReviewKeyDown}
                     />
-                    <div className="flex items-center gap-2 mt-3 shrink-0">
+                    <div className="mt-4 flex shrink-0 items-center gap-3">
                       <Button
-                        className="flex-1 h-10 text-sm font-medium gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white shadow-md"
+                        className="h-11 flex-1 gap-2 rounded bg-orange-500 text-sm font-bold text-white shadow-md hover:bg-orange-600"
                         type="button"
                         onClick={() => void handleSubmitRevision()}
                       >
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="h-4 w-4" />
                         提交修改意见
                       </Button>
                       <Button
-                        className="flex-1 h-10 text-sm font-medium gap-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-md"
+                        className="h-11 flex-1 gap-2 rounded bg-emerald-600 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
                         type="button"
                         onClick={handleApprove}
                       >
-                        <CheckCircle2 className="w-4 h-4" />
+                        <CheckCircle2 className="h-4 w-4" />
                         确认通过
                       </Button>
                     </div>
