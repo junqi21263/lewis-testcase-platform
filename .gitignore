@@ -63,6 +63,9 @@ allure-report/
 # 误拷的嵌套仓库副本（勿提交）
 lewis-testcase-platform/
 
+# 本机 PyCharm / 个人脚本目录误加入仓库（易含 API Key；勿提交）
+PycharmProjects/
+
 # Cursor: 版本库中保留 `.cursor/rules/`，其余 Cursor 数据仍忽略
 .cursor/*
 !.cursor/rules/
