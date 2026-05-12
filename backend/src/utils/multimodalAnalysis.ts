@@ -116,13 +116,13 @@ export type AnalyzeCosMultimodalParams = {
   fileKind: 'image' | 'pdf'
 }
 
-/**
- * 使用腾讯云混元 **hunyuan-vision**，对 COS 签名 URL 指向的图片或 PDF 做一次多模态理解，
- * 返回结构化需求分析正文（Markdown）。失败时抛出异常，由调用方降级到 OCR/原视觉管线。
- */
-export async function analyzeCosFileWithHunyuanMultimodal(
-  params: AnalyzeCosMultimodalParams,
-): Promise<string> {
+export type HunyuanCosPromptParams = AnalyzeCosMultimodalParams & {
+  prompt: string
+}
+
+export async function runHunyuanCosPrompt(
+  params: HunyuanCosPromptParams,
+): Promise<{ text: string; promptTokens?: number; completionTokens?: number; totalTokens?: number }> {
   const cred = resolveTencentCredentialsForHunyuan(params.config)
   if (!cred) {
     throw new Error('混元多模态：缺少 TENCENTCLOUD_SECRET_* 或 COS_SECRET_*')
@@ -152,15 +152,13 @@ export async function analyzeCosFileWithHunyuanMultimodal(
     profile: { httpProfile: { reqTimeout: t } },
   })
 
-  const prompt = buildStructuredRequirementPrompt(params.fileKind)
-
   const res = await client.ChatCompletions({
     Model: model,
     Messages: [
       {
         Role: 'user',
         Contents: [
-          { Type: 'text', Text: prompt },
+          { Type: 'text', Text: params.prompt },
           { Type: 'image_url', ImageUrl: { Url: signedUrl } },
         ],
       },
@@ -182,5 +180,22 @@ export async function analyzeCosFileWithHunyuanMultimodal(
   if (!text) {
     throw new Error('混元多模态返回内容为空')
   }
-  return text
+  return {
+    text,
+    promptTokens: res?.Usage?.PromptTokens,
+    completionTokens: res?.Usage?.CompletionTokens,
+    totalTokens: res?.Usage?.TotalTokens,
+  }
+}
+
+/**
+ * 使用腾讯云混元 **hunyuan-vision**，对 COS 签名 URL 指向的图片或 PDF 做一次多模态理解，
+ * 返回结构化需求分析正文（Markdown）。失败时抛出异常，由调用方降级到 OCR/原视觉管线。
+ */
+export async function analyzeCosFileWithHunyuanMultimodal(
+  params: AnalyzeCosMultimodalParams,
+): Promise<string> {
+  const prompt = buildStructuredRequirementPrompt(params.fileKind)
+  const out = await runHunyuanCosPrompt({ ...params, prompt })
+  return out.text
 }

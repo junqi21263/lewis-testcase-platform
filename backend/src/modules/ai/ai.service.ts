@@ -12,6 +12,7 @@ import { GenerationSource, GenerationStatus, Prisma, TestCasePriority, TestCaseT
 import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
+import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import {
   clampGenerationUserContent,
   humanizeAiProviderError,
@@ -254,7 +255,60 @@ export class AiService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private readonly multimodal: MultimodalService,
   ) {}
+
+  private async tryDirectMultimodalForAnalysis(
+    fileId: string,
+    userId: string,
+    customPrompt?: string,
+    recordId?: string,
+  ): Promise<string | null> {
+    const file = await this.prisma.uploadedFile.findUnique({
+      where: { id: fileId },
+      select: { id: true, path: true, size: true, mimeType: true },
+    })
+    if (!file?.path) return null
+    const kind = this.multimodal.resolveFileKind(file.mimeType)
+    if (kind !== 'IMAGE' && kind !== 'PDF') return null
+    if (!file.path.startsWith('cos://')) return null
+    const out = await this.multimodal.analyzeFileForRequirements({
+      userId,
+      storedPath: file.path,
+      fileKind: kind,
+      fileBytes: file.size,
+      customPrompt,
+      uploadedFileId: fileId,
+      recordId,
+    })
+    return out.text
+  }
+
+  private async tryDirectMultimodalForCases(
+    fileId: string,
+    userId: string,
+    customPrompt?: string,
+    recordId?: string,
+  ): Promise<string | null> {
+    const file = await this.prisma.uploadedFile.findUnique({
+      where: { id: fileId },
+      select: { id: true, path: true, size: true, mimeType: true },
+    })
+    if (!file?.path) return null
+    const kind = this.multimodal.resolveFileKind(file.mimeType)
+    if (kind !== 'IMAGE' && kind !== 'PDF') return null
+    if (!file.path.startsWith('cos://')) return null
+    const out = await this.multimodal.generateCasesFromFile({
+      userId,
+      storedPath: file.path,
+      fileKind: kind,
+      fileBytes: file.size,
+      customPrompt,
+      uploadedFileId: fileId,
+      recordId,
+    })
+    return out.text
+  }
 
   /** 落库时的团队、来源枚举、参数快照与模板全文 */
   private async buildRecordPersistExtras(dto: GenerateDto, userId: string) {
@@ -513,6 +567,60 @@ export class AiService {
     })
 
     try {
+      let directMultimodalJson: string | null = null
+      if (dto.sourceType === 'file' && dto.fileId) {
+        try {
+          directMultimodalJson = await this.tryDirectMultimodalForCases(
+            dto.fileId,
+            userId,
+            dto.customPrompt,
+            record.id,
+          )
+        } catch (e) {
+          this.logger.warn(`generate direct multimodal failed, fallback text mode: ${(e as Error).message}`)
+        }
+      }
+
+      if (directMultimodalJson) {
+        const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, directMultimodalJson)
+        const rows = resolved.rows
+        if (rows.length === 0) {
+          const msg = '多模态已返回结果，但未解析出有效用例 JSON，请调整提示词后重试。'
+          await this.prisma.generationRecord.update({
+            where: { id: record.id },
+            data: { status: GenerationStatus.FAILED, errorMessage: msg, caseCount: 0 },
+          })
+          throw new BadRequestException(msg)
+        }
+        const suite = await this.prisma.testSuite.create({
+          data: {
+            name: `AI 生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+            creatorId: userId,
+            cases: {
+              create: rows.map((c: any) => this.mapRowToCaseInput(c)),
+            },
+          },
+          include: { cases: true },
+        })
+        const duration = Date.now() - startTime
+        await this.prisma.generationRecord.update({
+          where: { id: record.id },
+          data: {
+            status: GenerationStatus.SUCCESS,
+            caseCount: suite.cases.length,
+            suiteId: suite.id,
+            duration,
+          },
+        })
+        await this.bumpTemplateUsage(dto.templateId)
+        return {
+          recordId: record.id,
+          cases: suite.cases,
+          duration,
+          warnings: ['已启用多模态直达生成（文件URL直接理解）。'],
+        }
+      }
+
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
       const completion = await client.chat.completions.create({
@@ -650,6 +758,70 @@ export class AiService {
     let fullContent = ''
     let finishReason: string | null = null
     try {
+      if (dto.sourceType === 'file' && dto.fileId) {
+        try {
+          const directMultimodalJson = await this.tryDirectMultimodalForCases(
+            dto.fileId,
+            userId,
+            dto.customPrompt,
+            record.id,
+          )
+          if (directMultimodalJson) {
+            res.write(`data: ${JSON.stringify({ notice: '已启用多模态直达生成，正在整理用例…' })}\n\n`)
+            fullContent = directMultimodalJson
+            const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, fullContent)
+            const rows = resolved.rows
+            if (rows.length === 0) {
+              const msg = '多模态已返回结果，但未解析出有效用例 JSON，请调整提示词后重试。'
+              await this.prisma.generationRecord.update({
+                where: { id: record.id },
+                data: { status: GenerationStatus.FAILED, errorMessage: msg, caseCount: 0 },
+              })
+              if (!res.writableEnded) {
+                res.write(`data: ${JSON.stringify({ error: msg, recordId: record.id })}\n\n`)
+                res.write('data: [DONE]\n\n')
+                res.end()
+              }
+              return
+            }
+            const suite = await this.prisma.testSuite.create({
+              data: {
+                name: `AI 流式生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+                creatorId: userId,
+                cases: { create: rows.map((c: any) => this.mapRowToCaseInput(c)) },
+              },
+              include: { cases: true },
+            })
+            await this.prisma.generationRecord.update({
+              where: { id: record.id },
+              data: {
+                status: GenerationStatus.SUCCESS,
+                caseCount: suite.cases.length,
+                suiteId: suite.id,
+                duration: Date.now() - startTime,
+              },
+            })
+            await this.bumpTemplateUsage(dto.templateId)
+            if (!res.writableEnded) {
+              res.write(
+                `data: ${JSON.stringify({
+                  recordId: record.id,
+                  suiteId: suite.id,
+                  caseCount: suite.cases.length,
+                  notice: '多模态直达生成完成',
+                })}\n\n`,
+              )
+              res.write('data: [DONE]\n\n')
+              res.end()
+            }
+            return
+          }
+        } catch (e) {
+          this.logger.warn(`generateStream direct multimodal failed, fallback text mode: ${(e as Error).message}`)
+          this.writeStreamNotice(res, '多模态直达失败，已自动切换文本模式继续生成。')
+        }
+      }
+
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       for (const n of inputNotices) {
         this.writeStreamNotice(res, n)
@@ -849,6 +1021,46 @@ export class AiService {
     let fullContent = ''
     let finishReason: string | null = null
     try {
+      if (dto.sourceType === 'file' && dto.fileId && orderedIds.length === 1) {
+        try {
+          const direct = await this.tryDirectMultimodalForAnalysis(
+            dto.fileId,
+            userId,
+            dto.customPrompt,
+            record.id,
+          )
+          if (direct?.trim()) {
+            const pieces = direct.split(/(\n{2,})/).filter(Boolean)
+            for (const piece of pieces) {
+              fullContent += piece
+              res.write(`data: ${JSON.stringify({ content: piece })}\n\n`)
+            }
+            const duration = Date.now() - startTime
+            await this.prisma.generationRecord.update({
+              where: { id: record.id },
+              data: {
+                status: GenerationStatus.SUCCESS,
+                demandContent: fullContent.slice(0, 100_000),
+                duration,
+              },
+            })
+            res.write(
+              `data: ${JSON.stringify({
+                recordId: record.id,
+                done: true,
+                notice: '已启用多模态直达分析',
+              })}\n\n`,
+            )
+            res.write('data: [DONE]\n\n')
+            res.end()
+            return
+          }
+        } catch (e) {
+          this.logger.warn(`analyzeStream direct multimodal failed: ${(e as Error).message}`)
+          this.writeStreamNotice(res, '多模态直达失败，已自动切换文本模式继续分析。')
+        }
+      }
+
       // 构建用户内容
       let userContent = dto.customPrompt || '请对以下需求文档进行详细的结构化分析，输出 Markdown 格式的需求分析报告。'
       if (fileContent) {

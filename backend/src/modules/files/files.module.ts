@@ -8,9 +8,10 @@ import { CosStorageService } from './cos-storage.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { TencentOcrSdkPdfService } from './tencent-ocr-sdk-pdf.service'
 import { OcrModule } from '@/modules/ocr/ocr.module'
+import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
 
 @Module({
-  imports: [OcrModule],
+  imports: [OcrModule, MultimodalModule],
   providers: [
     FilesService,
     PdfDocumentParseService,

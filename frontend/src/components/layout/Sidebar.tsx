@@ -11,6 +11,7 @@ import {
   Bot,
   FileUp,
   Brain,
+  BarChart3,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useState } from 'react'
@@ -24,6 +25,7 @@ const navItems = [
   { path: '/records', icon: ClipboardList, label: '生成记录' },
   { path: '/templates', icon: BookTemplate, label: '模板管理' },
   { path: '/teams', icon: Users, label: '团队管理' },
+  { path: '/usage-stats', icon: BarChart3, label: '用量统计' },
 ]
 
 const bottomItems = [

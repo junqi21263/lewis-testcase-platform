@@ -9,6 +9,23 @@ export interface RuntimeHints {
   visionPdfAlways?: boolean
 }
 
+export interface MultimodalRuntimeConfig {
+  id?: string
+  multimodalEnabled: boolean
+  multimodalDefaultModel: string
+  textFallbackModel: string
+  maxConcurrentTasks: number
+  cacheTtlDays: number
+  monthlyCostAlertCny: number
+  autoDowngradeWhenOverBudget: boolean
+  multimodalInputPricePer1kCny: number
+  multimodalOutputPricePer1kCny: number
+  textInputPricePer1kCny: number
+  textOutputPricePer1kCny: number
+}
+
+export type UpdateMultimodalRuntimeConfigPayload = Partial<MultimodalRuntimeConfig>
+
 export interface AIModelAdmin {
   id: string
   name: string
@@ -51,6 +68,11 @@ export type UpdateAiModelPayload = Partial<
 
 export const settingsApi = {
   getRuntime: () => request.get<RuntimeHints>('/settings/runtime'),
+
+  getMultimodalConfig: () => request.get<MultimodalRuntimeConfig>('/settings/multimodal-config'),
+
+  updateMultimodalConfig: (data: UpdateMultimodalRuntimeConfigPayload) =>
+    request.patch<MultimodalRuntimeConfig>('/settings/multimodal-config', data),
 
   listModelsAdmin: () => request.get<AIModelAdmin[]>('/settings/models'),
 

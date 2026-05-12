@@ -22,6 +22,7 @@ const SUPPORTED_EXTS = new Set<string>([
 
 /** 与后端 `MAX_FILE_SIZE` 默认 100MB 一致（部署可通过环境变量调整） */
 const MAX_FILE_SIZE = 100 * 1024 * 1024
+const MAX_BATCH_FILES = 20
 const POLL_INTERVAL_MS = 2000
 const POLL_MAX_ROUNDS = 90
 
@@ -270,6 +271,9 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
       }
       if (task.pollingTimer) clearInterval(task.pollingTimer)
       if (task.serverFileId) {
+        if (task.status === 'parsing') {
+          filesApi.cancelTask(task.serverFileId).catch(() => {})
+        }
         filesApi.deleteFile(task.serverFileId).catch(() => {})
       }
       onTaskRemove(task.id)
@@ -310,16 +314,22 @@ export function useFileUpload({ onTaskUpdate, onTaskAdd, onTaskRemove }: UseFile
   )
 
   const addFiles = useCallback(
-    (files: File[]): Array<{ file: File; reason: string }> => {
+    (files: File[], currentCount = 0): Array<{ file: File; reason: string }> => {
       const rejected: Array<{ file: File; reason: string }> = []
+      let accepted = 0
 
       for (const file of files) {
+        if (currentCount + accepted >= MAX_BATCH_FILES) {
+          rejected.push({ file, reason: `一次最多上传 ${MAX_BATCH_FILES} 个文件` })
+          continue
+        }
         const err = validateFile(file)
         if (err) {
           rejected.push({ file, reason: err })
           continue
         }
         const task = initTask(file)
+        accepted += 1
         pipelineTailRef.current = pipelineTailRef.current
           .then(() => runPipelineForTask(task))
           .catch(() => {})

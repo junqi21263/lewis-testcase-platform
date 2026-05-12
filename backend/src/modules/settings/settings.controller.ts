@@ -4,6 +4,7 @@ import { UserRole } from '@prisma/client'
 import { SettingsService } from './settings.service'
 import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-model-settings.dto'
 import { Roles } from '@/common/decorators/roles.decorator'
+import { UpdateRuntimeConfigDto } from '@/modules/multimodal/dto/update-runtime-config.dto'
 @ApiTags('系统设置')
 @ApiBearerAuth()
 @Controller('settings')
@@ -14,6 +15,19 @@ export class SettingsController {
   @ApiOperation({ summary: '运行参数提示（上传上限、限流等，来自环境变量）' })
   getRuntime() {
     return this.settingsService.getRuntimeHints()
+  }
+
+  @Get('multimodal-config')
+  @ApiOperation({ summary: '多模态系统配置（实时）' })
+  getMultimodalConfig() {
+    return this.settingsService.getMultimodalConfig()
+  }
+
+  @Patch('multimodal-config')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: '管理员：更新多模态系统配置（实时生效）' })
+  updateMultimodalConfig(@Body() dto: UpdateRuntimeConfigDto) {
+    return this.settingsService.updateMultimodalConfig(dto)
   }
 
   @Get('models')

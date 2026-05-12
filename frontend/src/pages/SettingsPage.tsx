@@ -21,7 +21,12 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
-import { settingsApi, type AIModelAdmin, type RuntimeHints } from '@/api/settings'
+import {
+  settingsApi,
+  type AIModelAdmin,
+  type RuntimeHints,
+  type MultimodalRuntimeConfig,
+} from '@/api/settings'
 import { authApi } from '@/api/auth'
 import { adminApi, type AdminAuditLogItem, type AdminUserItem } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
@@ -90,6 +95,8 @@ export default function SettingsPage() {
   const setAiParams = useGenerateStore((s) => s.setAiParams)
 
   const [runtime, setRuntime] = useState<RuntimeHints | null>(null)
+  const [multimodalConfig, setMultimodalConfig] = useState<MultimodalRuntimeConfig | null>(null)
+  const [multimodalSaving, setMultimodalSaving] = useState(false)
   const [adminModels, setAdminModels] = useState<AIModelAdmin[]>([])
   const [publicModels, setPublicModels] = useState<AIModel[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
@@ -151,6 +158,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     settingsApi.getRuntime().then(setRuntime).catch(() => setRuntime(null))
+    settingsApi.getMultimodalConfig().then(setMultimodalConfig).catch(() => setMultimodalConfig(null))
   }, [])
 
   useEffect(() => {
@@ -245,6 +253,18 @@ export default function SettingsPage() {
       toast.success('生成默认参数已保存（当前页「生成」步骤将使用该默认值）')
     } finally {
       setPrefsSaving(false)
+    }
+  }
+
+  const saveMultimodalConfig = async () => {
+    if (!multimodalConfig) return
+    setMultimodalSaving(true)
+    try {
+      const next = await settingsApi.updateMultimodalConfig(multimodalConfig)
+      setMultimodalConfig(next)
+      toast.success('多模态配置已保存并实时生效')
+    } finally {
+      setMultimodalSaving(false)
     }
   }
 
@@ -636,6 +656,120 @@ export default function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* 多模态配置 */}
+      {admin && multimodalConfig && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              多模态配置
+            </CardTitle>
+            <CardDescription>全局多模态开关、并发、缓存和成本阈值（实时生效，无需重启）</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={multimodalConfig.multimodalEnabled}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, multimodalEnabled: e.target.checked } : prev,
+                    )
+                  }
+                />
+                启用多模态理解
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={multimodalConfig.autoDowngradeWhenOverBudget}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            autoDowngradeWhenOverBudget: e.target.checked,
+                          }
+                        : prev,
+                    )
+                  }
+                />
+                超阈值自动降级
+              </label>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">默认多模态模型</label>
+                <Input
+                  value={multimodalConfig.multimodalDefaultModel}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, multimodalDefaultModel: e.target.value } : prev,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">默认纯文本模型</label>
+                <Input
+                  value={multimodalConfig.textFallbackModel}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, textFallbackModel: e.target.value } : prev,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">最大并发处理数</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={multimodalConfig.maxConcurrentTasks}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, maxConcurrentTasks: Number(e.target.value) } : prev,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">缓存天数</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={multimodalConfig.cacheTtlDays}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, cacheTtlDays: Number(e.target.value) } : prev,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">月度费用预警阈值（CNY）</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={multimodalConfig.monthlyCostAlertCny}
+                  onChange={(e) =>
+                    setMultimodalConfig((prev) =>
+                      prev ? { ...prev, monthlyCostAlertCny: Number(e.target.value) } : prev,
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <Button className="gap-2" onClick={saveMultimodalConfig} disabled={multimodalSaving}>
+              <Save className="w-4 h-4" />
+              保存多模态配置
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 生成默认参数（本地） */}
       <Card>
