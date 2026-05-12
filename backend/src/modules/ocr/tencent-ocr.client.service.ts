@@ -14,7 +14,8 @@ export class TencentOcrClientService {
   constructor(private readonly config: ConfigService) {}
 
   isEnabled(): boolean {
-    return this.config.get<string>('TENCENT_OCR_HTTP_URL')?.trim().length > 0
+    const url = this.config.get<string>('TENCENT_OCR_HTTP_URL')?.trim()
+    return (url?.length ?? 0) > 0
   }
 
   /** 将 JPEG 二进制转发到配置的 HTTP OCR 代理 */
