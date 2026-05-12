@@ -25,12 +25,17 @@ const sanitizeSchema = {
   },
 }
 
+/** 顶层分段：前言块或 `##` 章节（数组元素为联合类型，注意括号避免解析成 `preface | h2[]`） */
+type AnalysisMarkdownTopSection =
+  | { kind: 'preface'; body: string }
+  | { kind: 'h2'; heading: string; body: string }
+
 /** 顶层 `## 标题` 分段（不含 `###`），用于折叠块；正文内若再出现 `##` 由 nested 渲染器处理 */
-function splitMarkdownByTopLevelH2(markdown: string): { kind: 'preface'; body: string } | { kind: 'h2'; heading: string; body: string }[] {
+function splitMarkdownByTopLevelH2(markdown: string): AnalysisMarkdownTopSection[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
   const isH2 = (line: string) => /^##\s+/.test(line) && !/^###/.test(line)
 
-  const out: ({ kind: 'preface'; body: string } | { kind: 'h2'; heading: string; body: string })[] = []
+  const out: AnalysisMarkdownTopSection[] = []
   let preface: string[] = []
   let i = 0
 
