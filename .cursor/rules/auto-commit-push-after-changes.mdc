@@ -1,5 +1,5 @@
 ---
-description: 会话内代码修改完成后默认提交并推送到 develop；合并/部署到 main 前必须询问确认
+description: 会话内代码修改完成后默认提交并推送到 cnb/develop；合并/部署到 main 前必须询问确认
 alwaysApply: true
 ---
 
@@ -16,9 +16,10 @@ alwaysApply: true
 - **禁止直接在 `main` 分支上进行开发**
 - `main` 分支仅用于生产环境部署，代码来源只能是 `develop` 分支的合并
 
-### 推送策略
-- 默认开发分支为 **`develop`**：将提交推送到 **`origin/develop`** 用于开发环境验证。
-- 主分支为 **`main`**：将提交合并/推送到 **`origin/main`** 视为进入生产并触发生产部署。
+### 推送策略（以 CNB 为唯一默认部署入口）
+- 默认开发分支为 **`develop`**：将提交推送到 **`cnb/develop`**（远程名一般为 **`cnb`**）以触发 CNB 流水线与开发环境部署。
+- 主分支为 **`main`**：将提交合并/推送到 **`cnb/main`** 视为进入生产并触发 CNB 生产部署。
+- **不要**在收尾默认执行 **`git push origin …`**；若用户单独要求同步到 GitHub，再按其指令推送 **`origin`** 或使用 GitHub MCP。
 
 **重要**：任何"合并到 main / 推送到 main / 触发生产部署"的动作，必须先在对话中询问用户是否执行，得到明确同意后才可进行。
 
@@ -27,17 +28,15 @@ alwaysApply: true
 1. **`git status`**：确认变更文件；勿提交 `.gitignore` 中的产物（如 `frontend/dist.zip`），除非用户明确要求提交产物。
 2. **`git add`**：仅纳入与本次任务相关的路径。
 3. **`git commit -m "..."`**：使用完整、可读的英文或中文说明（说明「改了什么、为什么」）。
-4. 默认推送到开发分支：**`git push origin develop`**（或用户指定的开发分支）。
+4. 默认推送到开发分支：**`git push cnb develop`**（CNB 远程名以 `git remote -v` 为准，常见为 **`cnb`**；或用户指定的远程/分支）。
 5. 若用户明确要求发布到生产，则：
    - 先询问确认（每次都要问）
    - 再执行合并/推送到 **`main`**（按用户指令选择 PR 或直接 merge）
 
 ## 与 GitHub MCP 规则的关系
 
-若项目规则要求 **优先使用 GitHub MCP**（`push_files` 等），则：
-
-- **优先**按 `github-mcp-deploy.mdc` 用 MCP 发布到同一仓库与分支；
-- 当 MCP **不可用**或用户环境更适合终端时，使用 **`git push`**，并在回复中说明采用了何种方式。
+- **部署与日常同步**：以 **`git push cnb`** 为准（见 `cnb-primary-ci.mdc`）。
+- **GitHub MCP**：仅在用户**明确要求**把变更同步到 GitHub 时，再按 `github-mcp-deploy.mdc` 使用 MCP；默认收尾**不**用 MCP 代推送 GitHub。
 
 ## 例外（不自动推送）
 

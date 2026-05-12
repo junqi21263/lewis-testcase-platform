@@ -1,24 +1,24 @@
 ---
-description: Prefer GitHub MCP for publishing code to GitHub (triggers CI / connected deploy)
+description: 按需使用 GitHub MCP 同步代码到 GitHub；默认部署走 CNB git push
 alwaysApply: true
 ---
 
-# GitHub 发布与部署（MCP 优先）
+# GitHub 发布（MCP，按需）
 
 ## 目标
 
-将本地实现的变更同步到 GitHub 时，**优先使用 Cursor 已启用的 GitHub MCP**（`user-github`），以便与 **已绑定的自动部署**（如云服务器 GitHub Actions、或用户自选的 PaaS）衔接。
+本仓库**默认部署与验证**以 **CNB**（`git push cnb`、`.cnb.yml`）为准。将变更同步到 **GitHub** 时，仅在用户**明确要求**备份/镜像到 GitHub 时，再使用 Cursor 已启用的 **GitHub MCP**（`user-github`）。
 
 ## 操作要求
 
 1. **调用前**：在 `mcps/user-github/tools/` 阅读对应工具的 JSON 描述（参数必填项、`sha` 规则等），再调用 `call_mcp_tool`。
 2. **新建或批量文件**：优先用 **`push_files`**（`owner`、`repo`、`branch`、`message`、`files[]`），`files[].content` 使用仓库内真实文件内容（与本地一致）。
-3. **只改单个已存在文件**：用 **`create_or_update_file`**；更新前用 **`get_file_contents`**（或本地 `git rev-parse origin/main:<path>`）取得 **`sha`**。
+3. **只改单个已存在文件**：用 **`create_or_update_file`**；更新前用 **`get_file_contents`**（或本地 `git rev-parse <remote>/<branch>:<path>`，其中 `<remote>` 为 GitHub 对应远程，常见为 `origin`）取得 **`sha`**。
 4. **仓库坐标**：`owner`、`repo`、默认分支 **`main`** 以**当前打开的仓库远程**为准（勿在规则中写死个人账号或仓库名）；若用户指定其他分支则以用户为准。
 5. **范围**：把**本次会话中修改过的路径**纳入提交即可；不必用 MCP 重传整个仓库。若变更面极大，可拆成多次 `push_files` 或说明需用户在终端 `git push` 作为例外。
-6. **MCP 不可用**（如 `invalid session`）：说明需在 Cursor 中 **重新连接 / 登录 GitHub MCP**，修复后再用 MCP 发布；**不要**在未告知用户的情况下假定已改用 HTTPS/SSH `git push`。
+6. **MCP 不可用**（如 `invalid session`）：说明需在 Cursor 中 **重新连接 / 登录 GitHub MCP**，修复后再用；**不要**假定用户希望改走未确认的 `git push`。
 
 ## 与部署环境的关系
 
-- MCP 只负责把提交推到 **GitHub**；**本项目的自动部署以腾讯 CNB**（根目录 `.cnb.yml`）为主；GitHub Actions 的 `Deploy to VPS` 已改为仅 **workflow_dispatch** 手动触发，避免与 CNB 双轨。
-- 若用户日常 **`git push` 到 CNB 远程**，部署状态在 **cnb.cool 流水线**查看；若仍向 GitHub 推送镜像/备份代码，GitHub 侧不再因 push 自动部署。
+- **触发部署**：日常收尾使用 **`git push cnb develop`** / 生产前经确认的 **`git push cnb main`**；状态在 **cnb.cool 流水线**查看。
+- **GitHub MCP**：只负责把提交推到 **GitHub**，**不**替代 CNB 部署；GitHub Actions 的 VPS 部署为 **workflow_dispatch** 手动触发（应急）。

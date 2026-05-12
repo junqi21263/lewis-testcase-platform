@@ -13,4 +13,5 @@ alwaysApply: true
 ## 协作提示
 
 - 本地可将 **`origin`** 改为指向 CNB，或保留 **`origin`=GitHub、`cnb`=CNB** 双远程；向用户说明部署绑在哪个远程上。
-- 收尾提交/推送时：若用户声明「只推 CNB」，使用其配置的 **CNB 远程与分支**（通常为 `git push <cnb-remote> develop`），勿假定仍推 `origin` 到 GitHub。
+- **用户约定「只部署到 CNB」时（当前默认）**：收尾默认 **`git push cnb develop`**（及经确认后的 **`git push cnb main`**），**不要**自动 **`git push origin`**，也不要默认用 GitHub MCP 代替推送。
+- 若用户**单独要求**同步到 GitHub，再推 **`origin`** 或使用 MCP。
