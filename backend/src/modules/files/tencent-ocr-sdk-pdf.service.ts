@@ -12,7 +12,7 @@ interface TextDet {
 
 /**
  * 使用腾讯云官方 OCR SDK（GeneralBasicOCR + IsPdf + PdfPageNumber）按页识别 PDF，
- * 无需本地 pdf-to-img 渲染；需配置 TENCENTCLOUD_SECRET_ID/KEY。
+ * 无需本地 pdf-to-img 渲染。OCR 调用密钥优先读 TENCENTCLOUD_SECRET_ID / KEY；未单独配置时自动回退为 COS_SECRET_ID / KEY（与 COS 同子账号时可不再重复填写）。
  *
  * - **COS 文件**：对 `cos://` 生成签名 **ImageUrl**，腾讯云侧直连拉取（推荐）。
  * - **仅本地文件**：小 PDF（默认 ≤4MB）可走 **ImageBase64**；更大则返回 null 由上层降级为本地渲染 + HTTP 代理。
@@ -28,6 +28,18 @@ export class TencentOcrSdkPdfService {
     private readonly cosStorage: CosStorageService,
   ) {}
 
+  /** OCR 接口凭证：优先专用变量，否则与 COS 共用一套 Secret（同账号常见） */
+  private resolveOcrCredentials(): { secretId: string; secretKey: string } | null {
+    const sid =
+      this.config.get<string>('TENCENTCLOUD_SECRET_ID')?.trim() ||
+      this.config.get<string>('COS_SECRET_ID')?.trim()
+    const sk =
+      this.config.get<string>('TENCENTCLOUD_SECRET_KEY')?.trim() ||
+      this.config.get<string>('COS_SECRET_KEY')?.trim()
+    if (!sid || !sk) return null
+    return { secretId: sid, secretKey: sk }
+  }
+
   /** 是否启用「官方 SDK PDF 模式」（与 HTTP 代理二选一优先级由 PdfDocumentParseService 决定） */
   isSdkPdfPathEnabled(): boolean {
     if (this.config.get<string>('PDF_TENCENT_SDK_PDF') === '0') return false
@@ -35,13 +47,15 @@ export class TencentOcrSdkPdfService {
   }
 
   isSdkConfigured(): boolean {
-    const sid = this.config.get<string>('TENCENTCLOUD_SECRET_ID')?.trim()
-    const sk = this.config.get<string>('TENCENTCLOUD_SECRET_KEY')?.trim()
-    return !!sid && !!sk
+    return this.resolveOcrCredentials() !== null
   }
 
   private getRegion(): string {
-    return this.config.get<string>('TENCENT_OCR_REGION')?.trim() || 'ap-guangzhou'
+    return (
+      this.config.get<string>('TENCENT_OCR_REGION')?.trim() ||
+      this.config.get<string>('COS_REGION')?.trim() ||
+      'ap-guangzhou'
+    )
   }
 
   /**
@@ -55,13 +69,14 @@ export class TencentOcrSdkPdfService {
   }): Promise<string | null> {
     if (!this.isSdkPdfPathEnabled()) return null
 
+    const cred = this.resolveOcrCredentials()
+    if (!cred) return null
+
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const tencentcloud = require('tencentcloud-sdk-nodejs') as typeof import('tencentcloud-sdk-nodejs')
     const OcrClient = tencentcloud.ocr.v20181119.Client
-    const sid = this.config.get<string>('TENCENTCLOUD_SECRET_ID')!.trim()
-    const sk = this.config.get<string>('TENCENTCLOUD_SECRET_KEY')!.trim()
     const client = new OcrClient({
-      credential: { secretId: sid, secretKey: sk },
+      credential: { secretId: cred.secretId, secretKey: cred.secretKey },
       region: this.getRegion(),
       profile: { httpProfile: { endpoint: 'ocr.tencentcloudapi.com' } },
     })
