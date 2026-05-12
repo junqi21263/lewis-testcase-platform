@@ -1473,15 +1473,7 @@ ${state.reportText}
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
   const showApprovedOnly = !humanReview && state.status === 'approved'
-  /** 底部审阅/通过面板是否显示（报告区需为其预留纵向空间） */
-  const bottomPanelVisible = showReviewArea || showApprovedOnly
-  /** 流式生成中：日志仅占用内容高度，报告紧贴日志下方并占据中间弹性空间 */
   const isAnalyzingStream = state.status === 'analyzing'
-  /**
-   * 报告区占用日志与底部栏之间的全部剩余高度（生成中 / 生成完成且底部面板可见），内部滚动。
-   */
-  const useTerminalFlexReport =
-    isAnalyzingStream || (Boolean(state.reportText.trim()) && bottomPanelVisible)
   const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
   const busy =
     state.status === 'uploading' || state.status === 'parsing' || state.status === 'analyzing'
@@ -1490,7 +1482,7 @@ ${state.reportText}
     state.status === 'idle' && canStartAnalysis ? '就绪' : undefined
 
   return (
-    <div className="w-full min-w-0 max-w-[1600px] mx-auto px-3 sm:px-4 md:px-6 pb-8 space-y-5">
+    <div className="flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-background">
       <ConfirmDialog
         open={confirmStopOpen}
         title="确认停止？"
@@ -1502,45 +1494,49 @@ ${state.reportText}
       />
 
       {!online && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          <WifiOff className="w-4 h-4 flex-shrink-0" />
+        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          <WifiOff className="h-4 w-4 flex-shrink-0" />
           当前离线，请检查网络连接
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Brain className="w-6 h-6 text-primary" />
+      {/* 顶栏：固定高度，不参与主区滚动 */}
+      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border/40 px-3 py-3 sm:px-4 md:px-5">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
+            <Brain className="h-6 w-6 shrink-0 text-primary" />
             AI 需求分析
           </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">
             上传需求文档，AI 自动解析并生成结构化需求分析报告；大文件自动分片上传，支持解析阶段追踪与任务取消
           </p>
         </div>
         {modelInfo && (
           <Badge
             variant="outline"
-            className="text-xs border-primary/30 text-primary bg-primary/5 flex-shrink-0"
+            className="shrink-0 border-primary/30 bg-primary/5 text-xs text-primary"
           >
             模型：{modelInfo.name}
           </Badge>
         )}
-      </div>
+      </header>
 
-      <div className="flex items-start gap-2.5 px-4 py-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-lg text-sm text-blue-700 dark:text-blue-300">
-        <FileText className="w-4 h-4 flex-shrink-0 mt-0.5" />
-        <div className="space-y-0.5">
+      <div className="flex shrink-0 items-start gap-2.5 border-b border-border/30 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 sm:px-4 md:px-5">
+        <FileText className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <div className="min-w-0 space-y-0.5">
           <p className="font-medium">使用说明</p>
-          <p className="text-xs opacity-80">
+          <p className="opacity-80">
             关闭「人工审阅」时，分析结束后将自动标记为通过。编辑「解析文本」后，将优先使用编辑后的文本作为分析输入。
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[45%_55%] gap-4 lg:items-stretch lg:min-h-[calc(100dvh-9rem)]">
-        <div className="flex flex-col gap-4 min-h-0 lg:h-full">
-          <div className="space-y-4 shrink-0">
+      {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,44%)_minmax(0,56%)] lg:grid-rows-1">
+        {/* 左栏：仅中间区域滚动；底部「人工审阅开关 + 开始/停止」固定可见 */}
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-border/40 bg-card/15 lg:border-b-0 lg:border-r lg:border-border/40">
+          <div className="ai-analysis-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+            <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">需求文档</label>
             <input
@@ -1858,7 +1854,7 @@ ${state.reportText}
               <p className="text-[11px] text-muted-foreground">
                 以下为已成功落库的「需求分析」生成记录（关键词检索）；点击查看完整报告。
               </p>
-              <div className="max-h-[160px] overflow-y-auto rounded border border-border/30">
+              <div className="max-h-[min(30vh,220px)] overflow-y-auto rounded border border-border/30 ai-analysis-panel-scroll">
                 {analysisRecords.map((r) => {
                   const rb = analysisRecordStatusBadge(r.status)
                   return (
@@ -1901,7 +1897,7 @@ ${state.reportText}
           {fileHistory.length > 0 && (
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">最近上传</label>
-              <div className="max-h-[180px] overflow-y-auto rounded border border-border/30">
+              <div className="max-h-[min(30vh,220px)] overflow-y-auto rounded border border-border/30 ai-analysis-panel-scroll">
                 {fileHistory.map((f) => {
                   const fb = fileHistoryStatusBadge(f.status)
                   return (
@@ -1963,10 +1959,9 @@ ${state.reportText}
               onChange={(e) => setRequirementText(e.target.value)}
             />
           </div>
-          </div>
 
-          <div className="flex flex-col flex-1 min-h-[200px] lg:min-h-0 gap-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex max-h-[min(40vh,320px)] min-h-[160px] flex-col gap-2 overflow-hidden rounded-lg border border-border/30 bg-muted/10 p-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
               <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
                 分析指令模板（Prompt）
               </label>
@@ -1980,12 +1975,12 @@ ${state.reportText}
                 恢复默认
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <p className="shrink-0 text-xs leading-relaxed text-muted-foreground">
               作为发送给模型的分析指令；可与上方「补充说明」组合。修改后自动保存在本机浏览器。
             </p>
             <textarea
               id="ai-analysis-prompt-template"
-              className="w-full flex-1 min-h-[140px] basis-[140px] p-3 text-xs font-mono border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-y overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
+              className="min-h-[120px] w-full flex-1 resize-none overflow-y-auto rounded-lg border-0 bg-background/55 p-3 font-mono text-xs shadow-sm ring-1 ring-inset ring-foreground/10 focus:outline-none focus:ring-2 focus:ring-ring dark:ring-white/10 placeholder:text-muted-foreground/60"
               placeholder="编辑 AI 分析指令..."
               value={analysisPromptTemplate}
               onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
@@ -1993,8 +1988,11 @@ ${state.reportText}
             />
           </div>
 
-          <div className="shrink-0 flex flex-col gap-2">
-          <div className="flex items-center gap-3 py-2">
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-col gap-2 border-t border-border/40 bg-muted/25 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-3 py-1">
             <User className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-foreground" id="human-review-label">
               人工审阅
@@ -2065,9 +2063,10 @@ ${state.reportText}
             )}
           </div>
           </div>
-        </div>
+        </aside>
 
-        <div className="flex flex-col w-full min-w-0 min-h-0 lg:h-full">
+        {/* 右栏：顶栏固定；日志固定高；报告区 flex 滚动；人工审阅贴底 */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-col gap-0 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20">
             <div className="flex min-h-[48px] flex-wrap items-center justify-between gap-2 px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -2157,7 +2156,7 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="rounded-b-xl border border-border/20 bg-[#0d0d1a] overflow-hidden flex flex-col flex-1 min-h-0">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-border/20 border-t-0 bg-[#0d0d1a] lg:rounded-br-xl">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/20 px-4 py-2">
               <span className="text-xs font-medium text-slate-500">分析日志</span>
               <Button
@@ -2174,7 +2173,7 @@ ${state.reportText}
             <div
               ref={logContainerRef}
               onScroll={handleLogScroll}
-              className="h-[120px] shrink-0 overflow-y-auto space-y-0.5 px-4 py-2"
+              className="ai-analysis-panel-scroll h-[100px] shrink-0 space-y-0.5 overflow-y-auto overscroll-contain px-4 py-2"
             >
               {state.logs.length === 0 && (
                 <div className="py-6 text-center font-mono text-[12px] leading-[1.5] text-slate-500">
@@ -2186,17 +2185,18 @@ ${state.reportText}
               ))}
             </div>
 
-            {isAnalyzingStream && !state.reportText.trim() ? (
-              <div className="flex min-h-[100px] flex-1 flex-col justify-center border-t border-border/20 bg-[#111125]/40 px-4 py-5 text-center text-xs text-gray-500">
-                报告内容将在此处流式输出…
-              </div>
-            ) : state.reportText ? (
-              useTerminalFlexReport ? (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
-                  <div
-                    className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 py-4 pr-4 [scrollbar-gutter:stable] select-text"
-                    data-testid="ai-analysis-report-panel"
-                  >
+            {/* 报告滚动区 + 底部审阅：同一列内 flex，审阅条永远贴在右栏底部 */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
+              <div
+                className="ai-analysis-report-scroll box-border min-h-0 max-h-[calc(100dvh-220px)] flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 py-3 [scrollbar-gutter:stable] select-text sm:px-6"
+                data-testid="ai-analysis-report-panel"
+              >
+                {isAnalyzingStream && !state.reportText.trim() ? (
+                  <div className="flex min-h-[140px] flex-col justify-center py-10 text-center text-xs text-slate-500">
+                    报告内容将在此处流式输出…
+                  </div>
+                ) : state.reportText.trim() ? (
+                  <>
                     <div className="mb-4 shrink-0">
                       <h3 className="border-b-2 border-[#3B82F6] pb-2 text-[20px] font-bold leading-tight text-white">
                         需求文档分析报告
@@ -2209,84 +2209,68 @@ ${state.reportText}
                     >
                       <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
                     </div>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className="ai-analysis-report-scroll box-border max-h-[min(360px,50vh)] shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/20 bg-[#111125]/80 px-6 py-4 pr-4 [scrollbar-gutter:stable] select-text"
-                  data-testid="ai-analysis-report-panel"
-                >
-                  <div className="mb-4 shrink-0">
-                    <h3 className="border-b-2 border-[#3B82F6] pb-2 text-[20px] font-bold leading-tight text-white">
-                      需求文档分析报告
-                    </h3>
-                  </div>
-                  <div
-                    ref={reportMarkdownRef}
-                    data-testid="ai-analysis-report-markdown"
-                    className="ai-analysis-print-root min-w-0 max-w-full pb-1"
-                  >
-                    <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
-                  </div>
-                </div>
-              )
-            ) : null}
-
-            {(showReviewArea || showApprovedOnly) && (
-              <div className="shrink-0 border-t border-[#334155] bg-[#0d0d1a] p-4">
-                {state.status === 'approved' ? (
-                  <div className="space-y-2 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2 text-green-400">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <span className="text-sm font-medium">需求分析已通过</span>
-                    </div>
-                    <p className="text-xs text-slate-500">可继续生成测试用例或重新分析</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-                      type="button"
-                      onClick={() => dispatch({ type: 'RESET' })}
-                    >
-                      清空并重置
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <h4 className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      人工审阅
-                    </h4>
-                    <textarea
-                      rows={5}
-                      className="min-h-[120px] w-full resize-y overflow-y-auto rounded border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed text-slate-200 shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-ring"
-                      placeholder="请输入修改意见…（Ctrl+Enter 提交）"
-                      value={state.reviewText}
-                      onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
-                      onKeyDown={handleReviewKeyDown}
-                    />
-                    <div className="mt-4 flex shrink-0 items-center gap-3">
-                      <Button
-                        className="h-11 flex-1 gap-2 rounded bg-orange-500 text-sm font-bold text-white shadow-md hover:bg-orange-600"
-                        type="button"
-                        onClick={() => void handleSubmitRevision()}
-                      >
-                        <ArrowRight className="h-4 w-4" />
-                        提交修改意见
-                      </Button>
-                      <Button
-                        className="h-11 flex-1 gap-2 rounded bg-emerald-600 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
-                        type="button"
-                        onClick={handleApprove}
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        确认通过
-                      </Button>
-                    </div>
                   </>
+                ) : (
+                  <div className="py-8 text-center text-xs text-slate-600">完成分析后，报告将显示在此区域</div>
                 )}
               </div>
-            )}
+
+              {(showReviewArea || showApprovedOnly) && (
+                <div className="shrink-0 border-t border-[#475569] bg-[#0d0d1a] p-4">
+                  {state.status === 'approved' ? (
+                    <div className="space-y-2 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2 text-green-400">
+                        <CheckCircle2 className="h-5 w-5" />
+                        <span className="text-sm font-medium">需求分析已通过</span>
+                      </div>
+                      <p className="text-xs text-slate-500">可继续生成测试用例或重新分析</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                        type="button"
+                        onClick={() => dispatch({ type: 'RESET' })}
+                      >
+                        清空并重置
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <h4 className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        人工审阅
+                      </h4>
+                      <textarea
+                        rows={5}
+                        className="min-h-[120px] w-full resize-y overflow-y-auto rounded border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed text-slate-200 shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-ring"
+                        placeholder="请输入修改意见…（Ctrl+Enter 提交）"
+                        value={state.reviewText}
+                        onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
+                        onKeyDown={handleReviewKeyDown}
+                      />
+                      <div className="mt-4 flex shrink-0 items-center gap-3">
+                        <Button
+                          className="h-11 flex-1 gap-2 rounded bg-orange-500 text-sm font-bold text-white shadow-md hover:bg-orange-600"
+                          type="button"
+                          onClick={() => void handleSubmitRevision()}
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          提交修改意见
+                        </Button>
+                        <Button
+                          className="h-11 flex-1 gap-2 rounded bg-emerald-600 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
+                          type="button"
+                          onClick={handleApprove}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          确认通过
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -2296,7 +2280,24 @@ ${state.reportText}
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        /* 需求分析报告滚动区：深色主题窄滚动条（与人工审阅区对齐的整块区域内滚动） */
+        .ai-analysis-panel-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: #475569 #1e293b;
+        }
+        .ai-analysis-panel-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .ai-analysis-panel-scroll::-webkit-scrollbar-track {
+          background: #1e293b;
+          border-radius: 3px;
+        }
+        .ai-analysis-panel-scroll::-webkit-scrollbar-thumb {
+          background: #475569;
+          border-radius: 3px;
+        }
+        .ai-analysis-panel-scroll::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
+        }
         .ai-analysis-report-scroll {
           scrollbar-width: thin;
           scrollbar-color: #475569 #1e293b;

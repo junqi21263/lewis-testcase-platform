@@ -68,7 +68,7 @@ export function MermaidBlock({ chart }: { chart: string }) {
   }
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-white/10 bg-[#0d1117]/90 shadow-inner">
+    <div className="my-2 max-w-full overflow-hidden rounded-lg border border-white/10 bg-[#0d1117]/90 shadow-inner">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-[#1a1a2e]/80 px-2 py-1.5">
         <span className="text-[11px] text-gray-500">流程图 · 可缩放查看</span>
         <div className="flex items-center gap-1">
