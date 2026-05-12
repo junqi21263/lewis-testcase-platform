@@ -4,14 +4,15 @@ import * as fs from 'fs'
 import { DocumentVisionService } from './document-vision.service'
 import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
+import { TencentOcrSdkPdfService } from './tencent-ocr-sdk-pdf.service'
 
 export type PdfTextLayerMeta = { text: string; numpages: number }
 
 type HeartbeatFn = (stage: string, progress?: Record<string, unknown>) => Promise<void>
 
 /**
- * PDF 文本层检测 +（可选）腾讯云全本逐页 OCR。
- * 与 FilesService 上传解析流程配合：先 pdf-parse，不足则优先走腾讯云，否则仍由 FilesService 走视觉/Tesseract 分批管线。
+ * PDF 文本层检测 +（可选）腾讯云 OCR：优先官方 SDK（PDF 模式，免本地渲染），
+ * 其次 HTTP 代理 + 本地逐页 JPEG；均不可用时由 FilesService 走视觉/Tesseract 分批管线。
  */
 @Injectable()
 export class PdfDocumentParseService {
@@ -22,6 +23,7 @@ export class PdfDocumentParseService {
     private readonly documentVision: DocumentVisionService,
     private readonly tencentOcr: TencentOcrClientService,
     private readonly imagePreprocess: ImagePreprocessService,
+    private readonly tencentSdkPdf: TencentOcrSdkPdfService,
   ) {}
 
   /** pdf-parse 提取文本层与页数 */
@@ -72,7 +74,7 @@ export class PdfDocumentParseService {
     return { sufficient, garbledRatio, minLen, garbledMax: gm }
   }
 
-  /** 文本层不足时，是否优先走腾讯云全本 OCR（需配置 TENCENT_OCR_HTTP_URL） */
+  /** 文本层不足时，是否走 HTTP 代理全本逐页（需 TENCENT_OCR_HTTP_URL） */
   shouldPreferTencentFullPdfOcr(): boolean {
     if (!this.tencentOcr.isEnabled()) return false
     if (this.config.get<string>('PDF_TENCENT_OCR_ENABLED') === '0') return false
@@ -80,15 +82,43 @@ export class PdfDocumentParseService {
   }
 
   /**
-   * 逐页渲染 → 转 JPEG → 调用现有 TencentOcrClientService；进度写入 heartbeat（pageCurrent/pageTotal/message）。
-   * 失败返回 null，由调用方降级到原视觉/Tesseract 分批逻辑。
+   * 优先腾讯云官方 SDK（COS 签名 URL 或本地小 PDF Base64，按 PdfPageNumber 逐页，无需 pdf-to-img）；
+   * 其次 HTTP 代理 + 本地渲染 JPEG。
    */
   async runTencentFullPdfOcr(
     filePath: string,
     embeddedText: string,
     totalPagesHint: number,
     heartbeat: HeartbeatFn,
+    opts?: { originalStoredPath?: string },
   ): Promise<string | null> {
+    const originalStoredPath = opts?.originalStoredPath ?? filePath
+
+    if (this.tencentSdkPdf.isSdkPdfPathEnabled()) {
+      try {
+        const sdkBody = await this.tencentSdkPdf.recognizePdfBySdk({
+          originalStoredPath,
+          localPdfPath: filePath,
+          numpages: totalPagesHint,
+          heartbeat,
+        })
+        if (sdkBody) {
+          const parts: string[] = []
+          if (embeddedText.trim()) {
+            parts.push(
+              `【PDF 内置文本层（质量不足；已启用腾讯云官方 PDF OCR）】\n${embeddedText.trim()}`,
+            )
+          }
+          parts.push(sdkBody)
+          return parts.join('\n\n')
+        }
+      } catch (e) {
+        const msg = (e as Error).message || String(e)
+        if (msg.startsWith('【解析失败】')) throw e
+        this.logger.warn(`腾讯云 SDK PDF 未采用，尝试 HTTP 逐页: ${msg}`)
+      }
+    }
+
     if (!this.shouldPreferTencentFullPdfOcr()) return null
 
     await heartbeat('PDF_TENCENT_OCR', {

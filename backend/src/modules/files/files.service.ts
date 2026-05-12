@@ -290,6 +290,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             fileId,
             fileBytes: st.size,
             parseRetryHint,
+            originalStoredPath: filePath,
           })
           break
         }
@@ -509,7 +510,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   private async parsePdfWithVisionFallback(
     filePath: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
-    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null },
+    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null; originalStoredPath?: string },
   ): Promise<string> {
     if (ctx.parseRetryHint === 'text_only') {
       await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
@@ -586,6 +587,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         text,
         numpages,
         heartbeat,
+        { originalStoredPath: ctx.originalStoredPath },
       )
       if (tencentMd) {
         this.logger.log('PDF：已使用腾讯云 OCR 完成全本逐页识别')

@@ -115,6 +115,34 @@ export class CosStorageService {
     return this.buildUri(region, bucket, key)
   }
 
+  /**
+   * 生成带签名的 HTTPS GET 链接（供腾讯云 OCR ImageUrl 等外网拉取；默认 2 小时有效）。
+   */
+  async getSignedGetObjectUrl(storedPath: string, expiresSec = 7200): Promise<string> {
+    if (!this.cos) throw new Error('COS 未配置')
+    const parsed = this.parseUri(storedPath)
+    if (!parsed) throw new Error('无效的 COS 路径')
+    const exp =
+      Number.isFinite(expiresSec) && expiresSec >= 60 && expiresSec <= 86400 ? Math.floor(expiresSec) : 7200
+    return new Promise<string>((resolve, reject) => {
+      this.cos!.getObjectUrl(
+        {
+          Bucket: parsed.bucket,
+          Region: parsed.region,
+          Key: parsed.key,
+          Sign: true,
+          Method: 'GET',
+          Expires: exp,
+        },
+        (err, data) => {
+          if (err) reject(err)
+          else if (data?.Url) resolve(data.Url)
+          else reject(new Error('COS getObjectUrl 未返回 Url'))
+        },
+      )
+    })
+  }
+
   async deleteObject(storedPath: string): Promise<void> {
     if (!this.cos) return
     const parsed = this.parseUri(storedPath)
