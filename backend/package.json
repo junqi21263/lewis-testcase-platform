@@ -17,7 +17,9 @@
     "test:smtp": "ts-node scripts/test-smtp-send.ts",
     "smoke:enhancements": "ts-node scripts/smoke-enhancements.ts",
     "smoke:export-analysis-pdf": "pnpm exec ts-node -r tsconfig-paths/register scripts/smoke-export-analysis-pdf.ts",
-    "user:reset-password": "ts-node scripts/reset-user-password.ts"
+    "user:reset-password": "ts-node scripts/reset-user-password.ts",
+    "test": "jest --runInBand",
+    "test:integration": "jest --runInBand --testPathPattern=test/"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.10",
@@ -103,11 +105,14 @@
     "@types/passport-local": "^1.0.38",
     "@types/pdf-parse": "^1.1.4",
     "@types/pdfkit": "^0.17.6",
+    "@types/jest": "^29.5.14",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
+    "jest": "^29.7.0",
     "prettier": "^3.3.3",
+    "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.4"

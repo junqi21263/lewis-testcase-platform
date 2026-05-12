@@ -12,8 +12,9 @@ cd "$ROOT/backend"
 pnpm exec prisma validate --schema=./prisma/schema.prod.prisma
 pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
 pnpm run build
+pnpm test
 
 cd "$ROOT/frontend"
 pnpm run build
 
-echo "[integration] OK — backend + frontend build passed"
+echo "[integration] OK — prisma + backend build + backend jest + frontend build passed"

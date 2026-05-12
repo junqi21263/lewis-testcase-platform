@@ -31,5 +31,6 @@ bash scripts/smoke.sh
 
 ## 5. 自动化测试与报告
 
-- 门禁（不拉起服务）：`bash scripts/dev-integration-check.sh`
+- 门禁（不拉起服务）：`bash scripts/dev-integration-check.sh`（含后端 `pnpm test`：`test/hunyuan-cos-multimodal-parse.integration.spec.ts` 用 **jest mock** 拦截混元 SDK，校验 COS 门闸与 `tryDirectCosMultimodal` 契约，**不发起真实腾讯云请求**）
+- 后端单跑集成用例：`cd backend && pnpm test`
 - 前端：`cd frontend && pnpm allure:report`（单测 + CT + E2E + Allure），见 `docs/qa/SECURITY_QA_REPORT_2026-05-09.md`
