@@ -11,6 +11,8 @@ CI **不会** rsync 覆盖服务器上的 `.env` / `.env.*`（见 `cnb-deploy-vp
 
 `docker-compose.ghcr.yml` 里 `backend` 的 `environment` 为 **白名单透传**：只有 compose 里列出的变量名才会从 env 文件进入容器。新增一类配置（如腾讯云 OCR）时，除改 `.env` 外还需 **仓库内 compose 已包含该变量名**（否则仅写 `.env` 也不会进容器）。更新 compose 后要在 **两个目录分别 `git pull`**（若各为一份克隆），再 `up -d` 应用。
 
+**开发栈注意**：`docker-compose.dev.override.yml` 对 `backend.environment` 为**整块覆盖**（与 `ghcr` 合并后仅以 override 为准）。因此 **混元 `HUNYUAN_*`、运行时 `MM_*` 等必须在 override 里显式列出**，仅写在 `docker-compose.ghcr.yml` 或仅写 `.env.development` 都不会进入 **`testcase_dev_backend`** 容器。
+
 ---
 
 ## 一、两边「一起改、一起生效」的推荐做法
