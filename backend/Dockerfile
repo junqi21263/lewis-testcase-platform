@@ -45,7 +45,8 @@ RUN echo "=== [backend builder] apk: cairo / pango (-dev) for node-canvas compil
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY backend/package.json backend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false --prefer-offline=false
+# postinstall 会 prisma generate，但此时尚未 COPY prisma/；忽略脚本后由下一步显式 generate
+RUN pnpm install --frozen-lockfile --prod=false --prefer-offline=false --ignore-scripts
 
 COPY backend/ .
 
