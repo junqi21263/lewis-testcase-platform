@@ -34,7 +34,7 @@ export default function MainLayout() {
   }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-workspace-page">
       <WallpaperLayer />
       {/* 侧边栏 */}
       <Sidebar />
@@ -45,7 +45,7 @@ export default function MainLayout() {
         <Header />
 
         {/* 页面内容：workspace 宽度与轻量铺底，与登录页 playful 系统一致 */}
-        <main className="relative flex-1 overflow-y-auto bg-gradient-to-b from-sky-50/35 via-transparent to-violet-50/25 px-5 py-6 sm:px-7 sm:py-7 lg:px-8 dark:from-slate-950/80 dark:via-slate-950/20 dark:to-indigo-950/35">
+        <main className="relative flex-1 overflow-y-auto bg-workspace-page/95 bg-gradient-to-b from-cyan-500/[0.045] via-transparent to-violet-500/[0.055] px-5 py-6 sm:px-7 sm:py-7 lg:px-8 dark:from-slate-950/55 dark:via-slate-950/15 dark:to-indigo-950/40">
           <div className="mx-auto w-full max-w-[1520px] min-w-0">
             <Outlet />
           </div>

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useThemeStore } from '@/store/themeStore'
 import MainLayout from '@/components/layout/MainLayout'
@@ -48,13 +48,23 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { theme } = useThemeStore()
+  const theme = useThemeStore((s) => s.theme)
 
-  useEffect(() => {
-    const root = window.document.documentElement
+  useLayoutEffect(() => {
+    const root = document.documentElement
     root.classList.remove('light', 'dark')
     root.classList.add(theme)
   }, [theme])
+
+  useEffect(() => {
+    if (useThemeStore.persist.hasHydrated()) return
+    return useThemeStore.persist.onFinishHydration(() => {
+      const t = useThemeStore.getState().theme
+      const root = document.documentElement
+      root.classList.remove('light', 'dark')
+      root.classList.add(t)
+    })
+  }, [])
 
   return (
     <BrowserRouter>

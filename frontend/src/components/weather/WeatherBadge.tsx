@@ -59,19 +59,22 @@ export function WeatherBadge() {
   const onClick = () => navigate('/settings#appearance-weather')
 
   return (
-    <button onClick={onClick} className="hidden md:block">
-      <Badge variant="secondary" className="gap-2">
-        <span className="max-w-[6rem] truncate">{cityLabel}</span>
+    <button type="button" onClick={onClick} className="hidden md:block">
+      <Badge
+        variant="secondary"
+        className="gap-2 rounded-full border border-workspace-panel-border/55 bg-workspace-control/90 px-3 py-1.5 text-xs font-medium text-workspace-text-primary shadow-[0_10px_26px_-16px_rgba(15,23,42,0.12)] backdrop-blur-md hover:bg-workspace-control dark:border-white/10 dark:bg-workspace-control/90 dark:text-workspace-text-primary dark:shadow-[0_12px_28px_-16px_rgba(0,0,0,0.4)]"
+      >
+        <span className="max-w-[6rem] truncate text-workspace-text-primary">{cityLabel}</span>
         {prefs?.weatherCityId ? (
           now?.temp !== null && now?.temp !== undefined ? (
-            <span className={now.stale ? 'text-muted-foreground' : ''}>
+            <span className={now.stale ? 'text-workspace-text-muted' : 'text-workspace-text-secondary'}>
               {now.temp}° {now.text ?? ''}
             </span>
           ) : (
-            <span className="text-muted-foreground">加载中</span>
+            <span className="text-workspace-text-muted">加载中</span>
           )
         ) : (
-          <span className="text-muted-foreground">点击设置</span>
+          <span className="text-workspace-text-muted">点击设置</span>
         )}
       </Badge>
     </button>

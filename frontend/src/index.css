@@ -4,34 +4,64 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* 浅色主壳：暖白 / pale sky，避免「死白」 */
+    --background: 226 52% 98%;
+    --foreground: 222 47% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 47% 12%;
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --secondary: 220 35% 95%;
+    --secondary-foreground: 222 40% 14%;
+    --muted: 220 32% 94%;
+    --muted-foreground: 215 18% 40%;
+    --accent: 220 40% 94%;
+    --accent-foreground: 222 40% 14%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: 220 22% 88%;
+    --input: 220 22% 88%;
+    --ring: 188 94% 42%;
     --radius: 0.5rem;
-    --sidebar-background: 222.2 47.4% 11.2%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 221.2 83.2% 53.3%;
+    /* 侧栏：与 shadcn `sidebar` 色板一致，浅色为 frosted 白底 + 深字 */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 42% 14%;
+    --sidebar-primary: 262 83% 58%;
     --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 217.2 32.6% 17.5%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 221.2 83.2% 53.3%;
+    --sidebar-accent: 220 38% 93%;
+    --sidebar-accent-foreground: 222 40% 12%;
+    --sidebar-border: 220 24% 86%;
+    --sidebar-ring: 188 85% 42%;
+
+    /* ---------- Workspace tokens（工作台 / 顶栏 / 面板 / 主题开关）---------- */
+    --workspace-page-bg: 226 55% 98%;
+    --workspace-sidebar-bg: 0 0% 100%;
+    --workspace-sidebar-border: 220 28% 78%;
+    --workspace-sidebar-text: 222 42% 14%;
+    --workspace-sidebar-text-muted: 215 18% 38%;
+    --workspace-sidebar-active-bg: 195 85% 94%;
+    --workspace-sidebar-active-text: 222 47% 12%;
+    --workspace-sidebar-active-border: 188 78% 42%;
+    --workspace-topbar-bg: 0 0% 100%;
+    --workspace-topbar-border: 220 26% 88%;
+    --workspace-topbar-control-bg: 0 0% 100%;
+    --workspace-panel-bg: 0 0% 100%;
+    --workspace-panel-border: 220 22% 86%;
+    --workspace-panel-muted-bg: 220 40% 96%;
+    --workspace-text-primary: 222 47% 12%;
+    --workspace-text-secondary: 215 20% 34%;
+    --workspace-text-muted: 215 16% 42%;
+    --workspace-icon: 222 35% 28%;
+    --workspace-action-tile-bg: 0 0% 100%;
+    --workspace-metric-card-bg: 0 0% 100%;
+    --workspace-list-panel-bg: 220 45% 99%;
+    --workspace-empty-state-bg: 226 48% 97%;
+    --workspace-theme-toggle-track: 220 40% 96%;
+    --workspace-theme-toggle-thumb: 0 0% 100%;
+    --workspace-theme-toggle-active-icon: 43 96% 56%;
+    --workspace-theme-toggle-inactive-icon: 215 18% 55%;
   }
 
   .dark {
@@ -62,6 +92,33 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217.2 32.6% 12%;
     --sidebar-ring: 224.3 76.3% 48%;
+
+    --workspace-page-bg: 222 47% 6%;
+    --workspace-sidebar-bg: 222 52% 8%;
+    --workspace-sidebar-border: 217 28% 18%;
+    --workspace-sidebar-text: 210 36% 96%;
+    --workspace-sidebar-text-muted: 215 18% 72%;
+    --workspace-sidebar-active-bg: 217 38% 16%;
+    --workspace-sidebar-active-text: 210 40% 98%;
+    --workspace-sidebar-active-border: 188 78% 52%;
+    --workspace-topbar-bg: 222 50% 7%;
+    --workspace-topbar-border: 217 28% 16%;
+    --workspace-topbar-control-bg: 217 32% 14%;
+    --workspace-panel-bg: 222 48% 9%;
+    --workspace-panel-border: 217 26% 18%;
+    --workspace-panel-muted-bg: 217 32% 13%;
+    --workspace-text-primary: 210 40% 98%;
+    --workspace-text-secondary: 215 20% 82%;
+    --workspace-text-muted: 215 16% 68%;
+    --workspace-icon: 210 30% 88%;
+    --workspace-action-tile-bg: 222 48% 10%;
+    --workspace-metric-card-bg: 222 48% 10%;
+    --workspace-list-panel-bg: 222 46% 11%;
+    --workspace-empty-state-bg: 222 44% 12%;
+    --workspace-theme-toggle-track: 222 40% 14%;
+    --workspace-theme-toggle-thumb: 217 28% 22%;
+    --workspace-theme-toggle-active-icon: 226 85% 78%;
+    --workspace-theme-toggle-inactive-icon: 45 90% 58%;
   }
 }
 

@@ -23,27 +23,27 @@ import { formatDate, timeAgo } from '@/utils/format'
 import type { GenerationRecord, TestSuite } from '@/types'
 import { cn } from '@/utils/cn'
 
-/** 工作台统一面板 token（与 metrics / health 同源，底部 recent 不再单独一套视觉） */
+/** 工作台统一面板：全部由 workspace theme token 驱动 */
 const dash = {
   panel:
-    'rounded-[20px] border border-slate-200/65 bg-white/78 shadow-[0_20px_52px_-42px_rgba(15,23,42,0.24)] backdrop-blur-xl dark:border-white/[0.09] dark:bg-slate-950/[0.54] dark:shadow-[0_24px_64px_-42px_rgba(0,0,0,0.68)]',
+    'rounded-[20px] border border-workspace-panel-border/70 bg-workspace-panel/86 shadow-[0_22px_56px_-40px_rgba(59,130,246,0.22)] backdrop-blur-xl dark:border-white/[0.09] dark:bg-workspace-panel/72 dark:shadow-[0_26px_64px_-40px_rgba(0,0,0,0.68)]',
   panelHeader:
-    'flex items-start justify-between gap-3 border-b border-slate-200/55 px-5 py-4 dark:border-white/[0.06]',
-  kicker: 'text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400',
-  panelTitle: 'text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50',
+    'flex items-start justify-between gap-3 border-b border-workspace-panel-border/60 px-5 py-4 dark:border-white/[0.06]',
+  kicker: 'text-[10px] font-semibold uppercase tracking-[0.2em] text-workspace-text-muted',
+  panelTitle: 'text-base font-semibold tracking-tight text-workspace-text-primary',
   panelLink:
-    'group inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-violet-700 transition-[color,background-color] hover:bg-violet-500/10 hover:text-violet-900 dark:text-violet-300 dark:hover:bg-violet-500/15 dark:hover:text-violet-100',
+    'group inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-primary transition-[color,background-color] hover:bg-primary/10',
   listBody: 'flex flex-col gap-1 p-3 pb-4',
   listRow:
-    'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-[transform,background-color] duration-200 [-webkit-tap-highlight-color:transparent] hover:bg-slate-50/90 hover:translate-x-0.5 dark:hover:bg-white/[0.045] motion-reduce:hover:translate-x-0',
+    'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-[transform,opacity,background-color] duration-200 [-webkit-tap-highlight-color:transparent] hover:bg-workspace-panel-muted/90 hover:translate-x-0.5 dark:hover:bg-white/[0.045] motion-reduce:hover:translate-x-0',
   emptyWrap:
-    'flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200/80 bg-slate-50/40 px-5 py-10 text-center dark:border-white/[0.08] dark:bg-white/[0.03]',
+    'flex flex-col items-center gap-3 rounded-2xl border border-dashed border-workspace-panel-border/75 bg-workspace-empty-state/95 px-5 py-10 text-center dark:border-white/[0.08] dark:bg-workspace-empty-state/80',
   emptyIcon:
-    'flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 via-white/70 to-violet-400/18 ring-1 ring-slate-200/60 dark:from-cyan-400/12 dark:via-white/5 dark:to-violet-500/15 dark:ring-white/10',
-  emptyTitle: 'text-sm font-semibold text-slate-900 dark:text-slate-50',
-  emptyHint: 'max-w-[260px] text-xs leading-relaxed text-slate-600 dark:text-slate-400',
+    'flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/22 via-workspace-panel/80 to-violet-400/18 ring-1 ring-workspace-panel-border/60 dark:from-cyan-400/12 dark:via-white/5 dark:to-violet-500/15 dark:ring-white/10',
+  emptyTitle: 'text-sm font-semibold text-workspace-text-primary',
+  emptyHint: 'max-w-[260px] text-xs leading-relaxed text-workspace-text-secondary',
   emptyCta:
-    'mt-1 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 transition-[color,gap] hover:gap-1.5 dark:text-violet-300',
+    'mt-1 inline-flex items-center gap-1 text-xs font-semibold text-primary transition-[color,gap] hover:gap-1.5',
 } as const
 
 interface Stats {
@@ -138,7 +138,7 @@ function DashListEmpty({
       </div>
       <p className={dash.emptyTitle}>{title}</p>
       <p className={dash.emptyHint}>{hint}</p>
-        {actionLabel && onAction ? (
+      {actionLabel && onAction ? (
         <button type="button" onClick={onAction} className={cn(dash.emptyCta, 'group')}>
           {actionLabel}
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
@@ -308,8 +308,8 @@ export default function DashboardPage() {
       <section
         className={cn(
           'dash-enter dash-enter-delay-1 relative overflow-hidden rounded-[22px] border',
-          'border-slate-200/70 bg-gradient-to-br from-white/85 via-sky-50/50 to-violet-50/40',
-          'p-6 shadow-[0_28px_70px_-44px_rgba(56,189,248,0.45)] backdrop-blur-xl',
+          'border-workspace-panel-border/75 bg-gradient-to-br from-workspace-panel/92 via-workspace-page to-workspace-panel-muted/70',
+          'p-6 shadow-[0_28px_70px_-44px_rgba(56,189,248,0.35)] backdrop-blur-xl',
           'dark:border-white/[0.09] dark:from-slate-950/75 dark:via-[#0d1528]/80 dark:to-[#121c33]/85',
           'dark:shadow-[0_32px_80px_-40px_rgba(0,0,0,0.72)]',
         )}
@@ -329,13 +329,13 @@ export default function DashboardPage() {
               <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-200" strokeWidth={1.75} />
             </div>
             <div className="min-w-0 space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-workspace-text-muted">
                 Friendly AI workspace
               </p>
-              <h1 className="text-balance text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-[1.65rem]">
+              <h1 className="text-balance text-2xl font-semibold tracking-tight text-workspace-text-primary sm:text-[1.65rem]">
                 欢迎回来，{user?.username ?? '用户'}
               </h1>
-              <p className="max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+              <p className="max-w-xl text-sm leading-relaxed text-workspace-text-secondary">
                 今天也让 AI 帮你少写一点重复用例。
               </p>
             </div>
@@ -371,10 +371,10 @@ export default function DashboardPage() {
               type="button"
               onClick={() => navigate(action.to)}
               className={cn(
-                'group relative flex flex-col overflow-hidden rounded-[20px] border bg-white/70 p-5 text-left',
-                'shadow-[0_18px_44px_-36px_rgba(15,23,42,0.35)] backdrop-blur-xl transition-[transform,box-shadow,opacity] duration-300',
+                'group relative flex flex-col overflow-hidden rounded-[20px] border border-workspace-panel-border/65 bg-workspace-action-tile/90 p-5 text-left',
+                'shadow-[0_18px_44px_-36px_rgba(59,130,246,0.2)] backdrop-blur-xl transition-[transform,box-shadow,opacity] duration-300',
                 'hover:-translate-y-1 hover:shadow-[0_28px_60px_-32px_rgba(56,189,248,0.35)]',
-                'dark:bg-slate-950/55 dark:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.65)] dark:hover:shadow-[0_32px_70px_-28px_rgba(99,102,241,0.25)]',
+                'dark:border-white/[0.08] dark:bg-workspace-action-tile/75 dark:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.65)] dark:hover:shadow-[0_32px_70px_-28px_rgba(99,102,241,0.25)]',
                 'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 accentTileMap[action.accent],
@@ -390,8 +390,8 @@ export default function DashboardPage() {
               />
               <div className="relative flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1.5">
-                  <p className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-slate-50">{action.title}</p>
-                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">{action.desc}</p>
+                  <p className="text-[15px] font-semibold tracking-tight text-workspace-text-primary">{action.title}</p>
+                  <p className="text-xs leading-relaxed text-workspace-text-secondary">{action.desc}</p>
                 </div>
                 <div
                   className={cn(
