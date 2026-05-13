@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { cn } from '@/utils/cn'
 
 const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
 /** 简单邮箱格式（与后端 LoginDto 的邮箱分支一致） */
@@ -53,26 +54,34 @@ export default function LoginPage() {
   }
 
   return (
-    <Card className="shadow-xl border-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur">
-      <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-2xl font-bold text-center">欢迎回来</CardTitle>
-        <CardDescription className="text-center">
+    <Card className="w-full max-w-[min(100%,28rem)] border-0 shadow-xl shadow-black/10 ring-1 ring-black/[0.04] dark:shadow-black/40 dark:ring-white/[0.06]">
+      <CardHeader className="space-y-2 pb-2 text-center sm:text-left">
+        <CardTitle className="text-center text-xl font-bold tracking-tight sm:text-2xl">欢迎回来</CardTitle>
+        <CardDescription className="text-center text-[13px] sm:text-sm">
           当前已关闭注册与找回密码，请使用管理员账号登录
         </CardDescription>
       </CardHeader>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          {/* 错误显示 */}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <CardContent className="space-y-4 sm:space-y-5">
           {authError && (
-            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md">
-              <p className="text-sm">{authError}</p>
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-destructive transition-colors dark:bg-destructive/15"
+            >
+              <p className="text-sm font-medium leading-relaxed">{authError}</p>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">用户名或邮箱</label>
+            <label
+              htmlFor="login-username"
+              className="text-sm font-medium leading-none text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              用户名或邮箱
+            </label>
             <Input
+              id="login-username"
               type="text"
               autoComplete="username"
               placeholder="请输入用户名或邮箱"
@@ -86,56 +95,85 @@ export default function LoginPage() {
                     ? '邮箱格式不正确'
                     : '用户名仅支持字母、数字、下划线、中文、点与短横线'),
               })}
-              className={errors.username ? 'border-destructive' : ''}
+              className={errors.username ? 'ring-2 ring-destructive/60 focus-visible:ring-destructive' : ''}
+              aria-invalid={errors.username ? true : undefined}
+              aria-describedby={errors.username ? 'login-username-error' : undefined}
             />
             {errors.username && (
-              <p className="text-xs text-destructive">{errors.username.message}</p>
+              <p id="login-username-error" className="text-xs font-medium text-destructive">
+                {errors.username.message}
+              </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">密码</label>
+            <label
+              htmlFor="login-password"
+              className="text-sm font-medium leading-none text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              密码
+            </label>
             <div className="relative">
               <Input
+                id="login-password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 placeholder="请输入密码"
                 {...register('password', {
                   required: '请输入密码',
                   minLength: { value: 6, message: '密码至少6位' },
                 })}
-                className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
+                className={`pr-11 ${errors.password ? 'ring-2 ring-destructive/60 focus-visible:ring-destructive' : ''}`}
+                aria-invalid={errors.password ? true : undefined}
+                aria-describedby={errors.password ? 'login-password-error' : undefined}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className={cn(
+                  'absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md',
+                  'text-muted-foreground transition-all duration-200',
+                  'hover:bg-accent hover:text-foreground',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  'active:scale-95 active:bg-accent/80 motion-reduce:active:scale-100',
+                  'disabled:pointer-events-none disabled:opacity-50',
+                )}
+                aria-label={showPassword ? '隐藏密码' : '显示密码'}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
               </button>
             </div>
             {errors.password && (
-              <p className="text-xs text-destructive">{errors.password.message}</p>
+              <p id="login-password-error" className="text-xs font-medium text-destructive">
+                {errors.password.message}
+              </p>
             )}
           </div>
         </CardContent>
 
-        <CardFooter className="flex flex-col gap-3 pt-2">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                记住我
-              </label>
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {loading ? '登录中...' : '登录'}
-            </Button>
-          </CardFooter>
+        <CardFooter className="flex flex-col gap-3 pt-1 sm:gap-4">
+          <div className="flex w-full items-center justify-between gap-3">
+            <label className="group flex cursor-pointer select-none items-center gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 shrink-0 cursor-pointer rounded border-border text-primary accent-primary transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <span className="leading-none">记住我</span>
+            </label>
+          </div>
+          <Button
+            type="submit"
+            variant="default"
+            className="w-full min-h-11 sm:min-h-10"
+            disabled={loading}
+            aria-busy={loading}
+          >
+            {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />}
+            {loading ? '登录中...' : '登录'}
+          </Button>
+        </CardFooter>
       </form>
     </Card>
   )
