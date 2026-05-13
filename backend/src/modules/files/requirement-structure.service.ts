@@ -53,10 +53,13 @@ export class RequirementStructureService {
     const text = maskedDocumentText.trim()
     if (!text) return { requirements: [] }
 
-    /** 视觉链路已在 DocumentVision 中输出 JSON→正文，再跑一轮默认模型会重复耗时 */
+    /** 视觉链路已在 DocumentVision / 混元 COS 中输出可读正文，再跑一轮默认模型会重复耗时 */
     const forceSecondLlm = this.config.get<string>('STRUCTURE_LLM_FOR_VISION_DOC') === '1'
     const looksLikeVisionBody =
-      text.startsWith('【多模态视觉理解｜') || text.startsWith('【多模态视觉理解|')
+      text.startsWith('【多模态视觉理解｜') ||
+      text.startsWith('【多模态视觉理解|') ||
+      text.startsWith('【混元多模态直读｜') ||
+      text.startsWith('【混元多模态直读|')
     if (!forceSecondLlm && looksLikeVisionBody) {
       this.logger.log('需求结构化：跳过多模态后的第二轮 LLM，采用规则拆分 structuredRequirements')
       return { requirements: this.fallbackStructure(text) }

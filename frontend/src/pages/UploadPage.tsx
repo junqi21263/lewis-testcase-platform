@@ -185,12 +185,12 @@ export default function UploadPage() {
 
   const handleFilesSelected = useCallback(
     (files: File[]) => {
-      const rejected = addFiles(files)
+      const rejected = addFiles(files, tasks.length)
       rejected.forEach(({ file, reason }) => {
         toast.error(`「${file.name}」${reason}`, { duration: 4000 })
       })
     },
-    [addFiles],
+    [addFiles, tasks.length],
   )
 
   const handleClearAll = useCallback(() => {
@@ -645,6 +645,11 @@ export default function UploadPage() {
         />
 
         <UploadStatsBar stats={stats} onClearAll={handleClearAll} onClearDone={handleClearDone} />
+        {stats.total > 0 && (
+          <p className="text-xs text-muted-foreground px-1">
+            正在处理第 {stats.parsed + Math.min(stats.uploading, 1)} / {stats.total} 个文件
+          </p>
+        )}
 
         {pendingTasks.length > 0 && (
           <div className="space-y-2">

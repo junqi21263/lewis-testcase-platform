@@ -4,6 +4,7 @@ import { AiController } from './ai.controller'
 import { AnalysisReportPdfService } from './analysis-report-pdf.service'
 
 @Module({
+  imports: [],
   providers: [AiService, AnalysisReportPdfService],
   controllers: [AiController],
   exports: [AiService, AnalysisReportPdfService],

@@ -17,6 +17,7 @@ const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const UploadPage = lazy(() => import('@/pages/UploadPage'))
 const AiAnalysisPage = lazy(() => import('@/pages/AiAnalysisPage'))
+const UsageStatsPage = lazy(() => import('@/pages/UsageStatsPage'))
 
 function RouteFallback() {
   return (
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/usage-stats" element={<UsageStatsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

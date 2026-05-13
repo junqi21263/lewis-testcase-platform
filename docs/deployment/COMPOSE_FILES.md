@@ -15,3 +15,7 @@
 同一 VPS 上 **开发目录 + 生产目录** 如何同步改 env、如何 `git pull` 与手动 `docker compose` 应用，见 [VPS_GHCR_DUAL_ENV.md](VPS_GHCR_DUAL_ENV.md)。
 
 更细的上线步骤见 [VPS_DOCKER.md](VPS_DOCKER.md)。
+
+## 为何 Compose 留在仓库根目录
+
+`docker-compose.full.yml` 等文件里 **`build.context`**（如 `context: .` + `dockerfile: backend/Dockerfile`）以及 **`volumes`**（如 `./backend/uploads`）均以 **compose 文件所在目录** 为基准。若把整个 stack 挪到子目录（例如 `deploy/`），需要同步改写所有相对路径并更新所有脚本与文档中的 `-f` 路径，易漏改。**因此 stack 定义保留在根目录**；仅依赖服务仍可用根目录 `docker-compose.yml` 单独拉起。

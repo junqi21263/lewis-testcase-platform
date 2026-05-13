@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { AIModelConfig } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-model-settings.dto'
+import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '')
@@ -9,7 +10,10 @@ function normalizeBaseUrl(url: string): string {
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly multimodal: MultimodalService,
+  ) {}
 
   private mapToAdminView(r: AIModelConfig) {
     return {
@@ -45,6 +49,26 @@ export class SettingsService {
       visionPdfMinTextChars: parseInt(process.env.VISION_PDF_MIN_TEXT_CHARS || '120', 10),
       visionPdfAlways: process.env.VISION_PDF_ALWAYS === '1',
     }
+  }
+
+  getMultimodalConfig() {
+    return this.multimodal.getRuntimeConfig()
+  }
+
+  updateMultimodalConfig(payload: {
+    multimodalEnabled?: boolean
+    multimodalDefaultModel?: string
+    textFallbackModel?: string
+    maxConcurrentTasks?: number
+    cacheTtlDays?: number
+    monthlyCostAlertCny?: number
+    autoDowngradeWhenOverBudget?: boolean
+    multimodalInputPricePer1kCny?: number
+    multimodalOutputPricePer1kCny?: number
+    textInputPricePer1kCny?: number
+    textOutputPricePer1kCny?: number
+  }) {
+    return this.multimodal.upsertRuntimeConfig(payload)
   }
 
   async listAiModelsAdmin() {

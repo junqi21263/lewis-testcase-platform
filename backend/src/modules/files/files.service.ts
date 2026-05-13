@@ -21,7 +21,9 @@ import type { MergeChunksDto } from './dto/merge-chunks.dto'
 import { CosStorageService } from './cos-storage.service'
 import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.service'
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
+import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
+import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -42,7 +44,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private cosStorage: CosStorageService,
     private readonly imageOcrPipeline: ImageOcrPipelineService,
     private readonly imagePreprocess: ImagePreprocessService,
+    private readonly tencentOcr: TencentOcrClientService,
     private readonly pdfDocumentParse: PdfDocumentParseService,
+    private readonly multimodal: MultimodalService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -228,9 +232,10 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   ) {
     const hintRow = await this.prisma.uploadedFile.findUnique({
       where: { id: fileId },
-      select: { parseRetryHint: true },
+      select: { parseRetryHint: true, uploaderId: true },
     })
     const parseRetryHint = hintRow?.parseRetryHint ?? null
+    const uploaderId = hintRow?.uploaderId ?? null
 
     let effectivePath = filePath
     let cosTempFile: string | null = null
@@ -291,6 +296,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             fileBytes: st.size,
             parseRetryHint,
             originalStoredPath: filePath,
+            uploaderId,
           })
           break
         }
@@ -311,7 +317,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           content = fs.readFileSync(effectivePath, 'utf-8')
           break
         case FileType.IMAGE:
-          content = await this.parseImageVisionThenOcr(effectivePath, mimeType, heartbeat)
+          content = await this.parseImageVisionThenOcr(
+            effectivePath,
+            mimeType,
+            heartbeat,
+            filePath,
+            uploaderId,
+          )
           break
         default:
           content = '不支持的文件格式'
@@ -398,99 +410,80 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 图片：多模态视觉为主；成功且未禁用时可跳过 Tesseract（后者对大 PNG 常耗时数分钟）。
-   * 视觉与 OCR 前对原图做 sharp 预处理（限宽/JPEG/EXIF），OCR 走 ImageOcrPipeline（缓存/分块/队列/重试）。
+   * 图片：强制优先混元多模态；失败时仅允许腾讯云 OCR 兜底。
+   * 不再走本地视觉模型与 Tesseract，避免「VISION 后继续本地 OCR」导致慢且不准。
    */
   private async parseImageVisionThenOcr(
     filePath: string,
     mimeType: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    /** 数据库 path（可能为 cos://…），用于混元直读 COS 公网 URL */
+    storedPathForCos: string,
+    uploaderId: string | null,
   ): Promise<string> {
-    const tempFiles: string[] = []
-    let visionPath = filePath
-    try {
-      const preBuf = await this.imagePreprocess.preprocessToJpegBuffer(filePath)
-      if (preBuf?.length) {
-        const tmp = this.imagePreprocess.writeTempJpeg(preBuf, 'vision-in')
-        tempFiles.push(tmp)
-        visionPath = tmp
+    const stImg = fs.statSync(filePath)
+    await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+      phase: 'VISION',
+      message: 'hunyuan_cos_start',
+      source: 'image',
+    })
+    const res = await this.multimodal.tryDirectCosMultimodal({
+      moduleType: 'FILE_PARSE',
+      fileKind: 'IMAGE',
+      userId: uploaderId ?? 'system',
+      storedPath: storedPathForCos,
+      localPath: filePath,
+      fileBytes: stImg.size,
+    })
+    if (res?.text?.trim()) {
+      const body = res.text
+      const minChars = parseInt(this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS') || '40', 10)
+      const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
+      if (body.trim().length >= floor) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_done',
+          chars: body.length,
+          cacheHit: res.cacheHit,
+        })
+        return `【混元多模态直读｜COS】\n${body.trim()}`
       }
-
-      await heartbeat('VISION', { phase: 'VISION', message: 'vision_start' })
-      const visionMime = preBuf?.length ? 'image/jpeg' : mimeType || 'image/jpeg'
-      const vision = await this.documentVision.transcribeImageFileAuto(visionPath, visionMime)
-      await heartbeat('VISION_DONE', {
+      this.logger.warn(`混元 COS 图片多模态正文过短（${body.trim().length} < ${floor}），准备降级腾讯云 OCR`)
+    } else {
+      await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
         phase: 'VISION',
-        message: 'vision_done',
-        visionChars: vision?.text?.trim().length ?? 0,
+        message: 'hunyuan_cos_fallback',
       })
+    }
 
-      const skipOcrWhenVisionOk = this.config.get<string>('IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK') !== '0'
-      const shouldRunOcr = !(skipOcrWhenVisionOk && Boolean(vision?.text?.trim()))
+    // 强制模式：不再走本地视觉/Tesseract，仅允许腾讯云 OCR 兜底。
+    const forceOnly = this.config.get<string>('HUNYUAN_PARSE_FORCE_ONLY') !== '0'
+    if (!forceOnly) {
+      return (
+        '【解析失败】混元多模态未返回有效正文；当前环境 HUNYUAN_PARSE_FORCE_ONLY=0 已关闭强制模式，请联系管理员。'
+      )
+    }
 
-      let ocr = ''
-      if (shouldRunOcr) {
-        await heartbeat('OCR', { phase: 'OCR', message: 'ocr_start' })
-        try {
-          const rawMs = this.config.get<string>('IMAGE_OCR_TIMEOUT_MS')
-          const ocrMs = parseInt(rawMs || '60000', 10)
-          const timeoutMs = Number.isFinite(ocrMs) && ocrMs >= 8000 ? ocrMs : 60000
-          ocr = await Promise.race([
-            this.imageOcrPipeline.recognizeFilePath(filePath, {
-              onProgress: async (ev) => {
-                await heartbeat('OCR', {
-                  phase: 'OCR',
-                  ocrStripCurrent: ev.ocrStripCurrent,
-                  ocrStripTotal: ev.ocrStripTotal,
-                  message: ev.message,
-                })
-              },
-            }),
-            new Promise<string>((_, reject) =>
-              setTimeout(() => reject(new Error(`OCR 超过 ${timeoutMs}ms`)), timeoutMs),
-            ),
-          ])
-        } catch (e) {
-          const hint = this.classifyOcrFailureMessage(e)
-          this.logger.warn(`OCR 失败或超时: ${(e as Error).message}`)
-          await heartbeat('OCR', { phase: 'OCR', message: 'ocr_error', errorHint: hint })
-        }
+    await heartbeat('OCR', { phase: 'OCR', message: 'tencent_ocr_start' })
+    try {
+      const jpeg =
+        (await this.imagePreprocess.preprocessToJpegBuffer(filePath)) ??
+        fs.readFileSync(filePath)
+      const text = await this.tencentOcr.recognizeJpegBuffer(jpeg)
+      if (text?.trim()) {
         await heartbeat('OCR_DONE', {
           phase: 'OCR',
-          message: 'ocr_done',
-          ocrChars: ocr.trim().length,
+          message: 'tencent_ocr_done',
+          ocrChars: text.trim().length,
         })
-      } else {
-        await heartbeat('OCR_SKIPPED', {
-          phase: 'OCR',
-          message: 'skip_tesseract_vision_ok',
-        })
+        return `【腾讯云 OCR（混元失败兜底）】\n${text.trim()}`
       }
-
-      if (vision?.text) {
-        let body = `【多模态视觉理解｜${vision.modelName}】\n${vision.text.trim()}`
-        if (ocr.trim() && ocr.trim() !== vision.text.trim()) {
-          body += `\n\n【OCR 辅助（Tesseract）】\n${ocr.trim()}`
-        }
-        return body
-      }
-
-      if (ocr.trim()) {
-        return `【OCR｜Tesseract】\n${ocr.trim()}`
-      }
-
-      return (
-        '【解析失败】未配置可用的视觉解析模型，且 OCR 无结果。请在「系统设置」中为支持 image 的模型勾选「支持视觉」并指定「文档视觉解析」模型，或设置环境变量 VISION_PARSE_MODEL_CONFIG_ID。'
-      )
-    } finally {
-      for (const p of tempFiles) {
-        try {
-          if (fs.existsSync(p)) fs.unlinkSync(p)
-        } catch {
-          /* ignore */
-        }
-      }
+    } catch (e) {
+      this.logger.warn(`腾讯云 OCR 兜底失败: ${(e as Error).message}`)
     }
+    throw new Error(
+      '【解析失败】混元多模态调用失败且腾讯云 OCR 无结果。请确认：COS 存储已启用、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、TENCENTCLOUD_SECRET_* 已配置、TENCENT_OCR_HTTP_URL 可用。',
+    )
   }
 
   /** 将底层 OCR 异常映射为前端可展示的简短原因 */
@@ -503,14 +496,82 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * PDF：先 pdf-parse 文本层；字数与乱码率达标则直接返回。
-   * 否则若配置 TENCENT_OCR_HTTP_URL 且未关闭 PDF_TENCENT_OCR_ENABLED，则逐页走腾讯云 OCR（进度见 heartbeat message）；
-   * 再否则走原视觉 / Paddle / Tesseract 分批管线（含增量快照）。
+   * 尝试混元 COS 多模态直读 PDF；成功则返回「混元理解在前 + 可选内置文本层附录」，失败返回 null。
+   */
+  private async tryPdfHunyuanCosMultimodalBody(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    ctx: {
+      fileId: string
+      fileBytes: number
+      parseRetryHint: string | null
+      originalStoredPath?: string
+      uploaderId?: string | null
+    },
+    embeddedTextLayer: string,
+  ): Promise<string | null> {
+    if (!ctx.originalStoredPath) return null
+    await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+      phase: 'VISION',
+      message: 'hunyuan_cos_start',
+      source: 'pdf',
+    })
+    const res = await this.multimodal.tryDirectCosMultimodal({
+      moduleType: 'FILE_PARSE',
+      fileKind: 'PDF',
+      userId: ctx.uploaderId ?? 'system',
+      uploadedFileId: ctx.fileId,
+      storedPath: ctx.originalStoredPath,
+      localPath: filePath,
+      fileBytes: ctx.fileBytes,
+    })
+    if (res?.text?.trim()) {
+      const body = res.text
+      const minChars = parseInt(
+        this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '80',
+        10,
+      )
+      const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 80
+      if (body.trim().length >= floor) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_done',
+          chars: body.length,
+          cacheHit: res.cacheHit,
+        })
+        const embedded = embeddedTextLayer.trim()
+        const parts: string[] = [`【混元多模态直读｜COS PDF】\n${body.trim()}`]
+        if (embedded) {
+          parts.push(`【PDF 内置文本层（原文检索备用）】\n${embedded}`)
+        }
+        this.logger.log(
+          `PDF：混元 COS 多模态直读成功（${body.trim().length} 字），内置文本层约 ${embedded.length} 字已附录`,
+        )
+        return parts.join('\n\n')
+      }
+      this.logger.warn(`混元 COS PDF 多模态正文过短（${body.trim().length} < ${floor}），继续后续流程`)
+    }
+    await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
+      phase: 'VISION',
+      message: 'hunyuan_cos_pdf_fallback',
+    })
+    return null
+  }
+
+  /**
+   * PDF：先尝试混元多模态直读，失败时降级腾讯云 OCR。
+   * 已禁用本地视觉 / Paddle / Tesseract 分页管线。
    */
   private async parsePdfWithVisionFallback(
     filePath: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
-    ctx: { fileId: string; fileBytes: number; parseRetryHint: string | null; originalStoredPath?: string },
+    ctx: {
+      fileId: string
+      fileBytes: number
+      parseRetryHint: string | null
+      originalStoredPath?: string
+      uploaderId?: string | null
+    },
   ): Promise<string> {
     if (ctx.parseRetryHint === 'text_only') {
       await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
@@ -555,31 +616,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     const quality = this.pdfDocumentParse.evaluateTextLayerSufficiency(text, numpages)
     const { garbledRatio, sufficient: textSufficient } = quality
-    const forceVision = this.config.get<string>('VISION_PDF_ALWAYS') === '1'
-
-    if (textSufficient && !forceVision) {
-      await heartbeat('PDF_TEXT_LAYER_OK', {
-        phase: 'TEXT_LAYER',
-        pageTotal: numpages,
-        message: 'skip_ocr',
-      })
-      this.logger.log(
-        `PDF 文本层可用（${text.trim().length} 字，乱码占比 ${(garbledRatio * 100).toFixed(1)}%），跳过多模态/OCR`,
+    if (!textSufficient) {
+      this.logger.warn(
+        `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将优先混元，再降级腾讯云 OCR（不再走本地视觉/Tesseract）。`,
       )
-      return `【PDF 文本提取】\n${text.trim()}`
     }
 
-    if (textSufficient && forceVision) {
-      await heartbeat('PDF_TEXT_LAYER_OK', { phase: 'TEXT_LAYER', pageTotal: numpages })
-      this.logger.log(
-        `PDF 文本层已充足；忽略 VISION_PDF_ALWAYS，避免对大文件发起多余视觉调用（${text.trim().length} 字）`,
-      )
-      return `【PDF 文本提取】\n${text.trim()}`
-    }
-
-    this.logger.warn(
-      `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；优先尝试腾讯云全本 OCR，否则走原视觉/Tesseract 分批管线`,
-    )
+    const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
+    if (hunyuanBody) return hunyuanBody
 
     try {
       const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(
@@ -596,10 +640,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     } catch (e) {
       const msg = (e as Error).message || String(e)
       if (msg.startsWith('【解析失败】')) throw e
-      this.logger.warn(`腾讯云 PDF OCR 异常，降级原管线: ${msg}`)
+      this.logger.warn(`腾讯云 PDF OCR 异常: ${msg}`)
     }
-
-    return this.parsePdfOcrBatchedPipeline(filePath, text, heartbeat, ctx.fileId, numpages)
+    throw new Error(
+      '【解析失败】混元多模态与腾讯云 PDF OCR 均未返回有效结果；已禁用本地视觉/Tesseract 降级。请确认 COS、混元与 OCR 配置是否完整。',
+    )
   }
 
   private getOcrBatchSize(): number {

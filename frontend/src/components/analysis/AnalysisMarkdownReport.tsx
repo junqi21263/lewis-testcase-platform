@@ -1,12 +1,11 @@
 /**
- * AI 分析报告 Markdown：GFM + 消毒；标题/表格/代码块样式与 AI 需求分析终端一致；
- * 顶层 `##` 章节可折叠（默认展开），便于长报告浏览。
+ * AI 分析报告 Markdown：GFM + 消毒；标题/表格/代码块样式与 AI 需求分析终端一致。
+ * 顶层 `##` 章节可折叠（默认展开），标题左侧 ▶ / ▼，折叠高度带 transition。
  */
 import { Children, isValidElement, useCallback, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import { MermaidBlock } from './MermaidBlock'
 
 const sanitizeSchema = {
@@ -95,23 +94,25 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
     ),
     h4: ({ children }) => <h4 className="text-[13px] font-semibold text-[#CBD5E1] mt-2 mb-1">{children}</h4>,
     p: ({ children }) => (
-      <p className="text-[13px] text-[#94A3B8] leading-[1.6] mb-2 last:mb-0">{children}</p>
+      <p className="text-[13px] text-[#94A3B8] leading-[1.6] mb-2 max-w-full break-words last:mb-0 [overflow-wrap:anywhere]">
+        {children}
+      </p>
     ),
     ul: ({ children }) => (
-      <ul className="list-disc pl-5 space-y-1 text-[13px] text-[#94A3B8] leading-[1.6] mb-2 marker:text-[#3B82F6]">
+      <ul className="mb-2 max-w-full list-disc space-y-1 break-words pl-5 text-[13px] leading-[1.6] text-[#94A3B8] marker:text-[#3B82F6] [overflow-wrap:anywhere]">
         {children}
       </ul>
     ),
     ol: ({ children }) => (
-      <ol className="list-decimal pl-5 space-y-1 text-[13px] text-[#94A3B8] leading-[1.6] mb-2 marker:text-[#3B82F6]">
+      <ol className="mb-2 max-w-full list-decimal space-y-1 break-words pl-5 text-[13px] leading-[1.6] text-[#94A3B8] marker:text-[#3B82F6] [overflow-wrap:anywhere]">
         {children}
       </ol>
     ),
-    li: ({ children }) => <li className="leading-[1.6] [&>p]:mb-0">{children}</li>,
+    li: ({ children }) => <li className="min-w-0 leading-[1.6] break-words [overflow-wrap:anywhere] [&>p]:mb-0">{children}</li>,
     strong: ({ children }) => <strong className="font-semibold text-[#E2E8F0]">{children}</strong>,
     em: ({ children }) => <em className="italic text-[#CBD5E1]">{children}</em>,
     blockquote: ({ children }) => (
-      <blockquote className="rounded bg-[#1E293B] border border-[#334155] pl-3 pr-3 py-3 my-3 text-[13px] text-[#94A3B8] leading-[1.6] not-italic">
+      <blockquote className="my-3 max-w-full break-words rounded border border-[#334155] bg-[#1E293B] px-3 py-3 text-[13px] leading-[1.6] text-[#94A3B8] not-italic [overflow-wrap:anywhere]">
         {children}
       </blockquote>
     ),
@@ -135,10 +136,18 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
       }
       if (inline) {
         return (
-          <code className="rounded bg-[#1E293B] px-1.5 py-0.5 text-[0.85em] font-mono text-[#E2E8F0]">{children}</code>
+          <code className="max-w-full break-words rounded bg-[#1E293B] px-1.5 py-0.5 text-[0.85em] font-mono text-[#E2E8F0] [overflow-wrap:anywhere]">
+            {children}
+          </code>
         )
       }
-      return <code className={`block font-mono text-[12px] text-[#E2E8F0] ${className ?? ''}`}>{children}</code>
+      return (
+        <code
+          className={`block max-w-full whitespace-pre-wrap break-words font-mono text-[12px] text-[#E2E8F0] [overflow-wrap:anywhere] ${className ?? ''}`}
+        >
+          {children}
+        </code>
+      )
     },
     pre: ({ children }) => {
       const first = Children.toArray(children)[0]
@@ -152,14 +161,14 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
         return <div className="mb-3">{children}</div>
       }
       return (
-        <pre className="mb-3 overflow-x-auto rounded bg-[#1E293B] p-3 font-mono text-[12px] text-[#E2E8F0] border border-[#334155]">
+        <pre className="mb-3 max-w-full overflow-x-hidden whitespace-pre-wrap break-words rounded bg-[#1E293B] p-3 font-mono text-[12px] text-[#E2E8F0] border border-[#334155] [overflow-wrap:anywhere]">
           {children}
         </pre>
       )
     },
     table: ({ children }) => (
-      <div className="overflow-x-auto mb-4 w-full rounded border border-[#334155]">
-        <table className="w-full min-w-0 border-collapse text-[13px] [&_tbody_tr:nth-child(odd)]:bg-[#0F172A] [&_tbody_tr:nth-child(even)]:bg-[#1E293B]">
+      <div className="mb-4 w-full max-w-full overflow-x-hidden rounded border border-[#334155]">
+        <table className="w-full min-w-0 table-fixed border-collapse text-[13px] [&_tbody_tr:nth-child(odd)]:bg-[#0F172A] [&_tbody_tr:nth-child(even)]:bg-[#1E293B]">
           {children}
         </table>
       </div>
@@ -168,9 +177,15 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
     tbody: ({ children }) => <tbody>{children}</tbody>,
     tr: ({ children }) => <tr className="border-b border-[#334155] last:border-b-0">{children}</tr>,
     th: ({ children }) => (
-      <th className="border border-[#334155] px-2 py-2 text-left font-bold text-white align-top">{children}</th>
+      <th className="border border-[#334155] px-2 py-2 text-left font-bold text-white align-top break-words [overflow-wrap:anywhere]">
+        {children}
+      </th>
     ),
-    td: ({ children }) => <td className="border border-[#334155] px-2 py-2 align-top text-[#94A3B8]">{children}</td>,
+    td: ({ children }) => (
+      <td className="border border-[#334155] px-2 py-2 align-top text-[#94A3B8] break-words [overflow-wrap:anywhere]">
+        {children}
+      </td>
+    ),
   }
 }
 
@@ -196,22 +211,30 @@ function CollapsibleH2Section({ heading, body }: { heading: string; body: string
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKeyDown}
-        className="flex w-full items-start gap-2 rounded bg-transparent py-2 pl-2 text-left outline-none ring-offset-[#111125] focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
+        className="flex w-full min-w-0 items-start gap-2 rounded bg-transparent py-2 pl-2 text-left outline-none ring-offset-[#111125] focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
       >
-        <span className="mt-0.5 shrink-0 text-[#94A3B8]" aria-hidden>
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <span
+          className="mt-0.5 inline-flex h-5 w-5 shrink-0 select-none items-center justify-center text-[11px] leading-none text-[#94A3B8]"
+          aria-hidden
+        >
+          {open ? '▼' : '▶'}
         </span>
-        <span className="text-[16px] font-bold leading-snug text-[#E2E8F0] border-l-4 border-l-[#3B82F6] pl-2">
+        <span className="min-w-0 flex-1 text-[16px] font-bold leading-snug text-[#E2E8F0] border-l-4 border-l-[#3B82F6] pl-2 break-words">
           {heading}
         </span>
       </button>
-      {open && (
-        <div id={panelId} className="pl-8 pt-1">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdNested}>
-            {body}
-          </ReactMarkdown>
+      {/* grid 0fr→1fr 实现折叠高度平滑过渡（现代浏览器） */}
+      <div
+        className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+      >
+        <div id={panelId} className="min-h-0 overflow-hidden">
+          <div className="max-w-full pt-1 pl-8 pr-0 sm:pr-1">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdNested}>
+              {body}
+            </ReactMarkdown>
+          </div>
         </div>
-      )}
+      </div>
     </section>
   )
 }

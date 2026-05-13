@@ -30,6 +30,8 @@ import { AdminModule } from './modules/admin/admin.module'
 import { PreferencesModule } from './modules/preferences/preferences.module'
 import { WallpaperModule } from './modules/wallpaper/wallpaper.module'
 import { WeatherModule } from './modules/weather/weather.module'
+import { MultimodalModule } from './modules/multimodal/multimodal.module'
+import { UsageModule } from './modules/usage/usage.module'
 
 @Module({
   controllers: [HealthController],
@@ -68,6 +70,8 @@ import { WeatherModule } from './modules/weather/weather.module'
     PreferencesModule,
     WallpaperModule,
     WeatherModule,
+    MultimodalModule,
+    UsageModule,
 
     // 中间件配置
     MiddlewareConfiguration,

@@ -96,6 +96,40 @@ enum EmailOtpPurpose {
   PASSWORD_RESET
 }
 
+enum MultimodalModuleType {
+  FILE_PARSE
+  AI_ANALYSIS
+  TESTCASE_GENERATION
+}
+
+enum MultimodalFileKind {
+  IMAGE
+  PDF
+  WORD
+  EXCEL
+  TEXT
+  YAML
+  JSON
+  OTHER
+}
+
+enum BatchTaskStatus {
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum BatchTaskItemStatus {
+  QUEUED
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
 // ==================== 表定义 ====================
 
 /// 团队表
@@ -136,6 +170,8 @@ model User {
   generationRecordAuditLogs GenerationRecordAuditLog[]
   generationRecordShares    GenerationRecordShare[]
   generationRecordExports   GenerationRecordExport[]
+  multimodalUsageRecords    MultimodalUsageRecord[]
+  batchTasks                BatchTask[]
   adminAuditLogsAsOperator  AdminAuditLog[]             @relation("AdminAuditOperator")
   adminAuditLogsAsTarget    AdminAuditLog[]             @relation("AdminAuditTarget")
   preference                UserPreference?
@@ -261,6 +297,8 @@ model UploadedFile {
 
   uploader          User               @relation(fields: [uploaderId], references: [id])
   generationRecords GenerationRecord[]
+  multimodalUsageRecords MultimodalUsageRecord[]
+  batchTaskItems         BatchTaskItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -399,6 +437,7 @@ model GenerationRecord {
   auditLogs GenerationRecordAuditLog[]
   shares    GenerationRecordShare[]
   exports   GenerationRecordExport[]
+  multimodalUsageRecords MultimodalUsageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -511,4 +550,145 @@ model AIModelConfig {
   updatedAt DateTime @updatedAt
 
   @@map("ai_model_configs")
+}
+
+/// 多模态运行时配置（单例）
+model SystemRuntimeConfig {
+  id String @id @default(cuid())
+
+  multimodalEnabled             Boolean @default(true)
+  multimodalDefaultModel        String  @default("hunyuan-vision")
+  textFallbackModel             String  @default("hunyuan-pro")
+  maxConcurrentTasks            Int     @default(3)
+  cacheTtlDays                  Int     @default(7)
+  monthlyCostAlertCny           Float   @default(10)
+  autoDowngradeWhenOverBudget   Boolean @default(false)
+
+  // 模型单价（每 1K tokens 人民币）
+  multimodalInputPricePer1kCny  Float   @default(0.0)
+  multimodalOutputPricePer1kCny Float   @default(0.0)
+  textInputPricePer1kCny        Float   @default(0.0)
+  textOutputPricePer1kCny       Float   @default(0.0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_runtime_configs")
+}
+
+/// 多模态调用明细（用量/成本统计）
+model MultimodalUsageRecord {
+  id String @id @default(cuid())
+
+  moduleType MultimodalModuleType
+  fileKind   MultimodalFileKind
+  provider   String? @db.VarChar(64)
+  modelName  String? @db.VarChar(120)
+
+  uploadedFileId String?
+  recordId       String?
+  batchTaskId    String?
+  userId         String
+
+  requestChars  Int    @default(0)
+  promptTokens  Int    @default(0)
+  completionTokens Int @default(0)
+  totalTokens   Int    @default(0)
+  estimatedCostCny Float @default(0)
+  cacheHit      Boolean  @default(false)
+  latencyMs     Int?
+  success       Boolean  @default(true)
+  errorMessage  String?  @db.Text
+  extraMeta     Json?
+
+  createdAt DateTime @default(now())
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uploadedFile UploadedFile?   @relation(fields: [uploadedFileId], references: [id], onDelete: SetNull)
+  record       GenerationRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  batchTask    BatchTask?      @relation(fields: [batchTaskId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([moduleType, createdAt])
+  @@index([userId, createdAt])
+  @@map("multimodal_usage_records")
+}
+
+/// 全局结果缓存（基于文件 MD5 + 模块）
+model MultimodalCacheEntry {
+  id String @id @default(cuid())
+
+  md5        String              @db.VarChar(64)
+  moduleType MultimodalModuleType
+  fileKind   MultimodalFileKind
+
+  parseResult      String? @db.Text
+  analysisResult   String? @db.Text
+  testcaseResult   String? @db.Text
+
+  hitCount    Int      @default(0)
+  lastHitAt   DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([md5, moduleType])
+  @@index([expiresAt])
+  @@map("multimodal_cache_entries")
+}
+
+/// 批量处理任务
+model BatchTask {
+  id String @id @default(cuid())
+
+  title        String              @db.VarChar(200)
+  moduleType   MultimodalModuleType
+  status       BatchTaskStatus     @default(QUEUED)
+  totalCount   Int                 @default(0)
+  successCount Int                 @default(0)
+  failCount    Int                 @default(0)
+  currentIndex Int                 @default(0)
+  paused       Boolean             @default(false)
+  cancelled    Boolean             @default(false)
+  errorMessage String?             @db.Text
+  progressMeta Json?
+
+  creatorId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  creator User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  items   BatchTaskItem[]
+  usage   MultimodalUsageRecord[]
+
+  @@index([creatorId, createdAt])
+  @@index([status, updatedAt])
+  @@map("batch_tasks")
+}
+
+/// 批量处理任务项
+model BatchTaskItem {
+  id String @id @default(cuid())
+
+  batchTaskId String
+  uploadedFileId String?
+  fileName    String              @db.VarChar(255)
+  fileKind    MultimodalFileKind
+  seq         Int
+  status      BatchTaskItemStatus @default(QUEUED)
+  resultRefId String?             @db.VarChar(64)
+  errorMessage String?            @db.Text
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  batchTask   BatchTask       @relation(fields: [batchTaskId], references: [id], onDelete: Cascade)
+  uploadedFile UploadedFile?  @relation(fields: [uploadedFileId], references: [id], onDelete: SetNull)
+
+  @@unique([batchTaskId, seq])
+  @@index([status, updatedAt])
+  @@map("batch_task_items")
 }
