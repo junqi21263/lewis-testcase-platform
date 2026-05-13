@@ -5,12 +5,15 @@ import { useForm } from 'react-hook-form'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
+import { useThemeStore } from '@/store/themeStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/utils/cn'
 import { LoginAmbientCanvas } from '@/components/auth/LoginAmbientCanvas'
+import { LoginBrandIcon } from '@/components/auth/LoginBrandIcon'
 import { LoginMascotStageDecor } from '@/components/auth/LoginMascotStageDecor'
 import { LoginMascot, type LoginMascotMood } from '@/components/auth/LoginMascot'
+import { LoginThemeToggle } from '@/components/auth/LoginThemeToggle'
 
 const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
 /** 简单邮箱格式（与后端 LoginDto 的邮箱分支一致） */
@@ -34,6 +37,7 @@ function clamp(n: number, a: number, b: number) {
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const theme = useThemeStore((s) => s.theme)
   const setAuth = useAuthStore((s) => s.setAuth)
   const authError = useAuthStore((s) => s.error)
   const setError = useAuthStore((s) => s.setError)
@@ -44,6 +48,7 @@ export default function LoginPage() {
   const [pwdFocus, setPwdFocus] = useState(false)
   const [look, setLook] = useState({ x: 0, y: 0 })
   const [shakeId, setShakeId] = useState(0)
+  const [celebrate, setCelebrate] = useState(false)
   const mascotRef = useRef<HTMLDivElement>(null)
   const prevLoading = useRef(loading)
 
@@ -119,7 +124,8 @@ export default function LoginPage() {
       : 'track'
 
   let mascotMood: LoginMascotMood = 'idle'
-  if (loading) mascotMood = 'loading'
+  if (celebrate) mascotMood = 'success'
+  else if (loading) mascotMood = 'loading'
   else if (authError) mascotMood = 'error'
   else if (userFocus && usernameValue.trim().length > 0 && !pwdFocus) mascotMood = 'listening'
 
@@ -129,6 +135,9 @@ export default function LoginPage() {
       const result = await authApi.login(data)
       setAuth(result.user, result.accessToken, rememberMe)
       toast.success('登录成功')
+      setCelebrate(true)
+      await new Promise((r) => setTimeout(r, 300))
+      setCelebrate(false)
       navigate('/dashboard')
     } catch {
       /* 错误已由 axios 拦截器与 authApi setError 处理 */
@@ -136,78 +145,90 @@ export default function LoginPage() {
   }
 
   const inputBase = cn(
-    'login-soft-input flex h-[52px] w-full rounded-[15px] border-0 px-4 text-[15px] text-slate-900 !shadow-none !ring-0',
-    'placeholder:text-slate-500/70 hover:!ring-0 focus-visible:!ring-0 focus-visible:!ring-offset-0',
+    'login-soft-input flex h-[52px] w-full rounded-[15px] border-0 px-4 text-[15px] !shadow-none !ring-0',
+    'hover:!ring-0 focus-visible:!ring-0 focus-visible:!ring-offset-0',
     'active:scale-[0.998] motion-reduce:active:scale-100 motion-reduce:focus-visible:translate-y-0',
   )
 
   return (
-    <div className="relative isolate min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-[#060b16] text-slate-100">
-      <div className="login-page-bg pointer-events-none absolute inset-0" aria-hidden />
-      <div
-        className="pointer-events-none absolute -left-[14%] top-[10%] z-0 h-[min(48vw,400px)] w-[min(48vw,400px)] rounded-full bg-cyan-400/[0.09] blur-[100px] motion-reduce:opacity-0"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute right-[-8%] top-[22%] z-0 h-[min(42vw,340px)] w-[min(42vw,340px)] rounded-full bg-violet-500/[0.1] blur-[110px] motion-reduce:opacity-0"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute bottom-[5%] left-[18%] z-0 h-[min(38vw,300px)] w-[min(38vw,300px)] rounded-full bg-orange-400/[0.07] blur-[95px] motion-reduce:opacity-0"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute bottom-[20%] right-[12%] z-0 h-[min(32vw,260px)] w-[min(32vw,260px)] rounded-full bg-emerald-400/[0.06] blur-[90px] motion-reduce:opacity-0"
-        aria-hidden
-      />
-      <div className="login-grain pointer-events-none absolute inset-0 z-0" aria-hidden />
-      <LoginAmbientCanvas />
+    <div className="login-page-root relative isolate min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto transition-colors duration-300 ease-out">
+      <LoginThemeToggle className="fixed right-4 top-4 z-[80] sm:right-7 sm:top-7" />
 
-      <div className="relative z-[4] mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-12 lg:px-10 lg:py-14">
+      <div className="login-page-bg pointer-events-none absolute inset-0 transition-[background] duration-300 ease-out" aria-hidden />
+      <div
+        className="login-blob -left-[14%] top-[10%] z-0 h-[min(48vw,400px)] w-[min(48vw,400px)] motion-reduce:opacity-0"
+        style={{ background: 'var(--lp-blob-a)' }}
+        aria-hidden
+      />
+      <div
+        className="login-blob right-[-8%] top-[22%] z-0 h-[min(42vw,340px)] w-[min(42vw,340px)] motion-reduce:opacity-0"
+        style={{ background: 'var(--lp-blob-b)' }}
+        aria-hidden
+      />
+      <div
+        className="login-blob bottom-[5%] left-[18%] z-0 h-[min(38vw,300px)] w-[min(38vw,300px)] motion-reduce:opacity-0"
+        style={{ background: 'var(--lp-blob-c)' }}
+        aria-hidden
+      />
+      <div
+        className="login-blob bottom-[20%] right-[12%] z-0 h-[min(32vw,260px)] w-[min(32vw,260px)] motion-reduce:opacity-0"
+        style={{ background: 'var(--lp-blob-d)' }}
+        aria-hidden
+      />
+      <div className="login-grain pointer-events-none absolute inset-0 z-0 transition-opacity duration-300" aria-hidden />
+      <LoginAmbientCanvas theme={theme} />
+
+      <div className="relative z-[4] mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col items-center justify-center px-4 pb-10 pt-16 sm:px-6 sm:pb-12 sm:pt-20 lg:px-10 lg:pb-14 lg:pt-14">
         <div className="grid w-full grid-cols-1 items-center gap-10 lg:grid-cols-[minmax(0,13fr)_minmax(0,12fr)] lg:gap-x-20 lg:gap-y-10">
           <aside className="relative z-[4] order-2 flex min-h-0 flex-col justify-center lg:order-1">
-            {/* 顶部：仅品牌与文案，40px 安全区，无装饰层 */}
             <header className="login-enter login-enter-delay-1 relative z-20 mx-auto w-full max-w-xl px-10 pb-6 pt-2 text-center lg:mx-0 lg:text-left">
               <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
-                <div
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 via-blue-500 to-violet-500 shadow-[0_14px_40px_-12px_rgba(56,189,248,0.5)] ring-2 ring-white/15"
-                  aria-hidden
-                >
-                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-white">AI</span>
-                </div>
+                <LoginBrandIcon />
                 <div className="min-w-0 space-y-2.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200/75">AI 用例平台</p>
-                  <h1 className="text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[1.9rem]">
+                  <p
+                    className="text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors duration-300"
+                    style={{ color: 'var(--lp-eyebrow)' }}
+                  >
+                    AI 用例平台
+                  </p>
+                  <h1
+                    className="text-balance text-2xl font-semibold tracking-tight transition-colors duration-300 sm:text-3xl lg:text-[1.9rem]"
+                    style={{ color: 'var(--lp-text-primary)' }}
+                  >
                     让测试用例自己跑起来
                   </h1>
-                  <p className="mx-auto max-w-md text-pretty text-sm leading-relaxed text-slate-400 sm:text-[15px] lg:mx-0">
+                  <p
+                    className="mx-auto max-w-md text-pretty text-sm leading-relaxed transition-colors duration-300 sm:text-[15px] lg:mx-0"
+                    style={{ color: 'var(--lp-text-secondary)' }}
+                  >
                     把需求、图片、OCR 和业务规则转成可评审、可执行的测试用例。
                   </p>
                 </div>
               </div>
             </header>
 
-            {/* 中部：吉祥物舞台 + 限定范围内的浮动标签 */}
             <div className="relative z-10 mt-2 flex w-full justify-center lg:justify-start">
               <div className="login-mascot-stage relative flex w-full max-w-[380px] min-h-[220px] items-center justify-center sm:min-h-[260px] lg:min-h-[280px]">
                 <div className="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden>
                   <LoginMascotStageDecor />
                 </div>
-                <div
-                  ref={mascotRef}
-                  className="login-enter login-enter-delay-2 relative z-[2] flex justify-center"
-                >
-                  <div
-                    key={`mascot-shake-${shakeId}`}
-                    className={cn(shakeId > 0 && 'login-mascot-head-shake-once')}
-                  >
-                    <LoginMascot look={look} eyesMode={eyesMode} mood={mascotMood} />
+                <div ref={mascotRef} className="login-enter login-enter-delay-2 relative z-[2] flex justify-center">
+                  <div key={`mascot-shake-${shakeId}`} className={cn(shakeId > 0 && 'login-mascot-head-shake-once')}>
+                    <LoginMascot
+                      look={look}
+                      eyesMode={eyesMode}
+                      mood={mascotMood}
+                      passwordHiddenGlow={!showPassword && passwordValue.length > 0}
+                    />
                   </div>
                 </div>
               </div>
             </div>
 
-            <footer className="login-enter login-enter-delay-3 relative z-20 mx-auto mt-8 hidden max-w-xl px-10 text-center text-xs leading-relaxed text-slate-500 sm:block lg:mx-0 lg:text-left">
+            <footer
+              className="login-enter login-enter-delay-3 relative z-20 mx-auto mt-8 hidden max-w-xl px-10 text-center text-xs leading-relaxed transition-colors duration-300 sm:block lg:mx-0 lg:text-left"
+              style={{ color: 'var(--lp-footer)' }}
+            >
               Friendly AI workspace：OCR、多模态与团队工作流，一站完成。
             </footer>
           </aside>
@@ -220,11 +241,21 @@ export default function LoginPage() {
                 shakeId > 0 && 'login-shake-once',
               )}
             >
-              <div className={cn('login-panel-shell rounded-[30px] p-px', loading && 'login-card-busy-light')}>
-                <div className="login-panel-body rounded-[29px] px-6 py-8 sm:px-8 sm:py-9">
+              <div
+                className={cn(
+                  'login-panel-shell rounded-[30px] p-px transition-[box-shadow,filter] duration-300',
+                  loading && 'login-card-busy-light',
+                )}
+              >
+                <div className="login-panel-body rounded-[29px] px-6 py-8 transition-[background,box-shadow] duration-300 sm:px-8 sm:py-9">
                   <header className="login-enter login-enter-delay-3 mb-7 space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-[1.35rem]">欢迎回来</h2>
-                    <p className="text-[13px] leading-relaxed text-slate-600 sm:text-sm">
+                    <h2
+                      className="text-xl font-semibold tracking-tight sm:text-[1.35rem]"
+                      style={{ color: 'var(--lp-card-title)' }}
+                    >
+                      欢迎回来
+                    </h2>
+                    <p className="text-[13px] leading-relaxed sm:text-sm" style={{ color: 'var(--lp-card-muted)' }}>
                       继续管理你的 AI 测试用例与团队工作流
                     </p>
                   </header>
@@ -232,10 +263,7 @@ export default function LoginPage() {
                   <form onSubmit={handleSubmit(onSubmit)} noValidate>
                     <div className="login-enter login-enter-delay-4 space-y-5">
                       {authError && (
-                        <div
-                          role="alert"
-                          className="rounded-2xl border border-red-200/80 bg-red-50/95 px-3.5 py-2.5 text-red-800 shadow-sm"
-                        >
+                        <div role="alert" className="login-error-banner rounded-2xl px-3.5 py-2.5 shadow-sm">
                           <p className="text-sm font-medium leading-relaxed">{authError}</p>
                         </div>
                       )}
@@ -243,7 +271,8 @@ export default function LoginPage() {
                       <div className="group/login-user space-y-2">
                         <label
                           htmlFor="login-username"
-                          className="text-[13px] font-medium text-slate-600 transition-colors duration-200 group-focus-within/login-user:text-indigo-600"
+                          className="text-[13px] font-medium transition-colors duration-200 group-focus-within/login-user:text-[color:var(--lp-label-focus)]"
+                          style={{ color: 'var(--lp-label)' }}
                         >
                           用户名或邮箱
                         </label>
@@ -258,15 +287,12 @@ export default function LoginPage() {
                             setUserFocus(false)
                             void usernameReg.onBlur(e)
                           }}
-                          className={cn(
-                            inputBase,
-                            errors.username && 'login-soft-input--error',
-                          )}
+                          className={cn(inputBase, errors.username && 'login-soft-input--error')}
                           aria-invalid={errors.username ? true : undefined}
                           aria-describedby={errors.username ? 'login-username-error' : undefined}
                         />
                         {errors.username && (
-                          <p id="login-username-error" className="text-xs font-medium text-red-600">
+                          <p id="login-username-error" className="text-xs font-medium text-red-500 dark:text-red-400">
                             {errors.username.message}
                           </p>
                         )}
@@ -275,7 +301,8 @@ export default function LoginPage() {
                       <div className="group/login-pwd space-y-2">
                         <label
                           htmlFor="login-password"
-                          className="text-[13px] font-medium text-slate-600 transition-colors duration-200 group-focus-within/login-pwd:text-indigo-600"
+                          className="text-[13px] font-medium transition-colors duration-200 group-focus-within/login-pwd:text-[color:var(--lp-label-focus)]"
+                          style={{ color: 'var(--lp-label)' }}
                         >
                           密码
                         </label>
@@ -303,12 +330,12 @@ export default function LoginPage() {
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
                             className={cn(
-                              'absolute right-2.5 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl',
-                              'text-slate-400 transition-colors duration-200',
-                              'hover:bg-indigo-500/[0.08] hover:text-indigo-600',
-                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/35 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
+                              'login-pwd-toggle absolute right-2.5 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl transition-colors duration-200',
+                              'hover:bg-[color:var(--lp-icon-btn-hover-bg)] hover:text-[color:var(--lp-icon-btn-hover)]',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--lp-checkbox-ring-offset)]',
                               'active:scale-95 motion-reduce:active:scale-100',
                             )}
+                            style={{ color: 'var(--lp-icon-btn)' }}
                             aria-label={showPassword ? '隐藏密码' : '显示密码'}
                           >
                             {showPassword ? (
@@ -319,7 +346,7 @@ export default function LoginPage() {
                           </button>
                         </div>
                         {errors.password && (
-                          <p id="login-password-error" className="text-xs font-medium text-red-600">
+                          <p id="login-password-error" className="text-xs font-medium text-red-500 dark:text-red-400">
                             {errors.password.message}
                           </p>
                         )}
@@ -327,12 +354,15 @@ export default function LoginPage() {
                     </div>
 
                     <div className="login-enter login-enter-delay-5 mt-7 flex flex-col gap-4">
-                      <label className="flex cursor-pointer select-none items-center gap-3 text-[13px] text-slate-600 transition-colors hover:text-slate-800">
+                      <label
+                        className="flex cursor-pointer select-none items-center gap-3 text-[13px] transition-colors duration-200"
+                        style={{ color: 'var(--lp-label)' }}
+                      >
                         <input
                           type="checkbox"
                           checked={rememberMe}
                           onChange={(e) => setRememberMe(e.target.checked)}
-                          className="login-remember-checkbox h-[18px] w-[18px] cursor-pointer rounded-md border border-indigo-200/60 bg-gradient-to-b from-[#eef4ff] to-[#f3efff] text-indigo-600 accent-indigo-600 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8fbff]"
+                          className="login-form-checkbox h-[18px] w-[18px] cursor-pointer rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--lp-checkbox-ring-offset)]"
                         />
                         <span>记住我</span>
                       </label>
@@ -343,9 +373,8 @@ export default function LoginPage() {
                         aria-busy={loading}
                         className={cn(
                           'login-btn-shine login-submit-btn relative h-[54px] w-full overflow-hidden rounded-2xl border-0 px-4 text-[15px] font-semibold text-white !ring-0',
-                          'shadow-[0_18px_40px_-16px_rgba(59,130,246,0.45),0_0_0_1px_rgba(255,255,255,0.12)_inset]',
                           'transition-[transform,box-shadow,filter] duration-200',
-                          'hover:enabled:-translate-y-0.5 hover:enabled:shadow-[0_22px_48px_-14px_rgba(99,102,241,0.4),0_0_0_1px_rgba(255,255,255,0.14)_inset]',
+                          'hover:enabled:-translate-y-0.5',
                           'active:enabled:translate-y-px active:enabled:brightness-[0.97]',
                           'disabled:opacity-65 disabled:hover:translate-y-0',
                           loading && 'login-submit-btn--busy',

@@ -1,141 +1,229 @@
+import { useId } from 'react'
 import { cn } from '@/utils/cn'
 
 export type LoginMascotEyesMode = 'track' | 'closed' | 'cautious'
 
-export type LoginMascotMood = 'idle' | 'listening' | 'loading' | 'error'
+export type LoginMascotMood = 'idle' | 'listening' | 'loading' | 'error' | 'success'
 
 type Props = {
-  /** 相对 SVG 视图盒的 -1~1，用于瞳孔偏移 */
   look: { x: number; y: number }
   eyesMode: LoginMascotEyesMode
-  /** 额外情绪：倾听用户名 / 登录中 / 失败困惑 */
   mood: LoginMascotMood
+  /** 密码已输入且隐藏时脸颊微光 */
+  passwordHiddenGlow?: boolean
   className?: string
 }
 
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n))
+}
+
 /**
- * SVG 小助手：瞳孔随 look；密码态 closed / cautious（单眼偷看）；
- * loading 扫描线；error 困惑嘴型；listening 轻微点头动画（外层）。
+ * Friendly AI companion：与品牌 icon 共享圆角与光色；状态以 opacity / transform 过渡为主。
  */
-export function LoginMascot({ look, eyesMode, mood, className }: Props) {
-  const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n))
-  const px = clamp(look.x, -1, 1) * 3.2
-  const py = clamp(look.y, -1, 1) * 2.8
+export function LoginMascot({ look, eyesMode, mood, passwordHiddenGlow, className }: Props) {
+  const uid = useId().replace(/:/g, '')
+  const px = clamp(look.x, -1, 1) * 4.2
+  const py = clamp(look.y, -1, 1) * 3.4
 
   const isError = mood === 'error'
   const isLoading = mood === 'loading'
+  const isSuccess = mood === 'success'
   const listening = mood === 'listening'
+
+  const showTrack = eyesMode === 'track'
+  const showClosed = eyesMode === 'closed'
+  const showCautious = eyesMode === 'cautious'
 
   return (
     <div
-      className={cn('relative flex justify-center', listening && 'login-mascot-listening', className)}
+      className={cn(
+        'relative flex justify-center',
+        (mood === 'idle' || listening) && !isLoading && !isSuccess && 'login-mascot-idle-float',
+        listening && 'login-mascot-listening',
+        isLoading && 'login-mascot-body-pulse',
+        className,
+      )}
       aria-hidden
     >
       <svg
-        viewBox="0 0 120 120"
-        className="h-28 w-28 text-slate-200/95 drop-shadow-[0_12px_36px_rgba(56,189,248,0.22)] sm:h-36 sm:w-36"
+        viewBox="0 0 128 132"
+        className="h-[7.5rem] w-[7.5rem] drop-shadow-[0_16px_42px_var(--lp-mascot-drop)] sm:h-[8.75rem] sm:w-[8.75rem]"
         role="img"
         aria-label=""
       >
         <defs>
-          <linearGradient id="login-bot-head" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgb(71 85 105)" />
-            <stop offset="40%" stopColor="rgb(51 78 115)" />
-            <stop offset="100%" stopColor="rgb(36 52 86)" />
+          <linearGradient id={`${uid}-body`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="var(--lp-mascot-body-a)" />
+            <stop offset="45%" stopColor="var(--lp-mascot-body-b)" />
+            <stop offset="100%" stopColor="var(--lp-mascot-body-c)" />
           </linearGradient>
-          <linearGradient id="login-bot-glass" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
-            <stop offset="100%" stopColor="rgba(167,243,208,0.06)" />
+          <linearGradient id={`${uid}-belly`} x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="var(--lp-mascot-belly-hi)" />
+            <stop offset="100%" stopColor="var(--lp-mascot-belly-lo)" />
           </linearGradient>
-          <linearGradient id="login-bot-scan" x1="0%" y1="0%" x2="0%" y2="100%">
+          <linearGradient id={`${uid}-scan`} x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" stopColor="rgba(34,211,238,0)" />
-            <stop offset="45%" stopColor="rgba(34,211,238,0.35)" />
-            <stop offset="55%" stopColor="rgba(167,139,250,0.35)" />
+            <stop offset="50%" stopColor="rgba(34,211,238,0.45)" />
             <stop offset="100%" stopColor="rgba(167,139,250,0)" />
           </linearGradient>
+          <filter id={`${uid}-soft`} x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="0.8" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
-        <rect x="18" y="22" width="84" height="78" rx="24" fill="url(#login-bot-head)" stroke="rgba(125,211,252,0.35)" strokeWidth="1" />
-        <rect x="22" y="26" width="76" height="36" rx="16" fill="url(#login-bot-glass)" />
 
-        {/* 眼睛 */}
-        {eyesMode === 'closed' ? (
-          <>
-            <path
-              d="M 38 58 Q 50 52 62 58"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              className="text-slate-400"
-            />
-            <path
-              d="M 58 58 Q 70 52 82 58"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              className="text-slate-400"
-            />
-            <ellipse cx="60" cy="62" rx="26" ry="10" fill="rgb(71 85 105)" opacity="0.5" />
-            <ellipse cx="60" cy="60" rx="24" ry="8" fill="rgb(100 116 139)" opacity="0.72" />
-          </>
-        ) : eyesMode === 'cautious' ? (
-          <>
-            {/* 右眼弯线「不好意思看」 */}
-            <path
-              d="M 58 58 Q 70 52 82 58"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              className="text-slate-400"
-            />
-            {/* 左眼偷看 */}
-            <circle cx="50" cy="56" r="7.5" fill="rgb(15 23 42)" stroke="rgba(148,163,184,0.5)" strokeWidth="1" />
-            <circle cx={49 + px * 0.35} cy={56 + py * 0.35} r="2.4" fill="rgb(226 232 240)" />
-            <circle cx={50 + px * 0.4} cy={55 + py * 0.4} r="0.85" fill="rgb(15 23 42)" />
-            {/* 半遮 */}
-            <path d="M 42 52 Q 50 48 58 52" fill="none" stroke="rgba(100,116,139,0.85)" strokeWidth="2" strokeLinecap="round" />
-          </>
-        ) : (
-          <>
-            <circle cx="50" cy="56" r="8" fill="rgb(15 23 42)" stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
-            <circle cx="70" cy="56" r="8" fill="rgb(15 23 42)" stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
-            <circle cx={50 + px} cy={56 + py} r="3.2" fill="rgb(226 232 240)" />
-            <circle cx={70 + px} cy={56 + py} r="3.2" fill="rgb(226 232 240)" />
-            <circle cx={50 + px * 1.1} cy={55 + py * 1.1} r="1.1" fill="rgb(15 23 42)" />
-            <circle cx={70 + px * 1.1} cy={55 + py * 1.1} r="1.1" fill="rgb(15 23 42)" />
-          </>
-        )}
+        <ellipse cx="64" cy="118" rx="28" ry="7" fill="var(--lp-mascot-shadow)" opacity="0.45" />
 
-        {/* 嘴：常态微笑 / 困惑 */}
-        {isError ? (
+        <path
+          d="M 64 18 L 64 10"
+          stroke="var(--lp-mascot-antenna)"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <circle cx="64" cy="8" r="3.5" fill="var(--lp-mascot-antenna-cap)" />
+
+        <path
+          d="M 32 52 C 28 28 48 20 64 22 C 80 20 100 28 96 52 C 102 72 98 96 64 100 C 30 96 26 72 32 52 Z"
+          fill={`url(#${uid}-body)`}
+          stroke="var(--lp-mascot-stroke)"
+          strokeWidth="1.15"
+          filter={`url(#${uid}-soft)`}
+        />
+        <ellipse cx="64" cy="78" rx="36" ry="28" fill={`url(#${uid}-belly)`} opacity="0.55" />
+
+        <g
+          className="transition-opacity duration-300 ease-out"
+          style={{ opacity: passwordHiddenGlow ? 0.55 : 0 }}
+        >
+          <ellipse cx="42" cy="68" rx="8" ry="5" fill="var(--lp-mascot-blush)" opacity="0.5" />
+          <ellipse cx="86" cy="68" rx="8" ry="5" fill="var(--lp-mascot-blush)" opacity="0.5" />
+        </g>
+
+        {/* 睁眼追踪 */}
+        <g
+          className="transition-opacity duration-200 ease-out"
+          style={{ opacity: showTrack && !isLoading && !isSuccess ? 1 : 0 }}
+        >
+          <ellipse cx="48" cy="58" rx="11" ry="12" fill="var(--lp-mascot-eye-white)" />
+          <ellipse cx="80" cy="58" rx="11" ry="12" fill="var(--lp-mascot-eye-white)" />
+          <circle cx={48 + px} cy={58 + py} r="4.2" fill="var(--lp-mascot-pupil)" />
+          <circle cx={80 + px} cy={58 + py} r="4.2" fill="var(--lp-mascot-pupil)" />
+          <circle cx={49 + px * 1.05} cy={56.5 + py * 1.05} r="1.35" fill="var(--lp-mascot-eye-shine)" />
+          <circle cx={81 + px * 1.05} cy={56.5 + py * 1.05} r="1.35" fill="var(--lp-mascot-eye-shine)" />
+        </g>
+
+        {/* 闭眼 */}
+        <g className="transition-opacity duration-200 ease-out" style={{ opacity: showClosed && !isSuccess ? 1 : 0 }}>
           <path
-            d="M 48 82 Q 60 74 72 82"
+            d="M 38 58 Q 48 50 58 58"
             fill="none"
-            stroke="rgba(251,191,36,0.65)"
+            stroke="var(--lp-mascot-lid)"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 70 58 Q 80 50 90 58"
+            fill="none"
+            stroke="var(--lp-mascot-lid)"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+          />
+          <ellipse cx="64" cy="62" rx="30" ry="11" fill="var(--lp-mascot-hand)" opacity="0.42" />
+        </g>
+
+        {/* 谨慎偷看 */}
+        <g className="transition-opacity duration-200 ease-out" style={{ opacity: showCautious && !isSuccess ? 1 : 0 }}>
+          <path
+            d="M 70 58 Q 80 50 90 58"
+            fill="none"
+            stroke="var(--lp-mascot-lid)"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+          />
+          <ellipse cx="48" cy="58" rx="11" ry="12" fill="var(--lp-mascot-eye-white)" />
+          <circle cx={47 + px * 0.35} cy={58 + py * 0.35} r="3.2" fill="var(--lp-mascot-pupil)" />
+          <circle cx={48 + px * 0.4} cy={57 + py * 0.4} r="1" fill="var(--lp-mascot-eye-shine)" />
+          <path
+            d="M 40 52 Q 48 48 56 52"
+            fill="none"
+            stroke="var(--lp-mascot-lid)"
             strokeWidth="1.8"
             strokeLinecap="round"
+            opacity="0.85"
           />
-        ) : (
+        </g>
+
+        {/* 成功：弯弯笑眼 */}
+        <g className="transition-opacity duration-300 ease-out" style={{ opacity: isSuccess ? 1 : 0 }}>
           <path
-            d="M 48 78 Q 60 84 72 78"
+            d="M 38 60 Q 48 50 58 60"
             fill="none"
-            stroke="rgba(148,163,184,0.45)"
-            strokeWidth="1.6"
+            stroke="var(--lp-mascot-pupil)"
+            strokeWidth="2.5"
             strokeLinecap="round"
           />
-        )}
+          <path
+            d="M 70 60 Q 80 50 90 60"
+            fill="none"
+            stroke="var(--lp-mascot-pupil)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <circle cx="34" cy="48" r="1.2" fill="var(--lp-mascot-spark)" className="login-mascot-star-a" />
+          <circle cx="94" cy="46" r="1" fill="var(--lp-mascot-spark)" className="login-mascot-star-b" />
+          <circle cx="88" cy="54" r="0.8" fill="var(--lp-mascot-spark)" className="login-mascot-star-c" />
+        </g>
 
-        <circle cx="60" cy="92" r="3.2" fill="rgba(56, 189, 248, 0.4)" />
-        <circle cx="54" cy="90" r="1.2" fill="rgba(167, 139, 250, 0.35)" />
+        {/* 扫描（登录中） */}
+        <g className="transition-opacity duration-200" style={{ opacity: isLoading ? 1 : 0 }}>
+          <rect x="34" y="44" width="60" height="32" rx="12" fill={`url(#${uid}-scan)`} className="login-mascot-scan-rect" />
+          <line
+            x1="34"
+            x2="94"
+            y1="58"
+            y2="58"
+            stroke="var(--lp-mascot-scan-line)"
+            strokeWidth="1.2"
+            strokeDasharray="4 6"
+            className="login-mascot-scan-line"
+          />
+        </g>
 
-        {isLoading && (
-          <>
-            <rect x="22" y="34" width="76" height="44" rx="14" fill="url(#login-bot-scan)" className="login-mascot-scan" />
-            <circle cx="60" cy="100" r="2" fill="rgba(34,211,238,0.6)" className="login-mascot-pulse-dot" />
-          </>
-        )}
+        {/* 嘴巴：常态 / 困惑 / 开心 */}
+        <g className="transition-opacity duration-200" style={{ opacity: !isError && !isSuccess ? 1 : 0 }}>
+          <path
+            d="M 50 86 Q 64 96 78 86"
+            fill="none"
+            stroke="var(--lp-mascot-mouth)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </g>
+        <g className="transition-opacity duration-200" style={{ opacity: isError ? 1 : 0 }}>
+          <path
+            d="M 50 90 Q 64 78 78 90"
+            fill="none"
+            stroke="var(--lp-mascot-mouth-worry)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </g>
+        <g className="transition-opacity duration-300" style={{ opacity: isSuccess ? 1 : 0 }}>
+          <path
+            d="M 48 84 Q 64 96 80 84"
+            fill="none"
+            stroke="var(--lp-mascot-mouth-happy)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        </g>
+
+        <circle cx="52" cy="102" r="2.2" fill="var(--lp-mascot-glow-a)" opacity="0.85" />
+        <circle cx="76" cy="100" r="1.6" fill="var(--lp-mascot-glow-b)" opacity="0.75" />
       </svg>
     </div>
   )
