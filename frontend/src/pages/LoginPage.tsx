@@ -198,7 +198,7 @@ export default function LoginPage() {
                     让测试用例自己跑起来
                   </h1>
                   <p
-                    className="mx-auto max-w-md text-pretty text-sm leading-relaxed transition-colors duration-300 sm:text-[15px] lg:mx-0"
+                    className="mx-auto max-w-full whitespace-nowrap text-sm leading-relaxed transition-colors duration-300 sm:text-[15px] lg:mx-0"
                     style={{ color: 'var(--lp-text-secondary)' }}
                   >
                     把需求、图片、OCR 和业务规则转成可评审、可执行的测试用例。
