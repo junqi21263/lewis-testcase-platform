@@ -8,7 +8,7 @@ import { CosStorageService } from '@/modules/files/cos-storage.service'
 import {
   analyzeCosFileWithHunyuanMultimodal,
   canTryHunyuanCosMultimodalParse,
-  runHunyuanCosPrompt,
+  runHunyuanOpenAiVisionChat,
 } from '@/utils/multimodalAnalysis'
 
 export type MultimodalModuleType = 'FILE_PARSE' | 'AI_ANALYSIS' | 'TESTCASE_GENERATION'
@@ -97,7 +97,10 @@ export class MultimodalService {
     return {
       ...cfg,
       multimodalEnabled:
-        envBool('MM_ENABLED') ?? envBool('HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED') ?? cfg.multimodalEnabled,
+        envBool('HUNYUAN_MULTIMODAL_ENABLED') ??
+        envBool('MM_ENABLED') ??
+        envBool('HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED') ??
+        cfg.multimodalEnabled,
       multimodalDefaultModel:
         envStr('MM_DEFAULT_MODEL') ?? envStr('HUNYUAN_MULTIMODAL_MODEL') ?? cfg.multimodalDefaultModel,
       textFallbackModel: envStr('MM_TEXT_FALLBACK_MODEL') ?? cfg.textFallbackModel,
@@ -306,6 +309,43 @@ export class MultimodalService {
     return Number(agg?._sum?.estimatedCostCny ?? 0)
   }
 
+  /**
+   * 将 DB 中的 path（本地路径或 cos://）解析为可读本地文件；COS 会下载到临时文件并返回 cleanup。
+   */
+  async resolveLocalPathForMultimodal(
+    storedPath: string | null | undefined,
+    localPath?: string | null,
+  ): Promise<{ path: string; cleanup?: () => void } | null> {
+    const lp = localPath?.trim()
+    if (lp && fs.existsSync(lp)) return { path: lp }
+    const sp = storedPath?.trim()
+    if (!sp) return null
+    if (!CosStorageService.isCosUri(sp) && fs.existsSync(sp)) return { path: sp }
+    if (CosStorageService.isCosUri(sp)) {
+      if (!this.cosStorage.isConfigured()) {
+        this.logger.warn('resolveLocalPathForMultimodal: COS 未配置，无法下载对象')
+        return null
+      }
+      try {
+        const tmp = await this.cosStorage.downloadToTempFile(sp)
+        return {
+          path: tmp,
+          cleanup: () => {
+            try {
+              if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
+            } catch {
+              /* ignore */
+            }
+          },
+        }
+      } catch (e) {
+        this.logger.warn(`resolveLocalPathForMultimodal: COS 下载失败 ${(e as Error).message}`)
+        return null
+      }
+    }
+    return null
+  }
+
   async shouldAutoDowngradeToText() {
     const cfg = await this.getRuntimeConfig()
     if (!cfg.multimodalEnabled) return true
@@ -356,12 +396,18 @@ export class MultimodalService {
       }
     }
 
+    if (!args.localPath?.trim() || !fs.existsSync(args.localPath)) {
+      this.logger.warn('tryDirectCosMultimodal: 需要本地文件路径以进行混元 Base64 多模态')
+      return null
+    }
+
     const canTry = canTryHunyuanCosMultimodalParse(
       this.config,
       this.cosStorage,
       args.storedPath,
       args.fileKind === 'IMAGE' ? 'image' : 'pdf',
       args.fileBytes,
+      args.localPath,
     )
     if (!canTry) return null
 
@@ -369,8 +415,7 @@ export class MultimodalService {
     try {
       const text = await analyzeCosFileWithHunyuanMultimodal({
         config: this.config,
-        cosStorage: this.cosStorage,
-        storedPath: args.storedPath,
+        localPath: args.localPath,
         fileKind: args.fileKind === 'IMAGE' ? 'image' : 'pdf',
       })
       const payload =
@@ -391,7 +436,7 @@ export class MultimodalService {
         userId: args.userId,
         uploadedFileId: args.uploadedFileId,
         recordId: args.recordId,
-        provider: 'hunyuan',
+        provider: 'hunyuan-openai',
         modelName: 'hunyuan-vision',
         requestChars: text.length,
         success: true,
@@ -408,7 +453,7 @@ export class MultimodalService {
         userId: args.userId,
         uploadedFileId: args.uploadedFileId,
         recordId: args.recordId,
-        provider: 'hunyuan',
+        provider: 'hunyuan-openai',
         modelName: 'hunyuan-vision',
         success: false,
         errorMessage: msg,
@@ -429,11 +474,14 @@ export class MultimodalService {
     uploadedFileId?: string
     recordId?: string
   }) {
-    const md5 = args.localPath
-      ? this.buildMd5FromFile(args.localPath)
-      : this.buildMd5ByKey(`${args.storedPath}:${args.fileBytes}`)
+    const resolved = await this.resolveLocalPathForMultimodal(args.storedPath, args.localPath)
+    if (!resolved) {
+      throw new BadRequestException('无法定位本地文件用于混元多模态（请确认 path 有效或已配置 COS）')
+    }
+    const md5 = this.buildMd5FromFile(resolved.path)
     const cached = await this.getCache(md5, 'AI_ANALYSIS')
     if (cached?.analysisResult) {
+      resolved.cleanup?.()
       await this.recordUsage({
         moduleType: 'AI_ANALYSIS',
         fileKind: args.fileKind,
@@ -450,13 +498,17 @@ export class MultimodalService {
       args.customPrompt?.trim() ||
       '请对该设计图/文档进行结构化需求分析，输出 markdown，并覆盖页面功能、模块、交互、数据模型、风险建议。'
     const started = Date.now()
-    const out = await runHunyuanCosPrompt({
-      config: this.config,
-      cosStorage: this.cosStorage,
-      storedPath: args.storedPath,
-      fileKind: args.fileKind === 'IMAGE' ? 'image' : 'pdf',
-      prompt: basePrompt,
-    })
+    let out: { text: string; promptTokens?: number; completionTokens?: number; totalTokens?: number }
+    try {
+      out = await runHunyuanOpenAiVisionChat({
+        config: this.config,
+        localPath: resolved.path,
+        fileKind: args.fileKind === 'IMAGE' ? 'image' : 'pdf',
+        prompt: basePrompt,
+      })
+    } finally {
+      resolved.cleanup?.()
+    }
     await this.setCache({
       md5,
       moduleType: 'AI_ANALYSIS',
@@ -469,7 +521,7 @@ export class MultimodalService {
       userId: args.userId,
       uploadedFileId: args.uploadedFileId,
       recordId: args.recordId,
-      provider: 'hunyuan',
+      provider: 'hunyuan-openai',
       modelName: 'hunyuan-vision',
       promptTokens: out.promptTokens,
       completionTokens: out.completionTokens,
@@ -490,11 +542,14 @@ export class MultimodalService {
     uploadedFileId?: string
     recordId?: string
   }) {
-    const md5 = args.localPath
-      ? this.buildMd5FromFile(args.localPath)
-      : this.buildMd5ByKey(`${args.storedPath}:${args.fileBytes}`)
+    const resolved = await this.resolveLocalPathForMultimodal(args.storedPath, args.localPath)
+    if (!resolved) {
+      throw new BadRequestException('无法定位本地文件用于混元多模态（请确认 path 有效或已配置 COS）')
+    }
+    const md5 = this.buildMd5FromFile(resolved.path)
     const cached = await this.getCache(md5, 'TESTCASE_GENERATION')
     if (cached?.testcaseResult) {
+      resolved.cleanup?.()
       await this.recordUsage({
         moduleType: 'TESTCASE_GENERATION',
         fileKind: args.fileKind,
@@ -512,13 +567,17 @@ export class MultimodalService {
       `你是资深测试架构师。请直接理解该设计图或 PDF，输出严格 JSON：{"cases":[...]}。
 每条用例必须含 title/priority/type/precondition/steps/expectedResult/tags，覆盖正向、逆向、边界、交互与跳转。`
     const started = Date.now()
-    const out = await runHunyuanCosPrompt({
-      config: this.config,
-      cosStorage: this.cosStorage,
-      storedPath: args.storedPath,
-      fileKind: args.fileKind === 'IMAGE' ? 'image' : 'pdf',
-      prompt,
-    })
+    let out: { text: string; promptTokens?: number; completionTokens?: number; totalTokens?: number }
+    try {
+      out = await runHunyuanOpenAiVisionChat({
+        config: this.config,
+        localPath: resolved.path,
+        fileKind: args.fileKind === 'IMAGE' ? 'image' : 'pdf',
+        prompt,
+      })
+    } finally {
+      resolved.cleanup?.()
+    }
     await this.setCache({
       md5,
       moduleType: 'TESTCASE_GENERATION',
@@ -531,7 +590,7 @@ export class MultimodalService {
       userId: args.userId,
       uploadedFileId: args.uploadedFileId,
       recordId: args.recordId,
-      provider: 'hunyuan',
+      provider: 'hunyuan-openai',
       modelName: 'hunyuan-vision',
       promptTokens: out.promptTokens,
       completionTokens: out.completionTokens,

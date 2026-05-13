@@ -8,7 +8,16 @@ import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
-import { GenerationSource, GenerationStatus, Prisma, TestCasePriority, TestCaseType } from '@prisma/client'
+import {
+  GenerationSource,
+  GenerationStatus,
+  Prisma,
+  TestCasePriority,
+  TestCaseType,
+  UploadedFile,
+} from '@prisma/client'
+import { MultimodalService } from '@/modules/multimodal/multimodal.service'
+import { isHunyuanMultimodalEnabled, resolveHunyuanVisionApiKey } from '@/utils/multimodalAnalysis'
 import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
@@ -254,7 +263,22 @@ export class AiService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private readonly multimodal: MultimodalService,
   ) {}
+
+  /** 环境级混元 OpenAI 多模态（HUNYUAN_MULTIMODAL_ENABLED + HUNYUAN_VISION_API_KEY） */
+  private hunyuanMultimodalEnvReady(): boolean {
+    if (!isHunyuanMultimodalEnabled(this.config)) return false
+    if (!resolveHunyuanVisionApiKey(this.config)) return false
+    return true
+  }
+
+  private isOnlyAiRawOutputRows(rows: any[]): boolean {
+    return (
+      rows.length > 0 &&
+      rows.every((r: any) => Array.isArray(r?.tags) && (r.tags as string[]).includes('ai-raw-output'))
+    )
+  }
 
   /** 落库时的团队、来源枚举、参数快照与模板全文 */
   private async buildRecordPersistExtras(dto: GenerateDto, userId: string) {
@@ -480,16 +504,16 @@ export class AiService {
 
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
-    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
+    this.logger.log(`generate: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    // 获取文件内容
     let fileContent: string | undefined
+    let fileRow: UploadedFile | null = null
     if (dto.fileId) {
-      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
-      fileContent = file.parsedContent
+      fileRow = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
+      if (!fileRow) throw new BadRequestException('文件不存在')
+      fileContent = fileRow.parsedContent ?? undefined
     }
 
     const extras = await this.buildRecordPersistExtras(dto, userId)
@@ -513,6 +537,71 @@ export class AiService {
     })
 
     try {
+      // 单文件图片/PDF：优先混元 hunyuan-vision 端到端 JSON；失败或未解析出有效用例则回退配置模型
+      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady()) {
+        const mime = (fileRow.mimeType || '').toLowerCase()
+        const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
+        if (isImgPdf && fileRow.path) {
+          try {
+            const fk = mime.includes('pdf') ? 'PDF' : 'IMAGE'
+            const { text } = await this.multimodal.generateCasesFromFile({
+              userId,
+              storedPath: fileRow.path,
+              localPath: fileRow.path,
+              fileKind: fk,
+              fileBytes: Number(fileRow.size) || 0,
+              customPrompt: dto.customPrompt,
+              uploadedFileId: fileRow.id,
+              recordId: record.id,
+            })
+            const resolvedEarly = await this.resolveCasesForPersistenceWithRepair(client, modelId, text)
+            if (resolvedEarly.rows.length > 0 && !this.isOnlyAiRawOutputRows(resolvedEarly.rows)) {
+              const suite = await this.prisma.testSuite.create({
+                data: {
+                  name: `AI 生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+                  creatorId: userId,
+                  cases: {
+                    create: resolvedEarly.rows.map((c: any) => this.mapRowToCaseInput(c)),
+                  },
+                },
+                include: { cases: true },
+              })
+              const duration = Date.now() - startTime
+              await this.prisma.generationRecord.update({
+                where: { id: record.id },
+                data: {
+                  status: GenerationStatus.SUCCESS,
+                  caseCount: suite.cases.length,
+                  suiteId: suite.id,
+                  duration,
+                },
+              })
+              await this.bumpTemplateUsage(dto.templateId)
+              const warnings: string[] = [
+                '已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。',
+              ]
+              if (resolvedEarly.repaired) {
+                warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
+              }
+              if (resolvedEarly.outputTruncated) warnings.push(OUTPUT_TRUNCATED_NOTICE)
+              return {
+                recordId: record.id,
+                cases: suite.cases,
+                duration,
+                warnings,
+              }
+            }
+            if (text?.trim()) fileContent = text.trim()
+          } catch (e) {
+            this.logger.warn(`generate: 混元多模态端到端失败，回退配置模型: ${(e as Error).message}`)
+          }
+        }
+      }
+
+      if (dto.fileId && !fileContent?.trim()) {
+        throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
+      }
+
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
       const completion = await client.chat.completions.create({
@@ -608,10 +697,11 @@ export class AiService {
     const startTime = Date.now()
 
     let fileContent: string | undefined
+    let fileRow: UploadedFile | null = null
     if (dto.fileId) {
-      const file = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!file?.parsedContent) throw new BadRequestException('文件内容尚未解析完成')
-      fileContent = file.parsedContent
+      fileRow = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
+      if (!fileRow) throw new BadRequestException('文件不存在')
+      fileContent = fileRow.parsedContent ?? undefined
     }
 
     const extras = await this.buildRecordPersistExtras(dto, userId)
@@ -650,6 +740,76 @@ export class AiService {
     let fullContent = ''
     let finishReason: string | null = null
     try {
+      // 单文件图片/PDF：混元多模态若已产出可落库用例，则直接结束 SSE（与「流式完成」事件形态一致）
+      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady()) {
+        const mime = (fileRow.mimeType || '').toLowerCase()
+        const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
+        if (isImgPdf && fileRow.path) {
+          try {
+            const fk = mime.includes('pdf') ? 'PDF' : 'IMAGE'
+            const { text } = await this.multimodal.generateCasesFromFile({
+              userId,
+              storedPath: fileRow.path,
+              localPath: fileRow.path,
+              fileKind: fk,
+              fileBytes: Number(fileRow.size) || 0,
+              customPrompt: dto.customPrompt,
+              uploadedFileId: fileRow.id,
+              recordId: record.id,
+            })
+            const resolvedEarly = await this.resolveCasesForPersistenceWithRepair(client, modelId, text)
+            if (resolvedEarly.rows.length > 0 && !this.isOnlyAiRawOutputRows(resolvedEarly.rows)) {
+              const { inputNotices } = this.buildPromptMessages(dto, fileContent)
+              for (const n of inputNotices) {
+                this.writeStreamNotice(res, n)
+              }
+              this.writeStreamNotice(res, '已使用腾讯云混元 hunyuan-vision 多模态直接生成用例，未再调用流式模型。')
+              if (resolvedEarly.repaired) {
+                this.writeStreamNotice(res, '模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
+              }
+              if (resolvedEarly.outputTruncated) {
+                this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
+              }
+              const suite = await this.prisma.testSuite.create({
+                data: {
+                  name: `AI 流式生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
+                  creatorId: userId,
+                  cases: { create: resolvedEarly.rows.map((c: any) => this.mapRowToCaseInput(c)) },
+                },
+                include: { cases: true },
+              })
+              await this.prisma.generationRecord.update({
+                where: { id: record.id },
+                data: {
+                  status: GenerationStatus.SUCCESS,
+                  caseCount: suite.cases.length,
+                  suiteId: suite.id,
+                  duration: Date.now() - startTime,
+                },
+              })
+              await this.bumpTemplateUsage(dto.templateId)
+              res.write(
+                `data: ${JSON.stringify({
+                  recordId: record.id,
+                  suiteId: suite.id,
+                  caseCount: suite.cases.length,
+                })}\n\n`,
+              )
+              res.write(`data: [DONE]\n\n`)
+              res.end()
+              return
+            }
+            if (text?.trim()) fileContent = text.trim()
+          } catch (e) {
+            this.logger.warn(`generateStream: 混元多模态端到端失败，回退流式模型: ${(e as Error).message}`)
+          }
+        }
+      }
+
+      if (dto.fileId && !fileContent?.trim()) {
+        throw new BadRequestException('文件内容尚未解析完成')
+      }
+
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       for (const n of inputNotices) {
         this.writeStreamNotice(res, n)
@@ -801,18 +961,47 @@ export class AiService {
         }
       }
 
-      for (const f of ordered) {
-        if (!f.parsedContent?.trim()) {
-          throw new BadRequestException(`文件尚未解析完成：${f.originalName}`)
+      // 单文件图片/PDF：优先混元多模态理解（不依赖 OCR）；失败则回退已解析文本
+      if (ordered.length === 1 && this.hunyuanMultimodalEnvReady()) {
+        const f = ordered[0]
+        const mime = (f.mimeType || '').toLowerCase()
+        const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
+        if (isImgPdf && f.path) {
+          try {
+            const fk = mime.includes('pdf') ? 'PDF' : 'IMAGE'
+            const { text } = await this.multimodal.analyzeFileForRequirements({
+              userId,
+              storedPath: f.path,
+              localPath: f.path,
+              fileKind: fk,
+              fileBytes: Number(f.size) || 0,
+              customPrompt: dto.customPrompt,
+              uploadedFileId: f.id,
+            })
+            if (text?.trim()) fileContent = text.trim()
+          } catch (e) {
+            this.logger.warn(`analyzeStream: 混元多模态失败，回退解析文本: ${(e as Error).message}`)
+          }
         }
       }
 
-      if (ordered.length === 1) {
-        fileContent = ordered[0].parsedContent ?? undefined
-      } else {
-        fileContent = ordered
-          .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
-          .join('\n\n---\n\n')
+      if (!fileContent?.trim()) {
+        if (ordered.length > 1) {
+          for (const f of ordered) {
+            if (!f.parsedContent?.trim()) {
+              throw new BadRequestException(`文件尚未解析完成：${f.originalName}`)
+            }
+          }
+          fileContent = ordered
+            .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
+            .join('\n\n---\n\n')
+        } else {
+          const f = ordered[0]
+          if (!f.parsedContent?.trim()) {
+            throw new BadRequestException(`文件尚未解析完成：${f.originalName}`)
+          }
+          fileContent = f.parsedContent ?? undefined
+        }
       }
     }
 

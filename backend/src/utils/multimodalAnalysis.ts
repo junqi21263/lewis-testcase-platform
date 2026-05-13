@@ -1,54 +1,191 @@
 import { ConfigService } from '@nestjs/config'
 import { Logger } from '@nestjs/common'
-import { hunyuan } from 'tencentcloud-sdk-nodejs-hunyuan'
+import axios from 'axios'
+import * as fs from 'fs'
+import * as path from 'path'
 import { CosStorageService } from '@/modules/files/cos-storage.service'
 
-const logger = new Logger('HunyuanCosMultimodal')
+const logger = new Logger('HunyuanOpenAiMultimodal')
 
-/** 与 OCR / COS SDK 一致的凭证解析 */
-export function resolveTencentCredentialsForHunyuan(
-  config: ConfigService,
-): { secretId: string; secretKey: string } | null {
-  const secretId =
-    config.get<string>('TENCENTCLOUD_SECRET_ID')?.trim() ||
-    config.get<string>('COS_SECRET_ID')?.trim()
-  const secretKey =
-    config.get<string>('TENCENTCLOUD_SECRET_KEY')?.trim() ||
-    config.get<string>('COS_SECRET_KEY')?.trim()
-  if (!secretId || !secretKey) return null
-  return { secretId, secretKey }
-}
+/** 混元 OpenAI 兼容接口（默认全路径，可用 HUNYUAN_OPENAI_BASE_URL 覆盖） */
+export const HUNYUAN_OPENAI_CHAT_COMPLETIONS_URL_DEFAULT =
+  'https://api.hunyuan.cloud.tencent.com/v1/chat/completions'
 
-/** 是否开启「COS URL → 混元多模态」文档解析（默认关闭，避免变更线上行为） */
-export function isHunyuanCosMultimodalParseEnabled(config: ConfigService): boolean {
+/**
+ * 是否启用混元多模态（OpenAI 兼容通道）。
+ * 兼容旧开关名：HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1 仍视为开启多模态尝试（需同时配置 HUNYUAN_VISION_API_KEY）。
+ */
+export function isHunyuanMultimodalEnabled(config: ConfigService): boolean {
+  const a = config.get<string>('HUNYUAN_MULTIMODAL_ENABLED')?.trim()
+  if (a === '1' || a?.toLowerCase() === 'true') return true
   return config.get<string>('HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED') === '1'
 }
 
+/** @deprecated 请使用 isHunyuanMultimodalEnabled */
+export function isHunyuanCosMultimodalParseEnabled(config: ConfigService): boolean {
+  return isHunyuanMultimodalEnabled(config)
+}
+
+export function resolveHunyuanVisionApiKey(config: ConfigService): string | null {
+  const k =
+    config.get<string>('HUNYUAN_VISION_API_KEY')?.trim() ||
+    config.get<string>('HUNYUAN_OPENAI_API_KEY')?.trim()
+  return k || null
+}
+
+function guessMimeFromPath(localPath: string, fileKind: 'image' | 'pdf'): string {
+  if (fileKind === 'pdf') return 'application/pdf'
+  const ext = path.extname(localPath).toLowerCase()
+  if (ext === '.png') return 'image/png'
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+  if (ext === '.webp') return 'image/webp'
+  if (ext === '.gif') return 'image/gif'
+  return 'image/jpeg'
+}
+
+function normalizeOpenAiMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (Array.isArray(content)) {
+    const parts = content as Array<{ type?: string; text?: string }>
+    return parts
+      .map((p) => (typeof p?.text === 'string' ? p.text : ''))
+      .join('')
+      .trim()
+  }
+  return ''
+}
+
 /**
- * 是否满足尝试混元 COS 直读的前提（开关、COS URI、密钥、体积上限）。
+ * 调用混元 OpenAI 兼容多模态接口（仅 axios）。
+ * Content 使用标准数组：[{type:text},{type:image_url,image_url:{url:data:...}}]
+ */
+export async function runHunyuanOpenAiVisionChat(params: {
+  config: ConfigService
+  localPath: string
+  fileKind: 'image' | 'pdf'
+  prompt: string
+}): Promise<{
+  text: string
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}> {
+  if (!isHunyuanMultimodalEnabled(params.config)) {
+    throw new Error('混元多模态未启用（HUNYUAN_MULTIMODAL_ENABLED 或兼容 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED）')
+  }
+  const apiKey = resolveHunyuanVisionApiKey(params.config)
+  if (!apiKey) {
+    throw new Error('混元 OpenAI 多模态：缺少 HUNYUAN_VISION_API_KEY（sk- 开头 API Key）')
+  }
+  const lp = params.localPath?.trim()
+  if (!lp || !fs.existsSync(lp)) {
+    throw new Error(`混元多模态：本地文件不存在：${lp || '(empty)'}`)
+  }
+
+  const buf = fs.readFileSync(lp)
+  const mime = guessMimeFromPath(lp, params.fileKind)
+  const dataUrl = `data:${mime};base64,${buf.toString('base64')}`
+
+  const url =
+    params.config.get<string>('HUNYUAN_OPENAI_BASE_URL')?.trim() ||
+    HUNYUAN_OPENAI_CHAT_COMPLETIONS_URL_DEFAULT
+  const model =
+    params.config.get<string>('HUNYUAN_MULTIMODAL_MODEL')?.trim() || 'hunyuan-vision'
+  const temperature = parseFloat(params.config.get<string>('HUNYUAN_MULTIMODAL_TEMPERATURE') || '0.1')
+  const timeoutMs = parseInt(params.config.get<string>('HUNYUAN_OPENAI_TIMEOUT_MS') || '180000', 10)
+  const timeout = Number.isFinite(timeoutMs) && timeoutMs >= 10_000 ? timeoutMs : 180_000
+
+  const body = {
+    model,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: params.prompt },
+          {
+            type: 'image_url',
+            image_url: { url: dataUrl },
+          },
+        ],
+      },
+    ],
+    temperature: Number.isFinite(temperature) ? temperature : 0.1,
+  }
+
+  try {
+    const { data, status } = await axios.post<Record<string, unknown>>(url, body, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout,
+      validateStatus: () => true,
+    })
+
+    if (status < 200 || status >= 300) {
+      const errBody = typeof data === 'object' && data && 'error' in data ? (data as any).error : data
+      throw new Error(`混元 API HTTP ${status}：${JSON.stringify(errBody).slice(0, 2000)}`)
+    }
+
+    const err = (data as any)?.error
+    if (err?.message) {
+      throw new Error(`混元 API：${String(err.message)}`)
+    }
+
+    const choices = (data as any)?.choices as unknown[] | undefined
+    const choice0 = Array.isArray(choices) && choices.length > 0 ? (choices[0] as any) : null
+    const content = choice0?.message?.content
+    const text = normalizeOpenAiMessageContent(content)
+    if (!text) {
+      throw new Error('混元 API：choices[0].message.content 为空')
+    }
+
+    const usage = (data as any)?.usage
+    return {
+      text,
+      promptTokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
+      completionTokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+      totalTokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : undefined,
+    }
+  } catch (e) {
+    if (axios.isAxiosError(e)) {
+      const msg = e.response?.data ? JSON.stringify(e.response.data).slice(0, 2000) : e.message
+      logger.warn(`混元 OpenAI 请求失败: ${msg}`)
+    }
+    throw e
+  }
+}
+
+/**
+ * 是否满足「混元 OpenAI 多模态直读」前提：开关、API Key、本地可读文件、体积上限。
+ * cosStorage / storedPath 参数保留以兼容旧调用方与单测签名；OpenAI 通道不依赖 COS 外链。
  */
 export function canTryHunyuanCosMultimodalParse(
   config: ConfigService,
-  cosStorage: CosStorageService,
+  _cosStorage: CosStorageService,
   storedPath: string,
   fileKind: 'image' | 'pdf',
   fileBytes: number,
+  localPath?: string,
 ): boolean {
-  if (!isHunyuanCosMultimodalParseEnabled(config)) return false
-  if (!CosStorageService.isCosUri(storedPath)) return false
-  if (!cosStorage.isConfigured()) {
-    logger.warn('Hunyuan COS multimodal: COS 未配置完整，跳过')
+  if (!isHunyuanMultimodalEnabled(config)) {
+    logger.debug('Hunyuan OpenAI multimodal: disabled')
     return false
   }
-  if (!resolveTencentCredentialsForHunyuan(config)) {
-    logger.warn('Hunyuan COS multimodal: 未配置 TENCENTCLOUD_SECRET_* / COS_SECRET_*，跳过')
+  if (!resolveHunyuanVisionApiKey(config)) {
+    logger.warn('Hunyuan OpenAI multimodal: missing HUNYUAN_VISION_API_KEY (or HUNYUAN_OPENAI_API_KEY fallback)')
+    return false
+  }
+  const lp = localPath?.trim()
+  if (!lp || !fs.existsSync(lp)) {
+    logger.warn('Hunyuan OpenAI multimodal: localPath missing or file not found')
     return false
   }
   if (fileKind === 'pdf') {
     const maxMb = parseInt(config.get<string>('HUNYUAN_COS_MULTIMODAL_MAX_PDF_MB') || '40', 10)
     const mb = fileBytes / (1024 * 1024)
     if (Number.isFinite(maxMb) && maxMb > 0 && mb > maxMb) {
-      logger.warn(`Hunyuan COS multimodal: PDF ${mb.toFixed(1)}MB 超过上限 ${maxMb}MB，跳过`)
+      logger.warn(`Hunyuan OpenAI multimodal: PDF ${mb.toFixed(1)}MB 超过上限 ${maxMb}MB，跳过`)
       return false
     }
   }
@@ -56,7 +193,7 @@ export function canTryHunyuanCosMultimodalParse(
     const maxMb = parseInt(config.get<string>('HUNYUAN_COS_MULTIMODAL_MAX_IMAGE_MB') || '18', 10)
     const mb = fileBytes / (1024 * 1024)
     if (Number.isFinite(maxMb) && maxMb > 0 && mb > maxMb) {
-      logger.warn(`Hunyuan COS multimodal: 图片 ${mb.toFixed(1)}MB 超过上限 ${maxMb}MB，跳过`)
+      logger.warn(`Hunyuan OpenAI multimodal: 图片 ${mb.toFixed(1)}MB 超过上限 ${maxMb}MB，跳过`)
       return false
     }
   }
@@ -108,94 +245,20 @@ function buildStructuredRequirementPrompt(fileKind: 'image' | 'pdf'): string {
 请确保分析全面，覆盖所有可见的功能和交互细节。`
 }
 
-export type AnalyzeCosMultimodalParams = {
-  config: ConfigService
-  cosStorage: CosStorageService
-  /** DB 中的 cos://region/bucket/key */
-  storedPath: string
-  fileKind: 'image' | 'pdf'
-}
-
-export type HunyuanCosPromptParams = AnalyzeCosMultimodalParams & {
-  prompt: string
-}
-
-export async function runHunyuanCosPrompt(
-  params: HunyuanCosPromptParams,
-): Promise<{ text: string; promptTokens?: number; completionTokens?: number; totalTokens?: number }> {
-  const cred = resolveTencentCredentialsForHunyuan(params.config)
-  if (!cred) {
-    throw new Error('混元多模态：缺少 TENCENTCLOUD_SECRET_* 或 COS_SECRET_*')
-  }
-  const ttlRaw =
-    params.config.get<string>('HUNYUAN_COS_URL_EXPIRES_SEC')?.trim() ||
-    params.config.get<string>('TENCENT_OCR_COS_URL_EXPIRES_SEC')?.trim() ||
-    '7200'
-  const ttl = parseInt(ttlRaw, 10)
-  const expires = Number.isFinite(ttl) && ttl >= 60 && ttl <= 86400 ? ttl : 7200
-  const signedUrl = await params.cosStorage.getSignedGetObjectUrl(params.storedPath, expires)
-
-  const region =
-    params.config.get<string>('HUNYUAN_REGION')?.trim() ||
-    params.config.get<string>('COS_REGION')?.trim() ||
-    'ap-guangzhou'
-  const model =
-    params.config.get<string>('HUNYUAN_MULTIMODAL_MODEL')?.trim() || 'hunyuan-vision'
-  const temperature = parseFloat(params.config.get<string>('HUNYUAN_MULTIMODAL_TEMPERATURE') || '0.1')
-  const reqTimeoutSec = parseInt(params.config.get<string>('HUNYUAN_MULTIMODAL_REQ_TIMEOUT_SEC') || '180', 10)
-  const t = Number.isFinite(reqTimeoutSec) && reqTimeoutSec >= 30 ? reqTimeoutSec : 180
-
-  const HunyuanClient = hunyuan.v20230901.Client
-  const client = new HunyuanClient({
-    credential: { secretId: cred.secretId, secretKey: cred.secretKey },
-    region,
-    profile: { httpProfile: { reqTimeout: t } },
-  })
-
-  const res = await client.ChatCompletions({
-    Model: model,
-    Messages: [
-      {
-        Role: 'user',
-        Contents: [
-          { Type: 'text', Text: params.prompt },
-          { Type: 'image_url', ImageUrl: { Url: signedUrl } },
-        ],
-      },
-    ],
-    Temperature: Number.isFinite(temperature) ? temperature : 0.1,
-    Stream: false,
-    EnableEnhancement: false,
-  })
-
-  if (res.ErrorMsg?.Msg) {
-    throw new Error(String(res.ErrorMsg.Msg))
-  }
-  const finish = res.Choices?.[0]?.FinishReason
-  if (finish === 'sensitive') {
-    throw new Error('混元多模态输出未通过安全审核')
-  }
-  const msg = res.Choices?.[0]?.Message
-  const text = typeof msg?.Content === 'string' ? msg.Content.trim() : ''
-  if (!text) {
-    throw new Error('混元多模态返回内容为空')
-  }
-  return {
-    text,
-    promptTokens: res?.Usage?.PromptTokens,
-    completionTokens: res?.Usage?.CompletionTokens,
-    totalTokens: res?.Usage?.TotalTokens,
-  }
-}
-
 /**
- * 使用腾讯云混元 **hunyuan-vision**，对 COS 签名 URL 指向的图片或 PDF 做一次多模态理解，
- * 返回结构化需求分析正文（Markdown）。失败时抛出异常，由调用方降级到 OCR/原视觉管线。
+ * 解析阶段：对本地图片/PDF 走混元多模态理解（Base64），返回结构化 Markdown 正文。
  */
-export async function analyzeCosFileWithHunyuanMultimodal(
-  params: AnalyzeCosMultimodalParams,
-): Promise<string> {
+export async function analyzeCosFileWithHunyuanMultimodal(params: {
+  config: ConfigService
+  localPath: string
+  fileKind: 'image' | 'pdf'
+}): Promise<string> {
   const prompt = buildStructuredRequirementPrompt(params.fileKind)
-  const out = await runHunyuanCosPrompt({ ...params, prompt })
+  const out = await runHunyuanOpenAiVisionChat({
+    config: params.config,
+    localPath: params.localPath,
+    fileKind: params.fileKind,
+    prompt,
+  })
   return out.text
 }
