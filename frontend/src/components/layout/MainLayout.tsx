@@ -44,9 +44,11 @@ export default function MainLayout() {
         {/* 顶部导航 */}
         <Header />
 
-        {/* 页面内容 */}
-        <main className="relative flex-1 overflow-y-auto p-6">
-          <Outlet />
+        {/* 页面内容：workspace 宽度与轻量铺底，与登录页 playful 系统一致 */}
+        <main className="relative flex-1 overflow-y-auto bg-gradient-to-b from-sky-50/35 via-transparent to-violet-50/25 px-5 py-6 sm:px-7 sm:py-7 lg:px-8 dark:from-slate-950/80 dark:via-slate-950/20 dark:to-indigo-950/35">
+          <div className="mx-auto w-full max-w-[1520px] min-w-0">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

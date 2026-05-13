@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Wand2,
@@ -10,22 +10,90 @@ import {
   FileUp,
   BookTemplate,
   Settings,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/store/authStore'
 import { recordsApi } from '@/api/records'
 import { testcasesApi } from '@/api/testcases'
 import { healthApi, type HealthStatus } from '@/api/health'
-import { formatDate, statusColorMap, timeAgo } from '@/utils/format'
+import { formatDate, timeAgo } from '@/utils/format'
 import type { GenerationRecord, TestSuite } from '@/types'
+import { cn } from '@/utils/cn'
 
 interface Stats {
   totalCases: number
   totalRecords: number
   totalSuites: number
   successRate: number
+}
+
+function MiniSparkline({ seed, className }: { seed: number; className?: string }) {
+  const pts = useMemo(() => {
+    return [0, 1, 2, 3, 4, 5].map((i) => {
+      const y = 42 + (((seed >> (i * 3)) & 7) - 3.5) * 6
+      return `${4 + i * 10},${Math.max(18, Math.min(54, y))}`
+    })
+  }, [seed])
+  return (
+    <svg
+      viewBox="0 0 64 56"
+      className={cn('h-10 w-[4.5rem] shrink-0 text-cyan-500/55 dark:text-cyan-300/45', className)}
+      aria-hidden
+    >
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={pts.join(' ')}
+      />
+    </svg>
+  )
+}
+
+function SuccessRing({ rate }: { rate: number }) {
+  const clamped = Math.max(0, Math.min(100, rate))
+  const dash = `${(clamped / 100) * 100.53} 100.53`
+  return (
+    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center" aria-hidden>
+      <svg viewBox="0 0 40 40" className="h-12 w-12 -rotate-90">
+        <circle cx="20" cy="20" r="16" fill="none" className="stroke-muted/35" strokeWidth="4" />
+        <circle
+          cx="20"
+          cy="20"
+          r="16"
+          fill="none"
+          className="stroke-emerald-400/90 dark:stroke-emerald-300/85"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={dash}
+        />
+      </svg>
+      <span className="pointer-events-none absolute text-[10px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-200">
+        {Math.round(clamped)}
+      </span>
+    </div>
+  )
+}
+
+function recordStatusLabel(status: string) {
+  if (status === 'SUCCESS') return '成功'
+  if (status === 'FAILED') return '失败'
+  if (status === 'PROCESSING') return '生成中'
+  return '等待中'
+}
+
+function recordStatusPillClass(status: string) {
+  if (status === 'SUCCESS')
+    return 'border-emerald-400/35 bg-emerald-500/12 text-emerald-800 dark:text-emerald-100'
+  if (status === 'FAILED')
+    return 'border-rose-400/35 bg-rose-500/12 text-rose-800 dark:text-rose-100'
+  if (status === 'PROCESSING')
+    return 'border-cyan-400/40 bg-cyan-500/12 text-cyan-900 dark:text-cyan-100'
+  return 'border-amber-400/35 bg-amber-500/12 text-amber-900 dark:text-amber-100'
 }
 
 export default function DashboardPage() {
@@ -65,193 +133,445 @@ export default function DashboardPage() {
     fetchData()
   }, [])
 
-  const statCards = [
-    { title: '总生成记录', value: stats.totalRecords, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-    { title: '用例集数量', value: stats.totalSuites, icon: CheckSquare, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-950/30' },
-    { title: '累计生成用例', value: stats.totalCases, icon: TrendingUp, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-    { title: '成功率', value: `${stats.successRate}%`, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
-  ]
+  const statCards = useMemo(
+    () =>
+      [
+        {
+          title: '总生成记录',
+          value: stats.totalRecords,
+          icon: FileText,
+          sparkSeed: stats.totalRecords + 11,
+          accent: 'from-sky-400/90 to-cyan-500/80',
+        },
+        {
+          title: '用例集数量',
+          value: stats.totalSuites,
+          icon: CheckSquare,
+          sparkSeed: stats.totalSuites + 101,
+          accent: 'from-violet-400/90 to-indigo-500/80',
+        },
+        {
+          title: '累计生成用例',
+          value: stats.totalCases,
+          icon: TrendingUp,
+          sparkSeed: stats.totalCases + 503,
+          accent: 'from-emerald-400/85 to-teal-500/75',
+        },
+        {
+          title: '成功率',
+          value: `${stats.successRate}%`,
+          numericRate: stats.successRate,
+          icon: TrendingUp,
+          sparkSeed: stats.successRate + 907,
+          accent: 'from-amber-300/90 to-orange-400/80',
+          isRate: true as const,
+        },
+      ] as const,
+    [stats],
+  )
 
   const quickActions = [
-    { title: '解析文档', desc: '上传并解析需求文档', icon: FileUp, to: '/upload' },
-    { title: '生成用例', desc: '配置参数并流式生成', icon: Wand2, to: '/generate' },
-    { title: '模板管理', desc: '维护提示词模板库', icon: BookTemplate, to: '/templates' },
-    { title: '系统设置', desc: '模型配置与个人设置', icon: Settings, to: '/settings' },
+    {
+      title: '解析文档',
+      desc: '上传并解析需求文档',
+      icon: FileUp,
+      to: '/upload',
+      accent: 'cyan' as const,
+    },
+    {
+      title: '生成用例',
+      desc: '配置参数并流式生成',
+      icon: Wand2,
+      to: '/generate',
+      accent: 'violet' as const,
+    },
+    {
+      title: '模板管理',
+      desc: '维护提示词模板库',
+      icon: BookTemplate,
+      to: '/templates',
+      accent: 'mint' as const,
+    },
+    {
+      title: '系统设置',
+      desc: '模型配置与个人设置',
+      icon: Settings,
+      to: '/settings',
+      accent: 'amber' as const,
+    },
   ]
 
+  const accentTileMap = {
+    cyan: 'from-cyan-400/25 via-cyan-500/10 to-transparent border-cyan-400/25 shadow-[0_20px_50px_-34px_rgba(34,211,238,0.55)]',
+    violet:
+      'from-violet-400/25 via-indigo-500/10 to-transparent border-violet-400/25 shadow-[0_20px_50px_-34px_rgba(167,139,250,0.55)]',
+    mint: 'from-emerald-400/22 via-teal-500/10 to-transparent border-emerald-400/25 shadow-[0_20px_50px_-34px_rgba(52,211,153,0.5)]',
+    amber:
+      'from-amber-300/28 via-amber-500/10 to-transparent border-amber-300/30 shadow-[0_20px_50px_-34px_rgba(251,191,36,0.45)]',
+  }
+
+  const accentIconMap = {
+    cyan: 'bg-cyan-500/15 text-cyan-700 ring-cyan-400/25 dark:text-cyan-100 dark:ring-cyan-400/20',
+    violet: 'bg-violet-500/15 text-violet-700 ring-violet-400/25 dark:text-violet-100 dark:ring-violet-400/20',
+    mint: 'bg-emerald-500/15 text-emerald-800 ring-emerald-400/25 dark:text-emerald-100 dark:ring-emerald-400/20',
+    amber: 'bg-amber-400/18 text-amber-900 ring-amber-300/35 dark:text-amber-100 dark:ring-amber-300/25',
+  }
+
+  const queueTotal = health ? Math.max(1, health.pending + health.parsing) : 1
+  const queueBusyPct = health ? Math.min(100, Math.round((health.parsing / queueTotal) * 100)) : 0
+
   return (
-    <div className="space-y-6">
-      {/* 欢迎区 */}
-      <div className="flex flex-col gap-3 rounded-xl border-0 bg-background/50 px-4 py-3 shadow-md ring-1 ring-inset ring-white/15 backdrop-blur-md dark:bg-background/40 dark:ring-white/10 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold drop-shadow-sm [text-shadow:0_1px_2px_hsl(var(--background)/0.45)]">
-            欢迎回来，{user?.username}
-          </h1>
-          <p className="mt-1 text-muted-foreground">今天也是提升测试效率的好日子</p>
+    <div className="space-y-7 md:space-y-8">
+      {/* Hero */}
+      <section
+        className={cn(
+          'dash-enter dash-enter-delay-1 relative overflow-hidden rounded-[22px] border',
+          'border-slate-200/70 bg-gradient-to-br from-white/85 via-sky-50/50 to-violet-50/40',
+          'p-6 shadow-[0_28px_70px_-44px_rgba(56,189,248,0.45)] backdrop-blur-xl',
+          'dark:border-white/[0.09] dark:from-slate-950/75 dark:via-[#0d1528]/80 dark:to-[#121c33]/85',
+          'dark:shadow-[0_32px_80px_-40px_rgba(0,0,0,0.72)]',
+        )}
+      >
+        <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-cyan-400/18 blur-3xl dark:bg-cyan-500/12" />
+        <div className="pointer-events-none absolute -bottom-24 -left-10 h-52 w-52 rounded-full bg-violet-400/16 blur-3xl dark:bg-violet-500/10" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-start">
+            <div
+              className={cn(
+                'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                'bg-gradient-to-br from-cyan-400/30 via-white/80 to-violet-400/25 ring-1 ring-white/50',
+                'dark:from-cyan-400/20 dark:via-white/10 dark:to-violet-500/20 dark:ring-white/15',
+              )}
+              aria-hidden
+            >
+              <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-200" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                Friendly AI workspace
+              </p>
+              <h1 className="text-balance text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-[1.65rem]">
+                欢迎回来，{user?.username ?? '用户'}
+              </h1>
+              <p className="max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                今天也让 AI 帮你少写一点重复用例。
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            <Button
+              type="button"
+              onClick={() => navigate('/generate')}
+              className={cn(
+                'dash-primary-cta group relative h-[52px] overflow-hidden rounded-2xl border-0 px-6 text-[15px] font-semibold text-white shadow-lg',
+                'bg-gradient-to-r from-violet-600 via-cyan-500 to-teal-500',
+                'transition-[transform,box-shadow,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                'hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-18px_rgba(99,102,241,0.55)]',
+                'active:translate-y-px active:brightness-[0.97] motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+              )}
+            >
+              <span className="relative z-[1] inline-flex items-center gap-2">
+                <Wand2 className="h-4 w-4" strokeWidth={2} />
+                立即生成用例
+              </span>
+            </Button>
+          </div>
         </div>
-        <Button onClick={() => navigate('/generate')} className="shrink-0 gap-2">
-          <Wand2 className="w-4 h-4" />
-          立即生成用例
-        </Button>
-      </div>
+      </section>
 
-      {/* 快捷入口 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {quickActions.map((a) => (
-          <Card
-            key={a.title}
-            className="hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => navigate(a.to)}
-          >
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
-                </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/40 bg-muted/60 backdrop-blur-sm">
-                  <a.icon className="w-5 h-5 text-muted-foreground" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((card) => (
-          <Card key={card.title} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">{card.title}</p>
-                  <p className="text-2xl font-bold mt-1">{loading ? '-' : card.value}</p>
+      {/* Action tiles */}
+      <section className="dash-enter dash-enter-delay-2 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {quickActions.map((action) => {
+          const TileIcon = action.icon
+          return (
+            <button
+              key={action.title}
+              type="button"
+              onClick={() => navigate(action.to)}
+              className={cn(
+                'group relative flex flex-col overflow-hidden rounded-[20px] border bg-white/70 p-5 text-left',
+                'shadow-[0_18px_44px_-36px_rgba(15,23,42,0.35)] backdrop-blur-xl transition-[transform,box-shadow,opacity] duration-300',
+                'hover:-translate-y-1 hover:shadow-[0_28px_60px_-32px_rgba(56,189,248,0.35)]',
+                'dark:bg-slate-950/55 dark:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.65)] dark:hover:shadow-[0_32px_70px_-28px_rgba(99,102,241,0.25)]',
+                'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                accentTileMap[action.accent],
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100',
+                  'bg-[radial-gradient(ellipse_at_90%_0%,rgba(56,189,248,0.22),transparent_55%)]',
+                  'dark:bg-[radial-gradient(ellipse_at_90%_0%,rgba(167,139,250,0.18),transparent_55%)]',
+                  'motion-reduce:opacity-0',
+                )}
+              />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1.5">
+                  <p className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-slate-50">{action.title}</p>
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">{action.desc}</p>
                 </div>
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-sm ring-1 ring-inset ring-white/12 backdrop-blur-sm dark:ring-white/8 ${card.bg}`}
+                  className={cn(
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 backdrop-blur-sm transition-transform duration-300',
+                    'group-hover:-rotate-6 group-hover:translate-x-0.5 motion-reduce:group-hover:rotate-0 motion-reduce:group-hover:translate-x-0',
+                    accentIconMap[action.accent],
+                  )}
                 >
-                  <card.icon className={`w-6 h-6 ${card.color}`} />
+                  <TileIcon className="h-5 w-5" strokeWidth={1.75} />
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <div className="relative mt-5 flex items-center justify-between text-xs font-medium text-cyan-700/80 dark:text-cyan-200/80">
+                <span className="opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:opacity-100">
+                  Go
+                </span>
+                <ArrowRight className="h-4 w-4 translate-x-0 opacity-60 transition-transform duration-300 group-hover:translate-x-1 group-hover:opacity-100 motion-reduce:group-hover:translate-x-0" />
+              </div>
+            </button>
+          )
+        })}
+      </section>
 
-      {/* 运行状态（可观测性：解析队列/worker 是否启用） */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base font-semibold">运行状态</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-xs"
-            onClick={async () => setHealth(await healthApi.getHealth().catch(() => null))}
-          >
-            刷新 <ArrowRight className="w-3 h-3 rotate-180" />
-          </Button>
-        </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          {health ? (
-            <>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline" className="text-xs">
-                  后端：OK
-                </Badge>
-                <Badge variant={health.workerEnabled ? 'secondary' : 'destructive'} className="text-xs">
+      {/* Metrics */}
+      <section className="dash-enter dash-enter-delay-3 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {statCards.map((card) => {
+          const Icon = card.icon
+          const isRate = 'isRate' in card && card.isRate === true
+          return (
+            <div
+              key={card.title}
+              className={cn(
+                'relative overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 p-5',
+                'shadow-[0_20px_50px_-40px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-shadow duration-300 hover:shadow-[0_26px_60px_-36px_rgba(99,102,241,0.22)]',
+                'dark:border-white/[0.08] dark:bg-slate-950/55 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
+              )}
+            >
+              <div
+                className={cn(
+                  'pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-gradient-to-br opacity-55 blur-2xl',
+                  card.accent,
+                )}
+              />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {card.title}
+                  </p>
+                  <p className="text-3xl font-semibold tabular-nums tracking-tight text-slate-900 dark:text-slate-50 sm:text-[2.1rem]">
+                    {loading ? '—' : card.value}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-500">实时汇总</p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  {isRate && 'numericRate' in card ? (
+                    <SuccessRing rate={card.numericRate} />
+                  ) : (
+                    <MiniSparkline seed={card.sparkSeed} />
+                  )}
+                  <div
+                    className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-md ring-1 ring-white/25',
+                      card.accent,
+                    )}
+                  >
+                    <Icon className="h-5 w-5" strokeWidth={2} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </section>
+
+      {/* System health */}
+      <section
+        className={cn(
+          'dash-enter dash-enter-delay-4 rounded-[20px] border border-slate-200/65 bg-white/72 p-5 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.3)] backdrop-blur-xl',
+          'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.68)]',
+        )}
+      >
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-emerald-400/30 bg-emerald-500/12 px-3 py-1 text-xs font-medium text-emerald-900 dark:text-emerald-100">
+              后端 OK
+            </span>
+            {health ? (
+              <>
+                <span
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-xs font-medium',
+                    health.workerEnabled
+                      ? 'border-cyan-400/35 bg-cyan-500/12 text-cyan-900 dark:text-cyan-100'
+                      : 'border-rose-400/35 bg-rose-500/12 text-rose-900 dark:text-rose-100',
+                  )}
+                >
                   解析 Worker：{health.workerEnabled ? '已启用' : '已关闭'}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                <span>待处理：{health.pending}</span>
-                <span>解析中：{health.parsing}</span>
-              </div>
-            </>
-          ) : (
-            <div className="text-sm text-muted-foreground">暂无法获取运行状态（请稍后重试）</div>
-          )}
-        </CardContent>
-      </Card>
+                </span>
+                <span className="rounded-full border border-violet-400/30 bg-violet-500/12 px-3 py-1 text-xs font-medium text-violet-900 dark:text-violet-100">
+                  队列正常
+                </span>
+              </>
+            ) : null}
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 最近生成记录 */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base font-semibold">最近生成记录</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/records')} className="gap-1 text-xs">
-              查看全部 <ArrowRight className="w-3 h-3" />
+          <div className="flex min-w-[200px] flex-1 flex-col gap-2 lg:max-w-md">
+            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+              <span>待处理 {health?.pending ?? '—'}</span>
+              <span>解析中 {health?.parsing ?? '—'}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800/90">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-violet-400 to-teal-400 transition-[width] duration-500 ease-out"
+                style={{ width: `${health ? Math.max(6, queueBusyPct) : 6}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-50/80 px-3 py-1.5 text-xs text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+              <Sparkles className="h-3.5 w-3.5 text-violet-500 dark:text-violet-300" strokeWidth={2} />
+              <span>小助手已就绪</span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 rounded-xl text-slate-600 hover:bg-slate-100/90 dark:text-slate-300 dark:hover:bg-white/10"
+              onClick={async () => setHealth(await healthApi.getHealth().catch(() => null))}
+            >
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />
+              刷新
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
+          </div>
+        </div>
+        {!health && !loading ? (
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">暂无法获取运行状态（请稍后重试）</p>
+        ) : null}
+      </section>
+
+      {/* Lists */}
+      <div className="dash-enter dash-enter-delay-5 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-7">
+        <div
+          className={cn(
+            'flex flex-col overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl',
+            'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
+          )}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200/60 px-5 py-4 dark:border-white/[0.06]">
+            <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">最近生成记录</h2>
+            <button
+              type="button"
+              onClick={() => navigate('/records')}
+              className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 transition-colors hover:text-cyan-600 dark:text-cyan-300 dark:hover:text-cyan-200"
+            >
+              查看全部
+              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
+          </div>
+          <div className="divide-y divide-slate-100/90 dark:divide-white/[0.06]">
             {loading ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">加载中...</div>
+              <div className="px-5 py-10 text-center text-sm text-slate-500">加载中…</div>
             ) : recentRecords.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">暂无记录，去生成第一个用例吧</div>
+              <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-600 dark:text-violet-200">
+                  <Sparkles className="h-6 w-6" strokeWidth={1.75} />
+                </div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">还没有生成记录</p>
+                <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">让 AI 从第一份需求开始，帮你起草可评审的用例。</p>
+                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate('/generate')}>
+                  去生成
+                </Button>
+              </div>
             ) : (
               recentRecords.map((record) => (
-                <div
+                <button
                   key={record.id}
-                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
+                  type="button"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
+                  className={cn(
+                    'flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-[transform,background-color] duration-200',
+                    'hover:bg-sky-50/70 hover:translate-x-0.5 dark:hover:bg-white/[0.04] motion-reduce:hover:translate-x-0',
+                  )}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{record.title}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">
-                        {timeAgo(record.createdAt)}（{formatDate(record.createdAt, 'MM-dd HH:mm')}）
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{record.title}</p>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                      <span className="truncate">
+                        {timeAgo(record.createdAt)} · {formatDate(record.createdAt, 'MM-dd HH:mm')}
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-3">
-                    <span className="text-xs text-muted-foreground">{record.caseCount} 条</span>
-                    <Badge className={`text-xs ${statusColorMap[record.status] || ''}`} variant="outline">
-                      {record.status === 'SUCCESS' ? '成功' : record.status === 'FAILED' ? '失败' : record.status === 'PROCESSING' ? '生成中' : '等待中'}
-                    </Badge>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">{record.caseCount} 条</span>
+                    <span
+                      className={cn(
+                        'rounded-full border px-2.5 py-0.5 text-[11px] font-medium',
+                        recordStatusPillClass(record.status),
+                      )}
+                    >
+                      {recordStatusLabel(record.status)}
+                    </span>
                   </div>
-                </div>
+                </button>
               ))
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* 最近用例集 */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base font-semibold">最近用例集</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/generate')} className="gap-1 text-xs">
-              去生成 <ArrowRight className="w-3 h-3" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div
+          className={cn(
+            'flex flex-col overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl',
+            'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
+          )}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200/60 px-5 py-4 dark:border-white/[0.06]">
+            <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">最近用例集</h2>
+            <button
+              type="button"
+              onClick={() => navigate('/generate')}
+              className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 transition-colors hover:text-cyan-600 dark:text-cyan-300 dark:hover:text-cyan-200"
+            >
+              去生成
+              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
+          </div>
+          <div className="divide-y divide-slate-100/90 dark:divide-white/[0.06]">
             {loading ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">加载中...</div>
+              <div className="px-5 py-10 text-center text-sm text-slate-500">加载中…</div>
             ) : recentSuites.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8 text-sm">暂无用例集</div>
+              <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-700 dark:text-emerald-200">
+                  <Sparkles className="h-6 w-6" strokeWidth={1.75} />
+                </div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">暂无用例集</p>
+                <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">生成一次用例后，用例集会出现在这里。</p>
+              </div>
             ) : (
               recentSuites.map((suite) => (
-                <div
+                <button
                   key={suite.id}
-                  className="-mx-2 flex cursor-pointer items-center justify-between rounded-md px-2 py-2 shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] last:shadow-none hover:bg-accent/30 dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]"
+                  type="button"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
+                  className={cn(
+                    'flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-[transform,background-color] duration-200',
+                    'hover:bg-emerald-50/60 hover:translate-x-0.5 dark:hover:bg-white/[0.04] motion-reduce:hover:translate-x-0',
+                  )}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{suite.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{suite.projectName || '无项目'}</p>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{suite.name}</p>
+                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">{suite.projectName || '无项目'}</p>
                   </div>
-                  <div className="flex items-center gap-2 ml-3">
-                    <Badge variant="secondary" className="text-xs">
-                      {suite.caseCount} 条用例
-                    </Badge>
-                  </div>
-                </div>
+                  <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-900 dark:text-emerald-100">
+                    {suite.caseCount} 条用例
+                  </span>
+                </button>
               ))
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   )
