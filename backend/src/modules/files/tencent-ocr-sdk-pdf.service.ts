@@ -163,6 +163,13 @@ export class TencentOcrSdkPdfService {
         }
       } catch (e) {
         const msg = this.formatTencentError(e)
+        // 腾讯云偶发 UnKnowError / 限流等：不要直接终局失败，交给上层走 HTTP 逐页或其它降级
+        if (this.isRecoverableTencentSdkError(msg)) {
+          this.logger.warn(
+            `腾讯云 SDK PDF 第 ${p} 页可恢复错误，放弃本链路: ${msg}`,
+          )
+          return null
+        }
         if (params.numpages > 0) {
           throw new Error(`【解析失败】腾讯云 PDF 识别第 ${p} 页失败：${msg}`)
         }
@@ -193,5 +200,22 @@ export class TencentOcrSdkPdfService {
     const err = e as { message?: string; code?: string }
     const parts = [err.code, err.message].filter(Boolean)
     return parts.join(' ') || String(e)
+  }
+
+  /** 官方 PDF 接口偶发内部错误 / 限流等，宜降级 HTTP 逐页或本地管线，而非立刻对用户报终局失败 */
+  private isRecoverableTencentSdkError(msg: string): boolean {
+    const m = msg.toLowerCase()
+    return (
+      m.includes('unknowerror') ||
+      m.includes('unknownerror') ||
+      m.includes('requestlimit') ||
+      m.includes('limitexceeded') ||
+      m.includes('serviceunavailable') ||
+      m.includes('resourceunavailable') ||
+      m.includes('throttl') ||
+      m.includes('timeout') ||
+      m.includes('econnreset') ||
+      m.includes('econnrefused')
+    )
   }
 }
