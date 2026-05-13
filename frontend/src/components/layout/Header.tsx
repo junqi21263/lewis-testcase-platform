@@ -36,22 +36,28 @@ function ThemeToggle() {
         'dark:border-white/10 dark:shadow-[0_12px_30px_-14px_rgba(56,189,248,0.28)]',
       )}
     >
+      {/* 与滑块圆心对齐：left = padding + 滑块半径；右档 + 平移量 2.25rem 与滑块 translate 一致 */}
       <span
-        className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-between px-1.5"
+        className="pointer-events-none absolute left-[calc(0.25rem+0.875rem)] top-1/2 z-[2] flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
         aria-hidden
       >
         <Sun
           className={cn(
-            'h-3.5 w-3.5 transition-opacity duration-200 motion-reduce:transition-none',
+            'h-3.5 w-3.5 shrink-0 transition-opacity duration-200 motion-reduce:transition-none',
             !isDark
               ? 'opacity-100 text-[hsl(var(--workspace-theme-toggle-active-icon))]'
               : 'opacity-[0.88] text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
           )}
           strokeWidth={2}
         />
+      </span>
+      <span
+        className="pointer-events-none absolute left-[calc(0.25rem+0.875rem+2.25rem)] top-1/2 z-[2] flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+        aria-hidden
+      >
         <Moon
           className={cn(
-            'h-3.5 w-3.5 transition-opacity duration-200 motion-reduce:transition-none',
+            'h-3.5 w-3.5 shrink-0 transition-opacity duration-200 motion-reduce:transition-none',
             isDark
               ? 'opacity-100 text-[hsl(var(--workspace-theme-toggle-active-icon))]'
               : 'opacity-[0.88] text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
