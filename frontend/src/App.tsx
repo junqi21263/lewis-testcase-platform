@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useThemeStore } from '@/store/themeStore'
 import MainLayout from '@/components/layout/MainLayout'
@@ -27,9 +27,23 @@ function RouteFallback() {
   )
 }
 
-/** 路由守卫：未登录跳转登录页 */
+/** 路由守卫：persist 从 localStorage 恢复完成后再判断，避免首帧误判未登录而一直停在 /login */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const [authReady, setAuthReady] = useState(() => useAuthStore.persist.hasHydrated())
+
+  useEffect(() => {
+    if (useAuthStore.persist.hasHydrated()) {
+      setAuthReady(true)
+      return
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => setAuthReady(true))
+    return unsub
+  }, [])
+
+  if (!authReady) {
+    return <RouteFallback />
+  }
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
 }
 

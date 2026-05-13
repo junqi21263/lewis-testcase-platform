@@ -41,6 +41,7 @@ function clamp(n: number, a: number, b: number) {
 export default function LoginPage() {
   const navigate = useNavigate();
   const theme = useThemeStore((s) => s.theme);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setAuth = useAuthStore((s) => s.setAuth);
   const authError = useAuthStore((s) => s.error);
   const setError = useAuthStore((s) => s.setError);
@@ -54,6 +55,21 @@ export default function LoginPage() {
   const [celebrate, setCelebrate] = useState(false);
   const mascotRef = useRef<HTMLDivElement>(null);
   const prevLoading = useRef(loading);
+
+  /** 已登录时访问 /login：等 auth persist 恢复后进入工作台（与 PrivateRoute 首帧误判修复配套） */
+  useEffect(() => {
+    const go = () => {
+      if (useAuthStore.getState().isAuthenticated) {
+        navigate("/dashboard", { replace: true });
+      }
+    };
+    if (useAuthStore.persist.hasHydrated()) {
+      go();
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(go);
+    return unsub;
+  }, [navigate, isAuthenticated]);
 
   const {
     register,
