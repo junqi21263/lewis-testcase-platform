@@ -144,7 +144,7 @@ export function LoginAmbientCanvas() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.55] mix-blend-screen"
+      className="pointer-events-none absolute inset-0 z-0 h-full w-full opacity-[0.45] mix-blend-screen"
       aria-hidden
     />
   )

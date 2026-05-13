@@ -270,24 +270,18 @@
   animation: login-card-glow 2.2s ease-in-out infinite;
 }
 
-@keyframes login-card-glow-light {
+@keyframes login-panel-shell-pulse {
   0%,
   100% {
-    box-shadow:
-      0 24px 48px -20px rgba(15, 23, 42, 0.12),
-      0 0 0 1px rgba(148, 163, 184, 0.22) inset,
-      0 0 36px -12px rgba(34, 211, 238, 0.12);
+    filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.16));
   }
   50% {
-    box-shadow:
-      0 28px 56px -18px rgba(15, 23, 42, 0.14),
-      0 0 0 1px rgba(167, 139, 250, 0.18) inset,
-      0 0 44px -10px rgba(167, 139, 250, 0.14);
+    filter: drop-shadow(0 0 22px rgba(167, 139, 250, 0.2));
   }
 }
 
-.login-card-busy-light {
-  animation: login-card-glow-light 2.2s ease-in-out infinite;
+.login-panel-shell.login-card-busy-light {
+  animation: login-panel-shell-pulse 2.2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -308,9 +302,9 @@
       0 0 0 1px rgba(255, 255, 255, 0.06) inset,
       0 24px 48px -24px rgba(0, 0, 0, 0.55);
   }
-  .login-card-busy-light {
+  .login-panel-shell.login-card-busy-light {
     animation: none;
-    box-shadow: 0 24px 48px -20px rgba(15, 23, 42, 0.1);
+    filter: none;
   }
 }
 
@@ -472,5 +466,125 @@
   }
   .login-mascot-head-shake-once {
     animation: none;
+  }
+}
+
+/* --- Login: frosted panel + soft inset inputs（与 playful 背景统一） --- */
+.login-mascot-stage {
+  position: relative;
+  isolation: isolate;
+}
+
+.login-panel-shell {
+  background: linear-gradient(
+    135deg,
+    rgba(125, 211, 252, 0.48),
+    rgba(196, 181, 253, 0.38),
+    rgba(253, 224, 71, 0.28)
+  );
+  box-shadow:
+    0 32px 64px -28px rgba(30, 58, 138, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 0 52px -24px rgba(56, 189, 248, 0.12);
+}
+
+.login-panel-body {
+  background: linear-gradient(180deg, #f8fbff 0%, #fff8f1 52%, #f5f7ff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -14px 32px -22px rgba(99, 102, 241, 0.07),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(20px);
+}
+
+.login-soft-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(180deg, #eef4ff 0%, #f3efff 100%);
+  border: 1px solid rgba(99, 102, 241, 0.14) !important;
+  box-shadow:
+    inset 0 2px 5px rgba(15, 23, 42, 0.055),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.78);
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.login-soft-input:hover {
+  border-color: rgba(56, 189, 248, 0.24) !important;
+}
+
+.login-soft-input:focus,
+.login-soft-input:focus-visible {
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow:
+    inset 0 2px 4px rgba(15, 23, 42, 0.045),
+    0 0 0 2px rgba(34, 211, 238, 0.4),
+    0 12px 32px -14px rgba(129, 140, 248, 0.22);
+  transform: translateY(-1px);
+}
+
+.login-soft-input--password {
+  padding-right: 2.85rem;
+}
+
+.login-soft-input--error {
+  border-color: rgba(248, 113, 113, 0.48) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(15, 23, 42, 0.04),
+    0 0 0 2px rgba(248, 113, 113, 0.22) !important;
+}
+
+.login-soft-input--error:focus,
+.login-soft-input--error:focus-visible {
+  box-shadow:
+    inset 0 2px 4px rgba(15, 23, 42, 0.04),
+    0 0 0 2px rgba(248, 113, 113, 0.32) !important;
+}
+
+.login-submit-btn {
+  background: linear-gradient(105deg, #3d6fa8 0%, #5348a0 46%, #1c8496 100%);
+}
+
+.login-submit-btn--busy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 42%,
+    transparent 72%
+  );
+  animation: login-submit-shimmer 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes login-submit-shimmer {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-soft-input:focus,
+  .login-soft-input:focus-visible {
+    transform: none;
+  }
+  .login-submit-btn--busy::before {
+    animation: none;
+    opacity: 0;
   }
 }

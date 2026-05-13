@@ -33,19 +33,19 @@ export function LoginMascot({ look, eyesMode, mood, className }: Props) {
     >
       <svg
         viewBox="0 0 120 120"
-        className="h-28 w-28 text-slate-200/95 drop-shadow-[0_16px_48px_rgba(56,189,248,0.18)] sm:h-36 sm:w-36"
+        className="h-28 w-28 text-slate-200/95 drop-shadow-[0_12px_36px_rgba(56,189,248,0.22)] sm:h-36 sm:w-36"
         role="img"
         aria-label=""
       >
         <defs>
           <linearGradient id="login-bot-head" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="rgb(71 85 105)" />
-            <stop offset="55%" stopColor="rgb(51 65 85)" />
-            <stop offset="100%" stopColor="rgb(30 41 59)" />
+            <stop offset="40%" stopColor="rgb(51 78 115)" />
+            <stop offset="100%" stopColor="rgb(36 52 86)" />
           </linearGradient>
           <linearGradient id="login-bot-glass" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.2)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
+            <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+            <stop offset="100%" stopColor="rgba(167,243,208,0.06)" />
           </linearGradient>
           <linearGradient id="login-bot-scan" x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" stopColor="rgba(34,211,238,0)" />
@@ -54,7 +54,7 @@ export function LoginMascot({ look, eyesMode, mood, className }: Props) {
             <stop offset="100%" stopColor="rgba(167,139,250,0)" />
           </linearGradient>
         </defs>
-        <rect x="18" y="22" width="84" height="78" rx="24" fill="url(#login-bot-head)" stroke="rgba(148,163,184,0.4)" strokeWidth="1" />
+        <rect x="18" y="22" width="84" height="78" rx="24" fill="url(#login-bot-head)" stroke="rgba(125,211,252,0.35)" strokeWidth="1" />
         <rect x="22" y="26" width="76" height="36" rx="16" fill="url(#login-bot-glass)" />
 
         {/* 眼睛 */}
