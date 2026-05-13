@@ -34,11 +34,14 @@ export function LoginThemeToggle({ className }: { className?: string }) {
         </span>
         <span
           className={cn(
-            'login-theme-toggle-thumb pointer-events-none absolute left-0 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center overflow-hidden rounded-full',
+            'login-theme-toggle-thumb pointer-events-none absolute top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center overflow-hidden rounded-full',
             'bg-gradient-to-br from-white/95 to-white/75 shadow-md ring-1 ring-black/[0.06]',
-            'transition-transform duration-500 ease-out',
+            /* left 的 % 相对轨道（定位父级）；勿用 translate-x(100%-thumb)，其 % 相对拇指自身宽度会恒为 0 */
+            'transition-[left,transform] duration-500 ease-out motion-reduce:transition-none',
             'sm:h-9 sm:w-9',
-            isDark ? 'translate-x-[calc(100%-2rem)] sm:translate-x-[calc(100%-2.25rem)]' : 'translate-x-0',
+            isDark
+              ? 'left-[calc(100%-2rem)] sm:left-[calc(100%-2.25rem)]'
+              : 'left-0',
           )}
           aria-hidden
         >
