@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -21,6 +22,29 @@ import { healthApi, type HealthStatus } from '@/api/health'
 import { formatDate, timeAgo } from '@/utils/format'
 import type { GenerationRecord, TestSuite } from '@/types'
 import { cn } from '@/utils/cn'
+
+/** 工作台统一面板 token（与 metrics / health 同源，底部 recent 不再单独一套视觉） */
+const dash = {
+  panel:
+    'rounded-[20px] border border-slate-200/65 bg-white/78 shadow-[0_20px_52px_-42px_rgba(15,23,42,0.24)] backdrop-blur-xl dark:border-white/[0.09] dark:bg-slate-950/[0.54] dark:shadow-[0_24px_64px_-42px_rgba(0,0,0,0.68)]',
+  panelHeader:
+    'flex items-start justify-between gap-3 border-b border-slate-200/55 px-5 py-4 dark:border-white/[0.06]',
+  kicker: 'text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400',
+  panelTitle: 'text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50',
+  panelLink:
+    'group inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-violet-700 transition-[color,background-color] hover:bg-violet-500/10 hover:text-violet-900 dark:text-violet-300 dark:hover:bg-violet-500/15 dark:hover:text-violet-100',
+  listBody: 'flex flex-col gap-1 p-3 pb-4',
+  listRow:
+    'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-[transform,background-color] duration-200 [-webkit-tap-highlight-color:transparent] hover:bg-slate-50/90 hover:translate-x-0.5 dark:hover:bg-white/[0.045] motion-reduce:hover:translate-x-0',
+  emptyWrap:
+    'flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200/80 bg-slate-50/40 px-5 py-10 text-center dark:border-white/[0.08] dark:bg-white/[0.03]',
+  emptyIcon:
+    'flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 via-white/70 to-violet-400/18 ring-1 ring-slate-200/60 dark:from-cyan-400/12 dark:via-white/5 dark:to-violet-500/15 dark:ring-white/10',
+  emptyTitle: 'text-sm font-semibold text-slate-900 dark:text-slate-50',
+  emptyHint: 'max-w-[260px] text-xs leading-relaxed text-slate-600 dark:text-slate-400',
+  emptyCta:
+    'mt-1 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 transition-[color,gap] hover:gap-1.5 dark:text-violet-300',
+} as const
 
 interface Stats {
   totalCases: number
@@ -88,12 +112,70 @@ function recordStatusLabel(status: string) {
 
 function recordStatusPillClass(status: string) {
   if (status === 'SUCCESS')
-    return 'border-emerald-400/35 bg-emerald-500/12 text-emerald-800 dark:text-emerald-100'
+    return 'bg-emerald-500/14 text-emerald-900 ring-1 ring-emerald-500/20 dark:text-emerald-100 dark:ring-emerald-400/25'
   if (status === 'FAILED')
-    return 'border-rose-400/35 bg-rose-500/12 text-rose-800 dark:text-rose-100'
+    return 'bg-rose-500/14 text-rose-900 ring-1 ring-rose-400/22 dark:text-rose-100 dark:ring-rose-400/28'
   if (status === 'PROCESSING')
-    return 'border-cyan-400/40 bg-cyan-500/12 text-cyan-900 dark:text-cyan-100'
-  return 'border-amber-400/35 bg-amber-500/12 text-amber-900 dark:text-amber-100'
+    return 'bg-cyan-500/14 text-cyan-950 ring-1 ring-cyan-400/25 dark:text-cyan-50 dark:ring-cyan-400/30'
+  return 'bg-amber-400/16 text-amber-950 ring-1 ring-amber-300/30 dark:text-amber-50 dark:ring-amber-300/25'
+}
+
+function DashListEmpty({
+  title,
+  hint,
+  actionLabel,
+  onAction,
+}: {
+  title: string
+  hint: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className={cn(dash.emptyWrap, 'mx-3 my-2')}>
+      <div className={dash.emptyIcon} aria-hidden>
+        <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-200" strokeWidth={1.85} />
+      </div>
+      <p className={dash.emptyTitle}>{title}</p>
+      <p className={dash.emptyHint}>{hint}</p>
+        {actionLabel && onAction ? (
+        <button type="button" onClick={onAction} className={cn(dash.emptyCta, 'group')}>
+          {actionLabel}
+          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function DashRecentPanel({
+  kicker,
+  title,
+  actionLabel,
+  onAction,
+  children,
+}: {
+  kicker: string
+  title: string
+  actionLabel: string
+  onAction: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className={cn('flex flex-col overflow-hidden', dash.panel)}>
+      <div className={dash.panelHeader}>
+        <div className="min-w-0 space-y-1">
+          <p className={dash.kicker}>{kicker}</p>
+          <h2 className={dash.panelTitle}>{title}</h2>
+        </div>
+        <button type="button" onClick={onAction} className={cn(dash.panelLink, 'shrink-0')}>
+          {actionLabel}
+          <ArrowRight className="h-3.5 w-3.5 opacity-80 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
+        </button>
+      </div>
+      {children}
+    </div>
+  )
 }
 
 export default function DashboardPage() {
@@ -340,11 +422,7 @@ export default function DashboardPage() {
           return (
             <div
               key={card.title}
-              className={cn(
-                'relative overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 p-5',
-                'shadow-[0_20px_50px_-40px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-shadow duration-300 hover:shadow-[0_26px_60px_-36px_rgba(99,102,241,0.22)]',
-                'dark:border-white/[0.08] dark:bg-slate-950/55 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
-              )}
+              className={cn('relative overflow-hidden p-5', dash.panel, 'transition-shadow duration-300 hover:shadow-[0_26px_60px_-36px_rgba(99,102,241,0.18)] dark:hover:shadow-[0_28px_64px_-38px_rgba(99,102,241,0.12)]')}
             >
               <div
                 className={cn(
@@ -384,12 +462,7 @@ export default function DashboardPage() {
       </section>
 
       {/* System health */}
-      <section
-        className={cn(
-          'dash-enter dash-enter-delay-4 rounded-[20px] border border-slate-200/65 bg-white/72 p-5 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.3)] backdrop-blur-xl',
-          'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.68)]',
-        )}
-      >
+      <section className={cn('dash-enter dash-enter-delay-4 p-5', dash.panel)}>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-emerald-400/30 bg-emerald-500/12 px-3 py-1 text-xs font-medium text-emerald-900 dark:text-emerald-100">
@@ -449,39 +522,26 @@ export default function DashboardPage() {
         ) : null}
       </section>
 
-      {/* Lists */}
+      {/* Lists — 与上方同一 dash.panel token；modern list + 软空状态 */}
       <div className="dash-enter dash-enter-delay-5 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-7">
-        <div
-          className={cn(
-            'flex flex-col overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl',
-            'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
-          )}
+        <DashRecentPanel
+          kicker="Activity"
+          title="最近生成记录"
+          actionLabel="查看全部"
+          onAction={() => navigate('/records')}
         >
-          <div className="flex items-center justify-between border-b border-slate-200/60 px-5 py-4 dark:border-white/[0.06]">
-            <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">最近生成记录</h2>
-            <button
-              type="button"
-              onClick={() => navigate('/records')}
-              className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 transition-colors hover:text-cyan-600 dark:text-cyan-300 dark:hover:text-cyan-200"
-            >
-              查看全部
-              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
-            </button>
-          </div>
-          <div className="divide-y divide-slate-100/90 dark:divide-white/[0.06]">
+          <div className={dash.listBody}>
             {loading ? (
-              <div className="px-5 py-10 text-center text-sm text-slate-500">加载中…</div>
-            ) : recentRecords.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-600 dark:text-violet-200">
-                  <Sparkles className="h-6 w-6" strokeWidth={1.75} />
-                </div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">还没有生成记录</p>
-                <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">让 AI 从第一份需求开始，帮你起草可评审的用例。</p>
-                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate('/generate')}>
-                  去生成
-                </Button>
+              <div className="rounded-xl px-3 py-10 text-center text-sm text-slate-500 animate-pulse dark:text-slate-400">
+                加载中…
               </div>
+            ) : recentRecords.length === 0 ? (
+              <DashListEmpty
+                title="还没有生成记录"
+                hint="从第一份需求开始，让 AI 帮你起草可评审的用例。"
+                actionLabel="去生成"
+                onAction={() => navigate('/generate')}
+              />
             ) : (
               recentRecords.map((record) => (
                 <button
@@ -489,25 +549,24 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-[transform,background-color] duration-200',
-                    'hover:bg-sky-50/70 hover:translate-x-0.5 dark:hover:bg-white/[0.04] motion-reduce:hover:translate-x-0',
-                  )}
+                  className={dash.listRow}
                 >
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{record.title}</p>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                      <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                    <p className="truncate text-[15px] font-semibold leading-snug text-slate-900 dark:text-slate-50">
+                      {record.title}
+                    </p>
+                    <p className="flex min-w-0 items-center gap-1.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                      <Clock className="h-3 w-3 shrink-0 opacity-80" strokeWidth={2} />
                       <span className="truncate">
                         {timeAgo(record.createdAt)} · {formatDate(record.createdAt, 'MM-dd HH:mm')}
                       </span>
-                    </div>
+                    </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">{record.caseCount} 条</span>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">{record.caseCount} 条</span>
                     <span
                       className={cn(
-                        'rounded-full border px-2.5 py-0.5 text-[11px] font-medium',
+                        'rounded-full px-2.5 py-0.5 text-[11px] font-medium shadow-none',
                         recordStatusPillClass(record.status),
                       )}
                     >
@@ -518,36 +577,26 @@ export default function DashboardPage() {
               ))
             )}
           </div>
-        </div>
+        </DashRecentPanel>
 
-        <div
-          className={cn(
-            'flex flex-col overflow-hidden rounded-[20px] border border-slate-200/65 bg-white/75 shadow-[0_20px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl',
-            'dark:border-white/[0.08] dark:bg-slate-950/52 dark:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.65)]',
-          )}
+        <DashRecentPanel
+          kicker="Library"
+          title="最近用例集"
+          actionLabel="去生成"
+          onAction={() => navigate('/generate')}
         >
-          <div className="flex items-center justify-between border-b border-slate-200/60 px-5 py-4 dark:border-white/[0.06]">
-            <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">最近用例集</h2>
-            <button
-              type="button"
-              onClick={() => navigate('/generate')}
-              className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 transition-colors hover:text-cyan-600 dark:text-cyan-300 dark:hover:text-cyan-200"
-            >
-              去生成
-              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
-            </button>
-          </div>
-          <div className="divide-y divide-slate-100/90 dark:divide-white/[0.06]">
+          <div className={dash.listBody}>
             {loading ? (
-              <div className="px-5 py-10 text-center text-sm text-slate-500">加载中…</div>
-            ) : recentSuites.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-5 py-12 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-700 dark:text-emerald-200">
-                  <Sparkles className="h-6 w-6" strokeWidth={1.75} />
-                </div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">暂无用例集</p>
-                <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">生成一次用例后，用例集会出现在这里。</p>
+              <div className="rounded-xl px-3 py-10 text-center text-sm text-slate-500 animate-pulse dark:text-slate-400">
+                加载中…
               </div>
+            ) : recentSuites.length === 0 ? (
+              <DashListEmpty
+                title="暂无用例集"
+                hint="完成一次用例生成后，最近的用例集会显示在这里。"
+                actionLabel="去生成"
+                onAction={() => navigate('/generate')}
+              />
             ) : (
               recentSuites.map((suite) => (
                 <button
@@ -555,23 +604,20 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => navigate('/records')}
                   title="查看生成记录"
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-[transform,background-color] duration-200',
-                    'hover:bg-emerald-50/60 hover:translate-x-0.5 dark:hover:bg-white/[0.04] motion-reduce:hover:translate-x-0',
-                  )}
+                  className={dash.listRow}
                 >
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{suite.name}</p>
-                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">{suite.projectName || '无项目'}</p>
+                    <p className="truncate text-[15px] font-semibold leading-snug text-slate-900 dark:text-slate-50">{suite.name}</p>
+                    <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{suite.projectName || '无项目'}</p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-900 dark:text-emerald-100">
+                  <span className="shrink-0 rounded-full bg-emerald-500/12 px-2.5 py-0.5 text-[11px] font-medium text-emerald-900 ring-1 ring-emerald-500/20 dark:text-emerald-100 dark:ring-emerald-400/25">
                     {suite.caseCount} 条用例
                   </span>
                 </button>
               ))
             )}
           </div>
-        </div>
+        </DashRecentPanel>
       </div>
     </div>
   )
