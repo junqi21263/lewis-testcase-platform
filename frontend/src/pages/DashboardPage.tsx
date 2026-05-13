@@ -8,7 +8,7 @@ import {
   TrendingUp,
   ArrowRight,
   Clock,
-  FileUp,
+  Brain,
   BookTemplate,
   Settings,
   Sparkles,
@@ -254,10 +254,10 @@ export default function DashboardPage() {
 
   const quickActions = [
     {
-      title: '解析文档',
-      desc: '上传并解析需求文档',
-      icon: FileUp,
-      to: '/upload',
+      title: 'AI 需求分析',
+      desc: '上传文档并由 AI 分析需求',
+      icon: Brain,
+      to: '/ai-analysis',
       accent: 'cyan' as const,
     },
     {

@@ -55,7 +55,7 @@ const statusLabels: Record<GenerationStatus, string> = {
 function sourceLabel(r: GenerationRecord): string {
   if (r.generationSource === 'TEMPLATE' || r.templateId) return '模板复用'
   if (r.generationSource === 'FILE_PARSE' || r.sourceType === 'file' || r.fileId) {
-    return '文档解析带入'
+    return '需求文档带入'
   }
   if (r.generationSource === 'MANUAL_INPUT' || r.sourceType === 'text') return '手动输入'
   return r.sourceType || '其他'
@@ -601,7 +601,7 @@ export default function RecordDetailPage() {
             {record.file && (
               <Button variant="outline" size="sm" asChild>
                 <Link
-                  to={`/upload`}
+                  to="/ai-analysis"
                   state={{ highlightFileId: record.file.id }}
                   onClick={guardLinkClick}
                 >
@@ -706,7 +706,7 @@ export default function RecordDetailPage() {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  toast('请前往「文档解析」页上传文档后使用「重新结构化」', { icon: 'ℹ️' })
+                  toast('请前往「AI 需求分析」上传文档后使用「重新结构化」', { icon: 'ℹ️' })
                 }
               >
                 重新提取需求点

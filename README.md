@@ -29,8 +29,7 @@ CNB 命名空间与流水线配置说明见 [docs/cnb-migration.md](docs/cnb-mig
 | 模块 | 路径 / API 前缀 | 能力摘要 |
 |------|-----------------|----------|
 | **工作台** | `/dashboard` | 总览与快捷入口 |
-| **文档解析** | `/upload`，`POST /api/files/*` | 单文件与分片上传；可选 **腾讯云 COS** 直传；PDF / Word / Excel / 图片等多格式解析；解析进度与重试；大图 **视觉理解** 与可配置 OCR 策略 |
-| **AI 需求分析** | `/ai-analysis`，`POST /api/ai/analyze/stream` | **SSE 流式**输出；默认 **六段结构化**报告（功能 / 非功能 / 接口 / 数据模型 / 业务流程含 Mermaid / 风险）；报告区 **Mermaid 渲染**；**导出 XMind**；**导出 PDF**（`POST /api/ai/analyze/export-pdf`，可将 Mermaid 渲染图为 Base64 嵌入） |
+| **AI 需求分析** | `/ai-analysis`（旧书签 `/upload` 会重定向至此），`POST /api/files/*`、`POST /api/ai/analyze/stream` | **上传**：单文件与分片上传，可选 **腾讯云 COS** 直传；PDF / Word / Excel / 图片等多格式解析与进度；**SSE 流式**结构化报告；Mermaid；**导出 XMind / PDF** |
 | **生成用例** | `/generate`，`POST /api/ai/generate`、`/api/ai/generate/stream` | 非流式与 **SSE 流式**生成测试用例；模型列表 `GET /api/ai/models` |
 | **生成记录** | `/records`，` /api/records` | 记录查询、分享、批量操作；定时清理等（见模块实现） |
 | **模板管理** | `/templates`，`/api/templates` | 用例/提示模板维护 |

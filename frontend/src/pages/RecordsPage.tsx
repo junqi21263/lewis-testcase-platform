@@ -70,7 +70,7 @@ const statusLabels: Record<GenerationStatus, string> = {
 
 function sourceLabel(r: GenerationRecord): string {
   if (r.templateId) return '模板复用'
-  if (r.sourceType === 'file' || r.fileId) return '文档解析带入'
+  if (r.sourceType === 'file' || r.fileId) return '需求文档带入'
   if (r.sourceType === 'text') return '手动输入'
   return r.sourceType || '其他'
 }
@@ -748,7 +748,7 @@ export default function RecordsPage() {
                 <span className="text-xs text-muted-foreground">来源</span>
                 {(
                   [
-                    ['file', '文档解析'],
+                    ['file', '需求文档'],
                     ['text', '手动输入'],
                     ['template', '模板复用'],
                   ] as const

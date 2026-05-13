@@ -37,7 +37,7 @@ function ThemeToggle() {
       )}
     >
       <span
-        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-between px-1.5"
+        className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-between px-1.5"
         aria-hidden
       >
         <Sun
@@ -45,7 +45,7 @@ function ThemeToggle() {
             'h-3.5 w-3.5 transition-opacity duration-200 motion-reduce:transition-none',
             !isDark
               ? 'opacity-100 text-[hsl(var(--workspace-theme-toggle-active-icon))]'
-              : 'opacity-45 text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
+              : 'opacity-[0.88] text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
           )}
           strokeWidth={2}
         />
@@ -54,7 +54,7 @@ function ThemeToggle() {
             'h-3.5 w-3.5 transition-opacity duration-200 motion-reduce:transition-none',
             isDark
               ? 'opacity-100 text-[hsl(var(--workspace-theme-toggle-active-icon))]'
-              : 'opacity-45 text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
+              : 'opacity-[0.88] text-[hsl(var(--workspace-theme-toggle-inactive-icon))]',
           )}
           strokeWidth={2}
         />

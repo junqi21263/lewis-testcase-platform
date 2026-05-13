@@ -886,7 +886,7 @@ function AiAnalysisPageInner() {
       toast.success(
         additionalAnalysisFiles.length > 0
           ? `全部 ${1 + additionalAnalysisFiles.length} 张图片解析完成`
-          : '文档解析完成，可展开查看解析文本',
+          : '需求解析完成，可展开查看解析文本',
         { id: 'parse-done-toast', duration: 4000 },
       )
     }
@@ -1109,7 +1109,7 @@ function AiAnalysisPageInner() {
 
         if (result.status === 'PARSED') {
           const n = result.parsedContent?.length ?? 0
-          addLog('success', `✅ 文档解析完成 (${n.toLocaleString()} 字符)`)
+          addLog('success', `✅ 需求解析完成 (${n.toLocaleString()} 字符)`)
           dispatch({ type: 'GO_IDLE' })
           void loadFileHistory()
           return
@@ -1131,7 +1131,7 @@ function AiAnalysisPageInner() {
           dispatch({ type: 'GO_IDLE' })
           void loadFileHistory()
         } else {
-          addLog('error', `❌ 文档解析失败：${parsed.parseError ?? '未知错误'}`)
+          addLog('error', `❌ 需求解析失败：${parsed.parseError ?? '未知错误'}`)
           dispatch({
             type: 'ERROR',
             log: makeLog('error', parsed.parseError ?? '解析失败'),
@@ -1363,7 +1363,7 @@ function AiAnalysisPageInner() {
 
   const handleStartAnalysis = useCallback(async () => {
     if (!uploadedFile || uploadedFile.status !== 'PARSED') {
-      toast.error('请先上传并等待文档解析完成')
+      toast.error('请先上传并等待解析完成')
       return
     }
     if (additionalAnalysisFiles.some((f) => f.status !== 'PARSED')) {

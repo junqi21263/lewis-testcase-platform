@@ -15,7 +15,6 @@ const TemplatesPage = lazy(() => import('@/pages/TemplatesPage'))
 const TeamsPage = lazy(() => import('@/pages/TeamsPage'))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
-const UploadPage = lazy(() => import('@/pages/UploadPage'))
 const AiAnalysisPage = lazy(() => import('@/pages/AiAnalysisPage'))
 const UsageStatsPage = lazy(() => import('@/pages/UsageStatsPage'))
 
@@ -89,7 +88,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/upload" element={<UploadPage />} />
+            <Route path="/upload" element={<Navigate to="/ai-analysis" replace />} />
             <Route path="/ai-analysis" element={<AiAnalysisPage />} />
             <Route path="/generate" element={<GeneratePage />} />
             <Route path="/records" element={<RecordsPage />} />

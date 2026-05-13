@@ -117,8 +117,9 @@
     --workspace-empty-state-bg: 222 44% 12%;
     --workspace-theme-toggle-track: 222 40% 14%;
     --workspace-theme-toggle-thumb: 217 28% 22%;
-    --workspace-theme-toggle-active-icon: 226 85% 78%;
-    --workspace-theme-toggle-inactive-icon: 45 90% 58%;
+    /* 深色顶栏：太阳为暖黄、月亮为淡紫蓝，保证与轨道对比清晰 */
+    --workspace-theme-toggle-active-icon: 258 96% 82%;
+    --workspace-theme-toggle-inactive-icon: 45 100% 68%;
   }
 }
 

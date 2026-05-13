@@ -45,7 +45,7 @@ async function pollFileUntilParsed(fileId: string) {
         if (f.fileType === 'IMAGE' && !f.parsedContent?.trim()) {
           toast.error('图片未识别出文字，请在下方用文本补充需求，或换更清晰的截图')
         } else {
-          toast.success('文档解析完成，可以开始生成')
+          toast.success('需求解析完成，可以开始生成')
         }
         return
       }
@@ -393,7 +393,7 @@ export default function GeneratePage() {
   const [templateOptions, setTemplateOptions] = useState<PromptTemplate[]>([])
   const [recentTplIds, setRecentTplIds] = useState<string[]>(() => loadRecentTemplateIds())
 
-  /** 进入生成页时消费文档解析投递（仅处理一次，避免依赖链重复触发） */
+  /** 进入生成页时消费来自 AI 需求分析等渠道的投递（仅处理一次，避免依赖链重复触发） */
   useEffect(() => {
     const h = useGenerateStore.getState().pendingGenerateHandoff
     if (!h) return
@@ -407,7 +407,7 @@ export default function GeneratePage() {
     toast.success(
       h.handoffSource === 'ai-analysis'
         ? '已从 AI 需求分析载入材料，可在提示词步骤直接生成用例'
-        : '已从文档解析载入需求与提示词，可直接生成',
+        : '已从需求材料载入需求与提示词，可直接生成',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时消费 handoff
   }, [])

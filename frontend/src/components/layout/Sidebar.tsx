@@ -8,7 +8,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  FileUp,
   Brain,
   BarChart3,
 } from 'lucide-react'
@@ -19,7 +18,6 @@ import { FriendlyBrandIcon } from '@/components/brand/FriendlyBrandIcon'
 
 const navItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: '工作台' },
-  { path: '/upload', icon: FileUp, label: '文档解析' },
   { path: '/ai-analysis', icon: Brain, label: 'AI 需求分析' },
   { path: '/generate', icon: Wand2, label: '生成用例' },
   { path: '/records', icon: ClipboardList, label: '生成记录' },
