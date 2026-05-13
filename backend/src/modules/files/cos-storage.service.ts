@@ -10,6 +10,28 @@ import COS from 'cos-nodejs-sdk-v5'
 /** 数据库 path 字段约定：`cos://{region}/{bucket}/{objectKey}` */
 const COS_URI_RE = /^cos:\/\/([^/]+)\/([^/]+)\/(.+)$/
 
+/**
+ * 去掉 object key 中误写入的「空格 + # + 注释 + /」段（常见于 .env 里 COS_PREFIX=xxx # 中文说明 被拼进 key）。
+ * 例：`ai-uploads/ # 上传文件的前缀目录，方便管理/uuid.png` → `ai-uploads/uuid.png`
+ */
+export function sanitizeCosObjectKey(key: string): string {
+  let k = (key || '').trim().replace(/\\/g, '/')
+  let prev = ''
+  while (prev !== k) {
+    prev = k
+    k = k.replace(/\s+#.*?\//g, '/')
+  }
+  return k.replace(/\/{2,}/g, '/').replace(/^\//, '')
+}
+
+/** 读取 COS_PREFIX 等：去掉行内 `#` 注释（dotenv 若未剥离时由这里兜底） */
+export function sanitizeCosPrefixFromEnv(raw: string | undefined | null): string {
+  const s0 = (raw ?? '').trim()
+  const cut = s0.search(/\s+#/)
+  const s = cut >= 0 ? s0.slice(0, cut).trim() : s0
+  return sanitizeCosObjectKey(s.endsWith('/') || !s ? s : `${s}/`)
+}
+
 @Injectable()
 export class CosStorageService {
   private readonly logger = new Logger(CosStorageService.name)
@@ -35,17 +57,69 @@ export class CosStorageService {
   }
 
   static isCosUri(storedPath: string | null | undefined): boolean {
-    return !!storedPath?.startsWith('cos://')
+    return !!(storedPath && storedPath.trim().startsWith('cos://'))
+  }
+
+  /**
+   * 规范化 DB 中的 cos://（清洗 object key 内误拼的「 #…/」注释段；兼容 BOM/首尾空白）。
+   * 新上传应保证 COS_PREFIX 单独成行写注释，勿写在同一行值后。
+   */
+  static normalizeCosStoredPath(storedPath: string | null | undefined): string {
+    const raw = (storedPath ?? '').trim().replace(/^\uFEFF/, '')
+    if (!raw.startsWith('cos://')) return raw
+    const m = raw.match(COS_URI_RE)
+    if (!m) return raw
+    const key = sanitizeCosObjectKey(m[3])
+    const region = m[1].replace(/\s+#.*$/, '').replace(/\s+/g, '').trim()
+    const bucket = m[2].replace(/\s+#.*$/, '').replace(/\s+/g, '').trim()
+    if (!region || !bucket || !key) return raw
+    return `cos://${region}/${bucket}/${key}`
+  }
+
+  /**
+   * 防御性清洗：去掉形如 `value # comment` 的行内注释，避免被当成真实配置值。
+   */
+  private stripInlineComment(value: string | null | undefined): string {
+    if (!value) return ''
+    return value.replace(/\s+#.*$/, '').trim()
+  }
+
+  /**
+   * 仅允许用于 region/bucket 这类 token 场景，额外移除空白。
+   */
+  private normalizeToken(value: string | null | undefined): string {
+    return this.stripInlineComment(value).replace(/\s+/g, '')
+  }
+
+  /**
+   * 兼容历史脏数据：
+   * 1) 去掉 object key 中注释段：`/ # xxx/`
+   * 2) 归一化分隔符，避免重复 `/`
+   */
+  private normalizeObjectKey(value: string): string {
+    return sanitizeCosObjectKey(value)
+  }
+
+  private normalizePrefix(value: string | null | undefined): string {
+    return sanitizeCosPrefixFromEnv(value)
   }
 
   parseUri(storedPath: string): { region: string; bucket: string; key: string } | null {
-    const m = storedPath.match(COS_URI_RE)
+    const normalized = CosStorageService.normalizeCosStoredPath(storedPath)
+    const m = normalized.match(COS_URI_RE)
     if (!m) return null
-    return { region: m[1], bucket: m[2], key: m[3] }
+    const region = this.normalizeToken(m[1])
+    const bucket = this.normalizeToken(m[2])
+    const key = this.normalizeObjectKey(m[3])
+    if (!region || !bucket || !key) return null
+    return { region, bucket, key }
   }
 
   buildUri(region: string, bucket: string, key: string): string {
-    return `cos://${region}/${bucket}/${key}`
+    const safeRegion = this.normalizeToken(region)
+    const safeBucket = this.normalizeToken(bucket)
+    const safeKey = this.normalizeObjectKey(key)
+    return `cos://${safeRegion}/${safeBucket}/${safeKey}`
   }
 
   /** 解析前临时文件目录（默认 os.tmpdir()，Linux 多为 /tmp）；可设 COS_PARSE_TEMP_DIR */
@@ -63,10 +137,10 @@ export class CosStorageService {
     if (!this.cos || !this.isConfigured()) {
       throw new Error('COS 未配置完整')
     }
-    const region = this.config.get<string>('COS_REGION')!.trim()
-    const bucket = this.config.get<string>('COS_BUCKET')!.trim()
-    let prefix = (this.config.get<string>('COS_PREFIX') ?? '').trim()
-    if (prefix && !prefix.endsWith('/')) prefix += '/'
+    const region = this.normalizeToken(this.config.get<string>('COS_REGION'))
+    const bucket = this.normalizeToken(this.config.get<string>('COS_BUCKET'))
+    if (!region || !bucket) throw new Error('COS_REGION/COS_BUCKET 配置无效')
+    const prefix = this.normalizePrefix(this.config.get<string>('COS_PREFIX'))
     const ext = path.extname(originalName) || ''
     const key = `${prefix}${uuid()}${ext}`
 
@@ -93,10 +167,10 @@ export class CosStorageService {
     if (!this.cos || !this.isConfigured()) {
       throw new Error('COS 未配置完整')
     }
-    const region = this.config.get<string>('COS_REGION')!.trim()
-    const bucket = this.config.get<string>('COS_BUCKET')!.trim()
-    let prefix = (this.config.get<string>('COS_PREFIX') ?? '').trim()
-    if (prefix && !prefix.endsWith('/')) prefix += '/'
+    const region = this.normalizeToken(this.config.get<string>('COS_REGION'))
+    const bucket = this.normalizeToken(this.config.get<string>('COS_BUCKET'))
+    if (!region || !bucket) throw new Error('COS_REGION/COS_BUCKET 配置无效')
+    const prefix = this.normalizePrefix(this.config.get<string>('COS_PREFIX'))
     const ext = path.extname(originalName) || ''
     const key = `${prefix}${uuid()}${ext}`
 

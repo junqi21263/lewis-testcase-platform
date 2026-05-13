@@ -230,6 +230,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     fileType: FileType,
     mimeType: string,
   ) {
+    const cosPath = CosStorageService.normalizeCosStoredPath(filePath.trim())
     const hintRow = await this.prisma.uploadedFile.findUnique({
       where: { id: fileId },
       select: { parseRetryHint: true, uploaderId: true },
@@ -237,14 +238,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const parseRetryHint = hintRow?.parseRetryHint ?? null
     const uploaderId = hintRow?.uploaderId ?? null
 
-    let effectivePath = filePath
+    let effectivePath = cosPath
     let cosTempFile: string | null = null
-    if (CosStorageService.isCosUri(filePath)) {
+    if (CosStorageService.isCosUri(cosPath)) {
       if (!this.cosStorage.isConfigured()) {
         throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
       }
       try {
-        cosTempFile = await this.cosStorage.downloadToTempFile(filePath)
+        cosTempFile = await this.cosStorage.downloadToTempFile(cosPath)
         effectivePath = cosTempFile
       } catch (e) {
         throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
@@ -295,7 +296,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             fileId,
             fileBytes: st.size,
             parseRetryHint,
-            originalStoredPath: filePath,
+            originalStoredPath: cosPath,
             uploaderId,
           })
           break
@@ -321,7 +322,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             effectivePath,
             mimeType,
             heartbeat,
-            filePath,
+            cosPath,
             uploaderId,
           )
           break
