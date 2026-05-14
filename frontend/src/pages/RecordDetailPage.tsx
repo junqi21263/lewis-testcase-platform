@@ -39,6 +39,7 @@ import { formatDate, generationRecordStatusClass } from '@/utils/format'
 import type { GenerationRecord, GenerationStatus, RecordDownloadEntry, TestCase } from '@/types'
 import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
 import { useAuthStore } from '@/store/authStore'
+import { appConfirm } from '@/store/appConfirmStore'
 import { casesDataSnapshot, normalizeSteps, stepsToLines } from '@/components/record-detail/caseUtils'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/cn'
@@ -151,17 +152,37 @@ export default function RecordDetailPage() {
 
   const hasUnsavedChanges = dirtyMeta || dirtyPrompt || dirtyCases
 
-  const confirmLeave = () =>
-    !hasUnsavedChanges || window.confirm('有未保存的修改，确定离开？')
+  const confirmLeave = useCallback(async () => {
+    if (!hasUnsavedChanges) return true
+    return appConfirm({
+      title: '放弃未保存的修改？',
+      description: '有未保存的修改，确定要离开此页吗？',
+      confirmText: '仍要离开',
+      confirmVariant: 'destructive',
+    })
+  }, [hasUnsavedChanges])
 
-  const navWithGuard = (to: string, state?: Record<string, unknown>) => {
-    if (!confirmLeave()) return
+  const navWithGuard = async (to: string, state?: Record<string, unknown>) => {
+    if (!(await confirmLeave())) return
     navigate(to, state != null ? { state } : undefined)
   }
 
-  const guardLinkClick: MouseEventHandler<HTMLAnchorElement> = (e) => {
-    if (!confirmLeave()) e.preventDefault()
-  }
+  const makeGuardedLinkClick = useCallback(
+    (to: string, state?: Record<string, unknown>): MouseEventHandler<HTMLAnchorElement> =>
+      (e) => {
+        if (!hasUnsavedChanges) return
+        e.preventDefault()
+        void appConfirm({
+          title: '放弃未保存的修改？',
+          description: '有未保存的修改，确定要离开此页吗？',
+          confirmText: '仍要离开',
+          confirmVariant: 'destructive',
+        }).then((ok) => {
+          if (ok) navigate(to, state != null ? { state } : undefined)
+        })
+      },
+    [hasUnsavedChanges, navigate],
+  )
 
   const saveMeta = async () => {
     if (!id || !record) return
@@ -207,7 +228,7 @@ export default function RecordDetailPage() {
 
   const handoffGenerate = async () => {
     if (!record) return
-    if (!confirmLeave()) return
+    if (!(await confirmLeave())) return
     let uploadedFile = null as typeof record.file | null
     if (record.fileId) {
       try {
@@ -294,7 +315,14 @@ export default function RecordDetailPage() {
   }
 
   const removeCase = async (cid: string) => {
-    if (!canEdit || !window.confirm('删除该用例？')) return
+    if (!canEdit) return
+    const ok = await appConfirm({
+      title: '删除该用例？',
+      description: '删除后无法从此记录恢复，需重新添加用例。',
+      confirmText: '确认删除',
+      confirmVariant: 'destructive',
+    })
+    if (!ok) return
     setCaseBusy(cid)
     try {
       await testcasesApi.deleteCase(cid)
@@ -429,7 +457,7 @@ export default function RecordDetailPage() {
         <button
           type="button"
           className="hover:text-foreground"
-          onClick={() => navWithGuard('/records')}
+          onClick={() => void navWithGuard('/records')}
         >
           生成记录
         </button>
@@ -603,7 +631,7 @@ export default function RecordDetailPage() {
                 <Link
                   to="/ai-analysis"
                   state={{ highlightFileId: record.file.id }}
-                  onClick={guardLinkClick}
+                  onClick={makeGuardedLinkClick('/ai-analysis', { highlightFileId: record.file.id })}
                 >
                   <FileText className="w-3.5 h-3.5 mr-1" />
                   关联文档 {record.file.originalName}
@@ -612,7 +640,7 @@ export default function RecordDetailPage() {
             )}
             {record.template && (
               <Button variant="outline" size="sm" asChild>
-                <Link to="/templates" onClick={guardLinkClick}>
+                <Link to="/templates" onClick={makeGuardedLinkClick('/templates')}>
                   <ExternalLink className="w-3.5 h-3.5 mr-1" />
                   模板：{record.template.name}
                 </Link>
@@ -1151,7 +1179,7 @@ export default function RecordDetailPage() {
       </div>
 
       <div className="no-print pt-4">
-        <Button variant="ghost" size="sm" className="gap-1" onClick={() => navWithGuard('/records')}>
+        <Button variant="ghost" size="sm" className="gap-1" onClick={() => void navWithGuard('/records')}>
           <ArrowLeft className="w-4 h-4" />
           返回列表
         </Button>

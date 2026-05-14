@@ -1161,7 +1161,7 @@ export default function RecordsPage() {
             ? `将永久删除 ${confirmCount} 条记录，无法恢复。`
             : `将 ${confirmCount} 条记录移入回收站，可在回收站恢复。`
         }
-        confirmText="确认"
+        confirmText={confirm.type === 'hard_delete' ? '确认删除' : '移入回收站'}
         confirmVariant="destructive"
         onCancel={() => setConfirm({ type: 'none' })}
         onConfirm={async () => {

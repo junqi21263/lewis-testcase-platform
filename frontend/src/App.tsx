@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useThemeStore } from '@/store/themeStore'
+import { AppConfirmHost } from '@/components/ui/AppConfirmHost'
 import MainLayout from '@/components/layout/MainLayout'
 import AuthLayout from '@/components/layout/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
@@ -67,6 +68,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <AppConfirmHost />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route element={<AuthLayout />}>

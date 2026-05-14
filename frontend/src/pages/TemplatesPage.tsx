@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { PromptTemplate, TemplateCategory } from '@/types'
 import toast from 'react-hot-toast'
+import { appConfirm } from '@/store/appConfirmStore'
 import { pushRecentTemplateId } from '@/utils/recentTemplates'
 
 const categoryLabels: Record<TemplateCategory, string> = {
@@ -132,7 +133,13 @@ export default function TemplatesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确认删除该模板？')) return
+    const ok = await appConfirm({
+      title: '删除该模板？',
+      description: '删除后无法恢复，使用此模板的生成记录不受影响。',
+      confirmText: '确认删除',
+      confirmVariant: 'destructive',
+    })
+    if (!ok) return
     try {
       await templatesApi.deleteTemplate(id)
       toast.success('删除成功')

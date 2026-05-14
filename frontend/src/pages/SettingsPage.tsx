@@ -33,6 +33,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { AIModel, UserRole } from '@/types'
 import toast from 'react-hot-toast'
+import { appConfirm } from '@/store/appConfirmStore'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 import { loadGenPrefs, saveGenPrefs, type GenPrefs } from '@/utils/genPrefs'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
@@ -411,7 +412,13 @@ export default function SettingsPage() {
   }
 
   const archive = async (id: string) => {
-    if (!window.confirm('确定归档该模型？归档后不会在生成页可选。')) return
+    const ok = await appConfirm({
+      title: '归档该模型？',
+      description: '归档后不会在生成页可选。',
+      confirmText: '确认归档',
+      confirmVariant: 'destructive',
+    })
+    if (!ok) return
     try {
       await settingsApi.archiveModel(id)
       toast.success('已归档')

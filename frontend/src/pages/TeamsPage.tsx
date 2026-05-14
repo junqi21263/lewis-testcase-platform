@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { teamsApi } from '@/api/teams'
 import type { Team, TeamMember } from '@/types'
 import toast from 'react-hot-toast'
+import { appConfirm } from '@/store/appConfirmStore'
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState<Team[]>([])
@@ -36,7 +37,14 @@ export default function TeamsPage() {
   }, [selectedTeam])
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!selectedTeam || !confirm('确认移除该成员？')) return
+    if (!selectedTeam) return
+    const ok = await appConfirm({
+      title: '移除该成员？',
+      description: '移除后该用户将不再属于此团队。',
+      confirmText: '确认移除',
+      confirmVariant: 'destructive',
+    })
+    if (!ok) return
     try {
       await teamsApi.removeMember(selectedTeam.id, memberId)
       toast.success('成员已移除')

@@ -43,6 +43,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { appConfirm } from '@/store/appConfirmStore'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -53,6 +54,7 @@ import type { AIModel, UploadedFile, GenerationRecord, GenerationStatus } from '
 import { safeRandomUUID } from '@/utils/uuid'
 import { displayUploadedFilename, normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
+import { maybeShrinkParseErrorField, sanitizeErrorForDisplay } from '@/utils/sanitizeErrorForDisplay'
 import { recordsApi } from '@/api/records'
 import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromptDefault'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
@@ -503,18 +505,18 @@ function AiStudioStepRail({
 function terminalLogTextClassFromStatus(status: TerminalLogStatus): string {
   switch (status) {
     case 'error':
-      return 'text-red-700 dark:text-red-300'
+      return 'text-[color:var(--ui-text-danger)]'
     case 'success':
-      return 'text-emerald-800 dark:text-emerald-300'
+      return 'text-[color:var(--ui-text-success)]'
     case 'warning':
       return 'text-amber-800 dark:text-amber-200'
     case 'info':
-      return 'text-slate-600 dark:text-slate-400'
+      return 'text-[color:var(--ui-terminal-meta)]'
     case 'pending':
-      return 'text-slate-500 dark:text-slate-500'
+      return 'text-[color:var(--ui-terminal-meta)]'
     case 'running':
     default:
-      return 'text-sky-900 dark:text-sky-200'
+      return 'text-[color:var(--ui-terminal-line)]'
   }
 }
 
@@ -569,14 +571,16 @@ function LogLine({ entry }: { entry: LogEntry }) {
   const status = entry.statusOverride ?? terminalLogStatusFromText(entry.text)
   const textCls = terminalLogTextClassFromStatus(status)
   return (
-    <div className="log-row flex items-start gap-2 py-0.5 font-mono text-[12px] leading-normal motion-safe:animate-[fadeIn_0.3s_ease-out]">
+    <div className="log-row flex items-start gap-2 py-0.5 font-mono text-[length:var(--text-terminal-size)] leading-[1.65] motion-safe:animate-[fadeIn_0.3s_ease-out]">
       <div className="log-status-icon flex w-5 shrink-0 justify-center self-start pt-[2px]">
         <TerminalLogStatusIcon status={status} />
       </div>
-      <span className="log-timestamp w-[5.5rem] shrink-0 tabular-nums text-[11px] text-workspace-text-muted dark:text-slate-500">
+      <span className="log-timestamp w-[5.5rem] shrink-0 tabular-nums text-[length:var(--text-caption-size)] text-[color:var(--ui-terminal-meta)]">
         {entry.timestamp}
       </span>
-      <span className={`log-message min-w-0 flex-1 whitespace-pre-wrap break-words ${textCls}`}>{entry.text}</span>
+      <span className={`log-message min-w-0 flex-1 whitespace-pre-wrap break-words ${textCls}`}>
+        {sanitizeErrorForDisplay(entry.text)}
+      </span>
     </div>
   )
 }
@@ -946,7 +950,13 @@ function AiAnalysisPageInner() {
     async (recordId: string, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      if (!window.confirm('确定删除该条分析记录？')) return
+      const ok = await appConfirm({
+        title: '删除该条分析记录？',
+        description: '删除后无法恢复，相关文件历史可能仍可单独查看。',
+        confirmText: '确认删除',
+        confirmVariant: 'destructive',
+      })
+      if (!ok) return
       try {
         await recordsApi.deleteRecord(recordId)
         toast.success('已删除')
@@ -1069,8 +1079,9 @@ function AiAnalysisPageInner() {
 
   /** 多图并行轮询时同步更新主文件或附加列表中的同一条记录 */
   const updateFileInPlace = useCallback((f: UploadedFile) => {
-    setUploadedFile((prev) => (prev?.id === f.id ? f : prev))
-    setAdditionalAnalysisFiles((prev) => prev.map((p) => (p.id === f.id ? f : p)))
+    const next = maybeShrinkParseErrorField(f)
+    setUploadedFile((prev) => (prev?.id === next.id ? next : prev))
+    setAdditionalAnalysisFiles((prev) => prev.map((p) => (p.id === next.id ? next : p)))
   }, [])
 
   const pollUntilParsed = useCallback(
@@ -1085,27 +1096,28 @@ function AiAnalysisPageInner() {
         await sleep(POLL_INTERVAL_MS)
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         const f = await filesApi.getFileById(fileId)
-        onTick?.(f)
-        const stage = f.parseStage ?? undefined
+        const fTick = maybeShrinkParseErrorField(f)
+        onTick?.(fTick)
+        const stage = fTick.parseStage ?? undefined
         if (stage !== lastStage) {
           lastStage = stage
           const mapped = mapParseStageMessage(stage)
           if (stage === 'FAILED') {
-            addLog(`${mapped.text}: ${f.parseError ?? '未知错误'}`)
+            addLog(`${mapped.text}: ${sanitizeErrorForDisplay(fTick.parseError ?? '未知错误')}`)
           } else if (stage !== 'DONE') {
             addLog(mapped.text)
           }
         }
-        if (f.status === 'PARSED') {
-          const n = f.parsedContent?.length ?? 0
+        if (fTick.status === 'PARSED') {
+          const n = fTick.parsedContent?.length ?? 0
           addLog(`✅ 解析完成 (${n.toLocaleString()} 字符)`)
-          return f
+          return fTick
         }
-        if (f.status === 'FAILED') {
-          return f
+        if (fTick.status === 'FAILED') {
+          return fTick
         }
       }
-      return filesApi.getFileById(fileId)
+      return maybeShrinkParseErrorField(await filesApi.getFileById(fileId))
     },
     [addLog],
   )
@@ -1131,11 +1143,11 @@ function AiAnalysisPageInner() {
   const retryParseFlow = useCallback(
     async (fileId: string, signal: AbortSignal, textOnly?: boolean) => {
       const r = await filesApi.retryParse(fileId, textOnly ? { textOnly: true } : undefined)
-      setUploadedFile(r)
+      setUploadedFile(maybeShrinkParseErrorField(r))
       dispatch({ type: 'UPLOAD_DONE' })
       addLog(textOnly ? '📄 已提交「仅内置文本」重新解析…' : '📄 已提交重新解析…')
-      const parsed = await pollUntilParsed(fileId, signal, setUploadedFile)
-      setUploadedFile(parsed)
+      const parsed = await pollUntilParsed(fileId, signal, (ff) => setUploadedFile(maybeShrinkParseErrorField(ff)))
+      setUploadedFile(maybeShrinkParseErrorField(parsed))
       if (parsed.status === 'PARSED') {
         setEditedParsedText(parsed.parsedContent ?? '')
         dispatch({ type: 'GO_IDLE' })
@@ -1143,7 +1155,7 @@ function AiAnalysisPageInner() {
       } else {
         dispatch({
           type: 'ERROR',
-          log: makeLog(`❌ ${parsed.parseError ?? '解析失败'}`, 'error'),
+          log: makeLog(`❌ ${sanitizeErrorForDisplay(parsed.parseError ?? '解析失败')}`, 'error'),
         })
       }
     },
@@ -1163,7 +1175,10 @@ function AiAnalysisPageInner() {
                 ...prev,
                 status: p.status as UploadedFile['status'],
                 parseStage: p.parseStage,
-                parseError: p.parseError,
+                parseError:
+                  p.parseError != null && p.parseError.length > 400
+                    ? sanitizeErrorForDisplay(p.parseError)
+                    : p.parseError,
                 parseProgress: p.parseProgress as UploadedFile['parseProgress'],
               }
             : prev,
@@ -1229,8 +1244,8 @@ function AiAnalysisPageInner() {
 
         const first = uploadedRows[0]
         if (first) {
-          setUploadedFile(first)
-          setAdditionalAnalysisFiles(uploadedRows.slice(1))
+          setUploadedFile(maybeShrinkParseErrorField(first))
+          setAdditionalAnalysisFiles(uploadedRows.slice(1).map((u) => maybeShrinkParseErrorField(u)))
         }
 
         const needParse = uploadedRows.filter((u) => u.status !== 'PARSED')
@@ -1250,8 +1265,8 @@ function AiAnalysisPageInner() {
 
         const firstR = results[0]
         if (firstR) {
-          setUploadedFile(firstR)
-          setAdditionalAnalysisFiles(results.slice(1))
+          setUploadedFile(maybeShrinkParseErrorField(firstR))
+          setAdditionalAnalysisFiles(results.slice(1).map((u) => maybeShrinkParseErrorField(u)))
         }
 
         const joined = results
@@ -1269,7 +1284,7 @@ function AiAnalysisPageInner() {
           const failed = results.find((r) => r.status === 'FAILED')
           dispatch({
             type: 'ERROR',
-            log: makeLog(`❌ 图片解析失败：${failed?.parseError ?? '未知错误'}`, 'error'),
+            log: makeLog(`❌ 图片解析失败：${sanitizeErrorForDisplay(failed?.parseError ?? '未知错误')}`, 'error'),
           })
           toast.error('部分图片解析失败')
         }
@@ -1332,7 +1347,7 @@ function AiAnalysisPageInner() {
         if (signal.aborted) return
 
         stashUploadedOriginalName(result.id, file.name)
-        setUploadedFile(result)
+        setUploadedFile(maybeShrinkParseErrorField(result))
         setParsePreviewDirty(false)
         setEditedParsedText(result.parsedContent ?? '')
         addLog(`✅ 文件上传成功，服务端文件 ID：${result.id}`)
@@ -1350,10 +1365,10 @@ function AiAnalysisPageInner() {
           '📄 正在等待服务端解析文档（服务端会按文档自动选择：内置文本层 / 混元多模态直读 / OCR 等）...',
         )
 
-        const parsed = await pollUntilParsed(result.id, signal, setUploadedFile)
+        const parsed = await pollUntilParsed(result.id, signal, (ff) => setUploadedFile(maybeShrinkParseErrorField(ff)))
         if (signal.aborted) return
 
-        setUploadedFile(parsed)
+        setUploadedFile(maybeShrinkParseErrorField(parsed))
 
         if (parsed.status === 'PARSED') {
           setEditedParsedText(parsed.parsedContent ?? '')
@@ -1362,7 +1377,7 @@ function AiAnalysisPageInner() {
         } else {
           dispatch({
             type: 'ERROR',
-            log: makeLog(`❌ 需求解析失败：${parsed.parseError ?? '未知错误'}`, 'error'),
+            log: makeLog(`❌ 需求解析失败：${sanitizeErrorForDisplay(parsed.parseError ?? '未知错误')}`, 'error'),
           })
         }
       } catch (e) {
@@ -1447,7 +1462,7 @@ function AiAnalysisPageInner() {
     setUploadDisplayName(null)
     replaceImagePreviews([])
     setAdditionalAnalysisFiles([])
-    setUploadedFile(f)
+    setUploadedFile(maybeShrinkParseErrorField(f))
     setEditedParsedText(f.parsedContent ?? '')
     setParsePreviewDirty(false)
     setPreviewEditable(false)
@@ -1753,7 +1768,7 @@ ${state.reportText}
         open={confirmStopOpen}
         title="确认停止？"
         description="将取消当前正在进行的上传、解析或 AI 分析。解析中的任务会通知服务端取消。"
-        confirmText="停止"
+        confirmText="停止任务"
         confirmVariant="destructive"
         contentClassName="border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-modal-card-bg)] shadow-2xl dark:border-white/10"
         onCancel={() => setConfirmStopOpen(false)}
@@ -2048,8 +2063,8 @@ ${state.reportText}
           {uploadedFile?.status === 'FAILED' && (
             <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 space-y-2 text-xs">
               <p className="text-red-300 font-medium">解析失败</p>
-              <p className="text-muted-foreground whitespace-pre-wrap break-words">
-                {uploadedFile.parseError ?? '未知错误'}
+              <p className="text-muted-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {sanitizeErrorForDisplay(uploadedFile.parseError ?? '未知错误')}
               </p>
               {uploadedFile.parseProgress?.errorHint ? (
                 <p className="text-amber-200/90 text-[11px]">识别阶段提示：{uploadedFile.parseProgress.errorHint}</p>
@@ -2744,7 +2759,7 @@ ${state.reportText}
                 <div
                   ref={logContainerRef}
                   onScroll={handleLogScroll}
-                  className="ai-analysis-terminal-scroll min-h-[140px] flex-1 space-y-0.5 overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-terminal-log-bg)] px-3 py-2 font-mono text-[12px]"
+                  className="ai-analysis-terminal-scroll min-h-[140px] flex-1 space-y-0.5 overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-terminal-log-bg)] px-3 py-2 font-mono text-[length:var(--text-terminal-size)] leading-[1.65]"
                 >
                   {state.logs.length === 0 && isIdle && !busy ? (
                     <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 px-4 py-10 text-center motion-safe:animate-[fadeIn_0.4s_ease-out]">
@@ -2755,7 +2770,7 @@ ${state.reportText}
                       </p>
                     </div>
                   ) : state.logs.length === 0 ? (
-                    <div className="py-6 text-center text-[12px] text-workspace-text-muted">
+                    <div className="py-6 text-center text-[length:var(--text-terminal-size)] text-[color:var(--ui-terminal-meta)]">
                       等待操作或开始分析…
                     </div>
                   ) : null}
@@ -2767,7 +2782,9 @@ ${state.reportText}
             ) : (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div
-                  className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-report-bg)] px-4 py-3 [scrollbar-gutter:stable] select-text sm:px-5"
+                  className={`ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-report-bg)] px-4 py-3 [scrollbar-gutter:stable] select-text sm:px-5 ${
+                    showReviewArea || showApprovedOnly ? 'scroll-pb-36 pb-32' : ''
+                  }`}
                   data-testid="ai-analysis-report-panel"
                 >
                   {isAnalyzingStream && !state.reportText.trim() ? (
@@ -2806,7 +2823,11 @@ ${state.reportText}
                 </div>
 
                 {(showReviewArea || showApprovedOnly) && (
-                  <div className="shrink-0 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-card-bg)] p-4">
+                  <div className="relative shrink-0 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-card-bg)] p-4">
+                    <div
+                      className="pointer-events-none absolute -top-14 left-0 right-0 z-[1] h-14 bg-gradient-to-b from-transparent via-[color:var(--ai-ar-card-bg)]/55 to-[color:var(--ai-ar-card-bg)]"
+                      aria-hidden
+                    />
                     {state.status === 'approved' ? (
                       <div className="space-y-2 py-2 text-center">
                         <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-400">

@@ -1,5 +1,5 @@
 /**
- * AI 分析报告 Markdown：GFM + 消毒；标题/表格/代码块样式与 AI 需求分析终端一致。
+ * AI 分析报告 Markdown：GFM + 消毒；样式由全局 `.report-readable` 与少量结构类控制。
  * 顶层 `##` 章节可折叠（默认展开），标题左侧 ▶ / ▼，折叠高度带 transition。
  */
 import { Children, isValidElement, useCallback, useId, useMemo, useState, type KeyboardEvent } from 'react'
@@ -7,6 +7,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { MermaidBlock } from './MermaidBlock'
+import { cn } from '@/utils/cn'
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -71,59 +72,26 @@ function splitMarkdownByTopLevelH2(markdown: string): AnalysisMarkdownTopSection
 function buildMdComponents(variant: 'default' | 'nested'): Components {
   const h2ForNested =
     variant === 'nested'
-      ? ({ children }: { children?: React.ReactNode }) => (
-          <h2 className="text-[16px] font-bold text-[#E2E8F0] mt-4 mb-2 pl-2 border-l-4 border-l-[#3B82F6]">
-            {children}
-          </h2>
-        )
+      ? ({ children }: { children?: React.ReactNode }) => <h2 className="!mt-3 !mb-1.5">{children}</h2>
       : undefined
 
   return {
-    h1: ({ children }) => (
-      <h1 className="text-[20px] font-bold text-white mt-6 mb-3 pb-2 border-b-2 border-[#3B82F6] first:mt-0">
-        {children}
-      </h1>
+    h1: ({ children }) => <h1>{children}</h1>,
+    h2: h2ForNested ?? (({ children }) => <h2>{children}</h2>),
+    h3: ({ children }) => <h3>{children}</h3>,
+    h4: ({ children }) => <h4>{children}</h4>,
+    p: ({ children }) => <p>{children}</p>,
+    ul: ({ children }) => <ul>{children}</ul>,
+    ol: ({ children }) => <ol>{children}</ol>,
+    li: ({ children }) => (
+      <li className="min-w-0 break-words [overflow-wrap:anywhere] leading-relaxed [&>p]:mb-0">{children}</li>
     ),
-    h2:
-      h2ForNested ??
-      (({ children }) => (
-        <h2 className="text-[16px] font-bold text-[#E2E8F0] mt-4 mb-2 pl-2 border-l-4 border-l-[#3B82F6]">{children}</h2>
-      )),
-    h3: ({ children }) => (
-      <h3 className="text-[14px] font-bold text-[#CBD5E1] mt-3 mb-1.5">{children}</h3>
-    ),
-    h4: ({ children }) => <h4 className="text-[13px] font-semibold text-[#CBD5E1] mt-2 mb-1">{children}</h4>,
-    p: ({ children }) => (
-      <p className="text-[13px] text-[#94A3B8] leading-[1.6] mb-2 max-w-full break-words last:mb-0 [overflow-wrap:anywhere]">
-        {children}
-      </p>
-    ),
-    ul: ({ children }) => (
-      <ul className="mb-2 max-w-full list-disc space-y-1 break-words pl-5 text-[13px] leading-[1.6] text-[#94A3B8] marker:text-[#3B82F6] [overflow-wrap:anywhere]">
-        {children}
-      </ul>
-    ),
-    ol: ({ children }) => (
-      <ol className="mb-2 max-w-full list-decimal space-y-1 break-words pl-5 text-[13px] leading-[1.6] text-[#94A3B8] marker:text-[#3B82F6] [overflow-wrap:anywhere]">
-        {children}
-      </ol>
-    ),
-    li: ({ children }) => <li className="min-w-0 leading-[1.6] break-words [overflow-wrap:anywhere] [&>p]:mb-0">{children}</li>,
-    strong: ({ children }) => <strong className="font-semibold text-[#E2E8F0]">{children}</strong>,
-    em: ({ children }) => <em className="italic text-[#CBD5E1]">{children}</em>,
-    blockquote: ({ children }) => (
-      <blockquote className="my-3 max-w-full break-words rounded border border-[#334155] bg-[#1E293B] px-3 py-3 text-[13px] leading-[1.6] text-[#94A3B8] not-italic [overflow-wrap:anywhere]">
-        {children}
-      </blockquote>
-    ),
-    hr: () => <hr className="border-[#334155] my-6" />,
+    strong: ({ children }) => <strong>{children}</strong>,
+    em: ({ children }) => <em>{children}</em>,
+    blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+    hr: () => <hr />,
     a: ({ href, children }) => (
-      <a
-        href={href}
-        className="text-[#60A5FA] underline underline-offset-2 hover:text-[#93C5FD] break-all"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
+      <a href={href} target="_blank" rel="noopener noreferrer" className="break-all">
         {children}
       </a>
     ),
@@ -135,16 +103,10 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
         return <MermaidBlock chart={chart} />
       }
       if (inline) {
-        return (
-          <code className="max-w-full break-words rounded bg-[#1E293B] px-1.5 py-0.5 text-[0.85em] font-mono text-[#E2E8F0] [overflow-wrap:anywhere]">
-            {children}
-          </code>
-        )
+        return <code className="max-w-full break-words [overflow-wrap:anywhere]">{children}</code>
       }
       return (
-        <code
-          className={`block max-w-full whitespace-pre-wrap break-words font-mono text-[12px] text-[#E2E8F0] [overflow-wrap:anywhere] ${className ?? ''}`}
-        >
+        <code className={`block max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${className ?? ''}`}>
           {children}
         </code>
       )
@@ -160,29 +122,23 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
       ) {
         return <div className="mb-3">{children}</div>
       }
-      return (
-        <pre className="mb-3 max-w-full overflow-x-hidden whitespace-pre-wrap break-words rounded bg-[#1E293B] p-3 font-mono text-[12px] text-[#E2E8F0] border border-[#334155] [overflow-wrap:anywhere]">
-          {children}
-        </pre>
-      )
+      return <pre className="mb-3 max-w-full overflow-x-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{children}</pre>
     },
     table: ({ children }) => (
-      <div className="mb-4 w-full max-w-full overflow-x-hidden rounded border border-[#334155]">
-        <table className="w-full min-w-0 table-fixed border-collapse text-[13px] [&_tbody_tr:nth-child(odd)]:bg-[#0F172A] [&_tbody_tr:nth-child(even)]:bg-[#1E293B]">
-          {children}
-        </table>
+      <div className="mb-4 w-full max-w-full overflow-x-auto rounded border border-[color:var(--ui-report-border)]">
+        <table className="w-full min-w-0 table-fixed border-collapse">{children}</table>
       </div>
     ),
-    thead: ({ children }) => <thead className="bg-[#1E293B]">{children}</thead>,
+    thead: ({ children }) => <thead className="bg-[color:var(--ui-report-surface)]">{children}</thead>,
     tbody: ({ children }) => <tbody>{children}</tbody>,
-    tr: ({ children }) => <tr className="border-b border-[#334155] last:border-b-0">{children}</tr>,
+    tr: ({ children }) => <tr className="border-b border-[color:var(--ui-report-border)] last:border-b-0">{children}</tr>,
     th: ({ children }) => (
-      <th className="border border-[#334155] px-2 py-2 text-left font-bold text-white align-top break-words [overflow-wrap:anywhere]">
+      <th className="border border-[color:var(--ui-report-border)] px-2 py-2 text-left align-top font-bold break-words [overflow-wrap:anywhere]">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border border-[#334155] px-2 py-2 align-top text-[#94A3B8] break-words [overflow-wrap:anywhere]">
+      <td className="border border-[color:var(--ui-report-border)] px-2 py-2 align-top break-words [overflow-wrap:anywhere]">
         {children}
       </td>
     ),
@@ -204,31 +160,40 @@ function CollapsibleH2Section({ heading, body }: { heading: string; body: string
   }, [])
 
   return (
-    <section className="mb-1 border-b border-[#334155]/60 pb-3 last:border-0">
+    <section className="mb-1 border-b border-[color:var(--ui-report-border)] pb-3 last:border-0">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKeyDown}
-        className="flex w-full min-w-0 items-start gap-2 rounded bg-transparent py-2 pl-2 text-left outline-none ring-offset-[#111125] focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
+        className="flex w-full min-w-0 items-start gap-2 rounded-lg bg-transparent py-2 pl-1 text-left outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-[color:var(--ui-report-h2-accent)]"
       >
         <span
-          className="mt-0.5 inline-flex h-5 w-5 shrink-0 select-none items-center justify-center text-[11px] leading-none text-[#94A3B8]"
+          className="mt-0.5 inline-flex h-5 w-5 shrink-0 select-none items-center justify-center text-[11px] leading-none"
+          style={{ color: 'var(--ui-report-text-muted)' }}
           aria-hidden
         >
           {open ? '▼' : '▶'}
         </span>
-        <span className="min-w-0 flex-1 text-[16px] font-bold leading-snug text-[#E2E8F0] border-l-4 border-l-[#3B82F6] pl-2 break-words">
+        <span
+          className="min-w-0 flex-1 break-words border-l-[3px] pl-2 font-bold leading-snug"
+          style={{
+            borderColor: 'var(--ui-report-h2-accent)',
+            color: 'var(--ui-report-text-primary)',
+            fontSize: 'var(--text-section-title-size)',
+          }}
+        >
           {heading}
         </span>
       </button>
-      {/* grid 0fr→1fr 实现折叠高度平滑过渡（现代浏览器） */}
       <div
-        className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+        className={`grid min-h-0 transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
       >
         <div id={panelId} className="min-h-0 overflow-hidden">
-          <div className="max-w-full pt-1 pl-8 pr-0 sm:pr-1">
+          <div className="max-w-full pt-1 pl-7 pr-0 sm:pr-1">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdNested}>
               {body}
             </ReactMarkdown>
@@ -245,7 +210,7 @@ export function AnalysisMarkdownReport({ text, className }: { text: string; clas
 
   if (!hasCollapsible) {
     return (
-      <div className={className}>
+      <div className={cn('report-readable', className)}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdDefault}>
           {text}
         </ReactMarkdown>
@@ -254,7 +219,7 @@ export function AnalysisMarkdownReport({ text, className }: { text: string; clas
   }
 
   return (
-    <div className={className}>
+    <div className={cn('report-readable', className)}>
       {sections.map((sec, i) =>
         sec.kind === 'preface' ? (
           <ReactMarkdown
