@@ -1,9 +1,8 @@
-import { Moon, Sun, Bell, User, LogOut, ChevronDown, Settings } from 'lucide-react'
+import { Moon, Sun, User, LogOut, ChevronDown, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useThemeStore } from '@/store/themeStore'
-import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { authApi } from '@/api/auth'
@@ -111,11 +110,6 @@ export default function Header() {
       <div className="flex-1" />
 
       <div className="flex min-w-0 items-center gap-2">
-        <Button type="button" variant="ghost" size="icon" className={cn('relative h-9 w-9', controlPill)}>
-          <Bell className="h-5 w-5 text-workspace-icon" strokeWidth={2} />
-          <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-red-500" />
-        </Button>
-
         <ThemeToggle />
 
         <WeatherBadge />
