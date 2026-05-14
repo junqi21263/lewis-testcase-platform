@@ -19,6 +19,7 @@ import { diskStorage, memoryStorage } from 'multer'
 import { extname } from 'path'
 import { v4 as uuid } from 'uuid'
 import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger'
+import { SkipThrottle } from '@nestjs/throttler'
 import { FilesService } from './files.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { RestructureFileDto } from './dto/restructure-file.dto'
@@ -148,6 +149,7 @@ export class FilesController {
   }
 
   /** 须放在 @Get(':id') 之前，避免被误匹配 */
+  @SkipThrottle()
   @Get(':id/parse-events')
   @ApiOperation({ summary: 'SSE：解析进度（parseProgress / stage），完成后关闭流' })
   parseEvents(
@@ -186,6 +188,7 @@ export class FilesController {
     return this.filesService.restructureFromEditedText(id, userId, dto.text)
   }
 
+  @SkipThrottle()
   @Get(':id')
   @ApiOperation({ summary: '获取文件详情' })
   getById(@Param('id') id: string) {
