@@ -18,7 +18,8 @@ export const HUNYUAN_OPENAI_CHAT_COMPLETIONS_URL_DEFAULT =
 export function isHunyuanMultimodalEnabled(config: ConfigService): boolean {
   const a = config.get<string>('HUNYUAN_MULTIMODAL_ENABLED')?.trim()
   if (a === '1' || a?.toLowerCase() === 'true') return true
-  return config.get<string>('HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED') === '1'
+  const b = config.get<string>('HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED')?.trim()
+  return b === '1' || b?.toLowerCase() === 'true'
 }
 
 /** @deprecated 请使用 isHunyuanMultimodalEnabled */

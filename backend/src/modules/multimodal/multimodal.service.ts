@@ -418,7 +418,14 @@ export class MultimodalService {
       args.fileBytes,
       args.localPath,
     )
-    if (!canTry) return null
+    if (!canTry) {
+      if (forceFileParseHunyuan) {
+        this.logger.warn(
+          'tryDirectCosMultimodal: FILE_PARSE_FORCE_HUNYUAN=1 但 canTryHunyuanCosMultimodalParse=false（多为开关/Key/本地路径/体积上限）；请搜日志前缀 [HunyuanOpenAiMultimodal]',
+        )
+      }
+      return null
+    }
 
     const started = Date.now()
     try {

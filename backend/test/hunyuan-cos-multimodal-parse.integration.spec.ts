@@ -94,6 +94,14 @@ describe('canTryHunyuanCosMultimodalParse（OpenAI 兼容通道，本地 Base64�
     expect(canTryHunyuanCosMultimodalParse(cfg, cosStub(), cosUri, 'image', 1024, __filename)).toBe(true)
   })
 
+  it('旧开关值含首尾空白仍视为开启', () => {
+    const cfg = cfgFrom({
+      HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED: ' 1 ',
+      HUNYUAN_VISION_API_KEY: 'sk-test',
+    })
+    expect(canTryHunyuanCosMultimodalParse(cfg, cosStub(), cosUri, 'image', 1024, __filename)).toBe(true)
+  })
+
   it('PDF 超过体积上限时返回 false', () => {
     const cfg = cfgFrom({
       HUNYUAN_MULTIMODAL_ENABLED: '1',
