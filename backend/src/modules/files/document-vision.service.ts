@@ -333,6 +333,66 @@ export class DocumentVisionService {
     }
   }
 
+  /**
+   * 视觉型 PDF 主链路：先把 PDF 渲染为 PNG，再分批送混元理解。
+   * 用于流程图/原型图等「文本层弱、版式语义强」文档，避免把整份 PDF 直接作为 data:pdf;base64 发送。
+   */
+  async transcribePdfByVisionBatches(
+    pdfPath: string,
+    onProgress?: (p: { pageCurrent: number; pageTotal?: number; batchIndex: number; batchTotal?: number }) => Promise<void>,
+  ): Promise<{ text: string; modelName: string } | null> {
+    const cfg = await this.resolveVisionModel()
+    if (!cfg) return null
+
+    const batchRaw = parseInt(this.config.get<string>('VISION_PDF_BATCH_PAGES') || '3', 10)
+    const batchPages = Number.isFinite(batchRaw) && batchRaw > 0 ? Math.min(Math.max(batchRaw, 1), 8) : 3
+    const maxRaw = parseInt(this.config.get<string>('VISION_PDF_MAX_PAGES') || '60', 10)
+    const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
+
+    let current: { pageNum: number; buffer: Buffer }[] = []
+    let pageTotal = 0
+    const batches: { pageNum: number; buffer: Buffer }[][] = []
+    for await (const page of this.iteratePdfPagesAsPng(pdfPath)) {
+      pageTotal++
+      if (pageTotal > maxPages) {
+        break
+      }
+      current.push(page)
+      if (current.length >= batchPages) {
+        batches.push(current)
+        current = []
+      }
+    }
+    if (current.length > 0) batches.push(current)
+    if (batches.length === 0) return null
+
+    const sections: string[] = []
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      const first = batch[0].pageNum
+      const last = batch[batch.length - 1].pageNum
+      await onProgress?.({
+        pageCurrent: last,
+        pageTotal,
+        batchIndex: i + 1,
+        batchTotal: batches.length,
+      })
+      const text = await this.transcribeMultiplePngBuffers(
+        cfg,
+        batch.map((x) => x.buffer),
+      )
+      if (text.trim()) {
+        sections.push(`【PDF 第 ${first}-${last} 页视觉理解】\n${text.trim()}`)
+      }
+    }
+
+    if (sections.length === 0) return null
+    return {
+      modelName: cfg.name,
+      text: `【PDF 视觉分批理解｜${cfg.name}】\n\n${sections.join('\n\n')}`,
+    }
+  }
+
   /** 将 PDF 首页渲成 PNG；失败时返回 error 文案（会进入 parseError 便于排障） */
   async renderPdfFirstPagePng(pdfPath: string): Promise<{ buffer: Buffer } | { error: string }> {
     const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')

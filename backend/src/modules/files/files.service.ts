@@ -721,6 +721,32 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
           : {}),
       })
+      const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
+        filePath,
+        async (p) => {
+          await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+            phase: 'VISION',
+            message: 'hunyuan_pdf_page_batch',
+            pageCurrent: p.pageCurrent,
+            pageTotal: p.pageTotal,
+            batchIndex: p.batchIndex,
+            batchTotal: p.batchTotal,
+          })
+        },
+      )
+      if (visionPaged?.text?.trim()) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_pdf_page_batch_done',
+          chars: visionPaged.text.length,
+        })
+        this.logger.log(
+          `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
+        )
+        return visionPaged.text
+      }
+
+      this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读兼容链路')
       const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
       if (hunyuanBody) return hunyuanBody
 
