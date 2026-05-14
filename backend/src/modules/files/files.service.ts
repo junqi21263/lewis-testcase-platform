@@ -411,8 +411,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 图片：强制优先混元多模态；失败时仅允许腾讯云 OCR 兜底。
-   * 不再走本地视觉模型与 Tesseract，避免「VISION 后继续本地 OCR」导致慢且不准。
+   * 图片：优先混元多模态；默认不再走腾讯云 OCR（与 PDF 一致，上传解析统一混元）。
+   * 应急：设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 恢复混元失败后的腾讯云 OCR。
+   * 不再走本地视觉模型与 Tesseract。
    */
   private async parseImageVisionThenOcr(
     filePath: string,
@@ -457,13 +458,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       })
     }
 
-    if (this.isFileParseForceHunyuan()) {
+    if (this.isFileParseHunyuanOnlyForUpload()) {
       throw new Error(
-        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：图片须由混元多模态完成理解，但未返回有效正文或过短。请检查 HUNYUAN_VISION_API_KEY、HUNYUAN_MULTIMODAL_ENABLED、COS 路径与 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS；若需腾讯云 OCR 兜底，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
+        '【解析失败】上传解析已统一为混元多模态：图片须由混元完成理解，但未返回有效正文或过短。请检查 HUNYUAN_VISION_API_KEY、HUNYUAN_MULTIMODAL_ENABLED、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS。若业务仍需腾讯云 OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
       )
     }
 
-    // 强制模式：不再走本地视觉/Tesseract，仅允许腾讯云 OCR 兜底。
+    // 允许腾讯云兜底时：不再走本地视觉/Tesseract，仅允许腾讯云 OCR。
     const forceOnly = this.config.get<string>('HUNYUAN_PARSE_FORCE_ONLY') !== '0'
     if (!forceOnly) {
       return (
@@ -495,10 +496,20 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * FILE_PARSE_FORCE_HUNYUAN=1：上传文件解析阶段须由混元多模态产出理解结果，
-   * 不因 MM 关闭/超预算跳过混元；且混元失败时不降级腾讯云 PDF OCR（图片亦不走 OCR 兜底）。
+   * 不因 MM 关闭/超预算跳过混元（见 MultimodalService）；且混元失败时不降级腾讯云 OCR，除非 FILE_PARSE_TENCENT_OCR_FALLBACK=1。
    */
   private isFileParseForceHunyuan(): boolean {
     return this.config.get<string>('FILE_PARSE_FORCE_HUNYUAN')?.trim() === '1'
+  }
+
+  /** 是否允许混元失败后走腾讯云 OCR（PDF/图片）；默认不允许 = 上传解析统一混元 */
+  private isFileParseTencentOcrFallbackAllowed(): boolean {
+    return this.config.get<string>('FILE_PARSE_TENCENT_OCR_FALLBACK')?.trim() === '1'
+  }
+
+  /** 上传解析是否仅走混元（不允许腾讯云 OCR 兜底） */
+  private isFileParseHunyuanOnlyForUpload(): boolean {
+    return this.isFileParseForceHunyuan() || !this.isFileParseTencentOcrFallbackAllowed()
   }
 
   /** 将底层 OCR 异常映射为前端可展示的简短原因 */
@@ -574,7 +585,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * PDF：先尝试混元多模态直读，失败时降级腾讯云 OCR。
+   * PDF：先尝试混元多模态直读；默认不再降级腾讯云 OCR（上传解析统一混元）。
+   * 应急：FILE_PARSE_TENCENT_OCR_FALLBACK=1 时恢复混元失败后的腾讯云 PDF OCR。
    * 已禁用本地视觉 / Paddle / Tesseract 分页管线。
    */
   private async parsePdfWithVisionFallback(
@@ -638,16 +650,16 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const { garbledRatio, sufficient: textSufficient } = quality
     if (!textSufficient) {
       this.logger.warn(
-        `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将优先混元，再降级腾讯云 OCR（不再走本地视觉/Tesseract）。`,
+        `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将优先混元多模态；默认不再降级腾讯云 PDF OCR（设 FILE_PARSE_TENCENT_OCR_FALLBACK=1 可恢复兜底）。`,
       )
     }
 
     const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
     if (hunyuanBody) return hunyuanBody
 
-    if (this.isFileParseForceHunyuan()) {
+    if (this.isFileParseHunyuanOnlyForUpload()) {
       throw new Error(
-        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：PDF 须由混元多模态返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 80）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若需腾讯云 PDF OCR 兜底，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
+        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 80）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
       )
     }
 
