@@ -24,6 +24,7 @@ import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
+import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -394,7 +395,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       })
       this.logger.log(`文件解析完成: ${fileId}`)
     } catch (err) {
-      const msg = ((err as Error).message || '解析失败').slice(0, 4000)
+      const msg = sanitizeErrorMessageForClient(((err as Error).message || '解析失败').slice(0, 8000), 3800)
       try {
         await this.prisma.uploadedFile.update({
           where: { id: fileId },

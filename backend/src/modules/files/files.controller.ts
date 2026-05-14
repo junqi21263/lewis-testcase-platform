@@ -30,20 +30,26 @@ import type { Request, Response } from 'express'
 
 /**
  * 解码文件名中的 UTF-8 编码（处理中文/繁体等非 ASCII 字符）
- * multer 默认使用 latin1 编码，需要转换为 UTF-8
+ * - 支持 URL 编码文件名
+ * - 对「multipart 误用 latin1」的老问题：仅在当前串不含合法汉字时尝试 latin1→utf8 恢复，避免把 JSON 已正确解码的 UTF-8 文件名二次转坏
  */
 function decodeFilename(filename: string): string {
+  if (!filename) return filename
   try {
-    // 尝试检测并解码 URL 编码的文件名
     if (filename.includes('%')) {
       return decodeURIComponent(filename)
     }
-    // 尝试将 latin1 编码转换为 UTF-8
-    const buffer = Buffer.from(filename, 'latin1')
-    return buffer.toString('utf-8')
+    if (/[\u4e00-\u9fff]/.test(filename)) {
+      return filename
+    }
+    const recovered = Buffer.from(filename, 'latin1').toString('utf8')
+    if (recovered && recovered !== filename && /[\u4e00-\u9fff]/.test(recovered) && !/\ufffd/.test(recovered)) {
+      return recovered
+    }
   } catch {
     return filename
   }
+  return filename
 }
 
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024

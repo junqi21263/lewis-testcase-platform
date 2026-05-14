@@ -4,6 +4,7 @@ import axios from 'axios'
 import * as fs from 'fs'
 import * as path from 'path'
 import { CosStorageService } from '@/modules/files/cos-storage.service'
+import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 
 const logger = new Logger('HunyuanOpenAiMultimodal')
 
@@ -125,12 +126,13 @@ export async function runHunyuanOpenAiVisionChat(params: {
 
     if (status < 200 || status >= 300) {
       const errBody = typeof data === 'object' && data && 'error' in data ? (data as any).error : data
-      throw new Error(`混元 API HTTP ${status}：${JSON.stringify(errBody).slice(0, 2000)}`)
+      const raw = JSON.stringify(errBody)
+      throw new Error(`混元 API HTTP ${status}：${sanitizeErrorMessageForClient(raw, 1200)}`)
     }
 
     const err = (data as any)?.error
     if (err?.message) {
-      throw new Error(`混元 API：${String(err.message)}`)
+      throw new Error(`混元 API：${sanitizeErrorMessageForClient(String(err.message), 1200)}`)
     }
 
     const choices = (data as any)?.choices as unknown[] | undefined
@@ -150,8 +152,10 @@ export async function runHunyuanOpenAiVisionChat(params: {
     }
   } catch (e) {
     if (axios.isAxiosError(e)) {
-      const msg = e.response?.data ? JSON.stringify(e.response.data).slice(0, 2000) : e.message
+      const raw = e.response?.data != null ? JSON.stringify(e.response.data) : e.message
+      const msg = sanitizeErrorMessageForClient(String(raw), 1200)
       logger.warn(`混元 OpenAI 请求失败: ${msg}`)
+      throw new Error(`混元 OpenAI 请求失败: ${msg}`)
     }
     throw e
   }

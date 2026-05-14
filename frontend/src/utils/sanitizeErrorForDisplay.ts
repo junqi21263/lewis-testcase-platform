@@ -23,7 +23,7 @@ function stripLargeDataUrls(text: string): string {
 /** 若尾部为 `HTTP 400: {...json}`，解析并只保留前文 + `message`（便于阅读） */
 function compressHttpJsonTail(text: string): string {
   const trimmed = text.trimEnd()
-  const re = /^(.*)(HTTP\s+\d{3}\s*:\s*)(\{[\s\S]+\})\s*$/i
+  const re = /^(.*)(HTTP\s+\d{3}\s*[:：]\s*)(\{[\s\S]+\})\s*$/i
   const m = re.exec(trimmed)
   if (!m) return text
   const head = (m[1] ?? '').trimEnd()
@@ -31,7 +31,7 @@ function compressHttpJsonTail(text: string): string {
   try {
     const o = JSON.parse(jsonStr) as { message?: string }
     if (o?.message && typeof o.message === 'string') {
-      const msg = o.message.trim()
+      const msg = stripLargeDataUrls(o.message.trim())
       if (msg) return head ? `${head} — ${msg}` : msg
     }
   } catch {

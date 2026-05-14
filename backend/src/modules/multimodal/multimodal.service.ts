@@ -10,6 +10,7 @@ import {
   canTryHunyuanCosMultimodalParse,
   runHunyuanOpenAiVisionChat,
 } from '@/utils/multimodalAnalysis'
+import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 
 export type MultimodalModuleType = 'FILE_PARSE' | 'AI_ANALYSIS' | 'TESTCASE_GENERATION'
 export type MultimodalFileKind =
@@ -485,7 +486,7 @@ export class MultimodalService {
       })
       return { text, md5, cacheHit: false }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = sanitizeErrorMessageForClient(e instanceof Error ? e.message : String(e), 1200)
       this.logger.warn(`tryDirectCosMultimodal failed: ${msg}`)
       await this.recordUsage({
         moduleType: args.moduleType,
