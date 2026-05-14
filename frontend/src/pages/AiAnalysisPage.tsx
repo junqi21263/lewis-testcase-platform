@@ -21,6 +21,7 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
   Square,
   Terminal,
   User,
@@ -85,11 +86,15 @@ type AnalysisStatus =
   | 'approved'
   | 'error'
 
+/** 终端日志行语义状态（与左侧图标一一对应，不由 emoji 表示） */
+type TerminalLogStatus = 'pending' | 'running' | 'success' | 'warning' | 'error' | 'info'
+
 interface LogEntry {
   id: string
-  icon: 'loading' | 'success' | 'error'
   text: string
   timestamp: string
+  /** 当文案不足以推断状态时（如 ERROR reducer 的短错误码）强制指定 */
+  statusOverride?: TerminalLogStatus
 }
 
 interface PageState {
@@ -294,14 +299,20 @@ function analysisRecordStatusBadge(status: GenerationStatus): { label: string; c
 }
 
 /**
- * 终端日志左侧图标仅由本行文案决定（与 dispatch 时写入的 icon 字段无关），避免全局阶段与文案语义不一致。
- * 优先级：失败类 → 成功类 → 进行中类 → 默认进行中。
+ * 终端日志状态由文案语义推断（与 dispatch 时是否传入 override 无关）。
+ * 顺序：错误 → 警告 → 等待 → 取消/信息 → 成功（排除「等待解析」类）→ 进行中。
  */
-function terminalLogIconFromText(text: string): LogEntry['icon'] {
+function terminalLogStatusFromText(text: string): TerminalLogStatus {
   const t = text
-  const errorLike =
-    t.includes('失败') || (t.includes('错误') && !t.includes('无错误'))
+  const errorLike = t.includes('失败') || (t.includes('错误') && !t.includes('无错误'))
   if (errorLike) return 'error'
+
+  if (t.includes('提示：') || t.includes('识别阶段提示') || t.includes('仅供参考')) return 'warning'
+
+  if (t.includes('等待解析') || t.includes('等待文档')) return 'pending'
+  if (t.includes('等待') && !t.includes('正在')) return 'pending'
+
+  if (t.includes('已取消') || t.includes('已停止') || t.includes('已请求取消')) return 'info'
 
   const successLike =
     t.includes('上传成功') ||
@@ -310,61 +321,65 @@ function terminalLogIconFromText(text: string): LogEntry['icon'] {
     (t.includes('完成') && !t.includes('未完成'))
   if (successLike) return 'success'
 
-  const loadingLike =
-    t.includes('正在上传') ||
+  const runningLike =
+    t.includes('正在') ||
     t.includes('正在等待') ||
-    t.includes('等待解析') ||
-    t.includes('正在')
-  if (loadingLike) return 'loading'
+    t.includes('开始需求分析') ||
+    t.includes('开始解析') ||
+    t.includes('📤') ||
+    t.includes('并行解析') ||
+    t.includes('调用 AI') ||
+    t.includes('重新解析') ||
+    t.includes('重新分析')
+  if (runningLike) return 'running'
 
-  return 'loading'
+  return 'info'
 }
 
-function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntry['icon']; text: string } {
+function mapParseStageMessage(stage: string | null | undefined): { text: string } {
   const s = stage ?? 'PENDING'
   switch (s) {
     case 'PENDING':
-      return { icon: 'loading', text: '📄 文件上传成功，等待解析...' }
+      return { text: '📄 文件上传成功，等待解析...' }
     case 'CLAIMED':
-      return { icon: 'loading', text: '📝 开始解析文档...' }
+      return { text: '📝 开始解析文档...' }
     case 'FILE_OK':
-      return { icon: 'loading', text: '✅ 文件读取成功，继续解析…' }
+      return { text: '✅ 文件读取成功，继续解析…' }
     case 'PDF':
-      return { icon: 'loading', text: '📄 正在提取 PDF 文本...' }
+      return { text: '📄 正在提取 PDF 文本...' }
     case 'PDF_TEXT_LAYER':
-      return { icon: 'loading', text: '📄 正在提取 PDF 内置文本层...' }
+      return { text: '📄 正在提取 PDF 内置文本层...' }
     case 'PDF_TEXT_LAYER_OK':
-      return { icon: 'loading', text: '✅ PDF 内置文本可用，跳过 OCR' }
+      return { text: '✅ PDF 内置文本可用，跳过 OCR' }
     case 'PDF_OCR_PIPELINE':
-      return { icon: 'loading', text: '🔍 扫描件或文本不足，正在分页 OCR（分批处理）...' }
+      return { text: '🔍 扫描件或文本不足，正在分页 OCR（分批处理）...' }
     case 'WORD':
-      return { icon: 'loading', text: '📄 正在提取 Word 文本...' }
+      return { text: '📄 正在提取 Word 文本...' }
     case 'EXCEL':
-      return { icon: 'loading', text: '📊 正在解析 Excel 表格...' }
+      return { text: '📊 正在解析 Excel 表格...' }
     case 'YAML':
     case 'TEXT':
-      return { icon: 'loading', text: '📄 正在读取文本...' }
+      return { text: '📄 正在读取文本...' }
     case 'IMAGE':
-      return { icon: 'loading', text: '🔍 检测到扫描件，正在 OCR 识别...' }
+      return { text: '🔍 检测到扫描件，正在 OCR 识别...' }
     case 'STRUCTURE':
-      return { icon: 'loading', text: '⚙️ 正在结构化需求提取...' }
+      return { text: '⚙️ 正在结构化需求提取...' }
     case 'PDF_OCR_PARTIAL':
-      return { icon: 'loading', text: '📎 已生成部分解析文本，后台继续识别剩余页面…' }
+      return { text: '📎 已生成部分解析文本，后台继续识别剩余页面…' }
     case 'DONE':
-      return { icon: 'success', text: '✅ 解析完成' }
+      return { text: '✅ 解析完成' }
     case 'FAILED':
-      return { icon: 'error', text: '❌ 解析失败' }
+      return { text: '❌ 解析失败' }
     case 'CANCELLED':
-      return { icon: 'error', text: '❌ 已取消解析' }
+      return { text: '❌ 已取消解析' }
     default: {
       const m = /^PDF_OCR_P(\d+)_(\d+)$/.exec(s || '')
       if (m) {
         return {
-          icon: 'loading',
           text: `🔍 正在识别 PDF 第 ${m[1]}–${m[2]} 页（分批 OCR）...`,
         }
       }
-      return { icon: 'loading', text: `📄 解析阶段：${s}` }
+      return { text: `📄 解析阶段：${s}` }
     }
   }
 }
@@ -479,33 +494,84 @@ function AiStudioStepRail({
 
 /* ──────────────────── 子组件 ──────────────────────── */
 
-/** 终端日志左侧状态图标：同一 icon 类型始终同一组件与同一像素尺寸，避免同页多种 Loader2 样式漂移 */
-const TERMINAL_LOG_ICON_PX = 14
+function terminalLogTextClassFromStatus(status: TerminalLogStatus): string {
+  switch (status) {
+    case 'error':
+      return 'text-red-700 dark:text-red-300'
+    case 'success':
+      return 'text-emerald-800 dark:text-emerald-300'
+    case 'warning':
+      return 'text-amber-800 dark:text-amber-200'
+    case 'info':
+      return 'text-slate-600 dark:text-slate-400'
+    case 'pending':
+      return 'text-slate-500 dark:text-slate-500'
+    case 'running':
+    default:
+      return 'text-sky-900 dark:text-sky-200'
+  }
+}
 
-function TerminalLogStatusIcon({ status }: { status: LogEntry['icon'] }) {
-  const box = 'inline-flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center'
+/** 固定 20×20 图标列 + CSS transform 旋转，避免 Loader2 与行高导致的错位 */
+function TerminalLogStatusIcon({ status }: { status: TerminalLogStatus }) {
+  const c = (name: string) => ({ color: `var(${name})` } as const)
+
+  if (status === 'running') {
+    return (
+      <span className="log-status-spinner-shell" role="status" aria-label="进行中">
+        <span className="log-status-spinner-dial" />
+      </span>
+    )
+  }
   if (status === 'success') {
     return (
-      <span className={box} aria-hidden>
-        <CheckCircle2 size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-green-400" />
+      <span className="log-status-spinner-shell" aria-hidden>
+        <CheckCircle2 className="h-[15px] w-[15px]" strokeWidth={2} style={c('--ai-ar-log-success')} />
       </span>
     )
   }
   if (status === 'error') {
     return (
-      <span className={box} aria-hidden>
-        <XCircle size={TERMINAL_LOG_ICON_PX} strokeWidth={2} className="text-red-400" />
+      <span className="log-status-spinner-shell" aria-hidden>
+        <XCircle className="h-[15px] w-[15px]" strokeWidth={2} style={c('--ai-ar-log-error')} />
       </span>
     )
   }
+  if (status === 'warning') {
+    return (
+      <span className="log-status-spinner-shell" aria-hidden>
+        <AlertTriangle className="h-[14px] w-[14px]" strokeWidth={2} style={c('--ai-ar-log-warning')} />
+      </span>
+    )
+  }
+  if (status === 'info') {
+    return (
+      <span className="log-status-spinner-shell" aria-hidden>
+        <Info className="h-[14px] w-[14px]" strokeWidth={2} style={c('--ai-ar-log-info')} />
+      </span>
+    )
+  }
+  /* pending */
   return (
-    <span className={box} aria-hidden>
-      <Loader2
-        size={TERMINAL_LOG_ICON_PX}
-        strokeWidth={2}
-        className="text-blue-400 animate-spin"
-      />
+    <span className="log-status-spinner-shell" aria-hidden>
+      <Circle className="h-3 w-3" strokeWidth={2} fill="none" style={c('--ai-ar-log-pending')} />
     </span>
+  )
+}
+
+function LogLine({ entry }: { entry: LogEntry }) {
+  const status = entry.statusOverride ?? terminalLogStatusFromText(entry.text)
+  const textCls = terminalLogTextClassFromStatus(status)
+  return (
+    <div className="log-row flex items-start gap-2 py-0.5 font-mono text-[12px] leading-normal motion-safe:animate-[fadeIn_0.3s_ease-out]">
+      <div className="log-status-icon flex w-5 shrink-0 justify-center self-start pt-[2px]">
+        <TerminalLogStatusIcon status={status} />
+      </div>
+      <span className="log-timestamp w-[5.5rem] shrink-0 tabular-nums text-[11px] text-workspace-text-muted dark:text-slate-500">
+        {entry.timestamp}
+      </span>
+      <span className={`log-message min-w-0 flex-1 whitespace-pre-wrap break-words ${textCls}`}>{entry.text}</span>
+    </div>
   )
 }
 
@@ -554,27 +620,6 @@ function StatusBadge({
   )
 }
 
-/** 日志行文案语义 → 文本颜色（与 icon 判断一致） */
-function terminalLogTextClass(text: string): string {
-  const kind = terminalLogIconFromText(text)
-  if (kind === 'error') return 'text-red-700 dark:text-red-400'
-  if (kind === 'success') return 'text-emerald-700 dark:text-emerald-400'
-  return 'text-sky-900 dark:text-sky-300'
-}
-
-function LogLine({ entry }: { entry: LogEntry }) {
-  const status = terminalLogIconFromText(entry.text)
-  const textCls = terminalLogTextClass(entry.text)
-  return (
-    <div className="flex items-start gap-2 font-mono py-0.5 animate-[fadeIn_0.3s_ease-out] text-[12px] leading-[1.5]">
-      <TerminalLogStatusIcon status={status} />
-      <span className="text-workspace-text-secondary/90 dark:text-slate-500 flex-shrink-0 tabular-nums">
-        [{entry.timestamp}]
-      </span>
-      <span className={`whitespace-pre-wrap break-words ${textCls}`}>{entry.text}</span>
-    </div>
-  )
-}
 
 class AiAnalysisErrorBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -686,13 +731,18 @@ function AiAnalysisPageInner() {
   const { uploadFile, progress: uploadProgressState, abort: abortUpload, reset: resetUploadProgress, validateFile } =
     useChunkedUpload()
 
-  const makeLog = useCallback((icon: LogEntry['icon'], text: string): LogEntry => {
-    return { id: safeRandomUUID(), icon, text, timestamp: nowTime() }
+  const makeLog = useCallback((text: string, statusOverride?: TerminalLogStatus): LogEntry => {
+    return {
+      id: safeRandomUUID(),
+      text,
+      timestamp: nowTime(),
+      ...(statusOverride ? { statusOverride } : {}),
+    }
   }, [])
 
   const addLog = useCallback(
-    (icon: LogEntry['icon'], text: string) => {
-      dispatch({ type: 'ADD_LOG', log: makeLog(icon, text) })
+    (text: string) => {
+      dispatch({ type: 'ADD_LOG', log: makeLog(text) })
     },
     [makeLog],
   )
@@ -1035,14 +1085,14 @@ function AiAnalysisPageInner() {
           lastStage = stage
           const mapped = mapParseStageMessage(stage)
           if (stage === 'FAILED') {
-            addLog('error', `${mapped.text}: ${f.parseError ?? '未知错误'}`)
+            addLog(`${mapped.text}: ${f.parseError ?? '未知错误'}`)
           } else if (stage !== 'DONE') {
-            addLog(mapped.icon, mapped.text)
+            addLog(mapped.text)
           }
         }
         if (f.status === 'PARSED') {
           const n = f.parsedContent?.length ?? 0
-          addLog('success', `✅ 解析完成 (${n.toLocaleString()} 字符)`)
+          addLog(`✅ 解析完成 (${n.toLocaleString()} 字符)`)
           return f
         }
         if (f.status === 'FAILED') {
@@ -1077,10 +1127,7 @@ function AiAnalysisPageInner() {
       const r = await filesApi.retryParse(fileId, textOnly ? { textOnly: true } : undefined)
       setUploadedFile(r)
       dispatch({ type: 'UPLOAD_DONE' })
-      addLog(
-        'loading',
-        textOnly ? '📄 已提交「仅内置文本」重新解析…' : '📄 已提交重新解析…',
-      )
+      addLog(textOnly ? '📄 已提交「仅内置文本」重新解析…' : '📄 已提交重新解析…')
       const parsed = await pollUntilParsed(fileId, signal, setUploadedFile)
       setUploadedFile(parsed)
       if (parsed.status === 'PARSED') {
@@ -1088,10 +1135,9 @@ function AiAnalysisPageInner() {
         dispatch({ type: 'GO_IDLE' })
         void loadFileHistory()
       } else {
-        addLog('error', `❌ ${parsed.parseError ?? '解析失败'}`)
         dispatch({
           type: 'ERROR',
-          log: makeLog('error', parsed.parseError ?? '解析失败'),
+          log: makeLog(`❌ ${parsed.parseError ?? '解析失败'}`, 'error'),
         })
       }
     },
@@ -1160,12 +1206,12 @@ function AiAnalysisPageInner() {
       setParsePreviewDirty(false)
       replaceImagePreviews(arr.map((f) => URL.createObjectURL(f)))
 
-      addLog('loading', `📤 批量上传 ${arr.length} 张图片…`)
+      addLog(`📤 批量上传 ${arr.length} 张图片…`)
 
       try {
         const uploadedRows = await Promise.all(
           arr.map(async (file, i) => {
-            addLog('loading', `📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+            addLog(`📤 图片 ${i + 1}/${arr.length}：${file.name}`)
             const cur = await uploadFile(file)
             if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
             stashUploadedOriginalName(cur.id, file.name)
@@ -1184,7 +1230,7 @@ function AiAnalysisPageInner() {
         const needParse = uploadedRows.filter((u) => u.status !== 'PARSED')
         if (needParse.length > 0) {
           dispatch({ type: 'UPLOAD_DONE' })
-          addLog('loading', `📄 并行解析 ${needParse.length} 张图片…`)
+          addLog(`📄 并行解析 ${needParse.length} 张图片…`)
         }
 
         const results: UploadedFile[] = await Promise.all(
@@ -1210,21 +1256,20 @@ function AiAnalysisPageInner() {
         setParsePreviewDirty(false)
 
         if (results.every((r) => r.status === 'PARSED')) {
-          addLog('success', `✅ ${results.length} 张图片已就绪，可开始分析`)
+          addLog(`✅ ${results.length} 张图片已就绪，可开始分析`)
           dispatch({ type: 'GO_IDLE' })
           void loadFileHistory()
         } else {
           const failed = results.find((r) => r.status === 'FAILED')
-          addLog('error', `❌ 图片解析失败：${failed?.parseError ?? '未知错误'}`)
           dispatch({
             type: 'ERROR',
-            log: makeLog('error', failed?.parseError ?? '解析失败'),
+            log: makeLog(`❌ 图片解析失败：${failed?.parseError ?? '未知错误'}`, 'error'),
           })
           toast.error('部分图片解析失败')
         }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
-          addLog('loading', '⏹ 已取消上传/解析')
+          addLog('⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
           replaceImagePreviews([])
           setUploadedFile(null)
@@ -1232,8 +1277,7 @@ function AiAnalysisPageInner() {
           setUploadDisplayName(null)
           return
         }
-        addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
-        dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
+        dispatch({ type: 'ERROR', log: makeLog(`❌ ${(e as Error).message || '上传失败'}`, 'error') })
         toast.error('批量上传失败')
       } finally {
         operationAbortRef.current = null
@@ -1275,7 +1319,7 @@ function AiAnalysisPageInner() {
         replaceImagePreviews([])
       }
 
-      addLog('loading', `📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
+      addLog(`📤 正在上传：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`)
 
       try {
         const result = await uploadFile(file)
@@ -1285,11 +1329,11 @@ function AiAnalysisPageInner() {
         setUploadedFile(result)
         setParsePreviewDirty(false)
         setEditedParsedText(result.parsedContent ?? '')
-        addLog('success', `✅ 文件上传成功，服务端文件 ID：${result.id}`)
+        addLog(`✅ 文件上传成功，服务端文件 ID：${result.id}`)
 
         if (result.status === 'PARSED') {
           const n = result.parsedContent?.length ?? 0
-          addLog('success', `✅ 需求解析完成 (${n.toLocaleString()} 字符)`)
+          addLog(`✅ 需求解析完成 (${n.toLocaleString()} 字符)`)
           dispatch({ type: 'GO_IDLE' })
           void loadFileHistory()
           return
@@ -1297,7 +1341,6 @@ function AiAnalysisPageInner() {
 
         dispatch({ type: 'UPLOAD_DONE' })
         addLog(
-          'loading',
           '📄 正在等待服务端解析文档（服务端会按文档自动选择：内置文本层 / 混元多模态直读 / OCR 等）...',
         )
 
@@ -1311,15 +1354,14 @@ function AiAnalysisPageInner() {
           dispatch({ type: 'GO_IDLE' })
           void loadFileHistory()
         } else {
-          addLog('error', `❌ 需求解析失败：${parsed.parseError ?? '未知错误'}`)
           dispatch({
             type: 'ERROR',
-            log: makeLog('error', parsed.parseError ?? '解析失败'),
+            log: makeLog(`❌ 需求解析失败：${parsed.parseError ?? '未知错误'}`, 'error'),
           })
         }
       } catch (e) {
         if ((e as Error).name === 'AbortError') {
-          addLog('loading', '⏹ 已取消上传/解析')
+          addLog('⏹ 已取消上传/解析')
           dispatch({ type: 'STOP_TO_IDLE' })
           replaceImagePreviews([])
           setUploadedFile(null)
@@ -1328,8 +1370,7 @@ function AiAnalysisPageInner() {
           return
         }
         setUploadDisplayName(null)
-        addLog('error', `❌ ${(e as Error).message || '上传失败'}`)
-        dispatch({ type: 'ERROR', log: makeLog('error', '上传失败') })
+        dispatch({ type: 'ERROR', log: makeLog(`❌ ${(e as Error).message || '上传失败'}`, 'error') })
         toast.error('文件上传失败')
       } finally {
         operationAbortRef.current = null
@@ -1453,10 +1494,10 @@ function AiAnalysisPageInner() {
 
       dispatch({ type: isRevision ? 'REVIEW' : 'START_ANALYSIS' })
       if (!isRevision) {
-        addLog('loading', '🚀 开始需求分析...')
-        addLog('loading', '🤖 正在调用 AI 模型（需求分析通道）...')
+        addLog('🚀 开始需求分析...')
+        addLog('🤖 正在调用 AI 模型（需求分析通道）...')
       } else {
-        addLog('loading', '🔄 正在根据修改意见重新分析...')
+        addLog('🔄 正在根据修改意见重新分析...')
       }
 
       const multiFile = additionalAnalysisFiles.length > 0
@@ -1504,20 +1545,18 @@ function AiAnalysisPageInner() {
               void loadAnalysisRecords()
               if (humanReview) {
                 addLog(
-                  'success',
                   '✅ AI 需求分析完成。您可审阅报告或输入修改意见（Ctrl+Enter 提交修订）。',
                 )
                 dispatch({ type: 'SET_REPORT' })
               } else {
-                addLog('success', '✅ AI 需求分析完成（已跳过人工审阅，自动通过）。')
+                addLog('✅ AI 需求分析完成（已跳过人工审阅，自动通过）。')
                 dispatch({ type: 'APPROVE' })
                 toast.success('需求分析已完成并已通过')
               }
               resolve()
             },
             (err: Error) => {
-              addLog('error', `❌ 分析失败：${err.message}`)
-              dispatch({ type: 'ERROR', log: makeLog('error', err.message) })
+              dispatch({ type: 'ERROR', log: makeLog(`❌ 分析失败：${err.message}`, 'error') })
               reject(err)
             },
             controller.signal,
@@ -1616,7 +1655,7 @@ ${state.reportText}
       setUploadedFile(null)
       setAdditionalAnalysisFiles([])
       setUploadDisplayName(null)
-      addLog('loading', '⏹ 已请求取消解析任务')
+      addLog('⏹ 已请求取消解析任务')
       dispatch({ type: 'STOP_TO_IDLE' })
       toast('已停止', { icon: '⏹' })
       void loadFileHistory()
@@ -1624,7 +1663,7 @@ ${state.reportText}
     }
 
     if (state.status === 'analyzing') {
-      addLog('loading', '⏹ 已停止分析')
+      addLog('⏹ 已停止分析')
       dispatch({ type: 'STOP_TO_IDLE' })
       toast('已停止分析', { icon: '⏹' })
       return
@@ -1701,7 +1740,7 @@ ${state.reportText}
 
   return (
     <div
-      className="ai-analysis-studio motion-safe:animate-[arsStudioIn_0.55s_ease-out_both] -mx-5 -mb-6 -mt-6 flex min-h-0 w-auto max-w-none flex-col overflow-hidden rounded-2xl border border-workspace-panel-border/50 bg-workspace-page/90 shadow-[0_24px_80px_-48px_rgba(59,130,246,0.35)] backdrop-blur-md dark:border-white/[0.07] dark:bg-slate-950/40 dark:shadow-[0_28px_90px_-40px_rgba(0,0,0,0.55)] sm:-mx-7 sm:-mb-7 sm:-mt-7 lg:-mx-8 lg:-mb-8 lg:-mt-8 max-lg:max-h-none max-lg:min-h-[min(100dvh,920px)] lg:h-[calc(100dvh-7.25rem)] lg:max-h-[calc(100dvh-7.25rem)]"
+      className="ai-analysis-studio motion-safe:animate-[arsStudioIn_0.55s_ease-out_both] -mx-5 -mb-6 -mt-6 flex min-h-0 w-auto max-w-none flex-col overflow-hidden rounded-2xl border border-[color:var(--ai-ar-shell-border)] bg-[color:var(--ai-ar-shell-bg)] shadow-[var(--ai-ar-shell-shadow)] backdrop-blur-md sm:-mx-7 sm:-mb-7 sm:-mt-7 lg:-mx-8 lg:-mb-8 lg:-mt-8 max-lg:max-h-none max-lg:min-h-[min(100dvh,920px)] lg:h-[calc(100dvh-7.25rem)] lg:max-h-[calc(100dvh-7.25rem)]"
       data-page="ai-analysis"
     >
       <ConfirmDialog
@@ -1710,6 +1749,7 @@ ${state.reportText}
         description="将取消当前正在进行的上传、解析或 AI 分析。解析中的任务会通知服务端取消。"
         confirmText="停止"
         confirmVariant="destructive"
+        contentClassName="border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-modal-card-bg)] shadow-2xl dark:border-white/10"
         onCancel={() => setConfirmStopOpen(false)}
         onConfirm={() => void executeStop()}
       />
@@ -1721,7 +1761,7 @@ ${state.reportText}
         </div>
       )}
 
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-workspace-panel-border/60 bg-workspace-panel/70 px-4 py-2.5 backdrop-blur-md dark:bg-slate-900/55 sm:px-5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[color:var(--ai-ar-terminal-header-border)] bg-[color:var(--ai-ar-terminal-header-bg)] px-4 py-2.5 backdrop-blur-md sm:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/30 via-violet-500/25 to-emerald-400/25 ring-1 ring-white/40 dark:from-cyan-500/20 dark:via-violet-500/15 dark:to-emerald-500/15 dark:ring-white/10">
             <Sparkles className="h-4 w-4 text-cyan-700 dark:text-cyan-200" aria-hidden />
@@ -1765,10 +1805,10 @@ ${state.reportText}
       {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
       <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,42%)_minmax(0,58%)] lg:grid-rows-1">
         {/* 左栏：仅中间区域滚动；底部「人工审阅开关 + 开始/停止」固定可见 */}
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-workspace-panel-border/50 bg-workspace-panel/30 backdrop-blur-md dark:border-white/[0.07] dark:bg-slate-950/25 lg:border-b-0 lg:border-r">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-panel-bg)]/90 backdrop-blur-md lg:border-b-0 lg:border-r">
           <div className="ai-analysis-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
             <div className="space-y-4 motion-safe:animate-[arsStudioIn_0.45s_ease-out_both]">
-          <section className="rounded-xl border border-workspace-panel-border/55 bg-workspace-panel/50 p-3 shadow-sm dark:border-white/[0.07] dark:bg-slate-900/35">
+          <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.12)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.45)]">
             <h2 className="mb-2 text-sm font-semibold text-workspace-text-primary">需求文档</h2>
           <div className="space-y-2">
             <input
@@ -1796,7 +1836,7 @@ ${state.reportText}
                 className={`cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-[opacity,transform,box-shadow] duration-300 motion-reduce:transition-none ${
                   dropzoneActive
                     ? 'border-cyan-500/70 bg-cyan-500/10 shadow-[0_0_0_6px_rgba(34,211,238,0.12)] motion-safe:animate-pulse dark:border-cyan-400/60 dark:bg-cyan-500/10'
-                    : 'border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.35)] hover:border-violet-400/45 hover:bg-violet-500/5 dark:bg-slate-900/40'
+                    : 'border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)]/80 hover:border-cyan-500/40 hover:bg-[color:var(--ai-ar-card-hover-bg)] dark:bg-slate-900/40'
                 }`}
               >
                 <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
@@ -1807,26 +1847,29 @@ ${state.reportText}
                 </p>
               </div>
             ) : (
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+              <div className="flex items-start gap-3 rounded-lg border border-[color:var(--ai-ar-upload-success-border)] bg-[color:var(--ai-ar-upload-success-bg)] p-3">
                 {imagePreviewUrls.length > 0 && uploadedFile.fileType === 'IMAGE' ? (
-                  <div className="flex flex-wrap gap-1 flex-shrink-0 max-w-[3.75rem] content-start">
+                  <div className="flex max-w-[3.75rem] flex-shrink-0 flex-wrap content-start gap-1">
                     {imagePreviewUrls.map((url) => (
                       <img
                         key={url}
                         src={url}
                         alt=""
-                        className="w-11 h-11 object-cover rounded border border-green-500/30"
+                        className="h-11 w-11 rounded border border-[color:var(--ai-ar-upload-thumb-border)] object-cover"
                       />
                     ))}
                   </div>
                 ) : (
-                  <FileText className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                  <FileText
+                    className="mt-0.5 h-5 w-5 flex-shrink-0 text-[color:var(--ai-ar-upload-success-sub)]"
+                    aria-hidden
+                  />
                 )}
-                <div className="flex-1 min-w-0 space-y-1">
+                <div className="min-w-0 flex-1 space-y-1">
                   {additionalAnalysisFiles.length === 0 ? (
                     <>
                       <p
-                        className="text-sm text-green-300 truncate"
+                        className="truncate text-sm text-[color:var(--ai-ar-upload-success-text)]"
                         title={
                           uploadDisplayName ?? normalizeUploadedFilename(uploadedFile.originalName)
                         }
@@ -1834,7 +1877,7 @@ ${state.reportText}
                         {uploadDisplayName ??
                           normalizeUploadedFilename(uploadedFile.originalName)}
                       </p>
-                      <p className="text-xs text-green-400/60">
+                      <p className="text-xs text-[color:var(--ai-ar-upload-success-sub)]">
                         {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB ·{' '}
                         {uploadedFile.status === 'PARSED'
                           ? '解析完成'
@@ -1845,22 +1888,22 @@ ${state.reportText}
                     </>
                   ) : (
                     <>
-                      <p className="text-xs font-medium text-green-200">
+                      <p className="text-xs font-medium text-[color:var(--ai-ar-upload-success-text)]">
                         多图分析 · 共 {1 + additionalAnalysisFiles.length} 张
                       </p>
-                      <ul className="text-xs text-green-300 space-y-1 max-h-36 overflow-y-auto">
+                      <ul className="max-h-36 space-y-1 overflow-y-auto text-xs text-[color:var(--ai-ar-upload-success-text)]">
                         {[uploadedFile, ...additionalAnalysisFiles].map((f, idx) => (
-                          <li key={f.id} className="flex items-center gap-2 min-w-0">
+                          <li key={f.id} className="flex min-w-0 items-center gap-2">
                             {imagePreviewUrls[idx] ? (
                               <img
                                 src={imagePreviewUrls[idx]}
                                 alt=""
-                                className="w-8 h-8 object-cover rounded border border-green-500/25 shrink-0"
+                                className="h-8 w-8 shrink-0 rounded border border-[color:var(--ai-ar-upload-thumb-border)] object-cover"
                               />
                             ) : null}
-                            <span className="truncate min-w-0" title={displayUploadedFilename(f.id, f.originalName)}>
+                            <span className="min-w-0 truncate" title={displayUploadedFilename(f.id, f.originalName)}>
                               · {displayUploadedFilename(f.id, f.originalName)}{' '}
-                              <span className="text-green-400/70">
+                              <span className="text-[color:var(--ai-ar-upload-success-sub)]">
                                 {f.status === 'PARSED' ? '✓' : f.status === 'PARSING' ? '解析中' : f.status}
                               </span>
                             </span>
@@ -1873,10 +1916,10 @@ ${state.reportText}
                 <button
                   type="button"
                   onClick={handleRemoveFile}
-                  className="text-green-400/60 hover:text-green-300 transition-colors p-1"
+                  className="p-1 text-[color:var(--ai-ar-upload-remove)] transition-colors hover:text-[color:var(--ai-ar-upload-remove-hover)]"
                   aria-label="移除文件"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             )}
@@ -1906,7 +1949,7 @@ ${state.reportText}
             {state.status === 'parsing' && (
               <div className="flex flex-col gap-1 text-xs text-amber-400">
                 <div className="flex items-center gap-2">
-                  <TerminalLogStatusIcon status="loading" />
+                  <TerminalLogStatusIcon status="running" />
                   正在解析… 已等待 {parseElapsed}s
                 </div>
                 {uploadedFile &&
@@ -2091,7 +2134,7 @@ ${state.reportText}
 
           </section>
 
-          <section className="rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/55 p-3 shadow-sm dark:bg-slate-900/35">
+          <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.1)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.4)]">
             <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
               <h2 className="text-sm font-semibold text-workspace-text-primary">需求上下文</h2>
               <span className="text-[10px] text-workspace-text-muted">可选 · 与指令模板组合后发给模型</span>
@@ -2109,7 +2152,7 @@ ${state.reportText}
                 <textarea
                   id="ars-req-desc"
                   rows={5}
-                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-0 transition-[box-shadow,opacity,transform] placeholder:text-workspace-text-muted/80 focus:border-cyan-500/55 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(34,211,238,0.18)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(34,211,238,0.22)]"
+                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-0 transition-[box-shadow,opacity,transform] placeholder:text-workspace-text-muted/80 focus:border-cyan-500/55 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(34,211,238,0.18)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(34,211,238,0.22)]"
                   placeholder="例如：这是哪个产品版本、要解决什么问题、关键用户旅程是什么……"
                   value={requirementDescription}
                   onChange={(e) => setRequirementDescription(e.target.value.slice(0, REQ_DESC_MAX))}
@@ -2148,7 +2191,7 @@ ${state.reportText}
                 <textarea
                   id="ars-req-supp"
                   rows={4}
-                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] placeholder:text-workspace-text-muted/80 focus:border-violet-500/45 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(139,92,246,0.16)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(139,92,246,0.2)]"
+                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] placeholder:text-workspace-text-muted/80 focus:border-violet-500/45 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(139,92,246,0.16)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(139,92,246,0.2)]"
                   placeholder="约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。"
                   value={requirementSupplement}
                   onChange={(e) => setRequirementSupplement(e.target.value.slice(0, REQ_SUPP_MAX))}
@@ -2178,7 +2221,7 @@ ${state.reportText}
             </div>
           </section>
 
-          <section className="relative rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/55 p-3 dark:bg-slate-900/35">
+          <section className="relative rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.1)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.4)]">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-workspace-text-primary">分析指令模板</h2>
               {isCustomTemplate ? (
@@ -2299,7 +2342,7 @@ ${state.reportText}
               </div>
               <textarea
                 id="ai-analysis-prompt-template"
-                className="min-h-[100px] max-h-[200px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.45)] p-3 font-mono text-[11px] leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] focus:border-violet-500/45 focus:outline-none focus:shadow-[0_0_0_3px_rgba(139,92,246,0.12)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                className="min-h-[100px] max-h-[200px] w-full resize-y overflow-y-auto rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)] p-3 font-mono text-[11px] leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] focus:border-violet-500/45 focus:outline-none focus:shadow-[0_0_0_3px_rgba(139,92,246,0.12)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                 placeholder="在此微调发送给模型的系统指令…"
                 value={analysisPromptTemplate}
                 onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
@@ -2308,7 +2351,7 @@ ${state.reportText}
             </div>
           </section>
 
-          <section className="rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/40 p-3 dark:bg-slate-900/30">
+          <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-panel-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.08)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.35)]">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-workspace-text-primary">历史与上传</h2>
                 <div className="inline-flex rounded-full border border-workspace-panel-border/60 bg-workspace-panel-muted/50 p-0.5 text-[11px] dark:border-white/10">
@@ -2486,7 +2529,7 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-col gap-2 border-t border-workspace-panel-border/60 bg-workspace-panel/85 px-4 py-3 backdrop-blur-md dark:border-white/[0.08] dark:bg-slate-950/70 sm:px-5">
+          <div className="flex shrink-0 flex-col gap-2 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-sticky-bar-bg)] px-4 py-3 backdrop-blur-md sm:px-5">
             <p className="text-[11px] leading-snug text-workspace-text-secondary">{prepStripSummary}</p>
           <div className="flex items-center gap-3 py-1">
             <User className="w-4 h-4 text-muted-foreground" />
@@ -2562,8 +2605,8 @@ ${state.reportText}
         </aside>
 
         {/* 右栏：AI 分析终端 */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-workspace-panel-border/45 bg-workspace-panel/20 motion-safe:animate-[arsStudioIn_0.48s_ease-out_both] dark:border-white/[0.06] dark:bg-slate-950/25">
-          <div className="flex shrink-0 flex-col gap-1.5 rounded-t-xl border border-b-0 border-workspace-panel-border/50 bg-gradient-to-r from-white/90 via-cyan-50/40 to-violet-50/50 px-3 py-2.5 shadow-sm backdrop-blur-md dark:from-slate-900/95 dark:via-slate-900/90 dark:to-indigo-950/90 dark:border-white/10 sm:px-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-terminal-bg)] motion-safe:animate-[arsStudioIn_0.48s_ease-out_both] max-lg:border-t lg:border-l">
+          <div className="flex shrink-0 flex-col gap-1.5 rounded-t-xl border border-b-0 border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-terminal-header-bg)] px-3 py-2.5 shadow-[0_8px_32px_-24px_rgba(59,130,246,0.12)] backdrop-blur-md sm:px-4">
             <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Terminal className="h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300" aria-hidden />
@@ -2682,10 +2725,10 @@ ${state.reportText}
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-workspace-panel-border/50 bg-gradient-to-b from-slate-50/95 via-white to-slate-50/90 dark:border-white/10 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950/95 lg:rounded-br-xl">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-terminal-bg)] lg:rounded-br-xl">
             {rightTab === 'process' ? (
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="shrink-0 border-b border-workspace-panel-border/50 bg-workspace-panel/40 p-3 dark:border-white/[0.06] dark:bg-slate-900/50">
+                <div className="shrink-0 border-b border-[color:var(--ai-ar-terminal-header-border)] bg-[color:var(--ai-ar-terminal-bg)]/70 p-3">
                   <AiStudioStepRail
                     status={state.status}
                     uploadedFile={uploadedFile}
@@ -2695,7 +2738,7 @@ ${state.reportText}
                 <div
                   ref={logContainerRef}
                   onScroll={handleLogScroll}
-                  className="ai-analysis-terminal-scroll min-h-[140px] flex-1 space-y-0.5 overflow-y-auto overscroll-contain bg-slate-100/90 px-3 py-2 font-mono text-[12px] dark:bg-slate-950/85"
+                  className="ai-analysis-terminal-scroll min-h-[140px] flex-1 space-y-0.5 overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-terminal-log-bg)] px-3 py-2 font-mono text-[12px]"
                 >
                   {state.logs.length === 0 && isIdle && !busy ? (
                     <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 px-4 py-10 text-center motion-safe:animate-[fadeIn_0.4s_ease-out]">
@@ -2718,7 +2761,7 @@ ${state.reportText}
             ) : (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div
-                  className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-white/80 px-4 py-3 [scrollbar-gutter:stable] select-text dark:bg-slate-950/60 sm:px-5"
+                  className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-report-bg)] px-4 py-3 [scrollbar-gutter:stable] select-text sm:px-5"
                   data-testid="ai-analysis-report-panel"
                 >
                   {isAnalyzingStream && !state.reportText.trim() ? (
@@ -2757,7 +2800,7 @@ ${state.reportText}
                 </div>
 
                 {(showReviewArea || showApprovedOnly) && (
-                  <div className="shrink-0 border-t border-workspace-panel-border/60 bg-workspace-panel/90 p-4 dark:border-white/[0.08] dark:bg-slate-900/85">
+                  <div className="shrink-0 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-card-bg)] p-4">
                     {state.status === 'approved' ? (
                       <div className="space-y-2 py-2 text-center">
                         <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-400">
@@ -2819,7 +2862,7 @@ ${state.reportText}
 
       {largeEditorField && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[color:var(--ai-ar-modal-overlay)] p-4 backdrop-blur-[2px]"
           role="dialog"
           aria-modal
           aria-labelledby="ars-large-editor-title"
@@ -2828,7 +2871,7 @@ ${state.reportText}
           }}
         >
           <div
-            className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-workspace-panel-border/60 bg-workspace-panel p-4 shadow-2xl dark:border-white/10 dark:bg-slate-900"
+            className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-modal-card-bg)] p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -2840,7 +2883,7 @@ ${state.reportText}
               </Button>
             </div>
             <textarea
-              className="h-[min(60vh,480px)] w-full resize-y rounded-xl border border-workspace-panel-border/60 bg-[hsl(var(--workspace-panel-muted-bg)/0.5)] p-3 text-sm leading-relaxed text-workspace-text-primary focus:border-cyan-500/45 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 dark:bg-slate-950/60"
+              className="h-[min(60vh,480px)] w-full resize-y rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)] p-3 text-sm leading-relaxed text-workspace-text-primary focus:border-cyan-500/45 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
               value={largeEditorField === 'desc' ? requirementDescription : requirementSupplement}
               onChange={(e) => {
                 const v = e.target.value
@@ -2870,54 +2913,6 @@ ${state.reportText}
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
-        }
-        .ai-analysis-terminal-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(100,116,139,0.55) rgba(241,245,249,0.9);
-        }
-        .dark .ai-analysis-terminal-scroll {
-          scrollbar-color: #475569 #0f172a;
-        }
-        .ai-analysis-terminal-scroll::-webkit-scrollbar {
-          width: 6px;
-        }
-        .ai-analysis-terminal-scroll::-webkit-scrollbar-track {
-          background: rgba(241,245,249,0.95);
-          border-radius: 3px;
-        }
-        .dark .ai-analysis-terminal-scroll::-webkit-scrollbar-track {
-          background: #0f172a;
-        }
-        .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
-          background: rgba(100,116,139,0.45);
-          border-radius: 3px;
-        }
-        .dark .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
-          background: #475569;
-        }
-        .ai-analysis-studio .ai-analysis-panel-scroll {
-          scrollbar-color: rgba(100,116,139,0.45) rgba(248,250,252,0.9);
-        }
-        .dark .ai-analysis-studio .ai-analysis-panel-scroll {
-          scrollbar-color: #475569 #1e293b;
-        }
-        .ai-analysis-studio .ai-analysis-panel-scroll::-webkit-scrollbar-track {
-          background: rgba(248,250,252,0.95);
-        }
-        .dark .ai-analysis-studio .ai-analysis-panel-scroll::-webkit-scrollbar-track {
-          background: #1e293b;
-        }
-        .ai-analysis-studio .ai-analysis-report-scroll {
-          scrollbar-color: rgba(100,116,139,0.45) rgba(255,255,255,0.85);
-        }
-        .dark .ai-analysis-studio .ai-analysis-report-scroll {
-          scrollbar-color: #475569 #1e293b;
-        }
-        .ai-analysis-studio .ai-analysis-report-scroll::-webkit-scrollbar-track {
-          background: rgba(255,255,255,0.85);
-        }
-        .dark .ai-analysis-studio .ai-analysis-report-scroll::-webkit-scrollbar-track {
-          background: #1e293b;
         }
       `}</style>
     </div>

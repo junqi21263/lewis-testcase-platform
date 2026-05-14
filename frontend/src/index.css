@@ -64,6 +64,85 @@
     --workspace-theme-toggle-inactive-icon: 215 18% 55%;
   }
 
+  /* ---------- AI 需求分析 Studio（仅 .ai-analysis-studio 内使用 var）---------- */
+  .ai-analysis-studio {
+    --ai-ar-app-frame-bg: linear-gradient(180deg, #f8fbff 0%, #f4f1ff 52%, #f6f8ff 100%);
+    --ai-ar-shell-bg: rgba(255, 255, 255, 0.76);
+    --ai-ar-shell-border: rgba(148, 163, 184, 0.16);
+    --ai-ar-shell-shadow: 0 28px 90px -52px rgba(59, 130, 246, 0.22);
+    --ai-ar-panel-bg: rgba(255, 255, 255, 0.82);
+    --ai-ar-panel-muted-bg: #f2f6ff;
+    --ai-ar-panel-border: rgba(120, 140, 180, 0.2);
+    --ai-ar-card-bg: rgba(255, 255, 255, 0.9);
+    --ai-ar-card-hover-bg: #f7faff;
+    --ai-ar-input-bg: #f4f7ff;
+    --ai-ar-input-border: rgba(120, 140, 180, 0.24);
+    --ai-ar-terminal-bg: #f7faff;
+    --ai-ar-terminal-log-bg: #f2f7fc;
+    --ai-ar-terminal-header-bg: rgba(255, 255, 255, 0.88);
+    --ai-ar-terminal-header-border: rgba(120, 140, 180, 0.14);
+    --ai-ar-upload-success-bg: #ecfdf5;
+    --ai-ar-upload-success-border: rgba(16, 185, 129, 0.28);
+    --ai-ar-upload-success-text: #0f172a;
+    --ai-ar-upload-success-sub: #475569;
+    --ai-ar-upload-thumb-border: rgba(16, 185, 129, 0.35);
+    --ai-ar-upload-remove: rgba(71, 85, 105, 0.55);
+    --ai-ar-upload-remove-hover: rgba(4, 120, 87, 0.95);
+    --ai-ar-sticky-bar-bg: rgba(255, 255, 255, 0.9);
+    --ai-ar-divider: rgba(120, 140, 180, 0.28);
+    --ai-ar-modal-overlay: rgba(15, 23, 42, 0.42);
+    --ai-ar-modal-card-bg: rgba(255, 255, 255, 0.96);
+    --ai-ar-report-bg: rgba(255, 255, 255, 0.72);
+    --ai-ar-log-spin-track: rgba(14, 165, 233, 0.28);
+    --ai-ar-log-spin-active: #0284c7;
+    --ai-ar-log-pending: rgba(100, 116, 139, 0.85);
+    --ai-ar-log-success: #059669;
+    --ai-ar-log-warning: #d97706;
+    --ai-ar-log-error: #f43f5e;
+    --ai-ar-log-info: #64748b;
+    --ai-ar-log-running: #0369a1;
+    background: var(--ai-ar-app-frame-bg);
+  }
+
+  .dark .ai-analysis-studio {
+    --ai-ar-app-frame-bg: linear-gradient(180deg, rgb(15 23 42) 0%, rgb(8 11 26) 48%, rgb(15 23 42) 100%);
+    --ai-ar-shell-bg: rgba(15, 23, 42, 0.45);
+    --ai-ar-shell-border: rgba(255, 255, 255, 0.07);
+    --ai-ar-shell-shadow: 0 28px 90px -40px rgba(0, 0, 0, 0.55);
+    --ai-ar-panel-bg: rgba(15, 23, 42, 0.42);
+    --ai-ar-panel-muted-bg: rgba(30, 41, 59, 0.55);
+    --ai-ar-panel-border: rgba(255, 255, 255, 0.08);
+    --ai-ar-card-bg: rgba(15, 23, 42, 0.38);
+    --ai-ar-card-hover-bg: rgba(30, 41, 59, 0.62);
+    --ai-ar-input-bg: rgba(15, 23, 42, 0.55);
+    --ai-ar-input-border: rgba(148, 163, 184, 0.22);
+    --ai-ar-terminal-bg: rgba(15, 23, 42, 0.72);
+    --ai-ar-terminal-log-bg: rgba(2, 6, 23, 0.55);
+    --ai-ar-terminal-header-bg: rgba(15, 23, 42, 0.92);
+    --ai-ar-terminal-header-border: rgba(255, 255, 255, 0.08);
+    --ai-ar-upload-success-bg: rgba(6, 78, 59, 0.32);
+    --ai-ar-upload-success-border: rgba(52, 211, 153, 0.35);
+    --ai-ar-upload-success-text: rgb(209 250 229);
+    --ai-ar-upload-success-sub: rgb(167 243 208 / 0.85);
+    --ai-ar-upload-thumb-border: rgba(52, 211, 153, 0.45);
+    --ai-ar-upload-remove: rgba(167, 243, 208, 0.45);
+    --ai-ar-upload-remove-hover: rgb(254 202 202);
+    --ai-ar-sticky-bar-bg: rgba(15, 23, 42, 0.78);
+    --ai-ar-divider: rgba(255, 255, 255, 0.1);
+    --ai-ar-modal-overlay: rgba(2, 6, 23, 0.62);
+    --ai-ar-modal-card-bg: rgba(15, 23, 42, 0.94);
+    --ai-ar-report-bg: rgba(2, 6, 23, 0.5);
+    --ai-ar-log-spin-track: rgba(34, 211, 238, 0.22);
+    --ai-ar-log-spin-active: #22d3ee;
+    --ai-ar-log-pending: rgba(148, 163, 184, 0.65);
+    --ai-ar-log-success: #34d399;
+    --ai-ar-log-warning: #fbbf24;
+    --ai-ar-log-error: #fb7185;
+    --ai-ar-log-info: #94a3b8;
+    --ai-ar-log-running: #67e8f9;
+    background: var(--ai-ar-app-frame-bg);
+  }
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -136,6 +215,100 @@
     @apply bg-transparent text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ==================== AI 需求分析 Studio 组件样式 ==================== */
+@keyframes ai-ar-log-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-analysis-studio .log-status-spinner-shell {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  font-size: 0;
+}
+
+.ai-analysis-studio .log-status-spinner-dial {
+  display: block;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid var(--ai-ar-log-spin-track);
+  border-top-color: var(--ai-ar-log-spin-active);
+  border-radius: 9999px;
+  animation: ai-ar-log-spin 0.75s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-analysis-studio .log-status-spinner-dial {
+    animation: none;
+    border-top-color: var(--ai-ar-log-spin-track);
+  }
+}
+
+.ai-analysis-studio .ai-analysis-terminal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+.dark .ai-analysis-studio .ai-analysis-terminal-scroll {
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.38);
+  border-radius: 3px;
+}
+
+.ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.52);
+}
+
+.dark .ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.dark .ai-analysis-studio .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.52);
+}
+
+.ai-analysis-studio .ai-analysis-panel-scroll {
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
+.dark .ai-analysis-studio .ai-analysis-panel-scroll {
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+.ai-analysis-studio .ai-analysis-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ai-analysis-studio .ai-analysis-report-scroll {
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
+.dark .ai-analysis-studio .ai-analysis-report-scroll {
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+.ai-analysis-studio .ai-analysis-report-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ==================== 上传模块专属样式 ==================== */
