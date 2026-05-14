@@ -620,10 +620,61 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return null
   }
 
+  /** 默认 true：PDF 上传解析先整本走混元理解，不再先跑 pdf-parse 文本层探测（设 FILE_PARSE_PDF_HUNYUAN_FIRST=0 恢复旧顺序） */
+  private fileParsePdfHunyuanFirst(): boolean {
+    return this.config.get<string>('FILE_PARSE_PDF_HUNYUAN_FIRST')?.trim() !== '0'
+  }
+
   /**
-   * PDF：先尝试混元多模态直读；默认不再降级腾讯云 OCR（上传解析统一混元）。
-   * 应急：FILE_PARSE_TENCENT_OCR_FALLBACK=1 时恢复混元失败后的腾讯云 PDF OCR。
-   * 已禁用本地视觉 / Paddle / Tesseract 分页管线。
+   * 混元直读未命中后：在允许腾讯云兜底时走全本 OCR；否则抛错。
+   * @param embeddedText 已抽取的内置文本（可为空，供 OCR 侧参考）
+   */
+  private async finishPdfAfterHunyuanMiss(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    ctx: {
+      fileId: string
+      fileBytes: number
+      parseRetryHint: string | null
+      originalStoredPath?: string
+      uploaderId?: string | null
+    },
+    embeddedText: string,
+    numpages: number,
+  ): Promise<string> {
+    if (this.isFileParseHunyuanOnlyForUpload()) {
+      throw new Error(
+        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 40）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal failed 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
+      )
+    }
+
+    try {
+      const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(
+        filePath,
+        embeddedText,
+        numpages,
+        heartbeat,
+        { originalStoredPath: ctx.originalStoredPath },
+      )
+      if (tencentMd) {
+        this.logger.log('PDF：已使用腾讯云 OCR 完成全本逐页识别')
+        return tencentMd
+      }
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      if (msg.startsWith('【解析失败】')) throw e
+      this.logger.warn(`腾讯云 PDF OCR 异常: ${msg}`)
+    }
+    throw new Error(
+      '【解析失败】混元多模态与腾讯云 PDF OCR 均未返回有效结果；已禁用本地视觉/Tesseract 降级。请确认 COS、混元与 OCR 配置是否完整。',
+    )
+  }
+
+  /**
+   * PDF：默认整本先走混元多模态理解与结构化需求报告（prompt 见 multimodalAnalysis），
+   * 不再先跑 pdf-parse 内置文本层探测；混元失败后再抽文本层并走腾讯云 OCR 兜底（若允许）。
+   * 设 FILE_PARSE_PDF_HUNYUAN_FIRST=0 恢复「先文本层再混元」。
+   * 「仅内置文本」重试（parseRetryHint=text_only）仍为显式分支，与 FILE_PARSE_FORCE_HUNYUAN 互斥。
    */
   private async parsePdfWithVisionFallback(
     filePath: string,
@@ -655,6 +706,33 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         message: 'text_only_ok',
       })
       return `【PDF 文本提取｜仅内置文本】\n${text.trim()}`
+    }
+
+    // 默认：整本先走混元理解与结构化输出（见 multimodalAnalysis.buildStructuredRequirementPrompt）；
+    // 不设 FILE_PARSE_PDF_HUNYUAN_FIRST=0 时不先做 pdf-parse 内置文本层探测。
+    if (this.fileParsePdfHunyuanFirst()) {
+      const sizeMb = ctx.fileBytes / (1024 * 1024)
+      await heartbeat('PDF', {
+        phase: 'PDF',
+        fileBytes: ctx.fileBytes,
+        message: 'hunyuan_first',
+        ...(sizeMb > 5
+          ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
+          : {}),
+      })
+      const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
+      if (hunyuanBody) return hunyuanBody
+
+      let text = ''
+      let numpages = 0
+      try {
+        const meta = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
+        text = meta.text
+        numpages = meta.numpages
+      } catch (e) {
+        this.logger.warn(`pdf-parse 失败（混元未命中后供 OCR 参考）: ${(e as Error).message}`)
+      }
+      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, text, numpages)
     }
 
     const sizeMb = ctx.fileBytes / (1024 * 1024)
@@ -693,32 +771,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
     if (hunyuanBody) return hunyuanBody
 
-    if (this.isFileParseHunyuanOnlyForUpload()) {
-      throw new Error(
-        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 40）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal failed 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
-      )
-    }
-
-    try {
-      const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(
-        filePath,
-        text,
-        numpages,
-        heartbeat,
-        { originalStoredPath: ctx.originalStoredPath },
-      )
-      if (tencentMd) {
-        this.logger.log('PDF：已使用腾讯云 OCR 完成全本逐页识别')
-        return tencentMd
-      }
-    } catch (e) {
-      const msg = (e as Error).message || String(e)
-      if (msg.startsWith('【解析失败】')) throw e
-      this.logger.warn(`腾讯云 PDF OCR 异常: ${msg}`)
-    }
-    throw new Error(
-      '【解析失败】混元多模态与腾讯云 PDF OCR 均未返回有效结果；已禁用本地视觉/Tesseract 降级。请确认 COS、混元与 OCR 配置是否完整。',
-    )
+    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, text, numpages)
   }
 
   private getOcrBatchSize(): number {
