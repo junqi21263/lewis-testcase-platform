@@ -130,6 +130,40 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * 上传成功后尽快尝试启动解析，减少用户体感等待（尤其是批量图片最后一张排队慢）。
+   * 仍受 parseWorkerMaxConcurrent 限制，超限时回退给后台 worker 补位。
+   */
+  private async tryStartParseImmediately(claimed: {
+    id: string
+    path: string
+    fileType: FileType
+    mimeType: string
+  }): Promise<void> {
+    if (!claimed.path?.trim()) return
+    if (this.activeParseWorkerJobs >= this.parseWorkerMaxConcurrent) {
+      this.enqueueParseWorkerFill()
+      return
+    }
+    const now = new Date()
+    const updated = await this.prisma.uploadedFile.updateMany({
+      where: { id: claimed.id, status: FileStatus.PENDING },
+      data: {
+        status: FileStatus.PARSING,
+        parseStage: 'CLAIMED',
+        parseStartedAt: now,
+        lastHeartbeatAt: now,
+        parseAttempts: { increment: 1 },
+        parseError: null,
+      },
+    })
+    if (updated.count !== 1) return
+
+    this.activeParseWorkerJobs++
+    this.logger.debug(`上传后即时启动解析: ${claimed.id} (${claimed.fileType})`)
+    void this.runParseWorkerJob(claimed)
+  }
+
   private async claimNextPendingFile(): Promise<{
     id: string
     path: string
@@ -201,6 +235,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             uploaderId,
           },
         })
+        await this.tryStartParseImmediately({
+          id: created.id,
+          path: uri,
+          fileType,
+          mimeType: file.mimetype,
+        })
         return this.getFileById(created.id)
       } catch (e) {
         this.logger.error(`COS 直传失败: ${(e as Error).message}`, e as Error)
@@ -257,6 +297,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(record.id)
     }
 
+    await this.tryStartParseImmediately({
+      id: record.id,
+      path: resolvedPath,
+      fileType,
+      mimeType: file.mimetype,
+    })
     return this.getFileById(record.id)
   }
 
