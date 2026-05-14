@@ -457,6 +457,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       })
     }
 
+    if (this.isFileParseForceHunyuan()) {
+      throw new Error(
+        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：图片须由混元多模态完成理解，但未返回有效正文或过短。请检查 HUNYUAN_VISION_API_KEY、HUNYUAN_MULTIMODAL_ENABLED、COS 路径与 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS；若需腾讯云 OCR 兜底，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
+      )
+    }
+
     // 强制模式：不再走本地视觉/Tesseract，仅允许腾讯云 OCR 兜底。
     const forceOnly = this.config.get<string>('HUNYUAN_PARSE_FORCE_ONLY') !== '0'
     if (!forceOnly) {
@@ -485,6 +491,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     throw new Error(
       '【解析失败】混元多模态调用失败且腾讯云 OCR 无结果。请确认：COS 存储已启用、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、TENCENTCLOUD_SECRET_* 已配置、TENCENT_OCR_HTTP_URL 可用。',
     )
+  }
+
+  /**
+   * FILE_PARSE_FORCE_HUNYUAN=1：上传文件解析阶段须由混元多模态产出理解结果，
+   * 不因 MM 关闭/超预算跳过混元；且混元失败时不降级腾讯云 PDF OCR（图片亦不走 OCR 兜底）。
+   */
+  private isFileParseForceHunyuan(): boolean {
+    return this.config.get<string>('FILE_PARSE_FORCE_HUNYUAN')?.trim() === '1'
   }
 
   /** 将底层 OCR 异常映射为前端可展示的简短原因 */
@@ -575,6 +589,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     },
   ): Promise<string> {
     if (ctx.parseRetryHint === 'text_only') {
+      if (this.isFileParseForceHunyuan()) {
+        throw new Error(
+          '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1 时不支持「仅提取内置文本」重试。请关闭 FILE_PARSE_FORCE_HUNYUAN 后再使用仅内置文本，或改用完整解析。',
+        )
+      }
       await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
       const { text, numpages } = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
       if (!text.trim()) {
@@ -625,6 +644,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
     if (hunyuanBody) return hunyuanBody
+
+    if (this.isFileParseForceHunyuan()) {
+      throw new Error(
+        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：PDF 须由混元多模态返回有效正文，但当前未成功（未配置 COS 路径、密钥、输出过短或被关闭等）。请检查混元与 COS；若需降级腾讯云 PDF OCR，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
+      )
+    }
 
     try {
       const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(

@@ -354,7 +354,14 @@ export class MultimodalService {
     return monthCost >= cfg.monthlyCostAlertCny
   }
 
-  /** 图片/PDF 尝试混元直读（失败返回 null，由上层走 OCR/文本降级） */
+  /**
+   * 图片/PDF 尝试混元直读（失败返回 null，由上层走 OCR/文本降级）。
+   * FILE_PARSE_FORCE_HUNYUAN=1 且 moduleType=FILE_PARSE 时：不因「多模态总开关关闭 / 超预算自动降级」在入口处直接跳过混元（须配置好混元与 COS）。
+   */
+  private isFileParseForceHunyuanEnv(): boolean {
+    return this.config.get<string>('FILE_PARSE_FORCE_HUNYUAN')?.trim() === '1'
+  }
+
   async tryDirectCosMultimodal(args: {
     moduleType: MultimodalModuleType
     fileKind: MultimodalFileKind
@@ -366,7 +373,9 @@ export class MultimodalService {
     fileBytes: number
   }): Promise<{ text: string; md5: string; cacheHit: boolean } | null> {
     if (!(args.fileKind === 'IMAGE' || args.fileKind === 'PDF')) return null
-    if (await this.shouldAutoDowngradeToText()) return null
+    const forceFileParseHunyuan =
+      args.moduleType === 'FILE_PARSE' && this.isFileParseForceHunyuanEnv()
+    if (!forceFileParseHunyuan && (await this.shouldAutoDowngradeToText())) return null
 
     const md5 = args.localPath
       ? this.buildMd5FromFile(args.localPath)
