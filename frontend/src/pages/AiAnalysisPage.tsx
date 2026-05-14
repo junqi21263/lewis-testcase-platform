@@ -351,6 +351,12 @@ function mapParseStageMessage(stage: string | null | undefined): { text: string 
       return { text: '📄 正在提取 PDF 内置文本层...' }
     case 'PDF_TEXT_LAYER_OK':
       return { text: '✅ PDF 内置文本可用，跳过 OCR' }
+    case 'HUNYUAN_COS_MULTIMODAL':
+      return { text: '🤖 混元多模态：正在理解文档（服务端调用，浏览器不会出现 hunyuan 域名）' }
+    case 'HUNYUAN_COS_MULTIMODAL_DONE':
+      return { text: '✅ 混元多模态理解完成' }
+    case 'HUNYUAN_COS_MULTIMODAL_FALLBACK':
+      return { text: '⚠️ 混元多模态未返回有效正文，尝试降级链路…' }
     case 'PDF_OCR_PIPELINE':
       return { text: '🔍 扫描件或文本不足，正在分页 OCR（分批处理）...' }
     case 'WORD':
