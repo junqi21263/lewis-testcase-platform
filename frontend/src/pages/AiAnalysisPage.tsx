@@ -1230,7 +1230,7 @@ function AiAnalysisPageInner() {
         const needParse = uploadedRows.filter((u) => u.status !== 'PARSED')
         if (needParse.length > 0) {
           dispatch({ type: 'UPLOAD_DONE' })
-          addLog(`📄 并行解析 ${needParse.length} 张图片…`)
+          addLog(`📄 并行解析 ${needParse.length} 张图片（后台支持多路并发队列）…`)
         }
 
         const results: UploadedFile[] = await Promise.all(

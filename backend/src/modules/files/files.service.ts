@@ -30,7 +30,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FilesService.name)
   private readonly uploadDir: string
   private parseWorkerTimer?: NodeJS.Timeout
-  private parseWorkerRunning = false
+  /** 当前正在执行的 parseFileAsync 数量（与 FILE_PARSE_WORKER_MAX_CONCURRENT 配合） */
+  private activeParseWorkerJobs = 0
+  /** 解析 worker 最大并发（默认 3，上限 16）；多图上传时可并行混元/OCR */
+  private parseWorkerMaxConcurrent = 3
+  /** 串行化「补位认领」，避免并发 tick 超发 */
+  private parseWorkerChain: Promise<void> = Promise.resolve()
 
   private isNotFoundUpdateError(err: unknown) {
     return err instanceof PrismaClientKnownRequestError && err.code === 'P2025'
@@ -62,34 +67,65 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn('FILE_PARSE_WORKER_ENABLED=0，后台解析 worker 已关闭')
       return
     }
+    const maxRaw = parseInt(this.config.get<string>('FILE_PARSE_WORKER_MAX_CONCURRENT') || '3', 10)
+    if (Number.isFinite(maxRaw) && maxRaw >= 1) {
+      this.parseWorkerMaxConcurrent = Math.min(maxRaw, 16)
+    }
     const intervalMs = parseInt(this.config.get<string>('FILE_PARSE_WORKER_INTERVAL_MS') || '1500', 10)
     const ms = Number.isFinite(intervalMs) && intervalMs > 300 ? intervalMs : 1500
-    this.parseWorkerTimer = setInterval(() => void this.tickParseWorker(), ms)
-    this.logger.log(`后台解析 worker 已启动（interval=${ms}ms）`)
-    // 启动后立即跑一次（避免新上传文件等待 1 个 interval）
-    void this.tickParseWorker()
+    this.parseWorkerTimer = setInterval(() => void this.enqueueParseWorkerFill(), ms)
+    this.logger.log(
+      `后台解析 worker 已启动（interval=${ms}ms，maxConcurrent=${this.parseWorkerMaxConcurrent}）`,
+    )
+    // 启动后立即补位（避免新上传文件等待 1 个 interval）
+    void this.enqueueParseWorkerFill()
   }
 
   onModuleDestroy() {
     if (this.parseWorkerTimer) clearInterval(this.parseWorkerTimer)
   }
 
-  private async tickParseWorker() {
-    if (this.parseWorkerRunning) return
-    this.parseWorkerRunning = true
-    try {
-      this.logger.debug('后台解析 worker tick...')
+  /** 将一次「按并发上限补认领」排入队列，避免多 tick / 多任务结束同时补位造成竞态 */
+  private enqueueParseWorkerFill(): void {
+    this.parseWorkerChain = this.parseWorkerChain.then(async () => {
+      try {
+        await this.drainParseWorkerSlots()
+      } catch (e) {
+        this.logger.error('后台解析 worker 补位失败', e as Error)
+      }
+    })
+  }
+
+  /** 在不超过并发上限时连续认领并启动解析，直到无 PENDING 或槽位已满 */
+  private async drainParseWorkerSlots(): Promise<void> {
+    this.logger.debug(
+      `后台解析 worker: 补位中 active=${this.activeParseWorkerJobs}/${this.parseWorkerMaxConcurrent}`,
+    )
+    while (this.activeParseWorkerJobs < this.parseWorkerMaxConcurrent) {
       const claimed = await this.claimNextPendingFile()
       if (!claimed) {
         this.logger.debug('后台解析 worker: 无待处理 PENDING 文件')
         return
       }
+      this.activeParseWorkerJobs++
+      void this.runParseWorkerJob(claimed)
+    }
+  }
+
+  private async runParseWorkerJob(claimed: {
+    id: string
+    path: string
+    fileType: FileType
+    mimeType: string
+  }): Promise<void> {
+    try {
       this.logger.log(`后台解析 worker: 已认领文件 ${claimed.id} (${claimed.fileType})`)
       await this.parseFileAsync(claimed.id, claimed.path, claimed.fileType, claimed.mimeType)
     } catch (e) {
-      this.logger.error('后台解析 worker tick 失败', e as Error)
+      this.logger.error(`后台解析 worker 文件 ${claimed.id} 异常`, e as Error)
     } finally {
-      this.parseWorkerRunning = false
+      this.activeParseWorkerJobs = Math.max(0, this.activeParseWorkerJobs - 1)
+      this.enqueueParseWorkerFill()
     }
   }
 
