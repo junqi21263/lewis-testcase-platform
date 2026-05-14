@@ -2054,20 +2054,26 @@ ${state.reportText}
                     : []
                   const hint = batch.find((f) => f.parseProgress?.errorHint)?.parseProgress?.errorHint
                   if (!hint || state.status !== 'parsing') return null
-                  return <p className="text-[11px] text-amber-200/85">提示：{hint}</p>
+                  return (
+                    <p className="text-[11px] text-amber-200/85">
+                      提示：{sanitizeErrorForDisplay(hint, 800)}
+                    </p>
+                  )
                 })()}
               </div>
             )}
           </div>
 
           {uploadedFile?.status === 'FAILED' && (
-            <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 space-y-2 text-xs">
-              <p className="text-red-300 font-medium">解析失败</p>
-              <p className="text-muted-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            <div className="rounded-xl border border-[color:var(--ui-text-danger)]/25 bg-[color:var(--ui-text-danger)]/[0.06] p-3 space-y-2 text-[length:var(--text-small-size)]">
+              <p className="font-semibold text-[color:var(--ui-text-danger)]">解析失败</p>
+              <p className="whitespace-pre-wrap break-words leading-relaxed text-[color:var(--ui-text-secondary)] [overflow-wrap:anywhere]">
                 {sanitizeErrorForDisplay(uploadedFile.parseError ?? '未知错误')}
               </p>
               {uploadedFile.parseProgress?.errorHint ? (
-                <p className="text-amber-200/90 text-[11px]">识别阶段提示：{uploadedFile.parseProgress.errorHint}</p>
+                <p className="text-[11px] leading-snug text-[color:var(--ui-text-muted)]">
+                  识别阶段提示：{sanitizeErrorForDisplay(uploadedFile.parseProgress.errorHint, 800)}
+                </p>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button
