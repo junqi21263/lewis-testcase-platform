@@ -362,6 +362,11 @@ export class MultimodalService {
     return this.config.get<string>('FILE_PARSE_FORCE_HUNYUAN')?.trim() === '1'
   }
 
+  /** 上传解析：混元失败时是否禁止静默 null（须由上层走腾讯云 OCR）；=1 时仍返回 null 以便兜底 */
+  private fileParseStopsOnHunyuanFailure(): boolean {
+    return this.config.get<string>('FILE_PARSE_TENCENT_OCR_FALLBACK')?.trim() !== '1'
+  }
+
   async tryDirectCosMultimodal(args: {
     moduleType: MultimodalModuleType
     fileKind: MultimodalFileKind
@@ -375,7 +380,16 @@ export class MultimodalService {
     if (!(args.fileKind === 'IMAGE' || args.fileKind === 'PDF')) return null
     const forceFileParseHunyuan =
       args.moduleType === 'FILE_PARSE' && this.isFileParseForceHunyuanEnv()
-    if (!forceFileParseHunyuan && (await this.shouldAutoDowngradeToText())) return null
+    const stopFileParseOnHunyuanGap =
+      args.moduleType === 'FILE_PARSE' && this.fileParseStopsOnHunyuanFailure()
+    if (!forceFileParseHunyuan && (await this.shouldAutoDowngradeToText())) {
+      if (stopFileParseOnHunyuanGap) {
+        throw new BadRequestException(
+          '【解析失败】上传解析须走混元多模态，但当前多模态总开关关闭或已触发预算自动降级，无法调用混元。请开启 HUNYUAN_MULTIMODAL_ENABLED 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED，调整 MM_AUTO_DOWNGRADE_WHEN_OVER_BUDGET / 预算告警，或设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 启用腾讯云 OCR 兜底。',
+        )
+      }
+      return null
+    }
 
     const md5 = args.localPath
       ? this.buildMd5FromFile(args.localPath)
@@ -407,6 +421,11 @@ export class MultimodalService {
 
     if (!args.localPath?.trim() || !fs.existsSync(args.localPath)) {
       this.logger.warn('tryDirectCosMultimodal: 需要本地文件路径以进行混元 Base64 多模态')
+      if (stopFileParseOnHunyuanGap) {
+        throw new BadRequestException(
+          '【解析失败】混元多模态需要可读的本地文件路径（Base64 上传），当前缺失或文件不存在。请确认上传已落盘或 COS 下载成功；若仅需 OCR 兜底可设 FILE_PARSE_TENCENT_OCR_FALLBACK=1。',
+        )
+      }
       return null
     }
 
@@ -422,6 +441,11 @@ export class MultimodalService {
       if (forceFileParseHunyuan) {
         this.logger.warn(
           'tryDirectCosMultimodal: FILE_PARSE_FORCE_HUNYUAN=1 但 canTryHunyuanCosMultimodalParse=false（多为开关/Key/本地路径/体积上限）；请搜日志前缀 [HunyuanOpenAiMultimodal]',
+        )
+      }
+      if (stopFileParseOnHunyuanGap) {
+        throw new BadRequestException(
+          '【解析失败】混元 COS 多模态前置检查未通过（canTryHunyuanCosMultimodalParse=false）。请核对：HUNYUAN_VISION_API_KEY、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、COS 配置与对象路径、文件大小上限；后端日志搜 [HunyuanOpenAiMultimodal]。若需腾讯云 OCR 兜底请设 FILE_PARSE_TENCENT_OCR_FALLBACK=1。',
         )
       }
       return null
@@ -476,6 +500,12 @@ export class MultimodalService {
         latencyMs: Date.now() - started,
         mode: 'multimodal',
       })
+      if (stopFileParseOnHunyuanGap) {
+        const tail = msg.length > 480 ? `${msg.slice(0, 480)}…` : msg
+        throw new BadRequestException(
+          `【解析失败】混元多模态调用失败（上传解析未启用腾讯云 OCR 兜底）。原因摘要：${tail}`,
+        )
+      }
       return null
     }
   }

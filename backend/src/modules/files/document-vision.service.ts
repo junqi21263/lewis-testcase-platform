@@ -45,6 +45,19 @@ const VISION_STRUCTURE_SYSTEM = `# 角色
 const VISION_NO_RESULT_HINT =
   '未识别到有效业务需求，请检查上传内容或手动输入需求'
 
+/** 网关/模型明确不支持 image_url 时，再发「无 json_object」同类请求通常仍失败，直接跳过视觉层 */
+function isGatewayImageInputUnsupported(msg: string): boolean {
+  const m = (msg || '').toLowerCase()
+  return (
+    m.includes('no endpoints found') ||
+    m.includes('image input') ||
+    (m.includes('404') && m.includes('image')) ||
+    /不支持.*(图片|图像|image)/i.test(msg) ||
+    m.includes('images not supported') ||
+    m.includes('modalities not supported')
+  )
+}
+
 /** PDF 首页走视觉链路时的结果（供上层区分转图失败与接口失败） */
 export type PdfFirstPageVisionOutcome =
   | { outcome: 'success'; text: string; modelName: string }
@@ -192,17 +205,28 @@ export class DocumentVisionService {
       const raw = (completion.choices[0]?.message?.content || '').trim()
       return this.visionResponseToDocumentText(raw)
     } catch (e) {
-      this.logger.warn(
-        `视觉解析（多图 json_object）不可用或失败，回退为普通输出: ${(e as Error).message}`,
-      )
-      const completion = await client.chat.completions.create({
-        model: cfg.modelId,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-      })
-      const raw = (completion.choices[0]?.message?.content || '').trim()
-      return this.visionResponseToDocumentText(raw)
+      const msg = (e as Error).message || String(e)
+      if (isGatewayImageInputUnsupported(msg)) {
+        this.logger.warn(
+          `文档视觉（多图）：当前模型/网关不支持多模态图片（${msg.slice(0, 240)}）。请在 AI 模型配置中选用支持视觉的模型并勾选 supportsVision，或设 PDF_OCR_SKIP_VISION=1。`,
+        )
+        return ''
+      }
+      this.logger.warn(`视觉解析（多图 json_object）不可用或失败，回退为普通输出: ${msg}`)
+      try {
+        const completion = await client.chat.completions.create({
+          model: cfg.modelId,
+          messages,
+          max_tokens: maxTokens,
+          temperature,
+        })
+        const raw = (completion.choices[0]?.message?.content || '').trim()
+        return this.visionResponseToDocumentText(raw)
+      } catch (e2) {
+        const m2 = (e2 as Error).message || String(e2)
+        this.logger.warn(`视觉解析（多图）普通输出亦失败: ${m2.slice(0, 300)}`)
+        return ''
+      }
     }
   }
 
@@ -238,17 +262,28 @@ export class DocumentVisionService {
       const raw = (completion.choices[0]?.message?.content || '').trim()
       return this.visionResponseToDocumentText(raw)
     } catch (e) {
-      this.logger.warn(
-        `视觉解析 json_object 不可用或失败，回退为普通输出: ${(e as Error).message}`,
-      )
-      const completion = await client.chat.completions.create({
-        model: cfg.modelId,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-      })
-      const raw = (completion.choices[0]?.message?.content || '').trim()
-      return this.visionResponseToDocumentText(raw)
+      const msg = (e as Error).message || String(e)
+      if (isGatewayImageInputUnsupported(msg)) {
+        this.logger.warn(
+          `文档视觉：当前模型/网关不支持多模态图片（${msg.slice(0, 240)}）。请在 AI 模型配置中选用支持视觉的模型并勾选 supportsVision，或设 PDF_OCR_SKIP_VISION=1。`,
+        )
+        return ''
+      }
+      this.logger.warn(`视觉解析 json_object 不可用或失败，回退为普通输出: ${msg}`)
+      try {
+        const completion = await client.chat.completions.create({
+          model: cfg.modelId,
+          messages,
+          max_tokens: maxTokens,
+          temperature,
+        })
+        const raw = (completion.choices[0]?.message?.content || '').trim()
+        return this.visionResponseToDocumentText(raw)
+      } catch (e2) {
+        const m2 = (e2 as Error).message || String(e2)
+        this.logger.warn(`视觉解析普通输出亦失败: ${m2.slice(0, 300)}`)
+        return ''
+      }
     }
   }
 

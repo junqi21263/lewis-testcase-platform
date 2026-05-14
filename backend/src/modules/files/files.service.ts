@@ -554,10 +554,10 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (res?.text?.trim()) {
       const body = res.text
       const minChars = parseInt(
-        this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '80',
+        this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '40',
         10,
       )
-      const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 80
+      const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
       if (body.trim().length >= floor) {
         await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
           phase: 'VISION',
@@ -659,7 +659,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     if (this.isFileParseHunyuanOnlyForUpload()) {
       throw new Error(
-        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 80）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
+        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 40）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal failed 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
       )
     }
 

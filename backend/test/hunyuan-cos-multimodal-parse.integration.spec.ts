@@ -188,6 +188,7 @@ describe('MultimodalService.tryDirectCosMultimodal (mock 混元)', () => {
     const prisma = prismaMultimodalStub()
     const cfg = cfgFrom({
       HUNYUAN_VISION_API_KEY: 'sk-test',
+      FILE_PARSE_TENCENT_OCR_FALLBACK: '1',
     })
     const mod = await Test.createTestingModule({
       providers: [
@@ -208,6 +209,50 @@ describe('MultimodalService.tryDirectCosMultimodal (mock 混元)', () => {
     })
     expect(out).toBeNull()
     expect(analyzeSpy).not.toHaveBeenCalled()
+  })
+
+  it('FILE_PARSE 且无腾讯云兜底：混元接口失败抛出 BadRequestException（含【解析失败】）', async () => {
+    analyzeSpy.mockRejectedValueOnce(new Error('upstream timeout'))
+    const prisma = prismaMultimodalStub()
+    const svc = await createService(prisma)
+    await expect(
+      svc.tryDirectCosMultimodal({
+        moduleType: 'FILE_PARSE',
+        fileKind: 'IMAGE',
+        userId: 'user-1',
+        storedPath: cosUri,
+        localPath: __filename,
+        fileBytes: 2048,
+      }),
+    ).rejects.toThrow(/【解析失败】混元多模态调用失败.*upstream timeout/s)
+  })
+
+  it('FILE_PARSE_TENCENT_OCR_FALLBACK=1：混元失败仍返回 null 供腾讯云兜底', async () => {
+    analyzeSpy.mockRejectedValueOnce(new Error('upstream timeout'))
+    const prisma = prismaMultimodalStub()
+    const cfg = cfgFrom({
+      HUNYUAN_MULTIMODAL_ENABLED: '1',
+      HUNYUAN_VISION_API_KEY: 'sk-test',
+      FILE_PARSE_TENCENT_OCR_FALLBACK: '1',
+    })
+    const mod = await Test.createTestingModule({
+      providers: [
+        MultimodalService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: cfg },
+        { provide: CosStorageService, useValue: cosStub() },
+      ],
+    }).compile()
+    const svc = mod.get(MultimodalService)
+    const out = await svc.tryDirectCosMultimodal({
+      moduleType: 'FILE_PARSE',
+      fileKind: 'IMAGE',
+      userId: 'user-1',
+      storedPath: cosUri,
+      localPath: __filename,
+      fileBytes: 2048,
+    })
+    expect(out).toBeNull()
   })
 
   it('非 IMAGE/PDF 直接返回 null', async () => {
