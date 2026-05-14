@@ -349,42 +349,43 @@ export class DocumentVisionService {
     const maxRaw = parseInt(this.config.get<string>('VISION_PDF_MAX_PAGES') || '60', 10)
     const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
 
-    let current: { pageNum: number; buffer: Buffer }[] = []
-    let pageTotal = 0
-    const batches: { pageNum: number; buffer: Buffer }[][] = []
-    for await (const page of this.iteratePdfPagesAsPng(pdfPath)) {
-      pageTotal++
-      if (pageTotal > maxPages) {
-        break
-      }
-      current.push(page)
-      if (current.length >= batchPages) {
-        batches.push(current)
-        current = []
-      }
-    }
-    if (current.length > 0) batches.push(current)
-    if (batches.length === 0) return null
-
     const sections: string[] = []
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i]
-      const first = batch[0].pageNum
-      const last = batch[batch.length - 1].pageNum
+    let pageTotal = 0
+    let batchIndex = 0
+    let current: { pageNum: number; buffer: Buffer }[] = []
+    const flushBatch = async () => {
+      if (current.length === 0) return
+      batchIndex++
+      const first = current[0].pageNum
+      const last = current[current.length - 1].pageNum
       await onProgress?.({
         pageCurrent: last,
         pageTotal,
-        batchIndex: i + 1,
-        batchTotal: batches.length,
+        batchIndex,
+        // 流式处理时未知总批次；由调用方按 pageCurrent/pageTotal 展示进度
+        batchTotal: undefined,
       })
       const text = await this.transcribeMultiplePngBuffers(
         cfg,
-        batch.map((x) => x.buffer),
+        current.map((x) => x.buffer),
       )
       if (text.trim()) {
         sections.push(`【PDF 第 ${first}-${last} 页视觉理解】\n${text.trim()}`)
       }
+      // 及时释放本批页面 Buffer 引用，避免大 PDF 造成内存峰值
+      current = []
     }
+
+    for await (const page of this.iteratePdfPagesAsPng(pdfPath)) {
+      if (pageTotal >= maxPages) break
+      pageTotal++
+      current.push(page)
+      if (current.length >= batchPages) {
+        await flushBatch()
+      }
+    }
+    await flushBatch()
+    if (pageTotal === 0) return null
 
     if (sections.length === 0) return null
     return {
