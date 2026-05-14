@@ -961,8 +961,27 @@ export class AiService {
         }
       }
 
-      // 单文件图片/PDF：优先混元多模态理解（不依赖 OCR）；失败则回退已解析文本
-      if (ordered.length === 1 && this.hunyuanMultimodalEnvReady()) {
+      /**
+       * 上传解析阶段已对图片/PDF 走混元多模态（见 FilesService.parseFileAsync）。
+       * 需求分析流式输出只应用后台所选模型（dto.modelConfigId）；此处默认不再对同一文件二次调用混元。
+       * 应急恢复旧行为（解析后仍再在 analyze 里跑一轮混元）：ANALYZE_STREAM_HUNYUAN_WHEN_PARSED=1
+       */
+      const forceAnalyzeTimeHunyuan =
+        this.config.get<string>('ANALYZE_STREAM_HUNYUAN_WHEN_PARSED')?.trim() === '1'
+      const allHaveParsed = ordered.every((f) => (f.parsedContent ?? '').trim().length > 0)
+
+      if (allHaveParsed && !forceAnalyzeTimeHunyuan) {
+        if (ordered.length > 1) {
+          fileContent = ordered
+            .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
+            .join('\n\n---\n\n')
+        } else {
+          fileContent = ordered[0].parsedContent!.trim()
+        }
+        this.logger.log(
+          'analyzeStream: 使用上传解析已入库的正文作为需求输入，analyze 阶段不再二次调用混元；流式报告仍走所选 modelConfigId',
+        )
+      } else if (ordered.length === 1 && this.hunyuanMultimodalEnvReady()) {
         const f = ordered[0]
         const mime = (f.mimeType || '').toLowerCase()
         const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
