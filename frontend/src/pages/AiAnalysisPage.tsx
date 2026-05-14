@@ -9,6 +9,7 @@ import React, {
   useRef,
   useEffect,
   useReducer,
+  useMemo,
   Component,
   type ErrorInfo,
   type ReactNode,
@@ -33,8 +34,11 @@ import {
   WifiOff,
   FileDown,
   Sparkles,
-  History,
   Waypoints,
+  Search,
+  Maximize2,
+  Info,
+  Circle,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -62,6 +66,13 @@ import {
 } from '@/utils/exportAnalysisPdf'
 import { renderMermaidChartsToPngBase64 } from '@/utils/analysisMermaidPdf'
 import { buildAnalysisXmindBlob } from '@/utils/buildAnalysisXmind'
+import {
+  ANALYSIS_PROMPT_PRESETS,
+  findPresetIdForBody,
+  touchRecentPresetId,
+  readRecentPresetIds,
+  type AnalysisPromptPreset,
+} from '@/pages/aiAnalysisStudioPresets'
 
 /* ──────────────────────── 类型 ──────────────────────── */
 
@@ -199,6 +210,17 @@ function nowTime(): string {
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms))
 }
+
+/** 合并「需求描述」与「补充说明」，与原先单一 requirementText 语义一致 */
+function combineUserRequirementNotes(desc: string, supp: string): string {
+  const d = desc.trim()
+  const s = supp.trim()
+  if (d && s) return `${d}\n\n${s}`
+  return d || s
+}
+
+const REQ_DESC_MAX = 5000
+const REQ_SUPP_MAX = 5000
 
 /** 多图批量上传：允许的扩展名（与后端图片解析一致） */
 const IMAGE_BATCH_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
@@ -347,6 +369,114 @@ function mapParseStageMessage(stage: string | null | undefined): { icon: LogEntr
   }
 }
 
+type StudioStepState = 'pending' | 'running' | 'success' | 'error'
+
+const STUDIO_STEP_LABELS = [
+  '文件接收',
+  '文档解析',
+  'OCR / 多模态提取',
+  '需求归纳',
+  '结构化报告',
+] as const
+
+function deriveStudioStepStates(
+  status: AnalysisStatus,
+  uploadedFile: UploadedFile | null,
+  reportText: string,
+): StudioStepState[] {
+  const rep = reportText.trim().length > 0
+  const f = uploadedFile
+  const out: StudioStepState[] = ['pending', 'pending', 'pending', 'pending', 'pending']
+
+  if (!f) {
+    if (status === 'error') out[0] = 'error'
+    return out
+  }
+  if (status === 'uploading') {
+    out[0] = 'running'
+    return out
+  }
+  out[0] = 'success'
+
+  if (f.status === 'FAILED') {
+    out[1] = 'error'
+    return out
+  }
+  if (status === 'parsing' || f.status === 'PARSING' || f.status === 'PENDING') {
+    out[1] = 'running'
+    if (f.fileType === 'IMAGE' || f.fileType === 'PDF') out[2] = 'running'
+    return out
+  }
+
+  if (f.status === 'PARSED') {
+    out[1] = 'success'
+    out[2] = 'success'
+  }
+
+  if (status === 'idle') return out
+
+  if (status === 'analyzing') {
+    out[3] = 'running'
+    if (rep) out[4] = 'running'
+    return out
+  }
+
+  if (status === 'review' || status === 'approved') {
+    out[3] = 'success'
+    out[4] = rep ? 'success' : 'pending'
+    return out
+  }
+
+  if (status === 'error') {
+    if (rep) {
+      out[3] = 'success'
+      out[4] = 'error'
+    } else {
+      out[3] = 'error'
+    }
+    return out
+  }
+
+  return out
+}
+
+function AiStudioStepRail({
+  status,
+  uploadedFile,
+  reportText,
+}: {
+  status: AnalysisStatus
+  uploadedFile: UploadedFile | null
+  reportText: string
+}) {
+  const states = deriveStudioStepStates(status, uploadedFile, reportText)
+  const chip = (s: StudioStepState) =>
+    s === 'success'
+      ? 'border-emerald-500/45 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100'
+      : s === 'running'
+        ? 'border-cyan-500/55 bg-cyan-500/10 text-cyan-900 dark:text-cyan-100 motion-safe:animate-pulse'
+        : s === 'error'
+          ? 'border-red-500/50 bg-red-500/10 text-red-800 dark:text-red-100'
+          : 'border-workspace-panel-border/60 bg-workspace-panel-muted/50 text-workspace-text-secondary'
+
+  return (
+    <ol className="grid gap-1.5 sm:grid-cols-5">
+      {STUDIO_STEP_LABELS.map((label, i) => {
+        const s = states[i] ?? 'pending'
+        return (
+          <li
+            key={label}
+            className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${chip(s)}`}
+          >
+            <Circle className="h-2 w-2 shrink-0 fill-current opacity-80" aria-hidden />
+            <span className="truncate text-[10px] font-semibold leading-tight">{label}</span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 /* ──────────────────── 子组件 ──────────────────────── */
 
 /** 终端日志左侧状态图标：同一 icon 类型始终同一组件与同一像素尺寸，避免同页多种 Loader2 样式漂移 */
@@ -387,17 +517,38 @@ function StatusBadge({
   labelOverride?: string
 }) {
   const map: Record<AnalysisStatus, { label: string; cls: string }> = {
-    idle: { label: '等待上传', cls: 'bg-slate-600 text-white border-0 shadow-sm' },
-    uploading: { label: '上传中', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
-    parsing: { label: '解析中...', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
-    analyzing: { label: '分析中...', cls: 'bg-blue-600 text-white border-0 shadow-sm animate-pulse' },
-    review: { label: '等待审阅', cls: 'bg-amber-500 text-white border-0 shadow-sm' },
-    approved: { label: '已通过', cls: 'bg-emerald-600 text-white border-0 shadow-sm' },
-    error: { label: '分析失败', cls: 'bg-red-600 text-white border-0 shadow-sm' },
+    idle: {
+      label: '等待上传',
+      cls: 'border-slate-300/80 bg-slate-100 text-slate-800 dark:border-transparent dark:bg-slate-600 dark:text-white',
+    },
+    uploading: {
+      label: '上传中',
+      cls: 'border-sky-300/80 bg-sky-100 text-sky-900 motion-safe:animate-pulse dark:border-transparent dark:bg-blue-600 dark:text-white',
+    },
+    parsing: {
+      label: '解析中...',
+      cls: 'border-sky-300/80 bg-sky-100 text-sky-900 motion-safe:animate-pulse dark:border-transparent dark:bg-blue-600 dark:text-white',
+    },
+    analyzing: {
+      label: '分析中...',
+      cls: 'border-violet-300/80 bg-violet-100 text-violet-900 motion-safe:animate-pulse dark:border-transparent dark:bg-blue-600 dark:text-white',
+    },
+    review: {
+      label: '等待审阅',
+      cls: 'border-amber-300/80 bg-amber-100 text-amber-950 dark:border-transparent dark:bg-amber-500 dark:text-white',
+    },
+    approved: {
+      label: '已通过',
+      cls: 'border-emerald-300/80 bg-emerald-100 text-emerald-950 dark:border-transparent dark:bg-emerald-600 dark:text-white',
+    },
+    error: {
+      label: '分析失败',
+      cls: 'border-red-300/80 bg-red-100 text-red-900 dark:border-transparent dark:bg-red-600 dark:text-white',
+    },
   }
   const { label, cls } = map[status]
   return (
-    <Badge variant="outline" className={`text-xs font-semibold border-transparent ${cls}`}>
+    <Badge variant="outline" className={`text-xs font-semibold ${cls}`}>
       {labelOverride ?? label}
     </Badge>
   )
@@ -406,9 +557,9 @@ function StatusBadge({
 /** 日志行文案语义 → 文本颜色（与 icon 判断一致） */
 function terminalLogTextClass(text: string): string {
   const kind = terminalLogIconFromText(text)
-  if (kind === 'error') return 'text-red-400'
-  if (kind === 'success') return 'text-emerald-400'
-  return 'text-blue-300'
+  if (kind === 'error') return 'text-red-700 dark:text-red-400'
+  if (kind === 'success') return 'text-emerald-700 dark:text-emerald-400'
+  return 'text-sky-900 dark:text-sky-300'
 }
 
 function LogLine({ entry }: { entry: LogEntry }) {
@@ -417,7 +568,9 @@ function LogLine({ entry }: { entry: LogEntry }) {
   return (
     <div className="flex items-start gap-2 font-mono py-0.5 animate-[fadeIn_0.3s_ease-out] text-[12px] leading-[1.5]">
       <TerminalLogStatusIcon status={status} />
-      <span className="text-slate-500 flex-shrink-0">[{entry.timestamp}]</span>
+      <span className="text-workspace-text-secondary/90 dark:text-slate-500 flex-shrink-0 tabular-nums">
+        [{entry.timestamp}]
+      </span>
       <span className={`whitespace-pre-wrap break-words ${textCls}`}>{entry.text}</span>
     </div>
   )
@@ -463,7 +616,8 @@ function AiAnalysisPageInner() {
   /** 与 uploadedFile 同属一批多图分析时的其余图片（最多再 4 张，合计 ≤5） */
   const [additionalAnalysisFiles, setAdditionalAnalysisFiles] = useState<UploadedFile[]>([])
   const [analysisRecords, setAnalysisRecords] = useState<GenerationRecord[]>([])
-  const [requirementText, setRequirementText] = useState('')
+  const [requirementDescription, setRequirementDescription] = useState('')
+  const [requirementSupplement, setRequirementSupplement] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportingXmind, setExportingXmind] = useState(false)
@@ -477,6 +631,15 @@ function AiAnalysisPageInner() {
   const [previewEditable, setPreviewEditable] = useState(false)
   const [confirmStopOpen, setConfirmStopOpen] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [historyTab, setHistoryTab] = useState<'records' | 'uploads'>('records')
+  const [historyShowAll, setHistoryShowAll] = useState(false)
+  const [historyFilter, setHistoryFilter] = useState('')
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [rightTab, setRightTab] = useState<'process' | 'report'>('process')
+  const [largeEditorField, setLargeEditorField] = useState<null | 'desc' | 'supp'>(null)
+  const [usageHintOpen, setUsageHintOpen] = useState(false)
+  const [dropzoneActive, setDropzoneActive] = useState(false)
   const [parseElapsed, setParseElapsed] = useState(0)
   const [analysisElapsed, setAnalysisElapsed] = useState(0)
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
@@ -629,6 +792,21 @@ function AiAnalysisPageInner() {
     if (!autoScroll || !logContainerRef.current) return
     logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
   }, [state.logs, autoScroll])
+
+  const prevStudioStatusRef = useRef<AnalysisStatus | null>(null)
+  useEffect(() => {
+    const prev = prevStudioStatusRef.current
+    if (state.status === 'analyzing' && prev !== 'analyzing') setRightTab('process')
+    if (
+      (state.status === 'review' || state.status === 'approved') &&
+      state.reportText.trim().length > 0 &&
+      prev !== 'review' &&
+      prev !== 'approved'
+    ) {
+      setRightTab('report')
+    }
+    prevStudioStatusRef.current = state.status
+  }, [state.status, state.reportText])
 
   const handleLogScroll = useCallback(() => {
     const el = logContainerRef.current
@@ -797,8 +975,9 @@ function AiAnalysisPageInner() {
     if (uploadedFile?.originalName) {
       parts.push(`来源文档：${normalizeUploadedFilename(uploadedFile.originalName)}`)
     }
-    if (requirementText.trim()) {
-      parts.push(`【补充说明】\n${requirementText.trim()}`)
+    const combined = combineUserRequirementNotes(requirementDescription, requirementSupplement)
+    if (combined) {
+      parts.push(`【补充说明】\n${combined}`)
     }
     const edited = editedParsedText.trim()
     if (edited && parsePreviewDirty) {
@@ -825,7 +1004,8 @@ function AiAnalysisPageInner() {
     editedParsedText,
     navigate,
     parsePreviewDirty,
-    requirementText,
+    requirementDescription,
+    requirementSupplement,
     setPendingGenerateHandoff,
     state.reportText,
     uploadedFile,
@@ -1253,11 +1433,12 @@ function AiAnalysisPageInner() {
   )
 
   const buildCustomPrompt = useCallback(() => {
-    const base = requirementText.trim()
-      ? `${analysisPromptTemplate}\n\n用户补充说明：\n${requirementText}`
+    const combined = combineUserRequirementNotes(requirementDescription, requirementSupplement)
+    const base = combined
+      ? `${analysisPromptTemplate}\n\n用户补充说明：\n${combined}`
       : analysisPromptTemplate
     return base
-  }, [analysisPromptTemplate, requirementText])
+  }, [analysisPromptTemplate, requirementDescription, requirementSupplement])
 
   const runAnalyzeStream = useCallback(
     async (customPrompt: string, isRevision: boolean) => {
@@ -1401,16 +1582,16 @@ ${state.reportText}
 
 请根据修改意见重新分析并改进报告。`
 
-    const extra = requirementText.trim()
-      ? `\n\n用户补充说明：\n${requirementText}`
-      : ''
+    const extraNotes = combineUserRequirementNotes(requirementDescription, requirementSupplement)
+    const extra = extraNotes ? `\n\n用户补充说明：\n${extraNotes}` : ''
     await runAnalyzeStream(revisionPrompt + extra, true)
   }, [
     analysisPromptTemplate,
     state.reviewText,
     state.reportText,
     uploadedFile,
-    requirementText,
+    requirementDescription,
+    requirementSupplement,
     runAnalyzeStream,
   ])
 
@@ -1481,11 +1662,48 @@ ${state.reportText}
   const busy =
     state.status === 'uploading' || state.status === 'parsing' || state.status === 'analyzing'
 
+  const matchedPresetId = findPresetIdForBody(analysisPromptTemplate)
+  const isCustomTemplate = matchedPresetId === null
+  const activePreset = matchedPresetId
+    ? ANALYSIS_PROMPT_PRESETS.find((p) => p.id === matchedPresetId)
+    : null
+
+  const filteredPresets = useMemo(() => {
+    const q = templateSearch.trim().toLowerCase()
+    if (!q) return ANALYSIS_PROMPT_PRESETS
+    return ANALYSIS_PROMPT_PRESETS.filter((p) =>
+      `${p.name}${p.scenario}${p.shortDesc}${p.outputStyle}`.toLowerCase().includes(q),
+    )
+  }, [templateSearch])
+
+  const recentPresetList = useMemo(() => {
+    return readRecentPresetIds()
+      .map((id) => ANALYSIS_PROMPT_PRESETS.find((p) => p.id === id))
+      .filter((p): p is AnalysisPromptPreset => !!p)
+  }, [templatePickerOpen, analysisPromptTemplate])
+
   const terminalBadgeLabel =
     state.status === 'idle' && canStartAnalysis ? '就绪' : undefined
 
+  const prepStripSummary = (() => {
+    const bits: string[] = []
+    if (uploadedFile) {
+      const n = 1 + additionalAnalysisFiles.length
+      bits.push(n > 1 ? `已上传 ${n} 个文件` : '已上传 1 个文件')
+    } else bits.push('尚未选择文件')
+    bits.push(activePreset?.name ?? '自定义分析指令')
+    if (canStartAnalysis && isIdle) bits.push('可开始分析')
+    return bits.join(' · ')
+  })()
+
+  const reportTabEnabled =
+    state.reportText.trim().length > 0 || state.status === 'review' || state.status === 'approved'
+
   return (
-    <div className="flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-background">
+    <div
+      className="ai-analysis-studio motion-safe:animate-[arsStudioIn_0.55s_ease-out_both] -mx-5 -mb-6 -mt-6 flex min-h-0 w-auto max-w-none flex-col overflow-hidden rounded-2xl border border-workspace-panel-border/50 bg-workspace-page/90 shadow-[0_24px_80px_-48px_rgba(59,130,246,0.35)] backdrop-blur-md dark:border-white/[0.07] dark:bg-slate-950/40 dark:shadow-[0_28px_90px_-40px_rgba(0,0,0,0.55)] sm:-mx-7 sm:-mb-7 sm:-mt-7 lg:-mx-8 lg:-mb-8 lg:-mt-8 max-lg:max-h-none max-lg:min-h-[min(100dvh,920px)] lg:h-[calc(100dvh-7.25rem)] lg:max-h-[calc(100dvh-7.25rem)]"
+      data-page="ai-analysis"
+    >
       <ConfirmDialog
         open={confirmStopOpen}
         title="确认停止？"
@@ -1497,51 +1715,62 @@ ${state.reportText}
       />
 
       {!online && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <div className="flex shrink-0 items-center gap-2 border-b border-amber-400/40 bg-amber-100/90 px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
           <WifiOff className="h-4 w-4 flex-shrink-0" />
           当前离线，请检查网络连接
         </div>
       )}
 
-      {/* 顶栏：固定高度，不参与主区滚动 */}
-      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border/40 px-3 py-3 sm:px-4 md:px-5">
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-xl font-bold sm:text-2xl">
-            <Brain className="h-6 w-6 shrink-0 text-primary" />
-            AI 需求分析
-          </h1>
-          <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">
-            上传需求文档，AI 自动解析并生成结构化需求分析报告；大文件自动分片上传，支持解析阶段追踪与任务取消
-          </p>
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-workspace-panel-border/60 bg-workspace-panel/70 px-4 py-2.5 backdrop-blur-md dark:bg-slate-900/55 sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/30 via-violet-500/25 to-emerald-400/25 ring-1 ring-white/40 dark:from-cyan-500/20 dark:via-violet-500/15 dark:to-emerald-500/15 dark:ring-white/10">
+            <Sparkles className="h-4 w-4 text-cyan-700 dark:text-cyan-200" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold tracking-tight text-workspace-text-primary sm:text-xl">
+              AI 需求分析
+            </h1>
+            <p className="truncate text-[11px] text-workspace-text-secondary sm:text-xs">
+              上传需求文档，AI 自动解析并生成结构化分析报告
+            </p>
+          </div>
         </div>
-        {modelInfo && (
-          <Badge
-            variant="outline"
-            className="shrink-0 border-primary/30 bg-primary/5 text-xs text-primary"
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {modelInfo && (
+            <Badge
+              variant="outline"
+              className="border-violet-400/40 bg-violet-500/10 text-[11px] text-violet-900 dark:border-violet-400/30 dark:bg-violet-500/10 dark:text-violet-100"
+            >
+              {modelInfo.name}
+            </Badge>
+          )}
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-1 rounded-full border border-workspace-panel-border/60 bg-workspace-panel-muted/60 px-2.5 text-[11px] font-medium text-workspace-text-secondary transition-[opacity,transform] hover:bg-workspace-panel-muted dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200"
+            onClick={() => setUsageHintOpen((v) => !v)}
+            aria-expanded={usageHintOpen}
           >
-            模型：{modelInfo.name}
-          </Badge>
-        )}
+            <Info className="h-3.5 w-3.5" />
+            提示
+          </button>
+        </div>
       </header>
 
-      <div className="flex shrink-0 items-start gap-2.5 border-b border-border/30 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 sm:px-4 md:px-5">
-        <FileText className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <div className="min-w-0 space-y-0.5">
-          <p className="font-medium">使用说明</p>
-          <p className="opacity-80">
-            关闭「人工审阅」时，分析结束后将自动标记为通过。编辑「解析文本」后，将优先使用编辑后的文本作为分析输入。
-          </p>
+      {usageHintOpen && (
+        <div className="shrink-0 border-b border-workspace-panel-border/50 bg-sky-50/95 px-4 py-2 text-[11px] leading-relaxed text-sky-950 dark:border-sky-500/20 dark:bg-sky-950/35 dark:text-sky-100 sm:px-5">
+          关闭「人工审阅」时，分析结束后将自动标记为通过。编辑「解析文本」后，将优先使用编辑后的文本作为分析输入。
         </div>
-      </div>
+      )}
 
       {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
-      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,44%)_minmax(0,56%)] lg:grid-rows-1">
+      <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,42%)_minmax(0,58%)] lg:grid-rows-1">
         {/* 左栏：仅中间区域滚动；底部「人工审阅开关 + 开始/停止」固定可见 */}
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-border/40 bg-card/15 lg:border-b-0 lg:border-r lg:border-border/40">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-workspace-panel-border/50 bg-workspace-panel/30 backdrop-blur-md dark:border-white/[0.07] dark:bg-slate-950/25 lg:border-b-0 lg:border-r">
           <div className="ai-analysis-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
-            <div className="space-y-4">
+            <div className="space-y-4 motion-safe:animate-[arsStudioIn_0.45s_ease-out_both]">
+          <section className="rounded-xl border border-workspace-panel-border/55 bg-workspace-panel/50 p-3 shadow-sm dark:border-white/[0.07] dark:bg-slate-900/35">
+            <h2 className="mb-2 text-sm font-semibold text-workspace-text-primary">需求文档</h2>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">需求文档</label>
             <input
               ref={fileInputRef}
               type="file"
@@ -1553,10 +1782,22 @@ ${state.reportText}
 
             {!uploadedFile ? (
               <div
+                onDragEnter={(e) => {
+                  e.preventDefault()
+                  setDropzoneActive(true)
+                }}
+                onDragLeave={() => setDropzoneActive(false)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
+                onDrop={(e) => {
+                  setDropzoneActive(false)
+                  handleDrop(e)
+                }}
                 onClick={() => fileInputRef.current?.click()}
-                className="cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-all duration-200 border-border/40 bg-muted/15 hover:border-primary/40 hover:bg-muted/25"
+                className={`cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-[opacity,transform,box-shadow] duration-300 motion-reduce:transition-none ${
+                  dropzoneActive
+                    ? 'border-cyan-500/70 bg-cyan-500/10 shadow-[0_0_0_6px_rgba(34,211,238,0.12)] motion-safe:animate-pulse dark:border-cyan-400/60 dark:bg-cyan-500/10'
+                    : 'border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.35)] hover:border-violet-400/45 hover:bg-violet-500/5 dark:bg-slate-900/40'
+                }`}
               >
                 <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">拖拽文件到此处，或点击选择</p>
@@ -1848,153 +2089,405 @@ ${state.reportText}
             </div>
           )}
 
-          {analysisRecords.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <History className="w-4 h-4 text-muted-foreground" />
-                分析记录
-              </label>
-              <p className="text-[11px] text-muted-foreground">
-                以下为已成功落库的「需求分析」生成记录（关键词检索）；点击查看完整报告。
-              </p>
-              <div className="max-h-[min(30vh,220px)] overflow-y-auto rounded border border-border/30 ai-analysis-panel-scroll">
-                {analysisRecords.map((r) => {
-                  const rb = analysisRecordStatusBadge(r.status)
-                  return (
-                    <div
-                      key={r.id}
-                      className="flex items-stretch gap-1 border-b border-border/20 last:border-0 hover:bg-[#1E293B] transition-colors rounded"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void applyAnalysisRecord(r.id)}
-                        className="flex flex-1 min-w-0 flex-col gap-1 p-3 text-left text-xs rounded"
-                      >
-                        <span className="truncate font-medium text-foreground">{r.title}</span>
-                        <span className="text-[12px] text-[#64748B]">
-                          {formatUploadTime(r.createdAt)}
-                          {r.file?.originalName ? ` · ${r.file.originalName}` : ''}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-muted-foreground">{formatRelative(r.createdAt)}</span>
-                          <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${rb.cls}`}>
-                            {rb.label}
-                          </Badge>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="shrink-0 px-2 text-muted-foreground hover:text-red-500 transition-colors rounded"
-                        aria-label="删除分析记录"
-                        onClick={(e) => void handleDeleteAnalysisRecord(r.id, e)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )
-                })}
+          </section>
+
+          <section className="rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/55 p-3 shadow-sm dark:bg-slate-900/35">
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <h2 className="text-sm font-semibold text-workspace-text-primary">需求上下文</h2>
+              <span className="text-[10px] text-workspace-text-muted">可选 · 与指令模板组合后发给模型</span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-workspace-text-secondary" htmlFor="ars-req-desc">
+                    需求描述
+                  </label>
+                  <span className="text-[10px] tabular-nums text-workspace-text-muted">
+                    {requirementDescription.length} / {REQ_DESC_MAX}
+                  </span>
+                </div>
+                <textarea
+                  id="ars-req-desc"
+                  rows={5}
+                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-0 transition-[box-shadow,opacity,transform] placeholder:text-workspace-text-muted/80 focus:border-cyan-500/55 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(34,211,238,0.18)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(34,211,238,0.22)]"
+                  placeholder="例如：这是哪个产品版本、要解决什么问题、关键用户旅程是什么……"
+                  value={requirementDescription}
+                  onChange={(e) => setRequirementDescription(e.target.value.slice(0, REQ_DESC_MAX))}
+                />
+                <div className="mt-1 flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-[11px] text-workspace-text-secondary"
+                    onClick={() => setRequirementDescription('')}
+                  >
+                    清空
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-[11px] text-workspace-text-secondary"
+                    onClick={() => setLargeEditorField('desc')}
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    展开编辑
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-workspace-text-secondary" htmlFor="ars-req-supp">
+                    补充说明
+                  </label>
+                  <span className="text-[10px] tabular-nums text-workspace-text-muted">
+                    {requirementSupplement.length} / {REQ_SUPP_MAX}
+                  </span>
+                </div>
+                <textarea
+                  id="ars-req-supp"
+                  rows={4}
+                  className="ars-textarea-field min-h-[120px] max-h-[240px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] placeholder:text-workspace-text-muted/80 focus:border-violet-500/45 focus:outline-none focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_0_3px_rgba(139,92,246,0.16)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:focus:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_3px_rgba(139,92,246,0.2)]"
+                  placeholder="约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。"
+                  value={requirementSupplement}
+                  onChange={(e) => setRequirementSupplement(e.target.value.slice(0, REQ_SUPP_MAX))}
+                />
+                <div className="mt-1 flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-[11px] text-workspace-text-secondary"
+                    onClick={() => setRequirementSupplement('')}
+                  >
+                    清空
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-[11px] text-workspace-text-secondary"
+                    onClick={() => setLargeEditorField('supp')}
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    展开编辑
+                  </Button>
+                </div>
               </div>
             </div>
-          )}
+          </section>
 
-          {fileHistory.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">最近上传</label>
-              <div className="max-h-[min(30vh,220px)] overflow-y-auto rounded border border-border/30 ai-analysis-panel-scroll">
-                {fileHistory.map((f) => {
-                  const fb = fileHistoryStatusBadge(f.status)
-                  return (
-                    <div
-                      key={f.id}
-                      className={`flex items-center gap-2 border-b border-border/20 last:border-0 p-3 rounded transition-colors hover:bg-[#1E293B] ${
-                        uploadedFile?.id === f.id ? 'bg-primary/10' : ''
-                      }`}
-                    >
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => selectHistoryFile(f)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            selectHistoryFile(f)
-                          }
-                        }}
-                        className="flex flex-1 min-w-0 cursor-pointer flex-col gap-1 text-left text-xs"
-                      >
-                        <span
-                          className="truncate text-foreground font-medium"
-                          title={displayUploadedFilename(f.id, f.originalName)}
+          <section className="relative rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/55 p-3 dark:bg-slate-900/35">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-workspace-text-primary">分析指令模板</h2>
+              {isCustomTemplate ? (
+                <Badge variant="outline" className="border-amber-400/50 bg-amber-500/10 text-[10px] text-amber-950 dark:text-amber-100">
+                  已使用自定义指令
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-emerald-400/40 bg-emerald-500/10 text-[10px] text-emerald-950 dark:text-emerald-100">
+                  已匹配预设
+                </Badge>
+              )}
+            </div>
+            <button
+              type="button"
+              className="flex w-full items-start gap-3 rounded-xl border border-workspace-panel-border/70 bg-gradient-to-br from-cyan-500/10 via-white/40 to-violet-500/10 p-3 text-left transition-[opacity,transform] hover:border-cyan-500/40 dark:from-cyan-500/5 dark:via-slate-900/40 dark:to-violet-500/10 dark:hover:border-cyan-500/30"
+              onClick={() => {
+                setTemplatePickerOpen((o) => !o)
+                setTemplateSearch('')
+              }}
+              aria-expanded={templatePickerOpen}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/70 ring-1 ring-black/5 dark:bg-slate-800/80 dark:ring-white/10">
+                <Brain className="h-5 w-5 text-violet-600 dark:text-violet-300" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="truncate text-sm font-semibold text-workspace-text-primary">
+                  {activePreset?.name ?? '自定义分析指令'}
+                </p>
+                <p className="line-clamp-2 text-[11px] text-workspace-text-secondary">
+                  {activePreset ? `${activePreset.scenario} · ${activePreset.shortDesc}` : '当前内容与内置预设不一致，将按你编辑的文本优先发送'}
+                </p>
+                <p className="text-[10px] text-workspace-text-muted">点击展开模板库、搜索或切换预设</p>
+              </div>
+              <ChevronDown
+                className={`mt-1 h-4 w-4 shrink-0 text-workspace-text-muted transition-transform ${templatePickerOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {templatePickerOpen && (
+                <div className="absolute left-2 right-2 top-full z-20 mt-1 max-h-[min(52vh,380px)] overflow-hidden rounded-xl border border-workspace-panel-border/70 bg-workspace-panel/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+                <div className="border-b border-workspace-panel-border/50 p-2 dark:border-white/10">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-workspace-text-muted" />
+                    <input
+                      type="search"
+                      value={templateSearch}
+                      onChange={(e) => setTemplateSearch(e.target.value)}
+                      placeholder="搜索模板名称或场景…"
+                      className="h-9 w-full rounded-lg border border-workspace-panel-border/60 bg-workspace-panel-muted/60 pl-8 pr-2 text-xs text-workspace-text-primary outline-none ring-0 focus:border-cyan-500/50 dark:bg-slate-950/60"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[220px] overflow-y-auto p-2 ai-analysis-panel-scroll">
+                  {recentPresetList.length > 0 && !templateSearch.trim() && (
+                    <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-workspace-text-muted">
+                      最近使用
+                    </p>
+                  )}
+                  {recentPresetList.length > 0 && !templateSearch.trim() && (
+                    <div className="mb-2 space-y-1">
+                      {recentPresetList.map((p) => (
+                        <button
+                          key={`recent-${p.id}`}
+                          type="button"
+                          className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-2 py-1.5 text-left text-xs transition-[opacity,transform] hover:border-cyan-500/35 hover:bg-cyan-500/10"
+                          onClick={() => {
+                            setAnalysisPromptTemplate(p.body)
+                            touchRecentPresetId(p.id)
+                            setTemplatePickerOpen(false)
+                          }}
                         >
-                          {displayUploadedFilename(f.id, f.originalName)}
-                        </span>
-                        <span className="text-[12px] text-[#64748B]">
-                          {formatFileSizeShort(f.size)} · {formatUploadTime(f.createdAt)}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-muted-foreground">{formatRelative(f.createdAt)}</span>
-                          <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${fb.cls}`}>
-                            {fb.label}
-                          </Badge>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="shrink-0 p-1.5 text-muted-foreground hover:text-red-500 transition-colors rounded"
-                        aria-label="删除文件"
-                        onClick={(ev) => void deleteHistoryFile(f.id, ev)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                          <span className="font-medium text-workspace-text-primary">{p.name}</span>
+                          <span className="text-[10px] text-workspace-text-secondary">{p.scenario}</span>
+                        </button>
+                      ))}
                     </div>
-                  )
-                })}
+                  )}
+                  <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-workspace-text-muted">
+                    全部模板
+                  </p>
+                  {filteredPresets.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`mb-1 flex w-full flex-col gap-0.5 rounded-lg border px-2 py-2 text-left text-xs transition-[opacity,transform] last:mb-0 ${
+                        matchedPresetId === p.id
+                          ? 'border-cyan-500/50 bg-cyan-500/10'
+                          : 'border-workspace-panel-border/40 hover:border-violet-400/40 hover:bg-violet-500/5'
+                      }`}
+                      onClick={() => {
+                        setAnalysisPromptTemplate(p.body)
+                        touchRecentPresetId(p.id)
+                        setTemplatePickerOpen(false)
+                      }}
+                    >
+                      <span className="font-semibold text-workspace-text-primary">{p.name}</span>
+                      <span className="text-[10px] text-workspace-text-secondary">{p.scenario}</span>
+                      <span className="line-clamp-2 text-[10px] text-workspace-text-muted">{p.shortDesc}</span>
+                      <span className="text-[10px] text-workspace-text-muted/90">输出：{p.outputStyle}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-medium text-workspace-text-secondary" htmlFor="ai-analysis-prompt-template">
+                  指令正文（可直接编辑）
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[11px] text-workspace-text-muted"
+                  onClick={resetAnalysisPromptTemplate}
+                >
+                  恢复默认
+                </Button>
+              </div>
+              <textarea
+                id="ai-analysis-prompt-template"
+                className="min-h-[100px] max-h-[200px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/70 bg-[hsl(var(--workspace-panel-muted-bg)/0.45)] p-3 font-mono text-[11px] leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] focus:border-violet-500/45 focus:outline-none focus:shadow-[0_0_0_3px_rgba(139,92,246,0.12)] dark:bg-slate-950/55 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                placeholder="在此微调发送给模型的系统指令…"
+                value={analysisPromptTemplate}
+                onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
+                spellCheck={false}
+              />
             </div>
-          )}
+          </section>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">需求描述/补充说明</label>
-            <textarea
-              className="w-full h-[80px] p-3 text-sm border-0 rounded-lg bg-background/55 shadow-sm ring-1 ring-inset ring-foreground/10 dark:ring-white/10 resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/60"
-              placeholder="在此输入需求背景、业务描述或补充说明..."
-              value={requirementText}
-              onChange={(e) => setRequirementText(e.target.value)}
-            />
+          <section className="rounded-xl border border-workspace-panel-border/60 bg-workspace-panel/40 p-3 dark:bg-slate-900/30">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-workspace-text-primary">历史与上传</h2>
+                <div className="inline-flex rounded-full border border-workspace-panel-border/60 bg-workspace-panel-muted/50 p-0.5 text-[11px] dark:border-white/10">
+                  <button
+                    type="button"
+                    className={`rounded-full px-2.5 py-1 font-medium transition-[opacity,transform] ${
+                      historyTab === 'records'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                        : 'text-workspace-text-muted'
+                    }`}
+                    onClick={() => setHistoryTab('records')}
+                  >
+                    分析记录
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full px-2.5 py-1 font-medium transition-[opacity,transform] ${
+                      historyTab === 'uploads'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                        : 'text-workspace-text-muted'
+                    }`}
+                    onClick={() => setHistoryTab('uploads')}
+                  >
+                    最近上传
+                  </button>
+                </div>
+              </div>
+              {historyTab === 'records' && analysisRecords.length > 0 && (
+                <div className="space-y-2">
+                  <input
+                    type="search"
+                    value={historyFilter}
+                    onChange={(e) => setHistoryFilter(e.target.value)}
+                    placeholder="按标题筛选…"
+                    className="h-8 w-full rounded-lg border border-workspace-panel-border/60 bg-workspace-panel-muted/50 px-2 text-xs text-workspace-text-primary outline-none focus:border-cyan-500/45 dark:bg-slate-950/50"
+                  />
+                  <div className="max-h-[200px] overflow-y-auto rounded-lg border border-workspace-panel-border/50 ai-analysis-panel-scroll dark:border-white/10">
+                    {(historyShowAll
+                      ? analysisRecords.filter((r) =>
+                          historyFilter.trim()
+                            ? r.title.toLowerCase().includes(historyFilter.trim().toLowerCase())
+                            : true,
+                        )
+                      : analysisRecords
+                          .filter((r) =>
+                            historyFilter.trim()
+                              ? r.title.toLowerCase().includes(historyFilter.trim().toLowerCase())
+                              : true,
+                          )
+                          .slice(0, 5)
+                    ).map((r) => {
+                      const rb = analysisRecordStatusBadge(r.status)
+                      return (
+                        <div
+                          key={r.id}
+                          className="group flex items-stretch gap-1 border-b border-workspace-panel-border/40 last:border-0 hover:bg-workspace-panel-muted/70 dark:border-white/[0.06] dark:hover:bg-slate-800/60"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void applyAnalysisRecord(r.id)}
+                            className="flex min-w-0 flex-1 flex-col gap-0.5 p-2.5 text-left text-xs"
+                          >
+                            <span className="truncate font-medium text-workspace-text-primary">{r.title}</span>
+                            <span className="text-[11px] text-workspace-text-secondary">
+                              {formatUploadTime(r.createdAt)}
+                              {r.file?.originalName ? ` · ${r.file.originalName}` : ''}
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] text-workspace-text-muted">{formatRelative(r.createdAt)}</span>
+                              <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${rb.cls}`}>
+                                {rb.label}
+                              </Badge>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="shrink-0 px-2 text-workspace-text-muted opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100 dark:hover:text-red-400"
+                            aria-label="删除分析记录"
+                            onClick={(e) => void handleDeleteAnalysisRecord(r.id, e)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {analysisRecords.filter((r) =>
+                    historyFilter.trim() ? r.title.toLowerCase().includes(historyFilter.trim().toLowerCase()) : true,
+                  ).length > 5 && (
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-300"
+                      onClick={() => setHistoryShowAll((v) => !v)}
+                    >
+                      {historyShowAll ? '收起' : '查看全部'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {historyTab === 'records' && analysisRecords.length === 0 && (
+                <div className="flex flex-col items-center gap-1 py-6 text-center">
+                  <Sparkles className="h-6 w-6 text-cyan-500/80" />
+                  <p className="text-[11px] text-workspace-text-muted">暂无分析记录，完成一次分析后会出现在这里</p>
+                </div>
+              )}
+              {historyTab === 'uploads' && fileHistory.length > 0 && (
+                <div className="max-h-[200px] overflow-y-auto rounded-lg border border-workspace-panel-border/50 ai-analysis-panel-scroll dark:border-white/10">
+                  {(historyShowAll ? fileHistory : fileHistory.slice(0, 5)).map((f) => {
+                    const fb = fileHistoryStatusBadge(f.status)
+                    return (
+                      <div
+                        key={f.id}
+                        className={`group flex items-center gap-2 border-b border-workspace-panel-border/40 p-2.5 last:border-0 hover:bg-workspace-panel-muted/70 dark:border-white/[0.06] dark:hover:bg-slate-800/60 ${
+                          uploadedFile?.id === f.id ? 'bg-cyan-500/10' : ''
+                        }`}
+                      >
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => selectHistoryFile(f)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              selectHistoryFile(f)
+                            }
+                          }}
+                          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 text-left text-xs"
+                        >
+                          <span
+                            className="truncate font-medium text-workspace-text-primary"
+                            title={displayUploadedFilename(f.id, f.originalName)}
+                          >
+                            {displayUploadedFilename(f.id, f.originalName)}
+                          </span>
+                          <span className="text-[11px] text-workspace-text-secondary">
+                            {formatFileSizeShort(f.size)} · {formatUploadTime(f.createdAt)}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-workspace-text-muted">{formatRelative(f.createdAt)}</span>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${fb.cls}`}>
+                              {fb.label}
+                            </Badge>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 p-1.5 text-workspace-text-muted opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100 dark:hover:text-red-400"
+                          aria-label="删除文件"
+                          onClick={(ev) => void deleteHistoryFile(f.id, ev)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {historyTab === 'uploads' && fileHistory.length > 0 && fileHistory.length > 5 && (
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] font-medium text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-300"
+                  onClick={() => setHistoryShowAll((v) => !v)}
+                >
+                  {historyShowAll ? '收起' : '查看全部'}
+                </button>
+              )}
+              {historyTab === 'uploads' && fileHistory.length === 0 && (
+                <div className="flex flex-col items-center gap-1 py-6 text-center">
+                  <Upload className="h-6 w-6 text-violet-500/80" />
+                  <p className="text-[11px] text-workspace-text-muted">暂无上传记录</p>
+                </div>
+              )}
+            </section>
+
+            </div>
           </div>
 
-          <div className="flex max-h-[min(40vh,320px)] min-h-[160px] flex-col gap-2 overflow-hidden rounded-lg border border-border/30 bg-muted/10 p-3">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium text-foreground" htmlFor="ai-analysis-prompt-template">
-                分析指令模板（Prompt）
-              </label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground"
-                onClick={resetAnalysisPromptTemplate}
-              >
-                恢复默认
-              </Button>
-            </div>
-            <p className="shrink-0 text-xs leading-relaxed text-muted-foreground">
-              作为发送给模型的分析指令；可与上方「补充说明」组合。修改后自动保存在本机浏览器。
-            </p>
-            <textarea
-              id="ai-analysis-prompt-template"
-              className="min-h-[120px] w-full flex-1 resize-none overflow-y-auto rounded-lg border-0 bg-background/55 p-3 font-mono text-xs shadow-sm ring-1 ring-inset ring-foreground/10 focus:outline-none focus:ring-2 focus:ring-ring dark:ring-white/10 placeholder:text-muted-foreground/60"
-              placeholder="编辑 AI 分析指令..."
-              value={analysisPromptTemplate}
-              onChange={(e) => setAnalysisPromptTemplate(e.target.value)}
-              spellCheck={false}
-            />
-          </div>
-
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col gap-2 border-t border-border/40 bg-muted/25 px-4 py-3 sm:px-5">
+          <div className="flex shrink-0 flex-col gap-2 border-t border-workspace-panel-border/60 bg-workspace-panel/85 px-4 py-3 backdrop-blur-md dark:border-white/[0.08] dark:bg-slate-950/70 sm:px-5">
+            <p className="text-[11px] leading-snug text-workspace-text-secondary">{prepStripSummary}</p>
           <div className="flex items-center gap-3 py-1">
             <User className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-foreground" id="human-review-label">
@@ -2068,22 +2561,42 @@ ${state.reportText}
           </div>
         </aside>
 
-        {/* 右栏：顶栏固定；日志固定高；报告区 flex 滚动；人工审阅贴底 */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex shrink-0 flex-col gap-0 rounded-t-xl bg-[#1a1a2e] border border-b-0 border-border/20">
-            <div className="flex min-h-[48px] flex-wrap items-center justify-between gap-2 px-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <Terminal className="h-4 w-4 flex-shrink-0 text-slate-500" aria-hidden />
-                <span className="truncate font-mono text-sm text-slate-300">AI 需求分析终端</span>
+        {/* 右栏：AI 分析终端 */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-workspace-panel-border/45 bg-workspace-panel/20 motion-safe:animate-[arsStudioIn_0.48s_ease-out_both] dark:border-white/[0.06] dark:bg-slate-950/25">
+          <div className="flex shrink-0 flex-col gap-1.5 rounded-t-xl border border-b-0 border-workspace-panel-border/50 bg-gradient-to-r from-white/90 via-cyan-50/40 to-violet-50/50 px-3 py-2.5 shadow-sm backdrop-blur-md dark:from-slate-900/95 dark:via-slate-900/90 dark:to-indigo-950/90 dark:border-white/10 sm:px-4">
+            <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Terminal className="h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300" aria-hidden />
+                <span className="truncate text-sm font-semibold text-workspace-text-primary">AI 需求分析终端</span>
+                <StatusBadge status={state.status} labelOverride={terminalBadgeLabel} />
               </div>
-              <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {!autoScroll && (
+                  <button
+                    type="button"
+                    className="text-[11px] text-amber-800 underline-offset-2 hover:underline dark:text-amber-300"
+                    onClick={() => setAutoScroll(true)}
+                  >
+                    恢复自动滚动
+                  </button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-[11px] text-workspace-text-secondary hover:text-red-600 dark:hover:text-red-400"
+                  disabled={state.logs.length === 0}
+                  onClick={() => dispatch({ type: 'CLEAR_LOGS' })}
+                >
+                  清空日志
+                </Button>
                 {state.reportText.trim().length > 0 && (
                   <>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-9 gap-1.5 text-xs text-violet-300 hover:bg-violet-500/15 hover:text-violet-100"
+                      className="h-8 gap-1 text-[11px] text-violet-800 dark:text-violet-200"
                       onClick={() => void handleSendToGenerate()}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
@@ -2094,7 +2607,7 @@ ${state.reportText}
                       variant="ghost"
                       size="sm"
                       disabled={exportingPdf || exportingXmind}
-                      className="h-9 gap-1.5 text-xs text-slate-300 hover:bg-slate-700/50 hover:text-slate-100"
+                      className="h-8 gap-1 text-[11px] text-workspace-text-secondary"
                       onClick={() => void handleExportXmind()}
                     >
                       {exportingXmind ? (
@@ -2102,38 +2615,23 @@ ${state.reportText}
                       ) : (
                         <Waypoints className="h-3.5 w-3.5" />
                       )}
-                      导出 XMind
+                      XMind
                     </Button>
-                  </>
-                )}
-                {!autoScroll && (
-                  <button
-                    type="button"
-                    className="text-[11px] text-amber-400 hover:underline"
-                    onClick={() => setAutoScroll(true)}
-                  >
-                    恢复自动滚动
-                  </button>
-                )}
-                <StatusBadge status={state.status} labelOverride={terminalBadgeLabel} />
-                {state.reportText.trim().length > 0 && (
-                  <>
-                    <div className="mx-1 hidden h-6 w-px bg-border/40 sm:block" aria-hidden />
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-9 gap-1.5 rounded border-border/50 bg-transparent px-3 text-sm font-semibold text-slate-200 hover:bg-slate-800/80"
+                      className="h-8 gap-1 border-workspace-panel-border/60 text-[11px] text-workspace-text-primary"
                       onClick={copyAnalysisReport}
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      复制文本
+                      复制
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-9 gap-1.5 rounded border-border/50 bg-transparent px-3 text-sm font-semibold text-slate-200 hover:bg-slate-800/80"
+                      className="h-8 gap-1 border-workspace-panel-border/60 text-[11px] text-workspace-text-primary"
                       onClick={handlePrintAnalysisReport}
                     >
                       <Printer className="h-3.5 w-3.5" />
@@ -2143,7 +2641,7 @@ ${state.reportText}
                       type="button"
                       size="sm"
                       disabled={exportingPdf || exportingXmind}
-                      className="h-9 gap-1.5 rounded bg-[#2563EB] px-4 text-sm font-bold text-white shadow-md hover:bg-[#1D4ED8] disabled:opacity-60"
+                      className="h-8 gap-1 bg-gradient-to-r from-cyan-600 to-violet-600 px-3 text-[11px] font-semibold text-white shadow-md disabled:opacity-60"
                       onClick={() => void handleExportAnalysisPdf()}
                     >
                       {exportingPdf ? (
@@ -2151,173 +2649,275 @@ ${state.reportText}
                       ) : (
                         <FileDown className="h-3.5 w-3.5" />
                       )}
-                      导出 PDF
+                      PDF
                     </Button>
                   </>
                 )}
               </div>
             </div>
+            <div className="flex gap-1 border-t border-workspace-panel-border/40 pt-1.5 dark:border-white/[0.08]">
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-[opacity,transform] ${
+                  rightTab === 'process'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                    : 'text-workspace-text-muted hover:text-workspace-text-primary'
+                }`}
+                onClick={() => setRightTab('process')}
+              >
+                过程
+              </button>
+              <button
+                type="button"
+                disabled={!reportTabEnabled}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-[opacity,transform] disabled:cursor-not-allowed disabled:opacity-40 ${
+                  rightTab === 'report'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                    : 'text-workspace-text-muted hover:text-workspace-text-primary'
+                }`}
+                onClick={() => reportTabEnabled && setRightTab('report')}
+              >
+                报告
+              </button>
+            </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-border/20 border-t-0 bg-[#0d0d1a] lg:rounded-br-xl">
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/20 px-4 py-2">
-              <span className="text-xs font-medium text-slate-500">分析日志</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-slate-400 hover:text-red-400"
-                disabled={state.logs.length === 0}
-                onClick={() => dispatch({ type: 'CLEAR_LOGS' })}
-              >
-                清空日志
-              </Button>
-            </div>
-            <div
-              ref={logContainerRef}
-              onScroll={handleLogScroll}
-              className="ai-analysis-panel-scroll h-[100px] shrink-0 space-y-0.5 overflow-y-auto overscroll-contain px-4 py-2"
-            >
-              {state.logs.length === 0 && (
-                <div className="py-6 text-center font-mono text-[12px] leading-[1.5] text-slate-500">
-                  等待操作或开始分析…
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-workspace-panel-border/50 bg-gradient-to-b from-slate-50/95 via-white to-slate-50/90 dark:border-white/10 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950/95 lg:rounded-br-xl">
+            {rightTab === 'process' ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="shrink-0 border-b border-workspace-panel-border/50 bg-workspace-panel/40 p-3 dark:border-white/[0.06] dark:bg-slate-900/50">
+                  <AiStudioStepRail
+                    status={state.status}
+                    uploadedFile={uploadedFile}
+                    reportText={state.reportText}
+                  />
                 </div>
-              )}
-              {state.logs.map((log) => (
-                <LogLine key={log.id} entry={log} />
-              ))}
-            </div>
-
-            {/* 报告滚动区 + 底部审阅：同一列内 flex，审阅条永远贴在右栏底部 */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/20 bg-[#111125]/80">
-              <div
-                className="ai-analysis-report-scroll box-border min-h-0 max-h-[calc(100dvh-220px)] flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 py-3 [scrollbar-gutter:stable] select-text sm:px-6"
-                data-testid="ai-analysis-report-panel"
-              >
-                {isAnalyzingStream && !state.reportText.trim() ? (
-                  <div className="flex min-h-[140px] flex-col justify-center py-10 text-center text-xs text-slate-500">
-                    报告内容将在此处流式输出…
-                  </div>
-                ) : state.reportText.trim() ? (
-                  <>
-                    <div className="mb-4 shrink-0">
-                      <h3 className="border-b-2 border-[#3B82F6] pb-2 text-[20px] font-bold leading-tight text-white">
-                        需求文档分析报告
-                      </h3>
+                <div
+                  ref={logContainerRef}
+                  onScroll={handleLogScroll}
+                  className="ai-analysis-terminal-scroll min-h-[140px] flex-1 space-y-0.5 overflow-y-auto overscroll-contain bg-slate-100/90 px-3 py-2 font-mono text-[12px] dark:bg-slate-950/85"
+                >
+                  {state.logs.length === 0 && isIdle && !busy ? (
+                    <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 px-4 py-10 text-center motion-safe:animate-[fadeIn_0.4s_ease-out]">
+                      <Sparkles className="h-8 w-8 text-cyan-600/90 dark:text-cyan-300/90" />
+                      <p className="text-sm font-medium text-workspace-text-primary">等待任务启动</p>
+                      <p className="max-w-xs text-[11px] leading-relaxed text-workspace-text-secondary">
+                        上传需求文档或填写左侧「需求描述」后，AI 会在这里输出步骤时间线与运行日志。
+                      </p>
                     </div>
-                    <div
-                      ref={reportMarkdownRef}
-                      data-testid="ai-analysis-report-markdown"
-                      className="ai-analysis-print-root min-w-0 max-w-full pb-1"
-                    >
-                      <AnalysisMarkdownReport text={state.reportText} className="break-words [word-break:break-word]" />
+                  ) : state.logs.length === 0 ? (
+                    <div className="py-6 text-center text-[12px] text-workspace-text-muted">
+                      等待操作或开始分析…
                     </div>
-                  </>
-                ) : (
-                  <div className="py-8 text-center text-xs text-slate-600">完成分析后，报告将显示在此区域</div>
-                )}
+                  ) : null}
+                  {state.logs.map((log) => (
+                    <LogLine key={log.id} entry={log} />
+                  ))}
+                </div>
               </div>
-
-              {(showReviewArea || showApprovedOnly) && (
-                <div className="shrink-0 border-t border-[#475569] bg-[#0d0d1a] p-4">
-                  {state.status === 'approved' ? (
-                    <div className="space-y-2 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2 text-green-400">
-                        <CheckCircle2 className="h-5 w-5" />
-                        <span className="text-sm font-medium">需求分析已通过</span>
-                      </div>
-                      <p className="text-xs text-slate-500">可继续生成测试用例或重新分析</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-                        type="button"
-                        onClick={() => dispatch({ type: 'RESET' })}
-                      >
-                        清空并重置
-                      </Button>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                  className="ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-white/80 px-4 py-3 [scrollbar-gutter:stable] select-text dark:bg-slate-950/60 sm:px-5"
+                  data-testid="ai-analysis-report-panel"
+                >
+                  {isAnalyzingStream && !state.reportText.trim() ? (
+                    <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 py-12 text-center">
+                      <Loader2 className="h-7 w-7 animate-spin text-cyan-600 dark:text-cyan-300" />
+                      <p className="text-sm font-medium text-workspace-text-primary">报告流式生成中…</p>
+                      <p className="text-[11px] text-workspace-text-muted">生成完成后会自动切换到此标签，也可手动点开查看进度。</p>
                     </div>
-                  ) : (
+                  ) : state.reportText.trim() ? (
                     <>
-                      <h4 className="mb-3 flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        人工审阅
-                      </h4>
-                      <textarea
-                        rows={5}
-                        className="min-h-[120px] w-full resize-y overflow-y-auto rounded border-0 bg-[#1a1a2e] p-3 text-sm leading-relaxed text-slate-200 shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-ring"
-                        placeholder="请输入修改意见…（Ctrl+Enter 提交）"
-                        value={state.reviewText}
-                        onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
-                        onKeyDown={handleReviewKeyDown}
-                      />
-                      <div className="mt-4 flex shrink-0 items-center gap-3">
-                        <Button
-                          className="h-11 flex-1 gap-2 rounded bg-orange-500 text-sm font-bold text-white shadow-md hover:bg-orange-600"
-                          type="button"
-                          onClick={() => void handleSubmitRevision()}
-                        >
-                          <ArrowRight className="h-4 w-4" />
-                          提交修改意见
-                        </Button>
-                        <Button
-                          className="h-11 flex-1 gap-2 rounded bg-emerald-600 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
-                          type="button"
-                          onClick={handleApprove}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          确认通过
-                        </Button>
+                      <div className="mb-3 shrink-0">
+                        <h3 className="border-b border-cyan-500/50 pb-2 text-lg font-bold leading-tight text-workspace-text-primary dark:border-cyan-400/40">
+                          需求文档分析报告
+                        </h3>
+                      </div>
+                      <div
+                        ref={reportMarkdownRef}
+                        data-testid="ai-analysis-report-markdown"
+                        className="ai-analysis-print-root min-w-0 max-w-full pb-2 text-workspace-text-primary"
+                      >
+                        <AnalysisMarkdownReport
+                          text={state.reportText}
+                          className="break-words [word-break:break-word]"
+                        />
                       </div>
                     </>
+                  ) : (
+                    <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 py-12 text-center">
+                      <Sparkles className="h-7 w-7 text-violet-500/80" />
+                      <p className="text-sm text-workspace-text-primary">暂无报告输出</p>
+                      <p className="max-w-sm text-[11px] text-workspace-text-muted">
+                        上传需求文档或输入需求描述后，AI 会在这里生成分析过程与结构化报告。
+                      </p>
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+
+                {(showReviewArea || showApprovedOnly) && (
+                  <div className="shrink-0 border-t border-workspace-panel-border/60 bg-workspace-panel/90 p-4 dark:border-white/[0.08] dark:bg-slate-900/85">
+                    {state.status === 'approved' ? (
+                      <div className="space-y-2 py-2 text-center">
+                        <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-5 w-5" />
+                          <span className="text-sm font-medium">需求分析已通过</span>
+                        </div>
+                        <p className="text-xs text-workspace-text-muted">可继续生成测试用例或重新分析</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-1 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                          type="button"
+                          onClick={() => dispatch({ type: 'RESET' })}
+                        >
+                          清空并重置
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <h4 className="mb-2 flex shrink-0 items-center gap-2 text-sm font-medium text-workspace-text-primary">
+                          <User className="h-4 w-4 text-workspace-text-muted" />
+                          人工审阅
+                        </h4>
+                        <textarea
+                          rows={5}
+                          className="min-h-[120px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/60 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] p-3 text-sm leading-relaxed text-workspace-text-primary shadow-inner placeholder:text-workspace-text-muted focus:border-violet-500/45 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:bg-slate-950/60"
+                          placeholder="请输入修改意见…（Ctrl+Enter 提交）"
+                          value={state.reviewText}
+                          onChange={(e) => dispatch({ type: 'SET_REVIEW_TEXT', text: e.target.value })}
+                          onKeyDown={handleReviewKeyDown}
+                        />
+                        <div className="mt-3 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+                          <Button
+                            className="h-11 flex-1 gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-sm font-semibold text-white shadow-md hover:from-orange-600 hover:to-amber-600"
+                            type="button"
+                            onClick={() => void handleSubmitRevision()}
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                            提交修改意见
+                          </Button>
+                          <Button
+                            className="h-11 flex-1 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-semibold text-white shadow-md hover:from-emerald-700 hover:to-teal-700"
+                            type="button"
+                            onClick={handleApprove}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            确认通过
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
+      {largeEditorField && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal
+          aria-labelledby="ars-large-editor-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLargeEditorField(null)
+          }}
+        >
+          <div
+            className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-workspace-panel-border/60 bg-workspace-panel p-4 shadow-2xl dark:border-white/10 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 id="ars-large-editor-title" className="text-sm font-semibold text-workspace-text-primary">
+                {largeEditorField === 'desc' ? '需求描述' : '补充说明'}
+              </h3>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setLargeEditorField(null)}>
+                完成
+              </Button>
+            </div>
+            <textarea
+              className="h-[min(60vh,480px)] w-full resize-y rounded-xl border border-workspace-panel-border/60 bg-[hsl(var(--workspace-panel-muted-bg)/0.5)] p-3 text-sm leading-relaxed text-workspace-text-primary focus:border-cyan-500/45 focus:outline-none focus:ring-2 focus:ring-cyan-500/15 dark:bg-slate-950/60"
+              value={largeEditorField === 'desc' ? requirementDescription : requirementSupplement}
+              onChange={(e) => {
+                const v = e.target.value
+                if (largeEditorField === 'desc') setRequirementDescription(v.slice(0, REQ_DESC_MAX))
+                else setRequirementSupplement(v.slice(0, REQ_SUPP_MAX))
+              }}
+            />
+            <p className="mt-2 text-right text-[11px] tabular-nums text-workspace-text-muted">
+              {(largeEditorField === 'desc' ? requirementDescription : requirementSupplement).length} /{' '}
+              {largeEditorField === 'desc' ? REQ_DESC_MAX : REQ_SUPP_MAX}
+            </p>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        @keyframes arsStudioIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes arsStudioIn {
+            from { opacity: 1; transform: none; }
+            to { opacity: 1; transform: none; }
+          }
+        }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .ai-analysis-panel-scroll {
+        .ai-analysis-terminal-scroll {
           scrollbar-width: thin;
-          scrollbar-color: #475569 #1e293b;
+          scrollbar-color: rgba(100,116,139,0.55) rgba(241,245,249,0.9);
         }
-        .ai-analysis-panel-scroll::-webkit-scrollbar {
+        .dark .ai-analysis-terminal-scroll {
+          scrollbar-color: #475569 #0f172a;
+        }
+        .ai-analysis-terminal-scroll::-webkit-scrollbar {
           width: 6px;
         }
-        .ai-analysis-panel-scroll::-webkit-scrollbar-track {
-          background: #1e293b;
+        .ai-analysis-terminal-scroll::-webkit-scrollbar-track {
+          background: rgba(241,245,249,0.95);
           border-radius: 3px;
         }
-        .ai-analysis-panel-scroll::-webkit-scrollbar-thumb {
+        .dark .ai-analysis-terminal-scroll::-webkit-scrollbar-track {
+          background: #0f172a;
+        }
+        .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
+          background: rgba(100,116,139,0.45);
+          border-radius: 3px;
+        }
+        .dark .ai-analysis-terminal-scroll::-webkit-scrollbar-thumb {
           background: #475569;
-          border-radius: 3px;
         }
-        .ai-analysis-panel-scroll::-webkit-scrollbar-thumb:hover {
-          background: #64748b;
+        .ai-analysis-studio .ai-analysis-panel-scroll {
+          scrollbar-color: rgba(100,116,139,0.45) rgba(248,250,252,0.9);
         }
-        .ai-analysis-report-scroll {
-          scrollbar-width: thin;
+        .dark .ai-analysis-studio .ai-analysis-panel-scroll {
           scrollbar-color: #475569 #1e293b;
         }
-        .ai-analysis-report-scroll::-webkit-scrollbar {
-          width: 6px;
+        .ai-analysis-studio .ai-analysis-panel-scroll::-webkit-scrollbar-track {
+          background: rgba(248,250,252,0.95);
         }
-        .ai-analysis-report-scroll::-webkit-scrollbar-track {
+        .dark .ai-analysis-studio .ai-analysis-panel-scroll::-webkit-scrollbar-track {
           background: #1e293b;
-          border-radius: 3px;
         }
-        .ai-analysis-report-scroll::-webkit-scrollbar-thumb {
-          background: #475569;
-          border-radius: 3px;
+        .ai-analysis-studio .ai-analysis-report-scroll {
+          scrollbar-color: rgba(100,116,139,0.45) rgba(255,255,255,0.85);
         }
-        .ai-analysis-report-scroll::-webkit-scrollbar-thumb:hover {
-          background: #64748b;
+        .dark .ai-analysis-studio .ai-analysis-report-scroll {
+          scrollbar-color: #475569 #1e293b;
+        }
+        .ai-analysis-studio .ai-analysis-report-scroll::-webkit-scrollbar-track {
+          background: rgba(255,255,255,0.85);
+        }
+        .dark .ai-analysis-studio .ai-analysis-report-scroll::-webkit-scrollbar-track {
+          background: #1e293b;
         }
       `}</style>
     </div>
