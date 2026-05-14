@@ -673,6 +673,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * PDF 分页渲染 + 视觉分批（依赖 pdf-to-img/canvas）开关。
+   * 为避免某些服务器环境下 native 依赖异常导致进程崩溃，默认关闭，需显式设 1 开启。
+   */
+  private fileParsePdfPagedVisionEnabled(): boolean {
+    return this.config.get<string>('FILE_PARSE_PDF_PAGED_VISION')?.trim() === '1'
+  }
+
+  /**
    * 混元直读未命中后：在允许腾讯云兜底时走全本 OCR；否则抛错。
    * @param embeddedText 已抽取的内置文本（可为空，供 OCR 侧参考）
    */
@@ -767,32 +775,33 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
           : {}),
       })
-      const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
-        filePath,
-        async (p) => {
-          await heartbeat('HUNYUAN_COS_MULTIMODAL', {
-            phase: 'VISION',
-            message: 'hunyuan_pdf_page_batch',
-            pageCurrent: p.pageCurrent,
-            pageTotal: p.pageTotal,
-            batchIndex: p.batchIndex,
-            batchTotal: p.batchTotal,
-          })
-        },
-      )
-      if (visionPaged?.text?.trim()) {
-        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
-          phase: 'VISION',
-          message: 'hunyuan_pdf_page_batch_done',
-          chars: visionPaged.text.length,
-        })
-        this.logger.log(
-          `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
+      if (this.fileParsePdfPagedVisionEnabled()) {
+        const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
+          filePath,
+          async (p) => {
+            await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+              phase: 'VISION',
+              message: 'hunyuan_pdf_page_batch',
+              pageCurrent: p.pageCurrent,
+              pageTotal: p.pageTotal,
+              batchIndex: p.batchIndex,
+              batchTotal: p.batchTotal,
+            })
+          },
         )
-        return visionPaged.text
+        if (visionPaged?.text?.trim()) {
+          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+            phase: 'VISION',
+            message: 'hunyuan_pdf_page_batch_done',
+            chars: visionPaged.text.length,
+          })
+          this.logger.log(
+            `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
+          )
+          return visionPaged.text
+        }
+        this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读兼容链路')
       }
-
-      this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读兼容链路')
       const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
       if (hunyuanBody) return hunyuanBody
 
