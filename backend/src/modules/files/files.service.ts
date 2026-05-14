@@ -647,7 +647,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     if (this.isFileParseForceHunyuan()) {
       throw new Error(
-        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：PDF 须由混元多模态返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 80）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若需腾讯云 PDF OCR 兜底，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
+        '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1：PDF 须由混元多模态返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 80）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若需腾讯云 PDF OCR 兜底，请关闭 FILE_PARSE_FORCE_HUNYUAN。',
       )
     }
 
