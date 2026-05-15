@@ -241,10 +241,28 @@ export class CosStorageService {
     const ext = path.extname(parsed.key) || '.bin'
     const tmp = path.join(this.parseTempDir(), `cos-dl-${uuid()}${ext}`)
     const ws = createWriteStream(tmp)
+    const timeoutRaw = parseInt(this.config.get<string>('COS_DOWNLOAD_TIMEOUT_MS') || '120000', 10)
+    const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw >= 10_000 ? timeoutRaw : 120_000
 
     await new Promise<void>((resolve, reject) => {
-      ws.once('error', reject)
-      ws.once('finish', resolve)
+      let settled = false
+      const done = (err?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (err) reject(err)
+        else resolve()
+      }
+      const timer = setTimeout(() => {
+        try {
+          ws.destroy(new Error(`COS 下载超时（>${timeoutMs}ms）`))
+        } catch {
+          /* ignore */
+        }
+        done(new Error(`COS 下载超时（>${timeoutMs}ms）`))
+      }, timeoutMs)
+      ws.once('error', (e) => done(e instanceof Error ? e : new Error(String(e))))
+      ws.once('finish', () => done())
       this.cos!.getObject(
         {
           Bucket: parsed.bucket,
@@ -253,7 +271,7 @@ export class CosStorageService {
           Output: ws,
         },
         (err) => {
-          if (err) reject(err)
+          if (err) done(err instanceof Error ? err : new Error(String(err)))
         },
       )
     })

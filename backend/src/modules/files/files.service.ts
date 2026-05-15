@@ -279,21 +279,6 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const parseRetryHint = hintRow?.parseRetryHint ?? null
     const uploaderId = hintRow?.uploaderId ?? null
 
-    let effectivePath = cosPath
-    let cosTempFile: string | null = null
-    if (CosStorageService.isCosUri(cosPath)) {
-      if (!this.cosStorage.isConfigured()) {
-        throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
-      }
-      try {
-        cosTempFile = await this.cosStorage.downloadToTempFile(cosPath)
-        effectivePath = cosTempFile
-      } catch (e) {
-        throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
-      }
-    }
-
-    try {
     const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
       try {
         await this.prisma.uploadedFile.update({
@@ -312,6 +297,23 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    let effectivePath = cosPath
+    let cosTempFile: string | null = null
+    if (CosStorageService.isCosUri(cosPath)) {
+      if (!this.cosStorage.isConfigured()) {
+        throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
+      }
+      await heartbeat('COS_DOWNLOAD', { phase: 'DOWNLOAD', message: 'cos_download_start' })
+      try {
+        cosTempFile = await this.cosStorage.downloadToTempFile(cosPath)
+        effectivePath = cosTempFile
+        await heartbeat('COS_DOWNLOAD_OK', { phase: 'DOWNLOAD', message: 'cos_download_done' })
+      } catch (e) {
+        throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
+      }
+    }
+
+    try {
     try {
       let content = ''
 
