@@ -315,43 +315,39 @@ export class AiService {
   private async getOpenAIClient(
     modelConfigId?: string,
   ): Promise<{ client: OpenAI; modelId: string; modelName: string; configId: string | null }> {
-    let baseUrl = this.config.get<string>('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-    let apiKey = this.config.get<string>('OPENAI_API_KEY', '')
-    let modelId = this.config.get<string>('DEFAULT_AI_MODEL', 'gpt-4o')
-    let modelName = modelId
+    let baseUrl = ''
+    let apiKey = ''
+    let modelId = ''
+    let modelName = ''
     let configId: string | null = null
 
     if (modelConfigId) {
       this.logger.log(`查找模型配置: modelConfigId=${modelConfigId}`)
       const config = await this.prisma.aIModelConfig.findUnique({ where: { id: modelConfigId } })
-      if (config) {
-        configId = config.id
-        baseUrl = config.baseUrl
-        apiKey = config.apiKey
-        modelId = config.modelId
-        modelName = config.name
-        this.logger.log(`找到模型配置: id=${configId}, name=${modelName}, modelId=${modelId}`)
-      } else {
-        this.logger.warn(`未找到模型配置: modelConfigId=${modelConfigId}`)
+      if (!config || !config.isActive) {
+        throw new BadRequestException('指定模型不存在或已归档，请在系统设置中选择可用模型')
       }
+      configId = config.id
+      baseUrl = config.baseUrl
+      apiKey = config.apiKey
+      modelId = config.modelId
+      modelName = config.name
+      this.logger.log(`找到模型配置: id=${configId}, name=${modelName}, modelId=${modelId}`)
     } else {
-      // 使用默认模型
       const defaultModel = await this.prisma.aIModelConfig.findFirst({ where: { isDefault: true, isActive: true } })
-      if (defaultModel) {
-        configId = defaultModel.id
-        baseUrl = defaultModel.baseUrl
-        apiKey = defaultModel.apiKey
-        modelId = defaultModel.modelId
-        modelName = defaultModel.name
-        this.logger.log(`使用默认模型: id=${configId}, name=${modelName}, modelId=${modelId}`)
-      } else {
-        this.logger.warn('未找到默认模型，将使用环境变量配置')
+      if (!defaultModel) {
+        throw new BadRequestException('未配置默认分析模型，请在系统设置中先配置并启用一个默认模型')
       }
+      configId = defaultModel.id
+      baseUrl = defaultModel.baseUrl
+      apiKey = defaultModel.apiKey
+      modelId = defaultModel.modelId
+      modelName = defaultModel.name
+      this.logger.log(`使用默认模型: id=${configId}, name=${modelName}, modelId=${modelId}`)
     }
 
     if (!apiKey || apiKey === 'placeholder') {
-      this.logger.error(`API Key 未配置或为空: apiKey=${apiKey}`)
-      throw new BadRequestException('AI API Key 未配置，请在系统设置中配置模型')
+      throw new BadRequestException('分析模型 API Key 未配置，请在系统设置中完善模型密钥')
     }
 
     const client = new OpenAI({ apiKey, baseURL: baseUrl })

@@ -218,92 +218,50 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       (file.filename && String(file.filename).trim()) ||
       `${uuid()}${path.extname(file.originalname) || ''}`
 
-    // COS：优先内存 Buffer 直传对象存储，不写 UPLOAD_DIR
-    if (this.cosStorage.isConfigured() && file.buffer && file.buffer.length > 0) {
-      try {
-        const uri = await this.cosStorage.uploadBuffer(file.buffer, file.originalname)
-        const created = await this.prisma.uploadedFile.create({
-          data: {
-            name: safeName,
-            originalName: file.originalname,
-            path: uri,
-            size: file.buffer.length,
-            mimeType: file.mimetype,
-            fileType,
-            status: FileStatus.PENDING,
-            parseStage: 'PENDING',
-            uploaderId,
-          },
-        })
-        await this.tryStartParseImmediately({
-          id: created.id,
-          path: uri,
-          fileType,
-          mimeType: file.mimetype,
-        })
-        return this.getFileById(created.id)
-      } catch (e) {
-        this.logger.error(`COS 直传失败: ${(e as Error).message}`, e as Error)
-        throw new BadRequestException(`文件上传到对象存储失败：${(e as Error).message}`)
-      }
+    if (!this.cosStorage.isConfigured()) {
+      throw new BadRequestException(
+        '文件上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+      )
     }
 
-    // 未启用 COS：磁盘路径，或将内存 buffer 写入 UPLOAD_DIR
-    let diskSize = file.size
-    let resolvedPath = file.path
-    if (!resolvedPath && file.buffer?.length) {
-      resolvedPath = path.join(this.uploadDir, `${uuid()}${path.extname(file.originalname) || ''}`)
-      try {
-        fs.writeFileSync(resolvedPath, file.buffer)
-        diskSize = file.buffer.length
-      } catch (e) {
-        this.logger.error(`写入本地上传目录失败: ${resolvedPath}`, e as Error)
-        throw new BadRequestException('无法保存上传文件到服务器磁盘')
+    let uploadBuffer = file.buffer
+    if ((!uploadBuffer || uploadBuffer.length === 0) && file.path?.trim()) {
+      const localPath = file.path.trim()
+      if (!fs.existsSync(localPath)) {
+        throw new BadRequestException(`上传文件不存在：${localPath}`)
       }
+      uploadBuffer = fs.readFileSync(localPath)
+    }
+    if (!uploadBuffer || uploadBuffer.length < 1) {
+      throw new BadRequestException('上传文件为空（0 bytes），请重试。')
     }
 
     try {
-      if (resolvedPath && fs.existsSync(resolvedPath)) {
-        diskSize = fs.statSync(resolvedPath).size
-      }
-    } catch (e) {
-      this.logger.warn(`读取上传文件大小失败: ${resolvedPath}`, e as Error)
-    }
-
-    const record = await this.prisma.uploadedFile.create({
-      data: {
-        name: safeName,
-        originalName: file.originalname,
-        path: resolvedPath,
-        size: diskSize,
-        mimeType: file.mimetype,
-        fileType,
-        status: FileStatus.PENDING,
-        parseStage: 'PENDING',
-        uploaderId,
-      },
-    })
-
-    if (!resolvedPath || !fs.existsSync(resolvedPath) || diskSize < 1) {
-      const msg = !resolvedPath
-        ? '【解析失败】上传文件路径为空（服务端未落盘）。请重试上传。'
-        : !fs.existsSync(resolvedPath)
-          ? `【解析失败】上传文件未落盘或已丢失：${resolvedPath}。请重试上传。`
-          : `【解析失败】上传文件为空（0 bytes）：${resolvedPath}。请重试上传。`
-      await this.prisma.uploadedFile.update({
-        where: { id: record.id },
-        data: { status: FileStatus.FAILED, parseError: msg, parseStage: 'UPLOAD_CHECK' },
+      const uri = await this.cosStorage.uploadBuffer(uploadBuffer, file.originalname)
+      const created = await this.prisma.uploadedFile.create({
+        data: {
+          name: safeName,
+          originalName: file.originalname,
+          path: uri,
+          size: uploadBuffer.length,
+          mimeType: file.mimetype,
+          fileType,
+          status: FileStatus.PENDING,
+          parseStage: 'PENDING',
+          uploaderId,
+        },
       })
-      return this.getFileById(record.id)
+      await this.tryStartParseImmediately({
+        id: created.id,
+        path: uri,
+        fileType,
+        mimeType: file.mimetype,
+      })
+      return this.getFileById(created.id)
+    } catch (e) {
+      this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
+      throw new BadRequestException(`文件上传到 COS 失败：${(e as Error).message}`)
     }
-
-    await this.tryStartParseImmediately({
-      id: record.id,
-      path: resolvedPath,
-      fileType,
-      mimeType: file.mimetype,
-    })
-    return this.getFileById(record.id)
   }
 
   /** 异步解析文件内容（图片/PDF 优先多模态视觉理解，再 OCR/文本提取） */
@@ -541,39 +499,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       })
     }
 
-    if (this.isFileParseHunyuanOnlyForUpload()) {
-      throw new Error(
-        '【解析失败】上传解析已统一为混元多模态：图片须由混元完成理解，但未返回有效正文或过短。请检查 HUNYUAN_VISION_API_KEY、HUNYUAN_MULTIMODAL_ENABLED、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS。若业务仍需腾讯云 OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
-      )
-    }
-
-    // 允许腾讯云兜底时：不再走本地视觉/Tesseract，仅允许腾讯云 OCR。
-    const forceOnly = this.config.get<string>('HUNYUAN_PARSE_FORCE_ONLY') !== '0'
-    if (!forceOnly) {
-      return (
-        '【解析失败】混元多模态未返回有效正文；当前环境 HUNYUAN_PARSE_FORCE_ONLY=0 已关闭强制模式，请联系管理员。'
-      )
-    }
-
-    await heartbeat('OCR', { phase: 'OCR', message: 'tencent_ocr_start' })
-    try {
-      const jpeg =
-        (await this.imagePreprocess.preprocessToJpegBuffer(filePath)) ??
-        fs.readFileSync(filePath)
-      const text = await this.tencentOcr.recognizeJpegBuffer(jpeg)
-      if (text?.trim()) {
-        await heartbeat('OCR_DONE', {
-          phase: 'OCR',
-          message: 'tencent_ocr_done',
-          ocrChars: text.trim().length,
-        })
-        return `【腾讯云 OCR（混元失败兜底）】\n${text.trim()}`
-      }
-    } catch (e) {
-      this.logger.warn(`腾讯云 OCR 兜底失败: ${(e as Error).message}`)
-    }
     throw new Error(
-      '【解析失败】混元多模态调用失败且腾讯云 OCR 无结果。请确认：COS 存储已启用、HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、TENCENTCLOUD_SECRET_* 已配置、TENCENT_OCR_HTTP_URL 可用。',
+      '【解析失败】图片解析仅允许混元主链路：混元未返回有效正文或正文过短。请检查 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED/HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS，并确认文件已成功上传到 COS。',
     )
   }
 
@@ -697,31 +624,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     embeddedText: string,
     numpages: number,
   ): Promise<string> {
-    if (this.isFileParseHunyuanOnlyForUpload()) {
-      throw new Error(
-        '【解析失败】上传解析已统一为混元多模态：PDF 须由混元返回足够长的有效正文，但当前未成功。请核对：容器内 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED=1 或 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED=1、返回正文是否短于 HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF（默认 40）、混元 API 报错/超时（后端日志搜 tryDirectCosMultimodal failed 或 混元 OpenAI）。上传走 COS 仍需 COS_* 配置。若业务仍需腾讯云 PDF OCR 兜底，请设置 FILE_PARSE_TENCENT_OCR_FALLBACK=1 并重启后端。',
-      )
-    }
-
-    try {
-      const tencentMd = await this.pdfDocumentParse.runTencentFullPdfOcr(
-        filePath,
-        embeddedText,
-        numpages,
-        heartbeat,
-        { originalStoredPath: ctx.originalStoredPath },
-      )
-      if (tencentMd) {
-        this.logger.log('PDF：已使用腾讯云 OCR 完成全本逐页识别')
-        return tencentMd
-      }
-    } catch (e) {
-      const msg = (e as Error).message || String(e)
-      if (msg.startsWith('【解析失败】')) throw e
-      this.logger.warn(`腾讯云 PDF OCR 异常: ${msg}`)
-    }
     throw new Error(
-      '【解析失败】混元多模态与腾讯云 PDF OCR 均未返回有效结果；已禁用本地视觉/Tesseract 降级。请确认 COS、混元与 OCR 配置是否完整。',
+      '【解析失败】PDF 解析仅允许混元主链路：混元未返回足够长的有效正文。请核对 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED/HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF，并确认文件已上传至 COS。',
     )
   }
 
@@ -742,118 +646,48 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       uploaderId?: string | null
     },
   ): Promise<string> {
-    if (ctx.parseRetryHint === 'text_only') {
-      if (this.isFileParseForceHunyuan()) {
-        throw new Error(
-          '【解析失败】已开启 FILE_PARSE_FORCE_HUNYUAN=1 时不支持「仅提取内置文本」重试。请关闭 FILE_PARSE_FORCE_HUNYUAN 后再使用仅内置文本，或改用完整解析。',
-        )
-      }
-      await heartbeat('PDF_TEXT_LAYER', { phase: 'TEXT_LAYER', textOnly: true })
-      const { text, numpages } = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
-      if (!text.trim()) {
-        throw new Error(
-          '【解析失败】「仅内置文本」模式下未读取到文本层，可能为扫描版 PDF。请重新解析并取消「仅内置文本」，以启用完整 OCR。',
-        )
-      }
-      await heartbeat('PDF_TEXT_LAYER_OK', {
-        phase: 'TEXT_LAYER',
-        pageTotal: numpages,
-        message: 'text_only_ok',
-      })
-      return `【PDF 文本提取｜仅内置文本】\n${text.trim()}`
-    }
-
-    // 默认：整本先走混元理解与结构化输出（见 multimodalAnalysis.buildStructuredRequirementPrompt）；
-    // 不设 FILE_PARSE_PDF_HUNYUAN_FIRST=0 时不先做 pdf-parse 内置文本层探测。
-    if (this.fileParsePdfHunyuanFirst()) {
-      const sizeMb = ctx.fileBytes / (1024 * 1024)
-      await heartbeat('PDF', {
-        phase: 'PDF',
-        fileBytes: ctx.fileBytes,
-        message: 'hunyuan_first',
-        ...(sizeMb > 5
-          ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
-          : {}),
-      })
-      if (this.fileParsePdfPagedVisionEnabled()) {
-        const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
-          filePath,
-          async (p) => {
-            await heartbeat('HUNYUAN_COS_MULTIMODAL', {
-              phase: 'VISION',
-              message: 'hunyuan_pdf_page_batch',
-              pageCurrent: p.pageCurrent,
-              pageTotal: p.pageTotal,
-              batchIndex: p.batchIndex,
-              batchTotal: p.batchTotal,
-            })
-          },
-        )
-        if (visionPaged?.text?.trim()) {
-          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
-            phase: 'VISION',
-            message: 'hunyuan_pdf_page_batch_done',
-            chars: visionPaged.text.length,
-          })
-          this.logger.log(
-            `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
-          )
-          return visionPaged.text
-        }
-        this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读兼容链路')
-      }
-      const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
-      if (hunyuanBody) return hunyuanBody
-
-      let text = ''
-      let numpages = 0
-      try {
-        const meta = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
-        text = meta.text
-        numpages = meta.numpages
-      } catch (e) {
-        this.logger.warn(`pdf-parse 失败（混元未命中后供 OCR 参考）: ${(e as Error).message}`)
-      }
-      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, text, numpages)
-    }
-
     const sizeMb = ctx.fileBytes / (1024 * 1024)
-    await heartbeat('PDF_TEXT_LAYER', {
-      phase: 'TEXT_LAYER',
+    await heartbeat('PDF', {
+      phase: 'PDF',
       fileBytes: ctx.fileBytes,
+      message: 'hunyuan_primary',
       ...(sizeMb > 5
-        ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), message: 'large_pdf_eta' }
+        ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
         : {}),
     })
 
-    let text = ''
-    let numpages = 0
-    try {
-      const meta = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
-      text = meta.text
-      numpages = meta.numpages
-    } catch (e) {
-      this.logger.warn(`pdf-parse 失败: ${(e as Error).message}`)
-    }
-
-    await heartbeat('PDF_TEXT_LAYER', {
-      phase: 'TEXT_LAYER',
-      extractedChars: text.trim().length,
-      pageTotal: numpages,
-    })
-
-    const quality = this.pdfDocumentParse.evaluateTextLayerSufficiency(text, numpages)
-    const { garbledRatio, sufficient: textSufficient } = quality
-    if (!textSufficient) {
-      this.logger.warn(
-        `PDF 文本层不足或质量偏低（字数 ${text.trim().length}，乱码占比 ${(garbledRatio * 100).toFixed(1)}%，阈值字数 ${quality.minLen}、乱码上限 ${(quality.garbledMax * 100).toFixed(0)}%）；将优先混元多模态；默认不再降级腾讯云 PDF OCR（设 FILE_PARSE_TENCENT_OCR_FALLBACK=1 可恢复兜底）。`,
+    if (this.fileParsePdfPagedVisionEnabled()) {
+      const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
+        filePath,
+        async (p) => {
+          await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+            phase: 'VISION',
+            message: 'hunyuan_pdf_page_batch',
+            pageCurrent: p.pageCurrent,
+            pageTotal: p.pageTotal,
+            batchIndex: p.batchIndex,
+            batchTotal: p.batchTotal,
+          })
+        },
       )
+      if (visionPaged?.text?.trim()) {
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_pdf_page_batch_done',
+          chars: visionPaged.text.length,
+        })
+        this.logger.log(
+          `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
+        )
+        return visionPaged.text
+      }
+      this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读 COS 兼容链路')
     }
 
-    const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, text)
+    const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
     if (hunyuanBody) return hunyuanBody
 
-    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, text, numpages)
+    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, '', 0)
   }
 
   private getOcrBatchSize(): number {
@@ -1487,23 +1321,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
     }
 
-    // COS：合并结果直接内存上传，不向 UPLOAD_DIR 写入整文件
-    if (this.cosStorage.isConfigured()) {
-      const multerLike = {
-        buffer: final,
-        filename,
-        originalname: dto.originalName,
-        mimetype: dto.mimeType,
-        size: final.length,
-      } as Express.Multer.File
-      return this.saveUploadedFile(multerLike, uploaderId)
+    if (!this.cosStorage.isConfigured()) {
+      throw new BadRequestException(
+        '分片合并后上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+      )
     }
-
-    const destPath = path.join(this.uploadDir, filename)
-    fs.writeFileSync(destPath, final)
-
     const multerLike = {
-      path: destPath,
+      buffer: final,
       filename,
       originalname: dto.originalName,
       mimetype: dto.mimeType,
