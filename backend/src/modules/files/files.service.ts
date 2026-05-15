@@ -299,23 +299,23 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     let effectivePath = cosPath
     let cosTempFile: string | null = null
-    if (CosStorageService.isCosUri(cosPath)) {
-      if (!this.cosStorage.isConfigured()) {
-        throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
-      }
-      await heartbeat('COS_DOWNLOAD', { phase: 'DOWNLOAD', message: 'cos_download_start' })
-      try {
-        cosTempFile = await this.cosStorage.downloadToTempFile(cosPath)
-        effectivePath = cosTempFile
-        await heartbeat('COS_DOWNLOAD_OK', { phase: 'DOWNLOAD', message: 'cos_download_done' })
-      } catch (e) {
-        throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
-      }
-    }
 
     try {
-    try {
       let content = ''
+
+      if (CosStorageService.isCosUri(cosPath)) {
+        if (!this.cosStorage.isConfigured()) {
+          throw new Error('【解析失败】文件在 COS 上，但服务端未配置 COS 密钥')
+        }
+        await heartbeat('COS_DOWNLOAD', { phase: 'DOWNLOAD', message: 'cos_download_start' })
+        try {
+          cosTempFile = await this.cosStorage.downloadToTempFile(cosPath)
+          effectivePath = cosTempFile
+          await heartbeat('COS_DOWNLOAD_OK', { phase: 'DOWNLOAD', message: 'cos_download_done' })
+        } catch (e) {
+          throw new Error(`【解析失败】从 COS 下载失败：${(e as Error).message}`)
+        }
+      }
 
       // 再次确认文件存在且非空（避免零字节文件进入 pdf-to-img 等链路）
       if (!effectivePath || !fs.existsSync(effectivePath)) {
@@ -422,7 +422,6 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         throw e
       }
       this.logger.error(`文件解析失败: ${fileId}`, err as Error)
-    }
     } finally {
       if (cosTempFile && fs.existsSync(cosTempFile)) {
         try {
