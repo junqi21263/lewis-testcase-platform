@@ -2,18 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search,
-  Trash2,
-  Eye,
   ChevronLeft,
   ChevronRight,
   RotateCcw,
-  Archive,
-  ArchiveRestore,
-  Download,
-  Share2,
-  Copy,
-  Pencil,
-  Loader2,
   Filter,
   ArrowUpDown,
   ArrowUp,
@@ -21,7 +12,6 @@ import {
   Settings2,
   RefreshCw,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
@@ -30,7 +20,13 @@ import { Separator } from '@/components/ui/separator'
 import { recordsApi, type RecordsListQuery, type RecordsSummary } from '@/api/records'
 import { settingsApi } from '@/api/settings'
 import { filesApi } from '@/api/files'
-import { formatDate, generationRecordStatusClass } from '@/utils/format'
+import { formatDate } from '@/utils/format'
+import { copyTextToClipboard } from '@/utils/clipboard'
+import { rec, recordStatusBadge } from '@/utils/recordsUi'
+import { RecordsEmptyState } from '@/components/records/RecordsEmptyState'
+import { RecordsSegmentedTabs } from '@/components/records/RecordsSegmentedTabs'
+import { RecordsBatchBar } from '@/components/records/RecordsBatchBar'
+import { RecordsRowActions } from '@/components/records/RecordsRowActions'
 import type { GenerationRecord, GenerationStatus } from '@/types'
 import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -289,7 +285,6 @@ export default function RecordsPage() {
     setModelPick([])
     setSourcePick([])
     setPage(1)
-    toast.success('已重置筛选')
   }
 
   const onSortHeader = (field: 'createdAt' | 'caseCount') => {
@@ -408,12 +403,9 @@ export default function RecordsPage() {
 
   const copyShare = async (r: GenerationRecord) => {
     const url = `${window.location.origin}/records/${r.id}`
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success('链接已复制')
-    } catch {
-      toast.error('复制失败')
-    }
+    const ok = await copyTextToClipboard(url)
+    if (ok) toast.success('链接已复制')
+    else toast.error('复制失败，请检查浏览器权限')
   }
 
   const exportOne = (r: GenerationRecord) => {
@@ -475,7 +467,6 @@ export default function RecordsPage() {
   const applyPreset = (id: DatePresetId) => {
     setDatePreset(id)
     setPage(1)
-    if (id !== 'custom') toast.success('已应用时间范围')
   }
 
   const gridTemplate = useMemo(() => {
@@ -488,10 +479,56 @@ export default function RecordsPage() {
       cols.duration ? '72px' : '',
       cols.created ? '120px' : '',
       cols.operator ? '88px' : '',
-      'minmax(272px, 1fr)',
+      '120px',
     ].filter(Boolean)
     return parts.join(' ')
   }, [cols])
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      !!debouncedKeyword ||
+      statusSet.size > 0 ||
+      datePreset !== 'custom' ||
+      !!dateFrom ||
+      !!dateTo ||
+      caseBucket !== 'all' ||
+      modelPick.length > 0 ||
+      sourcePick.length > 0
+    )
+  }, [debouncedKeyword, statusSet, datePreset, dateFrom, dateTo, caseBucket, modelPick, sourcePick])
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = []
+    if (debouncedKeyword) parts.push(`关键词「${debouncedKeyword}」`)
+    if (statusSet.size) {
+      parts.push([...statusSet].map((s) => statusLabels[s]).join('、'))
+    }
+    if (datePreset !== 'custom') {
+      const labels: Record<string, string> = {
+        today: '今天',
+        '7d': '近7天',
+        '30d': '近30天',
+        thisMonth: '本月',
+        lastMonth: '上月',
+      }
+      parts.push(labels[datePreset] ?? '自定义时间')
+    } else if (dateFrom || dateTo) {
+      parts.push(`日期 ${dateFrom || '…'} — ${dateTo || '…'}`)
+    }
+    if (modelPick.length) parts.push(`模型 ${modelPick.length} 项`)
+    if (caseBucket !== 'all') parts.push('用例数筛选')
+    if (sourcePick.length) parts.push('来源筛选')
+    return parts.length ? `已应用：${parts.join(' · ')}` : ''
+  }, [
+    debouncedKeyword,
+    statusSet,
+    datePreset,
+    dateFrom,
+    dateTo,
+    modelPick,
+    caseBucket,
+    sourcePick,
+  ])
 
   const toggleCol = (k: RecordsColumnKey) => {
     setCols((prev) => {
@@ -503,42 +540,34 @@ export default function RecordsPage() {
 
   const confirmCount = confirm.type === 'none' ? 0 : confirm.ids.length
 
+  const emptyVariant =
+    view === 'recycle'
+      ? 'recycle'
+      : hasActiveFilters
+        ? 'no-match'
+        : 'empty'
+
   return (
-    <div className="space-y-4 min-w-0 max-w-[1400px] mx-auto pb-24">
-      <div>
-        <h1 className="text-2xl font-bold">生成记录</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          查看与管理 AI 用例生成历史 · 支持筛选、排序、批量与回收站
-        </p>
-      </div>
-
-      {/* 主 Tab + 顶部固定筛选 */}
-      <div className="sticky top-0 z-30 -mx-2 space-y-3 bg-background/75 px-2 py-2 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.55)] backdrop-blur-xl dark:bg-background/55 dark:shadow-[0_12px_48px_-20px_rgba(0,0,0,0.75)]">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={view === 'list' ? 'default' : 'outline'}
-            onClick={() => {
-              setView('list')
-              setPage(1)
-            }}
-          >
-            全部记录
-          </Button>
-          <Button
-            size="sm"
-            variant={view === 'recycle' ? 'default' : 'outline'}
-            onClick={() => {
-              setView('recycle')
-              setPage(1)
-            }}
-          >
-            回收站
-          </Button>
+    <div className={cn(rec.page, rec.container, 'space-y-6')}>
+      <header className="records-fade-up space-y-3">
+        <div>
+          <h1 className={rec.headerTitle}>生成记录</h1>
+          <p className={rec.headerSub}>
+            查看与管理 AI 用例生成历史，支持筛选、排序、批量与回收站
+          </p>
         </div>
+        <RecordsSegmentedTabs
+          view={view}
+          onChange={(v) => {
+            setView(v)
+            setPage(1)
+          }}
+        />
+      </header>
 
-        <Card className="shadow-sm">
-          <CardContent className="p-3 sm:p-4 space-y-3">
+      <div className="records-fade-up-d1 sticky top-0 z-20 space-y-2">
+        <div className={rec.filterPanel}>
+          <div className="space-y-2.5">
             <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
               <div className="flex flex-1 items-center gap-2 min-w-0">
                 <div className="relative flex-1 min-w-0 max-w-md">
@@ -775,61 +804,39 @@ export default function RecordsPage() {
                 })}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        {filterSummary ? <p className={rec.filterSummary}>{filterSummary}</p> : null}
       </div>
 
-      {selected.size > 0 && view === 'list' && (
-        <div className="sticky top-[1px] z-20 flex flex-wrap items-center gap-2 rounded-xl border-0 bg-muted/40 p-3 text-sm shadow-md ring-1 ring-inset ring-white/10 backdrop-blur-md dark:ring-white/8">
-          <span className="text-muted-foreground">已选 {selected.size} 条</span>
-          <Button size="sm" variant="destructive" onClick={() => runBatch('SOFT_DELETE')}>
-            批量删除
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => runBatch('ARCHIVE')}>
-            批量归档
-          </Button>
-          <Button size="sm" variant="outline" onClick={exportBatchJson}>
-            批量导出
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => toast('批量打标签功能即将开放', { icon: 'ℹ️' })}
-          >
-            批量打标签
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-            清除选择
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => void selectAllMatching()}>
-            全选符合条件（≤500）
-          </Button>
-        </div>
+      {selected.size > 0 && (
+        <RecordsBatchBar
+          count={selected.size}
+          mode={view}
+          onExport={view === 'list' ? exportBatchJson : undefined}
+          onArchive={view === 'list' ? () => runBatch('ARCHIVE') : undefined}
+          onDelete={
+            view === 'list'
+              ? () => setConfirm({ type: 'soft_delete', ids: [...selected] })
+              : undefined
+          }
+          onRestore={view === 'recycle' ? () => runBatch('RESTORE') : undefined}
+          onHardDelete={
+            view === 'recycle'
+              ? () => setConfirm({ type: 'hard_delete', ids: [...selected] })
+              : undefined
+          }
+          onClear={() => setSelected(new Set())}
+          onSelectAllMatching={view === 'list' ? () => void selectAllMatching() : undefined}
+        />
       )}
 
-      {view === 'recycle' && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border-0 bg-muted/40 p-3 text-sm shadow-md ring-1 ring-inset ring-white/10 backdrop-blur-md dark:ring-white/8">
-          <span className="text-muted-foreground">已选 {selected.size} 条</span>
-          <Button size="sm" variant="outline" onClick={() => runBatch('RESTORE')}>
-            批量恢复
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() =>
-              setConfirm({ type: 'hard_delete', ids: [...selected] })
-            }
-          >
-            批量彻底删除
-          </Button>
-        </div>
-      )}
-
-      <Card>
-        <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
-          <CardTitle className="text-base">
+      <section className={cn(rec.tablePanel, 'records-fade-up-d2')}>
+        <div className={cn(rec.tablePanelInner, 'border-b border-workspace-panel-border/55 pb-3 dark:border-white/[0.06]')}>
+          <div className="flex flex-row items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-workspace-text-primary">
             {loading ? '加载中…' : `共 ${total} 条`}
-          </CardTitle>
+          </h2>
           <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
@@ -838,8 +845,9 @@ export default function RecordsPage() {
             />
             全选本页
           </label>
-        </CardHeader>
-        <CardContent className="min-w-0">
+          </div>
+        </div>
+        <div className={cn(rec.tablePanelInner, 'min-w-0', loading && 'records-table-loading opacity-70')}>
           {error && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border-0 bg-destructive/10 p-4 ring-1 ring-inset ring-destructive/35 backdrop-blur-sm">
               <span className="text-sm">{error}</span>
@@ -859,14 +867,12 @@ export default function RecordsPage() {
               ))}
             </div>
           ) : list.length === 0 ? (
-            <div className="py-16 text-center space-y-4">
-              <p className="text-muted-foreground">
-                {view === 'recycle' ? '回收站为空' : '暂无记录或没有符合筛选的结果'}
-              </p>
-              {view === 'list' && (
-                <Button onClick={() => navigate('/generate')}>去生成用例</Button>
-              )}
-            </div>
+            <RecordsEmptyState
+              variant={emptyVariant}
+              onClearFilters={clearAllFilters}
+              onGoList={() => { setView('list'); setPage(1) }}
+              onGoGenerate={() => navigate('/generate')}
+            />
           ) : (
             <div
               ref={listRef}
@@ -877,7 +883,7 @@ export default function RecordsPage() {
               onKeyDown={onKeyDown}
             >
               <div
-                className="grid min-w-[1012px] gap-2 bg-muted/35 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.14)] backdrop-blur-sm dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.06)]"
+                className={rec.tableHead + " min-w-[920px]"}
                 style={{ gridTemplateColumns: gridTemplate }}
               >
                 <span />
@@ -916,9 +922,11 @@ export default function RecordsPage() {
                     <div
                       role="row"
                       className={cn(
-                        'grid cursor-pointer gap-2 px-3 py-2 items-center shadow-[inset_0_-1px_0_0_hsl(var(--border)_/_0.1)] transition-colors last:shadow-none dark:shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.04)]',
-                        expanded ? 'bg-accent/40' : 'hover:bg-accent/30',
-                        focused && 'ring-1 ring-ring ring-inset',
+                        rec.tableRow,
+                        rec.tableRowHover,
+                        selected.has(r.id) && rec.tableRowSelected,
+                        expanded && 'bg-workspace-panel-muted/50',
+                        focused && !selected.has(r.id) && 'bg-workspace-panel-muted/35',
                       )}
                       style={{ gridTemplateColumns: gridTemplate }}
                       onClick={() => {
@@ -944,7 +952,7 @@ export default function RecordsPage() {
                           variant="outline"
                           className={cn(
                             'text-[10px] mt-1',
-                            generationRecordStatusClass[r.status],
+                            recordStatusBadge(r.status),
                           )}
                         >
                           {statusLabels[r.status]}
@@ -974,119 +982,20 @@ export default function RecordsPage() {
                           {r.creator?.username ?? '—'}
                         </span>
                       )}
-                      <div
-                        className="flex items-center justify-end gap-2 flex-nowrap min-w-0 overflow-x-auto px-0.5 -mr-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {rowLoading === r.id ? (
-                          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                        ) : (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0"
-                              title="查看详情"
-                              onClick={() => navigate(`/records/${r.id}`)}
-                            >
-                              <Eye />
-                            </Button>
-                            {!inRecycle && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  title="一键复用"
-                                  onClick={() => void openReuse(r)}
-                                >
-                                  <Copy />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  title="快速导出"
-                                  onClick={() => exportOne(r)}
-                                >
-                                  <Download />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  title="编辑（带入生成页）"
-                                  onClick={() => void openReuse(r)}
-                                >
-                                  <Pencil />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  title="分享链接"
-                                  onClick={() => void copyShare(r)}
-                                >
-                                  <Share2 />
-                                </Button>
-                                {r.status !== 'ARCHIVED' ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0"
-                                    title="归档"
-                                    onClick={() => void handleRowAction(r, 'archive')}
-                                  >
-                                    <Archive />
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0"
-                                    title="恢复状态"
-                                    onClick={() => void handleRowAction(r, 'patch_active')}
-                                  >
-                                    <ArchiveRestore />
-                                  </Button>
-                                )}
-                              </>
-                            )}
-                            {inRecycle ? (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  title="恢复"
-                                  onClick={() => void handleRowAction(r, 'restore')}
-                                >
-                                  <ArchiveRestore />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0 text-destructive"
-                                  title="彻底删除"
-                                  onClick={() => setConfirm({ type: 'hard_delete', ids: [r.id] })}
-                                >
-                                  <Trash2 />
-                                </Button>
-                              </>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0 text-destructive"
-                                title="删除"
-                                onClick={() => setConfirm({ type: 'soft_delete', ids: [r.id] })}
-                              >
-                                <Trash2 />
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
+                      <RecordsRowActions
+                        record={r}
+                        inRecycle={inRecycle}
+                        loading={rowLoading === r.id}
+                        onView={() => navigate(`/records/${r.id}`)}
+                        onReuse={() => void openReuse(r)}
+                        onExport={() => exportOne(r)}
+                        onShare={() => void copyShare(r)}
+                        onArchive={() => void handleRowAction(r, 'archive')}
+                        onUnarchive={() => void handleRowAction(r, 'patch_active')}
+                        onRestore={() => void handleRowAction(r, 'restore')}
+                        onSoftDelete={() => setConfirm({ type: 'soft_delete', ids: [r.id] })}
+                        onHardDelete={() => setConfirm({ type: 'hard_delete', ids: [r.id] })}
+                      />
                     </div>
                     {expanded && (
                       <div className="space-y-2 bg-muted/25 px-4 py-3 text-xs shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.12)] backdrop-blur-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
@@ -1105,63 +1014,34 @@ export default function RecordsPage() {
               })}
             </div>
           )}
+        </div>
 
-          {!loading && list.length > 0 && (
-            <div className="mt-2 flex flex-col items-stretch justify-between gap-3 pt-4 shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.14)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] sm:flex-row sm:items-center">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  第 {page} / {totalPages} 页 · 每页
-                </span>
-                <select
-                  className="h-8 rounded-md border-0 bg-background/55 px-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
-                  value={pageSize}
-                  onChange={(e) => {
-                    const n = +e.target.value
-                    setPageSize(n)
-                    saveRecordsPageSize(n)
-                    setPage(1)
-                  }}
-                >
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span>条</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
+        {!loading && list.length > 0 && (
+          <div className={rec.paginationFooter}>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-workspace-text-muted">
+              <span>第 {page} / {totalPages} 页</span>
+              <span>·</span>
+              <span>每页</span>
+              <select className={cn(rec.control, rec.controlSm)} value={pageSize} onChange={(e) => { const n = +e.target.value; setPageSize(n); saveRecordsPageSize(n); setPage(1) }}>{[10,20,50,100].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+              <span>条 · 共 {total} 条</span>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" className={rec.iconBtn} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+              <Button variant="outline" size="icon" className={rec.iconBtn} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="w-4 h-4" /></Button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <ConfirmDialog
         open={confirm.type !== 'none'}
-        title={confirm.type === 'hard_delete' ? '彻底删除确认' : '移入回收站确认'}
+        title={confirm.type === 'hard_delete' ? '永久删除记录？' : '删除生成记录？'}
         description={
           confirm.type === 'hard_delete'
-            ? `将永久删除 ${confirmCount} 条记录，无法恢复。`
-            : `将 ${confirmCount} 条记录移入回收站，可在回收站恢复。`
+            ? `将永久删除 ${confirmCount} 条记录，该操作不可恢复，请确认是否继续。`
+            : `将 ${confirmCount} 条记录移入回收站，可在回收站中恢复或永久删除。`
         }
-        confirmText={confirm.type === 'hard_delete' ? '确认删除' : '移入回收站'}
+        confirmText={confirm.type === 'hard_delete' ? '永久删除' : '删除'}
         confirmVariant="destructive"
         onCancel={() => setConfirm({ type: 'none' })}
         onConfirm={async () => {

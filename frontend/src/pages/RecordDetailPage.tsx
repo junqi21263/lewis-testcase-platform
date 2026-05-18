@@ -43,6 +43,7 @@ import { appConfirm } from '@/store/appConfirmStore'
 import { casesDataSnapshot, normalizeSteps, stepsToLines } from '@/components/record-detail/caseUtils'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/cn'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const statusLabels: Record<GenerationStatus, string> = {
   PENDING: '等待中',
@@ -218,12 +219,9 @@ export default function RecordDetailPage() {
   }
 
   const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(prompt)
-      toast.success('已复制全文')
-    } catch {
-      toast.error('复制失败')
-    }
+    const ok = await copyTextToClipboard(prompt)
+    if (ok) toast.success('已复制全文')
+    else toast.error('复制失败，请检查浏览器权限')
   }
 
   const handoffGenerate = async () => {
@@ -381,13 +379,13 @@ export default function RecordDetailPage() {
   const copyShare = async () => {
     if (!id) return
     if (!canEdit) {
-      try {
-        const loginLink = `${window.location.origin}/records/${id}`
-        await navigator.clipboard.writeText(`${loginLink}\n（需登录后访问详情）`)
+      const loginLink = `${window.location.origin}/records/${id}`
+      const ok = await copyTextToClipboard(`${loginLink}\n（需登录后访问详情）`)
+      if (ok) {
         toast.success('已复制详情链接（登录访问）')
         setShareOpen(false)
-      } catch {
-        toast.error('复制失败')
+      } else {
+        toast.error('复制失败，请检查浏览器权限')
       }
       return
     }
@@ -395,11 +393,15 @@ export default function RecordDetailPage() {
     try {
       const res = await recordsApi.createShare(id, { expiresDays: shareDays })
       const url = `${window.location.origin}${res.path}`
-      await navigator.clipboard.writeText(
+      const ok = await copyTextToClipboard(
         `${url}\n（免登录只读分享，约定 ${shareDays} 天内有效）`,
       )
-      toast.success('分享链接已复制')
-      setShareOpen(false)
+      if (ok) {
+        toast.success('分享链接已复制')
+        setShareOpen(false)
+      } else {
+        toast.error('复制失败，请检查浏览器权限')
+      }
     } catch {
       toast.error('创建分享失败')
     } finally {
@@ -1018,16 +1020,26 @@ export default function RecordDetailPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
+                  onClick={async () => {
                     const text =
                       record.promptTemplateSnapshot ?? record.template?.content ?? ''
-                    void navigator.clipboard.writeText(text)
-                    toast.success(
-                      record.promptTemplateSnapshot ? '已复制当时模板快照' : '已复制当前库模板正文',
-                    )
+                    if (!text.trim()) {
+                      toast.error('模板正文为空，无法复制')
+                      return
+                    }
+                    const ok = await copyTextToClipboard(text)
+                    if (ok) {
+                      toast.success(
+                        record.promptTemplateSnapshot
+                          ? '已复制生成时的模板快照'
+                          : '已复制当前库中的模板正文',
+                      )
+                    } else {
+                      toast.error('复制失败，请检查浏览器权限')
+                    }
                   }}
                 >
-                  复制模板全文（优先快照）
+                  复制模板正文
                 </Button>
               </div>
             )}

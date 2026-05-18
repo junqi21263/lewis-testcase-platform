@@ -63,6 +63,12 @@
     --workspace-theme-toggle-active-icon: 43 96% 56%;
     --workspace-theme-toggle-inactive-icon: 215 18% 55%;
 
+    /* ---------- Records page（生成记录）---------- */
+    --records-row-hover-bg: 220 48% 97%;
+    --records-row-selected-bg: 195 85% 94%;
+    --records-row-accent: 188 78% 42%;
+    --records-filter-bg: 220 40% 96%;
+
     /* ---------- Generate Case Studio tokens ---------- */
     --gcs-page-bg: 226 56% 98%;
     --gcs-panel-bg: 0 0% 100%;
@@ -297,6 +303,11 @@
     /* 深色顶栏：太阳为暖黄、月亮为淡紫蓝，保证与轨道对比清晰 */
     --workspace-theme-toggle-active-icon: 258 96% 82%;
     --workspace-theme-toggle-inactive-icon: 45 100% 68%;
+
+    --records-row-hover-bg: 217 34% 14%;
+    --records-row-selected-bg: 217 38% 16%;
+    --records-row-accent: 188 78% 52%;
+    --records-filter-bg: 217 32% 13%;
 
     --gcs-page-bg: 222 46% 7%;
     --gcs-panel-bg: 222 48% 9%;
@@ -1765,5 +1776,58 @@ html.light .login-page-root {
   .login-submit-btn--busy::before {
     animation: none;
     opacity: 0;
+  }
+}
+
+/* ---------- Records page motion ---------- */
+@keyframes records-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes records-spark-breathe {
+  0%,
+  100% {
+    opacity: 0.88;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(0, -3px, 0) scale(1.04);
+  }
+}
+
+.records-fade-up {
+  animation: records-fade-up 0.42s ease-out both;
+}
+
+.records-fade-up-d1 {
+  animation: records-fade-up 0.48s ease-out 0.06s both;
+}
+
+.records-fade-up-d2 {
+  animation: records-fade-up 0.52s ease-out 0.12s both;
+}
+
+.records-spark-icon {
+  animation: records-spark-breathe 3.2s ease-in-out infinite;
+}
+
+.records-table-loading {
+  transition: opacity 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .records-fade-up,
+  .records-fade-up-d1,
+  .records-fade-up-d2,
+  .records-spark-icon {
+    animation: none;
   }
 }
