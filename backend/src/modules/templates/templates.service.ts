@@ -2,6 +2,9 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { createHash } from 'crypto'
 import { PrismaService } from '@/prisma/prisma.service'
 import { RedisService } from '@/redis/redis.service'
+import { Prisma, type TemplateCategory } from '@prisma/client'
+import type { CreateTemplateDto } from './dto/create-template.dto'
+import type { UpdateTemplateDto } from './dto/update-template.dto'
 
 type ListParams = { page?: number; pageSize?: number; category?: string; keyword?: string }
 
@@ -71,10 +74,12 @@ export class TemplatesService {
       }
     }
 
-    const { page = 1, pageSize = 20, category, keyword } = params
+    const page = Math.max(1, Number(params.page) || 1)
+    const pageSize = Math.min(100, Math.max(1, Number(params.pageSize) || 20))
+    const { category, keyword } = params
     const where = {
       OR: [{ creatorId: userId }, { isPublic: true }],
-      ...(category ? { category: category as any } : {}),
+      ...(category ? { category: category as TemplateCategory } : {}),
       ...(keyword ? { name: { contains: keyword, mode: 'insensitive' as const } } : {}),
     }
     const [list, total] = await Promise.all([
@@ -102,27 +107,46 @@ export class TemplatesService {
     return payload
   }
 
-  async getById(id: string) {
-    const tpl = await this.prisma.promptTemplate.findUnique({ where: { id } })
+  async getById(id: string, userId: string) {
+    const tpl = await this.prisma.promptTemplate.findFirst({
+      where: {
+        id,
+        OR: [{ creatorId: userId }, { isPublic: true }],
+      },
+    })
     if (!tpl) throw new NotFoundException('模板不存在')
     return tpl
   }
 
-  async create(userId: string, data: any) {
+  async create(userId: string, data: CreateTemplateDto) {
+    const createData: Prisma.PromptTemplateUncheckedCreateInput = {
+      ...data,
+      creatorId: userId,
+      variables: JSON.parse(JSON.stringify(data.variables ?? [])) as Prisma.InputJsonValue,
+    }
     const created = await this.prisma.promptTemplate.create({
-      data: { ...data, creatorId: userId, variables: data.variables || [] },
+      data: createData,
     })
     await this.invalidateAllListCache()
     return created
   }
 
-  async update(id: string, userId: string, data: any, role?: string) {
+  async update(id: string, userId: string, data: UpdateTemplateDto, role?: string) {
     const tpl = await this.prisma.promptTemplate.findUnique({ where: { id } })
     if (!tpl) throw new NotFoundException('模板不存在')
     const isOwner = tpl.creatorId === userId
     const isSuper = role === 'SUPER_ADMIN'
     if (!isOwner && !isSuper) throw new ForbiddenException('无权修改该模板')
-    const updated = await this.prisma.promptTemplate.update({ where: { id }, data })
+    const updateData: Prisma.PromptTemplateUpdateInput = {}
+    if (data.name !== undefined) updateData.name = data.name
+    if (data.description !== undefined) updateData.description = data.description
+    if (data.category !== undefined) updateData.category = data.category
+    if (data.content !== undefined) updateData.content = data.content
+    if (data.isPublic !== undefined) updateData.isPublic = data.isPublic
+    if (data.variables !== undefined) {
+      updateData.variables = JSON.parse(JSON.stringify(data.variables)) as Prisma.InputJsonValue
+    }
+    const updated = await this.prisma.promptTemplate.update({ where: { id }, data: updateData })
     await this.invalidateAllListCache()
     return updated
   }

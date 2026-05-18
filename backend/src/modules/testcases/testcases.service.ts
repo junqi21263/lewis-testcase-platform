@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '@/prisma/prisma.service'
 import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
 import type { CreateTestCaseDto } from './dto/create-test-case.dto'
@@ -62,6 +62,23 @@ function tagsCellExcludingModulePrefix(tags: unknown): string {
 export class TestcasesService {
   constructor(private prisma: PrismaService) {}
 
+  private async getOwnedSuiteOrThrow(id: string, userId: string) {
+    const suite = await this.prisma.testSuite.findFirst({
+      where: { id, creatorId: userId },
+      include: { cases: { orderBy: { createdAt: 'asc' } }, creator: { select: { id: true, username: true } } },
+    })
+    if (!suite) throw new NotFoundException('用例集不存在')
+    return suite
+  }
+
+  private async getOwnedCaseOrThrow(id: string, userId: string) {
+    const c = await this.prisma.testCase.findFirst({
+      where: { id, suite: { creatorId: userId } },
+    })
+    if (!c) throw new NotFoundException('用例不存在')
+    return c
+  }
+
   async getSummary(userId: string) {
     const where = { creatorId: userId }
     const [totalSuites, totalCasesAgg] = await Promise.all([
@@ -77,6 +94,8 @@ export class TestcasesService {
   // ---- 用例集 ----
 
   async getSuites(userId: string, page = 1, pageSize = 10, keyword?: string) {
+    const p = Math.max(1, Number(page) || 1)
+    const ps = Math.min(100, Math.max(1, Number(pageSize) || 10))
     const where = {
       creatorId: userId,
       ...(keyword ? { name: { contains: keyword, mode: 'insensitive' as const } } : {}),
@@ -84,8 +103,8 @@ export class TestcasesService {
     const [list, total] = await Promise.all([
       this.prisma.testSuite.findMany({
         where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: (p - 1) * ps,
+        take: ps,
         orderBy: { createdAt: 'desc' },
         include: { _count: { select: { cases: true } }, creator: { select: { id: true, username: true } } },
       }),
@@ -93,17 +112,12 @@ export class TestcasesService {
     ])
     return {
       list: list.map((s) => ({ ...s, caseCount: s._count.cases, _count: undefined })),
-      total, page, pageSize,
+      total, page: p, pageSize: ps,
     }
   }
 
-  async getSuiteById(id: string) {
-    const suite = await this.prisma.testSuite.findUnique({
-      where: { id },
-      include: { cases: { orderBy: { createdAt: 'asc' } }, creator: { select: { id: true, username: true } } },
-    })
-    if (!suite) throw new NotFoundException('用例集不存在')
-    return suite
+  async getSuiteById(id: string, userId: string) {
+    return this.getOwnedSuiteOrThrow(id, userId)
   }
 
   async createSuite(userId: string, data: { name: string; description?: string; projectName?: string }) {
@@ -128,22 +142,21 @@ export class TestcasesService {
 
   // ---- 用例 ----
 
-  async getCasesBySuiteId(suiteId: string) {
+  async getCasesBySuiteId(suiteId: string, userId: string) {
+    await this.getOwnedSuiteOrThrow(suiteId, userId)
     return this.prisma.testCase.findMany({
       where: { suiteId },
       orderBy: { createdAt: 'asc' },
     })
   }
 
-  async updateCase(id: string, data: any) {
-    const c = await this.prisma.testCase.findUnique({ where: { id } })
-    if (!c) throw new NotFoundException('用例不存在')
+  async updateCase(id: string, userId: string, data: any) {
+    await this.getOwnedCaseOrThrow(id, userId)
     return this.prisma.testCase.update({ where: { id }, data })
   }
 
-  async deleteCase(id: string) {
-    const c = await this.prisma.testCase.findUnique({ where: { id } })
-    if (!c) throw new NotFoundException('用例不存在')
+  async deleteCase(id: string, userId: string) {
+    await this.getOwnedCaseOrThrow(id, userId)
     await this.prisma.testCase.delete({ where: { id } })
   }
 
@@ -175,12 +188,17 @@ export class TestcasesService {
   // ---- 导出 ----
 
   async exportSuite(suiteId: string, format: string, userId: string) {
-    const suite = await this.getSuiteById(suiteId)
+    const normalizedFormat = format.toUpperCase()
+    const allowed: ExportFormat[] = ['EXCEL', 'JSON', 'MARKDOWN']
+    if (!allowed.includes(normalizedFormat as ExportFormat)) {
+      throw new BadRequestException('不支持的导出格式')
+    }
+    const suite = await this.getSuiteById(suiteId, userId)
     let content: Buffer
     let filename: string
     let mimeType: string
 
-    switch (format.toUpperCase()) {
+    switch (normalizedFormat) {
       case 'EXCEL':
         ({ content, filename, mimeType } = await this.exportToExcel(suite))
         break
@@ -191,14 +209,14 @@ export class TestcasesService {
         ({ content, filename, mimeType } = this.exportToMarkdown(suite))
         break
       default:
-        ({ content, filename, mimeType } = this.exportToJson(suite))
+        throw new BadRequestException('不支持的导出格式')
     }
 
     // 记录下载日志
     await this.prisma.downloadRecord.create({
       data: {
         suiteId,
-        format: format as ExportFormat,
+        format: normalizedFormat as ExportFormat,
         downloadUrl: `/downloads/${filename}`,
         downloaderId: userId,
       },
@@ -213,7 +231,7 @@ export class TestcasesService {
           recordId: genRec.id,
           suiteId,
           operatorId: userId,
-          format: format.toUpperCase() as ExportFormat,
+          format: normalizedFormat as ExportFormat,
           fileSize: content.length,
           downloadCount: 1,
           storagePath: `/downloads/${filename}`,

@@ -9,6 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import * as path from 'path'
+import { Transform } from 'stream'
+import { pipeline } from 'stream/promises'
 import { FileStatus, FileType, Prisma } from '@prisma/client'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 import { PrismaService } from '@/prisma/prisma.service'
@@ -257,7 +259,58 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         fileType,
         mimeType: file.mimetype,
       })
-      return this.getFileById(created.id)
+      return this.getFileById(created.id, uploaderId)
+    } catch (e) {
+      this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
+      throw new BadRequestException(`文件上传到 COS 失败：${(e as Error).message}`)
+    }
+  }
+
+  /** 从本地路径上传（避免先整体读入内存），并创建上传记录 */
+  async saveUploadedFileFromPath(
+    localPath: string,
+    originalName: string,
+    mimeType: string,
+    uploaderId: string,
+  ) {
+    if (!fs.existsSync(localPath)) {
+      throw new BadRequestException('合并文件不存在，请重试')
+    }
+    const stat = fs.statSync(localPath)
+    if (stat.size < 1) {
+      throw new BadRequestException('合并后文件为空')
+    }
+    const fileType = this.detectFileType(mimeType, originalName)
+    const safeName = `${uuid()}${path.extname(originalName) || ''}`
+
+    if (!this.cosStorage.isConfigured()) {
+      throw new BadRequestException(
+        '分片合并后上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+      )
+    }
+
+    try {
+      const uri = await this.cosStorage.uploadLocalFile(localPath, originalName)
+      const created = await this.prisma.uploadedFile.create({
+        data: {
+          name: safeName,
+          originalName,
+          path: uri,
+          size: stat.size,
+          mimeType,
+          fileType,
+          status: FileStatus.PENDING,
+          parseStage: 'PENDING',
+          uploaderId,
+        },
+      })
+      await this.tryStartParseImmediately({
+        id: created.id,
+        path: uri,
+        fileType,
+        mimeType,
+      })
+      return this.getFileById(created.id, uploaderId)
     } catch (e) {
       this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
       throw new BadRequestException(`文件上传到 COS 失败：${(e as Error).message}`)
@@ -1023,19 +1076,21 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getFileList(userId: string, page = 1, pageSize = 10) {
+    const normalizedPage = Math.max(1, Number(page) || 1)
+    const normalizedPageSize = Math.min(100, Math.max(1, Number(pageSize) || 10))
     const [list, total] = await Promise.all([
       this.prisma.uploadedFile.findMany({
         where: { uploaderId: userId },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: (normalizedPage - 1) * normalizedPageSize,
+        take: normalizedPageSize,
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.uploadedFile.count({ where: { uploaderId: userId } }),
     ])
-    return { list, total, page, pageSize }
+    return { list, total, page: normalizedPage, pageSize: normalizedPageSize }
   }
 
-  async getFileById(id: string) {
+  async getFileByIdInternal(id: string) {
     const file = await this.prisma.uploadedFile.findUnique({ where: { id } })
     if (!file) throw new NotFoundException('文件不存在')
 
@@ -1061,9 +1116,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return file
   }
 
+  async getFileById(id: string, userId: string) {
+    const file = await this.prisma.uploadedFile.findFirst({ where: { id, uploaderId: userId } })
+    if (!file) throw new NotFoundException('文件不存在')
+    return this.getFileByIdInternal(file.id)
+  }
+
   async deleteFile(id: string, userId: string) {
-    const file = await this.getFileById(id)
-    if (file.uploaderId !== userId) throw new BadRequestException('无权删除该文件')
+    const file = await this.getFileById(id, userId)
 
     if (file.path) {
       if (CosStorageService.isCosUri(file.path)) {
@@ -1084,8 +1144,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /** 取消正在解析的任务 */
   async cancelTask(id: string, userId: string) {
-    const file = await this.getFileById(id)
-    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+    const file = await this.getFileById(id, userId)
 
     // 只能取消 PENDING 或 PARSING 状态的文件
     if (file.status !== FileStatus.PENDING && file.status !== FileStatus.PARSING) {
@@ -1118,8 +1177,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /** 重新排队解析（上传页「重试」）；可选仅内置文本层 */
   async retryParse(id: string, userId: string, opts?: { textOnly?: boolean }) {
-    const file = await this.getFileById(id)
-    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+    const file = await this.getFileById(id, userId)
     const canRetry =
       !!file.path &&
       (CosStorageService.isCosUri(file.path) || fs.existsSync(file.path))
@@ -1140,7 +1198,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
 
-    return this.getFileById(id)
+    return this.getFileById(id, userId)
   }
 
   /** SSE：订阅解析进度（每秒轮询 DB，终端状态或客户端断开时结束） */
@@ -1150,11 +1208,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     res: import('express').Response,
     req?: import('express').Request,
   ): Promise<void> {
-    const file = await this.getFileById(id)
-    if (file.uploaderId !== userId) {
-      res.status(403).end()
-      return
-    }
+    await this.getFileById(id, userId)
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
     res.setHeader('Cache-Control', 'no-cache, no-transform')
@@ -1177,7 +1231,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
     const tick = async () => {
       try {
-        const f = await this.getFileById(id)
+        const f = await this.getFileById(id, userId)
         const payload = {
           status: f.status,
           parseStage: f.parseStage,
@@ -1201,8 +1255,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
    * 用户在前端编辑「原始文本」后，重新脱敏 + 结构化（不重新跑 OCR/视觉）
    */
   async restructureFromEditedText(id: string, userId: string, text: string) {
-    const file = await this.getFileById(id)
-    if (file.uploaderId !== userId) throw new BadRequestException('无权操作该文件')
+    await this.getFileById(id, userId)
 
     const masked = maskSensitivePlainText(text)
     const { requirements: structured, cleanedText } =
@@ -1220,7 +1273,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       },
     })
 
-    return this.getFileById(id)
+    return this.getFileById(id, userId)
   }
 
   private maxUploadBytes(): number {
@@ -1295,46 +1348,55 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('chunkTotal 与会话不一致')
     }
 
-    const buffers: Buffer[] = []
-    for (let i = 0; i < dto.chunkTotal; i++) {
-      const p = path.join(dir, `part-${i}`)
-      if (!fs.existsSync(p)) {
-        throw new BadRequestException(`缺少分片 ${i + 1}/${dto.chunkTotal}`)
-      }
-      buffers.push(fs.readFileSync(p))
-    }
-
-    const final = Buffer.concat(buffers)
     const maxBytes = this.maxUploadBytes()
-    if (final.length > maxBytes) {
-      throw new BadRequestException(`合并后超过单文件限制（${Math.round(maxBytes / 1024 / 1024)} MB）`)
-    }
-    if (final.length < 1) {
-      throw new BadRequestException('合并后文件为空')
-    }
-
-    const ext = path.extname(dto.originalName) || '.bin'
-    const filename = `${uuid()}${ext}`
+    const mergedTmpPath = path.join(dir, `.merged-${uuid()}.tmp`)
+    let mergedBytes = 0
+    const limitErrorText = `合并后超过单文件限制（${Math.round(maxBytes / 1024 / 1024)} MB）`
 
     try {
-      fs.rmSync(dir, { recursive: true, force: true })
-    } catch (e) {
-      this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
-    }
+      for (let i = 0; i < dto.chunkTotal; i++) {
+        const partPath = path.join(dir, `part-${i}`)
+        if (!fs.existsSync(partPath)) {
+          throw new BadRequestException(`缺少分片 ${i + 1}/${dto.chunkTotal}`)
+        }
+        await pipeline(
+          fs.createReadStream(partPath),
+          new Transform({
+            transform: (chunk, _encoding, callback) => {
+              const piece = chunk as Buffer
+              mergedBytes += piece.length
+              if (mergedBytes > maxBytes) {
+                callback(new BadRequestException(limitErrorText))
+                return
+              }
+              callback(null, piece)
+            },
+          }),
+          fs.createWriteStream(mergedTmpPath, { flags: 'a' }),
+        )
+      }
 
-    if (!this.cosStorage.isConfigured()) {
-      throw new BadRequestException(
-        '分片合并后上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+      if (mergedBytes < 1) {
+        throw new BadRequestException('合并后文件为空')
+      }
+
+      return await this.saveUploadedFileFromPath(
+        mergedTmpPath,
+        dto.originalName,
+        dto.mimeType,
+        uploaderId,
       )
+    } finally {
+      try {
+        if (fs.existsSync(mergedTmpPath)) fs.unlinkSync(mergedTmpPath)
+      } catch (e) {
+        this.logger.warn(`清理临时合并文件失败: ${mergedTmpPath}`, e as Error)
+      }
+      try {
+        fs.rmSync(dir, { recursive: true, force: true })
+      } catch (e) {
+        this.logger.warn(`清理分片目录失败: ${dir}`, e as Error)
+      }
     }
-    const multerLike = {
-      buffer: final,
-      filename,
-      originalname: dto.originalName,
-      mimetype: dto.mimeType,
-      size: final.length,
-    } as Express.Multer.File
-
-    return this.saveUploadedFile(multerLike, uploaderId)
   }
 }

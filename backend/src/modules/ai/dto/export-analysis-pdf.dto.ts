@@ -28,5 +28,6 @@ export class ExportAnalysisPdfDto {
   @IsArray()
   @ArrayMaxSize(40)
   @IsString({ each: true })
+  @MaxLength(7_000_000, { each: true })
   mermaidImagesBase64?: string[]
 }

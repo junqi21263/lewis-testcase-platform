@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import { Request, Response } from 'express'
+import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 
 const DEFAULT_ERROR_MESSAGES: Record<number, string> = {
   [HttpStatus.BAD_REQUEST]: '请求参数错误',
@@ -77,10 +78,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>()
 
     const status = HttpStatus.INTERNAL_SERVER_ERROR
-    const message = exception instanceof Error ? exception.message : '服务器内部错误'
+    const isProd = process.env.NODE_ENV === 'production'
+    const rawMessage = exception instanceof Error ? exception.message : '服务器内部错误'
+    const message = isProd
+      ? DEFAULT_ERROR_MESSAGES[status] || '服务器内部错误'
+      : sanitizeErrorMessageForClient(rawMessage || '服务器内部错误', 1500)
+    const safeLogMessage = sanitizeErrorMessageForClient(rawMessage || '服务器内部错误', 3000)
 
     this.logger.error(
-      `${request.method} ${request.url} - Unhandled Exception`,
+      `${request.method} ${request.url} - Unhandled Exception: ${safeLogMessage}`,
       exception instanceof Error ? exception.stack : String(exception),
     )
 

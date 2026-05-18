@@ -5,6 +5,7 @@ interface CacheEntry {
   text: string
   /** epoch ms */
   expiresAt: number
+  textBytes: number
 }
 
 /**
@@ -15,6 +16,7 @@ interface CacheEntry {
 export class OcrCacheService implements OnModuleDestroy {
   private readonly logger = new Logger(OcrCacheService.name)
   private readonly store = new Map<string, CacheEntry>()
+  private totalTextBytes = 0
   private sweepTimer?: NodeJS.Timeout
 
   constructor(private readonly config: ConfigService) {
@@ -38,32 +40,85 @@ export class OcrCacheService implements OnModuleDestroy {
     return Math.round(d * 24 * 60 * 60 * 1000)
   }
 
+  private maxEntries(): number {
+    const raw = parseInt(this.config.get<string>('IMAGE_OCR_CACHE_MAX_ENTRIES') || '1000', 10)
+    if (!Number.isFinite(raw) || raw < 1) return 1000
+    return Math.min(raw, 20_000)
+  }
+
+  private maxTextBytes(): number {
+    const raw = parseInt(
+      this.config.get<string>('IMAGE_OCR_CACHE_MAX_TEXT_BYTES') || String(50 * 1024 * 1024),
+      10,
+    )
+    if (!Number.isFinite(raw) || raw < 1) return 50 * 1024 * 1024
+    return Math.min(raw, 512 * 1024 * 1024)
+  }
+
+  private approxBytes(text: string): number {
+    return Buffer.byteLength(text || '', 'utf8')
+  }
+
+  private evictIfNeeded() {
+    const maxEntries = this.maxEntries()
+    const maxBytes = this.maxTextBytes()
+    while (this.store.size > maxEntries || this.totalTextBytes > maxBytes) {
+      const oldest = this.store.keys().next().value as string | undefined
+      if (!oldest) break
+      const entry = this.store.get(oldest)
+      this.store.delete(oldest)
+      if (entry) this.totalTextBytes = Math.max(0, this.totalTextBytes - entry.textBytes)
+    }
+  }
+
   get(md5: string): string | null {
     if (this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') === '0') return null
     const e = this.store.get(md5)
     if (!e) return null
     if (Date.now() > e.expiresAt) {
       this.store.delete(md5)
+      this.totalTextBytes = Math.max(0, this.totalTextBytes - e.textBytes)
       return null
     }
+    // LRU: 访问后提升到最近使用
+    this.store.delete(md5)
+    this.store.set(md5, e)
     return e.text
   }
 
   set(md5: string, text: string): void {
     if (this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') === '0') return
-    this.store.set(md5, { text, expiresAt: Date.now() + this.ttlMs() })
+    const prev = this.store.get(md5)
+    if (prev) {
+      this.totalTextBytes = Math.max(0, this.totalTextBytes - prev.textBytes)
+      this.store.delete(md5)
+    }
+    const entry: CacheEntry = {
+      text,
+      expiresAt: Date.now() + this.ttlMs(),
+      textBytes: this.approxBytes(text),
+    }
+    this.store.set(md5, entry)
+    this.totalTextBytes += entry.textBytes
+    this.evictIfNeeded()
   }
 
   /** 运维 / 调试：清空全部 OCR 缓存 */
   clearAll(): number {
     const n = this.store.size
     this.store.clear()
+    this.totalTextBytes = 0
     this.logger.log(`OCR 缓存已清空，共 ${n} 条`)
     return n
   }
 
   deleteKey(md5: string): boolean {
-    return this.store.delete(md5)
+    const prev = this.store.get(md5)
+    const ok = this.store.delete(md5)
+    if (ok && prev) {
+      this.totalTextBytes = Math.max(0, this.totalTextBytes - prev.textBytes)
+    }
+    return ok
   }
 
   private sweep() {
@@ -72,6 +127,7 @@ export class OcrCacheService implements OnModuleDestroy {
     for (const [k, v] of this.store) {
       if (now > v.expiresAt) {
         this.store.delete(k)
+        this.totalTextBytes = Math.max(0, this.totalTextBytes - v.textBytes)
         removed++
       }
     }

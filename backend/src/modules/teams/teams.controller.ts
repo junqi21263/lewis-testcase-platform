@@ -3,6 +3,10 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { TeamsService } from './teams.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { UserRole } from '@prisma/client'
+import { CreateTeamDto } from './dto/create-team.dto'
+import { UpdateTeamDto } from './dto/update-team.dto'
+import { InviteMemberDto } from './dto/invite-member.dto'
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto'
 
 @ApiTags('团队管理')
 @ApiBearerAuth()
@@ -16,17 +20,17 @@ export class TeamsController {
   }
 
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.service.getById(id)
+  getById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.getById(id, userId)
   }
 
   @Post()
-  create(@CurrentUser('id') userId: string, @Body() data: { name: string; description?: string }) {
+  create(@CurrentUser('id') userId: string, @Body() data: CreateTeamDto) {
     return this.service.create(userId, data)
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: any) {
+  update(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: UpdateTeamDto) {
     return this.service.update(id, userId, data)
   }
 
@@ -36,26 +40,31 @@ export class TeamsController {
   }
 
   @Get(':id/members')
-  getMembers(@Param('id') teamId: string) {
-    return this.service.getMembers(teamId)
+  getMembers(@Param('id') teamId: string, @CurrentUser('id') userId: string) {
+    return this.service.getMembers(teamId, userId)
   }
 
   @Post(':id/members/invite')
-  inviteMember(@Param('id') teamId: string, @Body() data: { email: string; role: string }) {
-    return this.service.inviteMember(teamId, data)
+  inviteMember(
+    @Param('id') teamId: string,
+    @CurrentUser('id') userId: string,
+    @Body() data: InviteMemberDto,
+  ) {
+    return this.service.inviteMember(teamId, userId, data)
   }
 
   @Delete(':id/members/:memberId')
-  removeMember(@Param('id') teamId: string, @Param('memberId') memberId: string) {
-    return this.service.removeMember(teamId, memberId)
+  removeMember(@Param('id') teamId: string, @Param('memberId') memberId: string, @CurrentUser('id') userId: string) {
+    return this.service.removeMember(teamId, memberId, userId)
   }
 
   @Patch(':id/members/:memberId')
   updateRole(
     @Param('id') teamId: string,
     @Param('memberId') memberId: string,
-    @Body('role') role: UserRole,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateMemberRoleDto,
   ) {
-    return this.service.updateMemberRole(teamId, memberId, role)
+    return this.service.updateMemberRole(teamId, memberId, userId, dto.role as UserRole)
   }
 }

@@ -193,107 +193,131 @@ export async function streamRequest(
 ): Promise<void> {
   const token = useAuthStore.getState().token
   const baseURL = getApiBaseUrl()
-
-  const response = await fetch(`${baseURL}${url}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: token ? `Bearer ${token}` : '',
-    },
-    body: JSON.stringify(data),
-    signal,
-  })
-
-  if (!response.ok) {
-    const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
-    onError?.(error)
-    return
-  }
-
-  const reader = response.body?.getReader()
-  if (!reader) return
-
-  const decoder = new TextDecoder()
-  let sseBuffer = ''
-  let doneMeta: StreamDoneMeta | undefined
-  let finished = false
-
-  const finish = (meta?: StreamDoneMeta) => {
-    if (finished) return
-    finished = true
-    onDone?.(meta ?? doneMeta)
-  }
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        finish()
-        break
+  const maxRetries = 2
+  const retryableHttp = new Set([502, 503, 504, 520, 522, 524])
+  let attempt = 0
+  while (true) {
+    let response: Response
+    try {
+      response = await fetch(`${baseURL}${url}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify(data),
+        signal,
+      })
+    } catch (err) {
+      const e = err as Error
+      if (e?.name === 'AbortError') return
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+        attempt++
+        continue
       }
-      sseBuffer += decoder.decode(value, { stream: true })
-      const lines = sseBuffer.split('\n')
-      sseBuffer = lines.pop() ?? ''
+      onError?.(new Error('流式连接建立失败，请稍后重试'))
+      return
+    }
 
-      for (const line of lines) {
-        const trimmed = line.replace(/\r$/, '').trim()
-        if (!trimmed.startsWith('data: ')) continue
-        const jsonStr = trimmed.slice(6).trim()
-        if (jsonStr === '[DONE]') {
-          finish(doneMeta)
-          return
+    if (!response.ok) {
+      if (retryableHttp.has(response.status) && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+        attempt++
+        continue
+      }
+      const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
+      onError?.(error)
+      return
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) return
+
+    const decoder = new TextDecoder()
+    let sseBuffer = ''
+    let doneMeta: StreamDoneMeta | undefined
+    let finished = false
+
+    const finish = (meta?: StreamDoneMeta) => {
+      if (finished) return
+      finished = true
+      onDone?.(meta ?? doneMeta)
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          finish()
+          break
         }
-        let obj: unknown
-        try {
-          obj = JSON.parse(jsonStr)
-        } catch {
-          continue
-        }
-        if (!obj || typeof obj !== 'object') continue
-        const rec = obj as Record<string, unknown>
-        if (typeof rec.content === 'string' && rec.content.length > 0) {
-          onChunk(rec.content)
-        }
-        if (typeof rec.notice === 'string' && rec.notice.trim()) {
-          toast(rec.notice, { duration: 9000 })
-        }
-        if (typeof rec.error === 'string') {
-          const rid = typeof rec.recordId === 'string' ? rec.recordId : ''
-          onError?.(new Error(rid ? `${rec.error}（记录: ${rid}）` : rec.error))
-          return
-        }
-        if (typeof rec.recordId === 'string') {
-          doneMeta = { ...doneMeta, recordId: rec.recordId }
-        }
-        if (typeof rec.suiteId === 'string') {
-          doneMeta = { ...doneMeta, suiteId: rec.suiteId }
-        }
-        if (typeof rec.caseCount === 'number') {
-          doneMeta = { ...doneMeta, caseCount: rec.caseCount }
+        sseBuffer += decoder.decode(value, { stream: true })
+        const lines = sseBuffer.split('\n')
+        sseBuffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const trimmed = line.replace(/\r$/, '').trim()
+          if (!trimmed.startsWith('data: ')) continue
+          const jsonStr = trimmed.slice(6).trim()
+          if (jsonStr === '[DONE]') {
+            finish(doneMeta)
+            return
+          }
+          let obj: unknown
+          try {
+            obj = JSON.parse(jsonStr)
+          } catch {
+            continue
+          }
+          if (!obj || typeof obj !== 'object') continue
+          const rec = obj as Record<string, unknown>
+          if (typeof rec.content === 'string' && rec.content.length > 0) {
+            onChunk(rec.content)
+          }
+          if (typeof rec.notice === 'string' && rec.notice.trim()) {
+            toast(rec.notice, { duration: 9000 })
+          }
+          if (typeof rec.error === 'string') {
+            const rid = typeof rec.recordId === 'string' ? rec.recordId : ''
+            onError?.(new Error(rid ? `${rec.error}（记录: ${rid}）` : rec.error))
+            return
+          }
+          if (typeof rec.recordId === 'string') {
+            doneMeta = { ...doneMeta, recordId: rec.recordId }
+          }
+          if (typeof rec.suiteId === 'string') {
+            doneMeta = { ...doneMeta, suiteId: rec.suiteId }
+          }
+          if (typeof rec.caseCount === 'number') {
+            doneMeta = { ...doneMeta, caseCount: rec.caseCount }
+          }
         }
       }
+      return
+    } catch (err) {
+      const e = err as Error
+      // 用户主动中止时静默退出
+      if (e?.name === 'AbortError') return
+      const msg = e?.message || String(err)
+      if (
+        msg.includes('chunked') ||
+        msg.includes('network error') ||
+        msg.includes('Failed to fetch') ||
+        msg.includes('ERR_INCOMPLETE')
+      ) {
+        onError?.(
+          new Error(
+            '流式连接被中断（常见于反代缓冲或负载均衡空闲超时）。请确认 Nginx 已对 /api/ai/generate/stream 关闭 buffering，或暂时改用非流式生成。',
+          ),
+        )
+      } else {
+        onError?.(e)
+      }
+      return
+    } finally {
+      reader.releaseLock()
     }
-  } catch (err) {
-    const e = err as Error
-    // 用户主动中止时静默退出
-    if (e?.name === 'AbortError') return
-    const msg = e?.message || String(err)
-    if (
-      msg.includes('chunked') ||
-      msg.includes('network error') ||
-      msg.includes('Failed to fetch') ||
-      msg.includes('ERR_INCOMPLETE')
-    ) {
-      onError?.(
-        new Error(
-          '流式连接被中断（常见于反代缓冲或负载均衡空闲超时）。请确认 Nginx 已对 /api/ai/generate/stream 关闭 buffering，或暂时改用非流式生成。',
-        ),
-      )
-    } else {
-      onError?.(e)
-    }
-  } finally {
-    reader.releaseLock()
   }
 }
 

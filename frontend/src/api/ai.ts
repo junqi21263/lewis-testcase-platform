@@ -2,10 +2,9 @@ import { request, streamRequest, type StreamDoneMeta } from '@/utils/request'
 import type { AIModel, AIGenerateParams, TestCase } from '@/types'
 
 export interface GenerateTestCasesPayload extends AIGenerateParams {
-  sourceType: 'file' | 'text' | 'url'
+  sourceType: 'file' | 'text'
   fileId?: string
   text?: string
-  url?: string
   templateId?: string
   customPrompt?: string
 }

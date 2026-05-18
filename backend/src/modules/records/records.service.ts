@@ -100,6 +100,22 @@ export class RecordsService {
     return this.maskTexts(r, ['prompt', 'demandContent', 'notes', 'remark'] as (keyof R)[])
   }
 
+  private maskShareSteps(raw: unknown): unknown {
+    if (!Array.isArray(raw)) return raw
+    return raw.map((step) => {
+      if (!step || typeof step !== 'object') return step
+      const src = step as Record<string, unknown>
+      const action = typeof src.action === 'string' ? maskSensitivePlainText(src.action) : src.action
+      const expected =
+        typeof src.expected === 'string' ? maskSensitivePlainText(src.expected) : src.expected
+      return {
+        ...src,
+        action,
+        expected,
+      }
+    })
+  }
+
   private async audit(
     recordId: string,
     operatorId: string,
@@ -693,15 +709,13 @@ export class RecordsService {
     const viewCases = perm.viewCases !== false
 
     const r = share.record
-    const demand = viewDemand
-      ? maskSensitivePlainText(r.prompt ?? '')
-      : '[hidden]'
+    const demand = viewDemand ? maskSensitivePlainText(r.demandContent ?? r.prompt ?? '') : '[hidden]'
     const cases = viewCases ? r.suite?.cases ?? [] : []
 
     return {
       record: {
         id: r.id,
-        title: r.title,
+        title: maskSensitivePlainText(r.title),
         status: r.status,
         caseCount: r.caseCount,
         createdAt: r.createdAt,
@@ -713,11 +727,15 @@ export class RecordsService {
       },
       cases: cases.map((c) => ({
         id: c.id,
-        title: c.title,
+        title: maskSensitivePlainText(c.title),
         priority: c.priority,
-        precondition: c.precondition,
-        steps: c.steps,
+        precondition: c.precondition ? maskSensitivePlainText(c.precondition) : c.precondition,
+        steps: this.maskShareSteps(c.steps),
         expectedResult: maskSensitivePlainText(c.expectedResult),
+        description: c.description ? maskSensitivePlainText(c.description) : c.description,
+        tags: Array.isArray(c.tags)
+          ? c.tags.map((t) => (typeof t === 'string' ? maskSensitivePlainText(t) : t))
+          : c.tags,
       })),
     }
   }

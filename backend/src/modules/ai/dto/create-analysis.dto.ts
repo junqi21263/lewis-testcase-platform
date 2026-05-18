@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsIn, Max, Min, IsArray, ArrayMaxSize } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsIn, Max, Min, IsArray, ArrayMaxSize, MaxLength } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateAnalysisDto {
@@ -9,6 +9,7 @@ export class CreateAnalysisDto {
   @ApiProperty({ required: false, description: '已上传文件 ID（sourceType=file 时必填）' })
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   fileId?: string
 
   @ApiProperty({
@@ -20,21 +21,25 @@ export class CreateAnalysisDto {
   @IsArray()
   @ArrayMaxSize(4)
   @IsString({ each: true })
+  @MaxLength(128, { each: true })
   additionalFileIds?: string[]
 
   @ApiProperty({ required: false, description: '直接输入的需求文本（sourceType=text 时必填）' })
   @IsOptional()
   @IsString()
+  @MaxLength(200_000)
   text?: string
 
   @ApiProperty({ required: false, description: '自定义分析提示词' })
   @IsOptional()
   @IsString()
+  @MaxLength(50_000)
   customPrompt?: string
 
   @ApiProperty({ required: false, description: 'AI 模型配置 ID' })
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   modelConfigId?: string
 
   @ApiProperty({ required: false, description: '最大输出 Token 数', default: 4096 })

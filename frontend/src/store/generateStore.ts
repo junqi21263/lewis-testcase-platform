@@ -4,7 +4,7 @@ import type { TestCase, AIGenerateParams, UploadedFile, GenerationOptions } from
 import { loadGenPrefs } from '@/utils/genPrefs'
 
 type GenerateStep = 'upload' | 'prompt' | 'generating' | 'result'
-type SourceType = 'file' | 'text' | 'url'
+type SourceType = 'file' | 'text'
 
 /** 各模块「带入用例生成」一次性投递的数据（不在 localStorage 持久化） */
 export interface PendingGenerateHandoff {
@@ -185,6 +185,7 @@ export const useGenerateStore = create<GenerateState>()(
         return {
           ...current,
           ...p,
+          generatedCases: current.generatedCases,
           generationOptions: {
             ...defaultGenerationOptions,
             ...(p?.generationOptions ?? {}),
@@ -202,7 +203,6 @@ export const useGenerateStore = create<GenerateState>()(
         selectedTemplateId: s.selectedTemplateId,
         generationOptions: s.generationOptions,
         aiParams: s.aiParams,
-        generatedCases: s.generatedCases,
         lastRecordId: s.lastRecordId,
         lastSuiteId: s.lastSuiteId,
         qualityScore: s.qualityScore,

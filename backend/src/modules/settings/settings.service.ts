@@ -100,8 +100,15 @@ export class SettingsService {
     const activeDefaultCount = await this.prisma.aIModelConfig.count({
       where: { isDefault: true, isActive: true },
     })
+    const nextActive = dto.isActive ?? true
+    if (!nextActive && dto.isDefault) {
+      throw new BadRequestException('无法将已停用模型设为默认')
+    }
+    if (!nextActive && activeDefaultCount === 0) {
+      throw new BadRequestException('至少需要一个启用且默认的模型，请先创建启用模型')
+    }
     let isDefault = dto.isDefault ?? false
-    if (!isDefault && activeDefaultCount === 0) isDefault = true
+    if (!isDefault && activeDefaultCount === 0 && nextActive) isDefault = true
     if (isDefault) await this.ensureSingleDefault()
     if (dto.useForDocumentVisionParse) await this.ensureSingleVisionParse()
     const row = await this.prisma.aIModelConfig.create({
@@ -114,7 +121,7 @@ export class SettingsService {
         maxTokens: dto.maxTokens ?? 4096,
         temperature: dto.temperature ?? 0.7,
         isDefault,
-        isActive: dto.isActive ?? true,
+        isActive: nextActive,
         supportsVision: dto.supportsVision ?? false,
         useForDocumentVisionParse: dto.useForDocumentVisionParse ?? false,
       },
@@ -126,8 +133,17 @@ export class SettingsService {
     const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
     if (!existing) throw new NotFoundException('模型配置不存在')
 
-    if (dto.isDefault === true && dto.isActive === false) {
+    if (dto.isDefault === true && (dto.isActive === false || (dto.isActive === undefined && !existing.isActive))) {
       throw new BadRequestException('无法将已停用模型设为默认')
+    }
+    const willDeactivateDefault = existing.isDefault && dto.isActive === false
+    if (willDeactivateDefault) {
+      const nextActiveCount = await this.prisma.aIModelConfig.count({
+        where: { isActive: true, id: { not: id } },
+      })
+      if (nextActiveCount < 1) {
+        throw new BadRequestException('不能停用最后一个启用中的默认模型')
+      }
     }
     if (dto.isDefault === true) await this.ensureSingleDefault(id)
     if (dto.useForDocumentVisionParse === true) await this.ensureSingleVisionParse(id)
@@ -152,7 +168,7 @@ export class SettingsService {
 
     const result = await this.prisma.aIModelConfig.update({ where: { id }, data })
 
-    if (dto.isActive === false && existing.isDefault) {
+    if (willDeactivateDefault) {
       const next = await this.prisma.aIModelConfig.findFirst({
         where: { isActive: true, id: { not: id } },
         orderBy: { updatedAt: 'desc' },
@@ -171,6 +187,15 @@ export class SettingsService {
   async archiveAiModel(id: string) {
     const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
     if (!existing) throw new NotFoundException('模型配置不存在')
+    if (existing.isDefault) {
+      const next = await this.prisma.aIModelConfig.findFirst({
+        where: { isActive: true, id: { not: id } },
+        orderBy: { updatedAt: 'desc' },
+      })
+      if (!next) {
+        throw new BadRequestException('不能归档最后一个启用中的默认模型')
+      }
+    }
 
     await this.prisma.aIModelConfig.update({
       where: { id },

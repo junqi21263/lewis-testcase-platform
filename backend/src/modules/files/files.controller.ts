@@ -197,8 +197,8 @@ export class FilesController {
   @SkipThrottle()
   @Get(':id')
   @ApiOperation({ summary: '获取文件详情' })
-  getById(@Param('id') id: string) {
-    return this.filesService.getFileById(id)
+  getById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.filesService.getFileById(id, userId)
   }
 
   @Delete(':id')

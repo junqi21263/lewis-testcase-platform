@@ -400,7 +400,7 @@ model GenerationRecord {
   id                     String           @id @default(cuid())
   title                  String           @db.VarChar(200)
   status                 GenerationStatus @default(PENDING)
-  sourceType             String           @db.VarChar(20) // file | text | url
+  sourceType             String           @db.VarChar(20) // file | text
   /// 需求原文（与 prompt 同步维护，便于检索与对外字段命名）
   prompt                 String           @db.Text
   demandContent          String?          @db.Text

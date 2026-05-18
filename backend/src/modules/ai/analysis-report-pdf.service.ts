@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import * as fs from 'fs'
 import * as path from 'path'
 import PDFDocument from 'pdfkit'
@@ -40,6 +40,8 @@ const COLOR_TABLE_ROW_B = '#1e293b'
 const COLOR_TABLE_CELL_TEXT = '#e2e8f0'
 const COLOR_CODE_BG = '#f1f5f9'
 const COLOR_ACCENT_BLUE = '#2563eb'
+const MERMAID_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+const MERMAID_IMAGE_TOTAL_MAX_BYTES = 20 * 1024 * 1024
 
 @Injectable()
 export class AnalysisReportPdfService {
@@ -47,6 +49,7 @@ export class AnalysisReportPdfService {
 
   /** 生成适合打印、分享的专业 PDF（白底、结构化排版） */
   async render(dto: ExportAnalysisPdfDto): Promise<Buffer> {
+    this.validateMermaidImages(dto.mermaidImagesBase64 ?? [])
     const marginPt = MARGIN_MM * MM_TO_PT
     const contentWidth = PAGE_W - 2 * marginPt
     const contentTop = marginPt + HEADER_ZONE_PT
@@ -333,6 +336,41 @@ export class AnalysisReportPdfService {
 
     doc.end()
     return endPromise
+  }
+
+  private normalizeBase64(input: string): string {
+    return input.replace(/\s+/g, '')
+  }
+
+  private isLikelyBase64(raw: string): boolean {
+    if (!raw || raw.length % 4 !== 0) return false
+    return /^[A-Za-z0-9+/]+={0,2}$/.test(raw)
+  }
+
+  private validateMermaidImages(images: string[]) {
+    let totalBytes = 0
+    for (let i = 0; i < images.length; i++) {
+      const normalized = this.normalizeBase64(images[i] || '')
+      if (!this.isLikelyBase64(normalized)) {
+        throw new BadRequestException(`第 ${i + 1} 张流程图图片格式非法，请重新导出后重试`)
+      }
+      let buf: Buffer
+      try {
+        buf = Buffer.from(normalized, 'base64')
+      } catch {
+        throw new BadRequestException(`第 ${i + 1} 张流程图图片格式非法，请重新导出后重试`)
+      }
+      if (buf.length < 24) {
+        throw new BadRequestException(`第 ${i + 1} 张流程图图片内容无效，请重新导出后重试`)
+      }
+      if (buf.length > MERMAID_IMAGE_MAX_BYTES) {
+        throw new BadRequestException('流程图图片过大，请减少图数量或压缩后重试')
+      }
+      totalBytes += buf.length
+      if (totalBytes > MERMAID_IMAGE_TOTAL_MAX_BYTES) {
+        throw new BadRequestException('流程图总大小过大，请减少图数量或压缩后重试')
+      }
+    }
   }
 
   private resolveFontPath(label: string, candidates: (string | undefined)[]): string | undefined {

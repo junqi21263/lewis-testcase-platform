@@ -2,6 +2,8 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestj
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { TemplatesService } from './templates.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { CreateTemplateDto } from './dto/create-template.dto'
+import { UpdateTemplateDto } from './dto/update-template.dto'
 
 @ApiTags('提示词模板')
 @ApiBearerAuth()
@@ -23,13 +25,13 @@ export class TemplatesController {
 
   @Get(':id')
   @ApiOperation({ summary: '获取模板详情' })
-  getById(@Param('id') id: string) {
-    return this.service.getById(id)
+  getById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.getById(id, userId)
   }
 
   @Post()
   @ApiOperation({ summary: '创建模板' })
-  create(@CurrentUser('id') userId: string, @Body() data: any) {
+  create(@CurrentUser('id') userId: string, @Body() data: CreateTemplateDto) {
     return this.service.create(userId, data)
   }
 
@@ -39,7 +41,7 @@ export class TemplatesController {
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: string,
-    @Body() data: any,
+    @Body() data: UpdateTemplateDto,
   ) {
     return this.service.update(id, userId, data, role)
   }

@@ -63,6 +63,41 @@
     --workspace-theme-toggle-active-icon: 43 96% 56%;
     --workspace-theme-toggle-inactive-icon: 215 18% 55%;
 
+    /* ---------- Generate Case Studio tokens ---------- */
+    --gcs-page-bg: 226 56% 98%;
+    --gcs-panel-bg: 0 0% 100%;
+    --gcs-panel-border: 220 24% 86%;
+    --gcs-panel-muted-bg: 220 45% 96%;
+    --gcs-card-bg: 0 0% 100%;
+    --gcs-card-hover-bg: 220 48% 97%;
+    --gcs-input-bg: 220 48% 96%;
+    --gcs-input-border: 220 22% 82%;
+    --gcs-input-focus: 188 94% 42%;
+    --gcs-dropzone-bg: 220 50% 97%;
+    --gcs-dropzone-border: 220 20% 80%;
+    --gcs-result-panel-bg: 226 52% 97%;
+    --gcs-testcase-card-bg: 0 0% 100%;
+    --gcs-testcase-card-border: 220 22% 86%;
+    --gcs-text-primary: 222 47% 12%;
+    --gcs-text-secondary: 222 30% 20%;
+    --gcs-text-muted: 215 16% 42%;
+    --gcs-modal-bg: 0 0% 100%;
+    --gcs-sticky-bg: 220 43% 98%;
+    --gcs-divider: 220 24% 86%;
+    --gcs-scrollbar: 215 24% 72%;
+    --gcs-console-empty-bg: 224 58% 97%;
+    --gcs-action-footer-bg: 220 43% 98%;
+    --gcs-action-footer-border: 220 22% 84%;
+    --gcs-action-footer-shadow: 0 -10px 24px -22px rgba(59, 130, 246, 0.24);
+    --gcs-action-chip-bg: 220 45% 95%;
+    --gcs-action-chip-border: 220 22% 82%;
+    --gcs-action-chip-text: 215 24% 34%;
+    --gcs-button-primary-bg: 223 84% 57%;
+    --gcs-button-primary-text: 210 40% 98%;
+    --gcs-button-primary-shadow: 0 10px 24px -16px rgba(37, 99, 235, 0.44);
+    --gcs-button-disabled-bg: 220 22% 90%;
+    --gcs-button-disabled-text: 215 12% 52%;
+
     /* ---------- Design foundation：字体 / 排版 / 文案色 / Modal / Toast / 报告 ---------- */
     --layout-header-height: 4rem;
     --font-sans:
@@ -255,6 +290,40 @@
     /* 深色顶栏：太阳为暖黄、月亮为淡紫蓝，保证与轨道对比清晰 */
     --workspace-theme-toggle-active-icon: 258 96% 82%;
     --workspace-theme-toggle-inactive-icon: 45 100% 68%;
+
+    --gcs-page-bg: 222 46% 7%;
+    --gcs-panel-bg: 222 48% 9%;
+    --gcs-panel-border: 217 26% 18%;
+    --gcs-panel-muted-bg: 222 42% 12%;
+    --gcs-card-bg: 222 46% 10%;
+    --gcs-card-hover-bg: 217 34% 14%;
+    --gcs-input-bg: 222 42% 12%;
+    --gcs-input-border: 217 26% 22%;
+    --gcs-input-focus: 188 98% 52%;
+    --gcs-dropzone-bg: 222 46% 11%;
+    --gcs-dropzone-border: 217 24% 24%;
+    --gcs-result-panel-bg: 222 44% 10%;
+    --gcs-testcase-card-bg: 222 45% 11%;
+    --gcs-testcase-card-border: 217 26% 20%;
+    --gcs-text-primary: 210 40% 98%;
+    --gcs-text-secondary: 215 20% 86%;
+    --gcs-text-muted: 215 16% 70%;
+    --gcs-modal-bg: 222 48% 9%;
+    --gcs-sticky-bg: 222 44% 11%;
+    --gcs-divider: 217 24% 18%;
+    --gcs-scrollbar: 217 14% 38%;
+    --gcs-console-empty-bg: 222 44% 12%;
+    --gcs-action-footer-bg: 222 43% 11%;
+    --gcs-action-footer-border: 217 24% 20%;
+    --gcs-action-footer-shadow: 0 -10px 24px -22px rgba(2, 6, 23, 0.62);
+    --gcs-action-chip-bg: 222 36% 14%;
+    --gcs-action-chip-border: 217 22% 24%;
+    --gcs-action-chip-text: 215 16% 78%;
+    --gcs-button-primary-bg: 216 92% 60%;
+    --gcs-button-primary-text: 222 48% 8%;
+    --gcs-button-primary-shadow: 0 10px 24px -16px rgba(56, 189, 248, 0.35);
+    --gcs-button-disabled-bg: 217 18% 20%;
+    --gcs-button-disabled-text: 215 12% 54%;
 
     --ui-text-primary: #f8fafc;
     --ui-text-secondary: #cbd5e1;
@@ -1474,6 +1543,95 @@ html.light .login-page-root {
     transform 0.2s ease,
     background 0.2s ease,
     color 0.2s ease;
+}
+
+/* ========== Generate Case Studio ========== */
+.generate-case-studio {
+  animation: dash-fade-up 0.35s ease-out both;
+}
+
+.gcs-appear-1 {
+  opacity: 0;
+  animation: dash-fade-up 0.34s ease-out 0.02s both;
+}
+
+.gcs-appear-2 {
+  opacity: 0;
+  animation: dash-fade-up 0.36s ease-out 0.08s both;
+}
+
+.gcs-appear-3 {
+  opacity: 0;
+  animation: dash-fade-up 0.38s ease-out 0.14s both;
+}
+
+.gcs-switch-stage {
+  animation: dash-fade-up 0.22s ease-out both;
+}
+
+.gcs-console-ready {
+  position: relative;
+  background:
+    radial-gradient(62% 48% at 50% 8%, hsl(var(--gcs-input-focus) / 0.14), transparent 72%),
+    hsl(var(--gcs-console-empty-bg));
+}
+
+.gcs-console-ready::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px hsl(var(--gcs-panel-border) / 0.35);
+  pointer-events: none;
+}
+
+.gcs-action-footer {
+  box-shadow: var(--gcs-action-footer-shadow);
+}
+
+.gcs-action-chip {
+  background: hsl(var(--gcs-action-chip-bg));
+  border-color: hsl(var(--gcs-action-chip-border));
+  color: hsl(var(--gcs-action-chip-text));
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.gcs-action-primary {
+  background: hsl(var(--gcs-button-primary-bg));
+  color: hsl(var(--gcs-button-primary-text));
+  box-shadow: var(--gcs-button-primary-shadow);
+}
+
+.gcs-action-primary:hover:enabled {
+  transform: translateY(-1px);
+}
+
+.gcs-action-primary:disabled {
+  background: hsl(var(--gcs-button-disabled-bg));
+  color: hsl(var(--gcs-button-disabled-text));
+  box-shadow: none;
+}
+
+.generate-case-studio ::-webkit-scrollbar-thumb {
+  background: hsl(var(--gcs-scrollbar) / 0.62);
+}
+
+.generate-case-studio ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--gcs-scrollbar) / 0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generate-case-studio {
+    animation: none;
+  }
+  .gcs-appear-1,
+  .gcs-appear-2,
+  .gcs-appear-3,
+  .gcs-switch-stage {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .login-soft-input::placeholder {

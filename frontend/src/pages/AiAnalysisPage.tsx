@@ -1272,15 +1272,15 @@ function AiAnalysisPageInner() {
       addLog(`📤 批量上传 ${arr.length} 张图片…`)
 
       try {
-        const uploadedRows = await Promise.all(
-          arr.map(async (file, i) => {
-            addLog(`📤 图片 ${i + 1}/${arr.length}：${file.name}`)
-            const cur = await uploadFile(file)
-            if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-            stashUploadedOriginalName(cur.id, file.name)
-            return cur
-          }),
-        )
+        const uploadedRows: UploadedFile[] = []
+        for (let i = 0; i < arr.length; i++) {
+          const file = arr[i]
+          addLog(`📤 图片 ${i + 1}/${arr.length}：${file.name}`)
+          const cur = await uploadFile(file)
+          if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+          stashUploadedOriginalName(cur.id, file.name)
+          uploadedRows.push(cur)
+        }
 
         if (signal.aborted) return
 

@@ -31,8 +31,8 @@ export class TestcasesController {
 
   @Get('suites/:id')
   @ApiOperation({ summary: '获取用例集详情' })
-  getSuiteById(@Param('id') id: string) {
-    return this.service.getSuiteById(id)
+  getSuiteById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.getSuiteById(id, userId)
   }
 
   @Post('suites')
@@ -56,8 +56,8 @@ export class TestcasesController {
   // ---- 用例 ----
   @Get('suites/:id/cases')
   @ApiOperation({ summary: '获取用例集下的所有用例' })
-  getCases(@Param('id') suiteId: string) {
-    return this.service.getCasesBySuiteId(suiteId)
+  getCases(@Param('id') suiteId: string, @CurrentUser('id') userId: string) {
+    return this.service.getCasesBySuiteId(suiteId, userId)
   }
 
   @Post('suites/:id/cases')
@@ -72,14 +72,14 @@ export class TestcasesController {
 
   @Patch('cases/:id')
   @ApiOperation({ summary: '更新用例' })
-  updateCase(@Param('id') id: string, @Body() data: any) {
-    return this.service.updateCase(id, data)
+  updateCase(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: any) {
+    return this.service.updateCase(id, userId, data)
   }
 
   @Delete('cases/:id')
   @ApiOperation({ summary: '删除用例' })
-  deleteCase(@Param('id') id: string) {
-    return this.service.deleteCase(id)
+  deleteCase(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.service.deleteCase(id, userId)
   }
 
   // ---- 导出 ----

@@ -161,6 +161,12 @@ export class AiService {
     return Math.min(Math.max(Math.floor(r), 256), 128_000)
   }
 
+  private streamFullContentMaxChars(): number {
+    const raw = parseInt(this.config.get<string>('STREAM_FULL_CONTENT_MAX_CHARS') || '500000', 10)
+    if (!Number.isFinite(raw) || raw < 10_000) return 500_000
+    return Math.min(raw, 2_000_000)
+  }
+
   private writeStreamNotice(res: Response, text: string) {
     if (res.writableEnded) return
     res.write(`data: ${JSON.stringify({ notice: text })}\n\n`)
@@ -507,8 +513,10 @@ export class AiService {
     let fileContent: string | undefined
     let fileRow: UploadedFile | null = null
     if (dto.fileId) {
-      fileRow = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!fileRow) throw new BadRequestException('文件不存在')
+      fileRow = await this.prisma.uploadedFile.findFirst({
+        where: { id: dto.fileId, uploaderId: userId },
+      })
+      if (!fileRow) throw new BadRequestException('文件不存在或无权访问')
       fileContent = fileRow.parsedContent ?? undefined
     }
 
@@ -695,8 +703,10 @@ export class AiService {
     let fileContent: string | undefined
     let fileRow: UploadedFile | null = null
     if (dto.fileId) {
-      fileRow = await this.prisma.uploadedFile.findUnique({ where: { id: dto.fileId } })
-      if (!fileRow) throw new BadRequestException('文件不存在')
+      fileRow = await this.prisma.uploadedFile.findFirst({
+        where: { id: dto.fileId, uploaderId: userId },
+      })
+      if (!fileRow) throw new BadRequestException('文件不存在或无权访问')
       fileContent = fileRow.parsedContent ?? undefined
     }
 
@@ -734,6 +744,9 @@ export class AiService {
     }, keepAliveMs)
 
     let fullContent = ''
+    const maxFullContentChars = this.streamFullContentMaxChars()
+    let fullContentTruncated = false
+    let streamTruncationNoticeSent = false
     let finishReason: string | null = null
     try {
       // 单文件图片/PDF：混元多模态若已产出可落库用例，则直接结束 SSE（与「流式完成」事件形态一致）
@@ -832,7 +845,22 @@ export class AiService {
           (typeof d?.content === 'string' ? d.content : '') ||
           (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
         if (delta) {
-          fullContent += delta
+          if (!fullContentTruncated) {
+            const remaining = maxFullContentChars - fullContent.length
+            if (remaining > 0) {
+              fullContent += delta.slice(0, remaining)
+            }
+            if (delta.length > remaining) {
+              fullContentTruncated = true
+              if (!streamTruncationNoticeSent) {
+                streamTruncationNoticeSent = true
+                this.writeStreamNotice(
+                  res,
+                  `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），仍继续实时返回流式结果。建议降低 maxTokens 或拆分需求后重试。`,
+                )
+              }
+            }
+          }
           res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
         }
       }
@@ -850,8 +878,16 @@ export class AiService {
       if (resolved.outputTruncated) {
         this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
+      if (fullContentTruncated && !streamTruncationNoticeSent) {
+        this.writeStreamNotice(
+          res,
+          `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），建议降低 maxTokens 或拆分需求。`,
+        )
+      }
       if (rows.length === 0) {
-        const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
+        const msg = this.emptyOutputUserMessage({
+          outputTruncated: finishReason === 'length' || fullContentTruncated,
+        })
         await this.prisma.generationRecord.update({
           where: { id: record.id },
           data: {

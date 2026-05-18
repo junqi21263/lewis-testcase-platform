@@ -16,8 +16,26 @@ export function WallpaperLayer() {
   const [url, setUrl] = useState<string | null>(null)
   const [fading, setFading] = useState(false)
   const intervalRef = useRef<number | null>(null)
+  const fadeTimeoutsRef = useRef<number[]>([])
+  const mountedRef = useRef(true)
   const urlRef = useRef<string | null>(null)
   urlRef.current = url
+
+  const clearFadeTimeouts = () => {
+    for (const t of fadeTimeoutsRef.current) {
+      window.clearTimeout(t)
+    }
+    fadeTimeoutsRef.current = []
+  }
+
+  const scheduleFadeReset = () => {
+    const timer = window.setTimeout(() => {
+      fadeTimeoutsRef.current = fadeTimeoutsRef.current.filter((id) => id !== timer)
+      if (!mountedRef.current) return
+      setFading(false)
+    }, 350)
+    fadeTimeoutsRef.current.push(timer)
+  }
 
   const style = useMemo(() => {
     if (!enabled || !url) return undefined
@@ -36,9 +54,10 @@ export function WallpaperLayer() {
       }
       if (res.url === urlRef.current) return
       await preloadImage(res.url)
+      if (!mountedRef.current) return
       setFading(true)
       setUrl(res.url)
-      window.setTimeout(() => setFading(false), 350)
+      scheduleFadeReset()
     } catch {
       /* 保持 preferences 里已有的 url */
     }
@@ -79,9 +98,10 @@ export function WallpaperLayer() {
     const nextUrl = p.wallpaperCurrentUrl
     void preloadImage(nextUrl)
       .then(() => {
+        if (!mountedRef.current) return
         setFading(true)
         setUrl(nextUrl)
-        window.setTimeout(() => setFading(false), 350)
+        scheduleFadeReset()
       })
       .catch(() => {})
   }
@@ -112,10 +132,11 @@ export function WallpaperLayer() {
       if (!mounted || !url) return
       void preloadImage(url)
         .then(() => {
+          if (!mountedRef.current) return
           setEnabled(true)
           setFading(true)
           setUrl(url)
-          window.setTimeout(() => setFading(false), 350)
+          scheduleFadeReset()
         })
         .catch(() => {})
     }
@@ -124,8 +145,10 @@ export function WallpaperLayer() {
     window.addEventListener('wallpaper-url-updated', onWallpaperUrl)
 
     return () => {
+      mountedRef.current = false
       mounted = false
       if (intervalRef.current) window.clearInterval(intervalRef.current)
+      clearFadeTimeouts()
       window.removeEventListener('user-preferences-updated', onPrefsUpdated)
       window.removeEventListener('wallpaper-url-updated', onWallpaperUrl)
     }

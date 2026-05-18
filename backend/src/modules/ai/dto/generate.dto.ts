@@ -1,33 +1,34 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsIn, Max, Min } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsBoolean, IsIn, Max, Min, MaxLength } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class GenerateDto {
-  @ApiProperty({ enum: ['file', 'text', 'url'] })
-  @IsIn(['file', 'text', 'url'])
-  sourceType: 'file' | 'text' | 'url'
+  @ApiProperty({ enum: ['file', 'text'] })
+  @IsIn(['file', 'text'])
+  sourceType: 'file' | 'text'
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   fileId?: string
 
   @IsOptional()
   @IsString()
+  @MaxLength(200_000)
   text?: string
 
   @IsOptional()
   @IsString()
-  url?: string
-
-  @IsOptional()
-  @IsString()
+  @MaxLength(128)
   templateId?: string
 
   @IsOptional()
   @IsString()
+  @MaxLength(50_000)
   customPrompt?: string
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   modelConfigId?: string
 
   @IsOptional()
