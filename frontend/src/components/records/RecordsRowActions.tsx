@@ -18,7 +18,6 @@ import { cn } from '@/utils/cn'
 function IconAction(props: {
   title: string
   onClick: () => void
-  danger?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -26,7 +25,7 @@ function IconAction(props: {
       type="button"
       title={props.title}
       aria-label={props.title}
-      className={cn(rec.iconBtn, props.danger && rec.iconBtnDanger)}
+      className={rec.iconBtn}
       onClick={(e) => {
         e.stopPropagation()
         props.onClick()
@@ -81,14 +80,16 @@ export function RecordsRowActions(props: {
   }, [menuOpen])
 
   if (loading) {
-    return <Loader2 className="mx-auto h-4 w-4 animate-spin text-workspace-text-muted" />
+    return (
+      <Loader2 className="mx-auto h-4 w-4 animate-spin text-[color:var(--records-icon-muted)]" />
+    )
   }
 
   const iconClass = 'h-4 w-4'
 
   return (
     <div
-      className="flex w-[120px] shrink-0 items-center justify-end gap-0.5 opacity-80 transition-opacity duration-200 group-hover/row:opacity-100"
+      className="flex w-[150px] shrink-0 items-center justify-end gap-2"
       onClick={(e) => e.stopPropagation()}
     >
       <IconAction title="查看详情" onClick={onView}>
@@ -110,7 +111,7 @@ export function RecordsRowActions(props: {
         </IconAction>
         {menuOpen && (
           <div
-            className="absolute right-0 top-full z-50 mt-1 min-w-[9.5rem] rounded-xl border border-workspace-panel-border/70 bg-workspace-panel/98 py-1 text-xs shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-workspace-panel/95"
+            className="absolute right-0 top-full z-50 mt-1 min-w-[9.5rem] rounded-xl border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-panel-bg))] py-1 text-xs shadow-[var(--records-panel-shadow)] backdrop-blur-xl"
             role="menu"
           >
             {!inRecycle && (
@@ -118,54 +119,56 @@ export function RecordsRowActions(props: {
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-workspace-panel-muted/80"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
                   onClick={() => {
                     setMenuOpen(false)
                     onReuse()
                   }}
                 >
-                  <Pencil className="h-3.5 w-3.5" /> 编辑（带入生成页）
+                  <Pencil className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" /> 编辑（带入生成页）
                 </button>
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-workspace-panel-muted/80"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
                   onClick={() => {
                     setMenuOpen(false)
                     onShare()
                   }}
                 >
-                  <Share2 className="h-3.5 w-3.5" /> 分享链接
+                  <Share2 className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" /> 分享链接
                 </button>
                 {r.status !== 'ARCHIVED' ? (
                   <button
                     type="button"
                     role="menuitem"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-workspace-panel-muted/80"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
                     onClick={() => {
                       setMenuOpen(false)
                       onArchive()
                     }}
                   >
-                    <Archive className="h-3.5 w-3.5" /> 归档
+                    <Archive className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" /> 归档
                   </button>
                 ) : (
                   <button
                     type="button"
                     role="menuitem"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-workspace-panel-muted/80"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
                     onClick={() => {
                       setMenuOpen(false)
                       onUnarchive()
                     }}
                   >
-                    <ArchiveRestore className="h-3.5 w-3.5" /> 取消归档
+                    <ArchiveRestore className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" /> 取消归档
                   </button>
                 )}
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-destructive hover:bg-destructive/10"
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[rgba(244,63,94,0.12)] hover:text-[color:var(--records-icon-danger)]',
+                  )}
                   onClick={() => {
                     setMenuOpen(false)
                     onSoftDelete()
@@ -180,18 +183,20 @@ export function RecordsRowActions(props: {
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-workspace-panel-muted/80"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
                   onClick={() => {
                     setMenuOpen(false)
                     onRestore()
                   }}
                 >
-                  <ArchiveRestore className="h-3.5 w-3.5" /> 恢复
+                  <ArchiveRestore className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" /> 恢复
                 </button>
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-destructive hover:bg-destructive/10"
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[rgba(244,63,94,0.12)] hover:text-[color:var(--records-icon-danger)]',
+                  )}
                   onClick={() => {
                     setMenuOpen(false)
                     onHardDelete()

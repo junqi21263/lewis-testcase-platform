@@ -90,6 +90,25 @@
     --records-row-accent: 188 78% 42%;
     --records-filter-bg: 220 40% 96%;
 
+    --records-badge-success-bg: #ecfdf5;
+    --records-badge-success-border: rgba(16, 185, 129, 0.28);
+    --records-badge-success-text: #047857;
+    --records-badge-warning-bg: #fffbeb;
+    --records-badge-warning-border: rgba(245, 158, 11, 0.28);
+    --records-badge-warning-text: #b45309;
+    --records-badge-danger-bg: #fff1f2;
+    --records-badge-danger-border: rgba(244, 63, 94, 0.28);
+    --records-badge-danger-text: #be123c;
+    --records-badge-info-bg: #eff6ff;
+    --records-badge-info-border: rgba(59, 130, 246, 0.24);
+    --records-badge-info-text: #2563eb;
+    --records-badge-muted-bg: #f1f5f9;
+    --records-badge-muted-border: rgba(100, 116, 139, 0.18);
+    --records-badge-muted-text: #475569;
+    --records-icon-muted: #64748b;
+    --records-icon-hover: #334155;
+    --records-icon-danger: #be123c;
+
     /* ---------- Generate Case Studio tokens ---------- */
     --gcs-page-bg: 226 56% 98%;
     --gcs-panel-bg: 0 0% 100%;
@@ -350,6 +369,25 @@
     --records-row-selected-bg: 217 38% 16%;
     --records-row-accent: 188 78% 52%;
     --records-filter-bg: 217 32% 13%;
+
+    --records-badge-success-bg: rgba(16, 185, 129, 0.14);
+    --records-badge-success-border: rgba(52, 211, 153, 0.32);
+    --records-badge-success-text: #6ee7b7;
+    --records-badge-warning-bg: rgba(245, 158, 11, 0.14);
+    --records-badge-warning-border: rgba(251, 191, 36, 0.32);
+    --records-badge-warning-text: #fcd34d;
+    --records-badge-danger-bg: rgba(244, 63, 94, 0.14);
+    --records-badge-danger-border: rgba(251, 113, 133, 0.32);
+    --records-badge-danger-text: #fda4af;
+    --records-badge-info-bg: rgba(56, 189, 248, 0.14);
+    --records-badge-info-border: rgba(125, 211, 252, 0.32);
+    --records-badge-info-text: #7dd3fc;
+    --records-badge-muted-bg: rgba(148, 163, 184, 0.1);
+    --records-badge-muted-border: rgba(148, 163, 184, 0.22);
+    --records-badge-muted-text: #cbd5e1;
+    --records-icon-muted: #94a3b8;
+    --records-icon-hover: #e2e8f0;
+    --records-icon-danger: #fda4af;
 
     --gcs-page-bg: 222 46% 7%;
     --gcs-panel-bg: 222 48% 9%;

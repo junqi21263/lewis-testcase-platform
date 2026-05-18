@@ -15,8 +15,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { recordsApi, type RecordsListQuery, type RecordsSummary } from '@/api/records'
 import { settingsApi } from '@/api/settings'
 import { filesApi } from '@/api/files'
@@ -586,9 +584,9 @@ export default function RecordsPage() {
 
       <div className="records-fade-up-d1 filter-panel-wrap">
         <div className={rec.filterPanel}>
-          <div className={rec.filterRow}>
-            <div className="relative min-w-0 flex-1 sm:max-w-md">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--records-text-muted))]" />
+          <div className={rec.filterPrimaryRow}>
+            <div className={rec.filterSearch}>
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--records-icon-muted)]" />
               <Input
                 placeholder="搜索标题、需求原文、错误备注、用例集名称…"
                 value={keyword}
@@ -597,45 +595,44 @@ export default function RecordsPage() {
                   setPage(1)
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && void fetchList()}
-                className={cn(rec.control, 'h-9 pl-9')}
+                className={cn(rec.control, 'h-9 w-full pl-10')}
               />
             </div>
-            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => void fetchList()} title="刷新">
-              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-            </Button>
-            <Button variant="outline" size="sm" className="h-9" onClick={clearAllFilters}>
-              <RotateCcw className="mr-1 h-3.5 w-3.5" />
-              一键重置
-            </Button>
-            <Button variant="outline" size="sm" className="h-9 lg:hidden" onClick={() => setAdvancedFiltersOpen((v) => !v)}>
-              <Filter className="mr-1 h-3.5 w-3.5" />
-              筛选
-            </Button>
-            <div className="relative">
-              <Button variant="outline" size="sm" className="h-9" onClick={() => setShowColMenu((v) => !v)}>
-                <Settings2 className="mr-1 h-3.5 w-3.5" />
-                列显隐
+            <div className={rec.filterPrimaryActions}>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => void fetchList()} title="刷新">
+                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
               </Button>
-              {showColMenu && (
-                <div className="absolute right-0 z-40 mt-1 w-48 space-y-1 rounded-md border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-panel-bg))] p-2 text-sm shadow-[var(--records-panel-shadow)]">
-                  {(Object.keys(cols) as RecordsColumnKey[]).map((k) => (
-                    <label key={k} className="flex cursor-pointer items-center gap-2">
-                      <input type="checkbox" checked={cols[k]} onChange={() => toggleCol(k)} />
-                      <span>
-                        {k === 'source' ? '来源' : k === 'duration' ? '耗时' : k === 'operator' ? '操作人' : k === 'model' ? '模型' : k === 'cases' ? '用例数' : '创建时间'}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
+              <Button variant="outline" size="sm" className="h-9 px-3" onClick={clearAllFilters}>
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                一键重置
+              </Button>
+              <Button variant="outline" size="sm" className="h-9 px-3 lg:hidden" onClick={() => setAdvancedFiltersOpen((v) => !v)}>
+                <Filter className="mr-1.5 h-3.5 w-3.5" />
+                更多筛选
+              </Button>
+              <div className="relative">
+                <Button variant="outline" size="sm" className="h-9 px-3" onClick={() => setShowColMenu((v) => !v)}>
+                  <Settings2 className="mr-1.5 h-3.5 w-3.5" />
+                  列显隐
+                </Button>
+                {showColMenu && (
+                  <div className="absolute right-0 z-40 mt-1.5 w-48 space-y-1 rounded-md border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-panel-bg))] p-2 text-sm shadow-[var(--records-panel-shadow)]">
+                    {(Object.keys(cols) as RecordsColumnKey[]).map((k) => (
+                      <label key={k} className="flex cursor-pointer items-center gap-2">
+                        <input type="checkbox" checked={cols[k]} onChange={() => toggleCol(k)} />
+                        <span>
+                          {k === 'source' ? '来源' : k === 'duration' ? '耗时' : k === 'operator' ? '操作人' : k === 'model' ? '模型' : k === 'cases' ? '用例数' : '创建时间'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className={rec.filterRow}>
-            <span className={rec.filterRowLabel}>
-              <Filter className="mr-0.5 inline h-3.5 w-3.5" />
-              状态
-            </span>
+          <div className={rec.filterStatusRow}>
+            <span className={rec.filterRowLabel}>状态</span>
               <button
                 type="button"
                 onClick={() => {
@@ -664,13 +661,14 @@ export default function RecordsPage() {
 
           <div
             className={cn(
-              rec.filterRow,
+              rec.filterAdvancedRow,
               advancedFiltersOpen ? 'flex' : 'hidden',
               'lg:flex',
             )}
           >
-            <span className={rec.filterRowLabel}>时间</span>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className={cn(rec.filterGroup, 'min-w-[min(100%,320px)] flex-1')}>
+              <span className={rec.filterRowLabel}>时间</span>
+              <div className="flex flex-wrap items-center gap-2">
                 {(
                   [
                     ['today', '今天'],
@@ -684,7 +682,7 @@ export default function RecordsPage() {
                     key={id}
                     size="sm"
                     variant={datePreset === id ? 'secondary' : 'ghost'}
-                    className="h-9 text-xs"
+                    className="h-9 px-3 text-xs"
                     onClick={() => applyPreset(id)}
                   >
                     {lab}
@@ -693,7 +691,7 @@ export default function RecordsPage() {
                 <Button
                   size="sm"
                   variant={datePreset === 'custom' ? 'secondary' : 'ghost'}
-                  className="h-9 text-xs"
+                  className="h-9 px-3 text-xs"
                   onClick={() => {
                     setDatePreset('custom')
                     setPage(1)
@@ -703,7 +701,7 @@ export default function RecordsPage() {
                 </Button>
                 <Input
                   type="date"
-                  className={cn(rec.control, rec.controlSm, "h-9 w-[132px]")}
+                  className={cn(rec.control, rec.controlSm, 'h-9 w-[136px]')}
                   value={dateFrom}
                   onChange={(e) => {
                     setDateFrom(e.target.value)
@@ -711,10 +709,10 @@ export default function RecordsPage() {
                     setPage(1)
                   }}
                 />
-                <span className="text-muted-foreground">—</span>
+                <span className="px-1 text-[hsl(var(--records-text-muted))]">—</span>
                 <Input
                   type="date"
-                  className={cn(rec.control, rec.controlSm, "h-9 w-[132px]")}
+                  className={cn(rec.control, rec.controlSm, 'h-9 w-[136px]')}
                   value={dateTo}
                   onChange={(e) => {
                     setDateTo(e.target.value)
@@ -723,79 +721,83 @@ export default function RecordsPage() {
                   }}
                 />
               </div>
+            </div>
 
-              <Separator orientation="vertical" className="hidden xl:block h-8" />
+            <div className={rec.filterGroup}>
+              <span className={rec.filterRowLabel}>模型</span>
+              {modelPick.length > 0 && (
+                <span className={rec.appliedChip} title={modelPick.join('、')}>
+                  {modelPick.length} 个已选
+                </span>
+              )}
+              <select
+                multiple
+                size={1}
+                title={
+                  modelPick.length
+                    ? `已选 ${modelPick.length} 个模型：${modelPick.join('、')}`
+                    : '按住 Ctrl / ⌘ 可多选模型'
+                }
+                className={cn(rec.control, rec.controlSm, 'h-9 max-w-[180px] truncate')}
+                value={modelPick}
+                onChange={(e) => {
+                  const v = [...e.target.selectedOptions].map((o) => o.value)
+                  setModelPick(v)
+                  setPage(1)
+                }}
+              >
+                {modelOptions.map((m) => (
+                  <option key={m.modelId} value={m.modelName} title={m.modelName}>
+                    {formatModelLabel(m.modelName)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">模型</span>
-                <select
-                  multiple
-                  size={1}
-                  title={
-                    modelPick.length
-                      ? `已选 ${modelPick.length} 个模型：${modelPick.join('、')}`
-                      : '按住 Ctrl / ⌘ 可多选模型'
-                  }
-                  className={cn(rec.control, rec.controlSm, "h-9 w-[160px] max-w-[160px] shrink-0")}
-                  value={modelPick}
-                  onChange={(e) => {
-                    const v = [...e.target.selectedOptions].map((o) => o.value)
-                    setModelPick(v)
-                    setPage(1)
-                  }}
-                >
-                  {modelOptions.map((m) => (
-                    <option key={m.modelId} value={m.modelName} title={m.modelName}>
-                      {formatModelLabel(m.modelName)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className={rec.filterGroup}>
+              <span className={rec.filterRowLabel}>用例数</span>
+              <select
+                className={cn(rec.control, rec.controlSm, 'h-9 min-w-[108px]')}
+                value={caseBucket}
+                onChange={(e) => {
+                  setCaseBucket(e.target.value)
+                  setPage(1)
+                }}
+              >
+                <option value="all">全部</option>
+                <option value="zero">0 条</option>
+                <option value="small">1–10 条</option>
+                <option value="large">10 条以上</option>
+              </select>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">用例数</span>
-                <select
-                  className={cn(rec.control, rec.controlSm, "h-9")}
-                  value={caseBucket}
-                  onChange={(e) => {
-                    setCaseBucket(e.target.value)
-                    setPage(1)
-                  }}
-                >
-                  <option value="all">全部</option>
-                  <option value="zero">0 条</option>
-                  <option value="small">1–10 条</option>
-                  <option value="large">10 条以上</option>
-                </select>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">来源</span>
-                {(
-                  [
-                    ['file', '需求文档'],
-                    ['text', '手动输入'],
-                    ['template', '模板复用'],
-                  ] as const
-                ).map(([val, lab]) => {
-                  const on = sourcePick.includes(val)
-                  return (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => {
-                        setSourcePick((p) =>
-                          p.includes(val) ? p.filter((x) => x !== val) : [...p, val],
-                        )
-                        setPage(1)
-                      }}
-                      className={cn(rec.chip, on ? rec.chipActive : rec.chipGhost)}
-                    >
-                      {lab}
-                    </button>
-                  )
-                })}
-              </div>
+            <div className={cn(rec.filterGroup, 'min-w-[200px]')}>
+              <span className={rec.filterRowLabel}>来源</span>
+              {(
+                [
+                  ['file', '需求文档'],
+                  ['text', '手动输入'],
+                  ['template', '模板复用'],
+                ] as const
+              ).map(([val, lab]) => {
+                const on = sourcePick.includes(val)
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      setSourcePick((p) =>
+                        p.includes(val) ? p.filter((x) => x !== val) : [...p, val],
+                      )
+                      setPage(1)
+                    }}
+                    className={cn(rec.chip, on ? rec.chipActive : rec.chipGhost)}
+                  >
+                    {lab}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -928,25 +930,19 @@ export default function RecordsPage() {
                         onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleSelect(r.id)}
                       />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
+                      <div className={rec.tableTitleCell}>
+                        <p className={rec.tableTitle}>
                           <HighlightText text={r.title} query={debouncedKeyword} />
                         </p>
-                        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        <p className={rec.tableSummary}>
                           {promptSummary(r.prompt || '', 30)}
                         </p>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            'text-[10px] mt-1',
-                            recordStatusBadge(r.status),
-                          )}
-                        >
+                        <span className={cn(recordStatusBadge(r.status), 'mt-2 inline-flex')}>
                           {statusLabels[r.status]}
-                        </Badge>
+                        </span>
                       </div>
                       {cols.model && (
-                        <span className="text-xs text-muted-foreground truncate" title={r.modelName}>
+                        <span className="truncate text-xs text-[hsl(var(--records-text-secondary))]" title={r.modelName}>
                           {r.modelName}
                         </span>
                       )}
@@ -954,18 +950,18 @@ export default function RecordsPage() {
                         <span className="text-sm tabular-nums">{r.caseCount}</span>
                       )}
                       {cols.source && (
-                        <span className="text-xs text-muted-foreground">{sourceLabel(r)}</span>
+                        <span className="text-xs text-[hsl(var(--records-text-secondary))]">{sourceLabel(r)}</span>
                       )}
                       {cols.duration && (
                         <span className="text-xs tabular-nums">{formatDuration(r.duration)}</span>
                       )}
                       {cols.created && (
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        <span className="whitespace-nowrap text-xs text-[hsl(var(--records-text-secondary))]">
                           {formatDate(r.createdAt, 'MM-dd HH:mm')}
                         </span>
                       )}
                       {cols.operator && (
-                        <span className="text-xs text-muted-foreground truncate">
+                        <span className="truncate text-xs text-[hsl(var(--records-text-secondary))]">
                           {r.creator?.username ?? '—'}
                         </span>
                       )}
