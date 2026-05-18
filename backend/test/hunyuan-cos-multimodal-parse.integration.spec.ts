@@ -8,7 +8,10 @@ import { CosStorageService } from '@/modules/files/cos-storage.service'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { PrismaService } from '@/prisma/prisma.service'
 import * as multimodalAnalysis from '@/utils/multimodalAnalysis'
-import { canTryHunyuanCosMultimodalParse } from '@/utils/multimodalAnalysis'
+import {
+  canTryHunyuanCosMultimodalParse,
+  isPdfTooLargeForHunyuanWholeFileBase64,
+} from '@/utils/multimodalAnalysis'
 
 function cfgFrom(map: Record<string, string | undefined>): ConfigService {
   return {
@@ -110,6 +113,17 @@ describe('canTryHunyuanCosMultimodalParse（OpenAI 兼容通道，本地 Base64�
     })
     const twoMb = 2 * 1024 * 1024
     expect(canTryHunyuanCosMultimodalParse(cfg, cosStub(), cosUri, 'pdf', twoMb, __filename)).toBe(false)
+  })
+
+  it('PDF 超过整本 Base64 直传上限时 canTry 返回 false', () => {
+    const cfg = cfgFrom({
+      HUNYUAN_MULTIMODAL_ENABLED: '1',
+      HUNYUAN_VISION_API_KEY: 'sk-test',
+      HUNYUAN_PDF_WHOLE_FILE_MAX_MB: '1.5',
+    })
+    const fourMb = 4 * 1024 * 1024
+    expect(isPdfTooLargeForHunyuanWholeFileBase64(cfg, fourMb)).toBe(true)
+    expect(canTryHunyuanCosMultimodalParse(cfg, cosStub(), cosUri, 'pdf', fourMb, __filename)).toBe(false)
   })
 })
 

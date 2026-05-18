@@ -45,6 +45,20 @@ function guessMimeFromPath(localPath: string, fileKind: 'image' | 'pdf'): string
   return 'image/jpeg'
 }
 
+/** 超过该体积的 PDF 禁止整本 data:application/pdf;base64 直传混元（易触发 image download failed） */
+export function getHunyuanPdfWholeFileMaxBytes(config: ConfigService): number {
+  const mb = parseFloat(config.get<string>('HUNYUAN_PDF_WHOLE_FILE_MAX_MB') || '1.5')
+  if (!Number.isFinite(mb) || mb <= 0) return 1_572_864
+  return Math.round(mb * 1024 * 1024)
+}
+
+export function isPdfTooLargeForHunyuanWholeFileBase64(
+  config: ConfigService,
+  fileBytes: number,
+): boolean {
+  return fileBytes > getHunyuanPdfWholeFileMaxBytes(config)
+}
+
 function normalizeOpenAiMessageContent(content: unknown): string {
   if (typeof content === 'string') return content.trim()
   if (Array.isArray(content)) {
@@ -57,65 +71,50 @@ function normalizeOpenAiMessageContent(content: unknown): string {
   return ''
 }
 
-/**
- * 调用混元 OpenAI 兼容多模态接口（仅 axios）。
- * Content 使用标准数组：[{type:text},{type:image_url,image_url:{url:data:...}}]
- */
-export async function runHunyuanOpenAiVisionChat(params: {
+function buildHunyuanVisionRequestBody(params: {
   config: ConfigService
-  localPath: string
-  fileKind: 'image' | 'pdf'
   prompt: string
+  imageDataUrls: string[]
+}) {
+  const model =
+    params.config.get<string>('HUNYUAN_MULTIMODAL_MODEL')?.trim() || 'hunyuan-vision'
+  const temperature = parseFloat(
+    params.config.get<string>('HUNYUAN_MULTIMODAL_TEMPERATURE') || '0.1',
+  )
+  const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+    { type: 'text', text: params.prompt },
+  ]
+  for (const url of params.imageDataUrls) {
+    content.push({ type: 'image_url', image_url: { url } })
+  }
+  return {
+    model,
+    messages: [{ role: 'user', content }],
+    temperature: Number.isFinite(temperature) ? temperature : 0.1,
+  }
+}
+
+async function postHunyuanOpenAiVision(params: {
+  config: ConfigService
+  body: ReturnType<typeof buildHunyuanVisionRequestBody>
 }): Promise<{
   text: string
   promptTokens?: number
   completionTokens?: number
   totalTokens?: number
 }> {
-  if (!isHunyuanMultimodalEnabled(params.config)) {
-    throw new Error('混元多模态未启用（HUNYUAN_MULTIMODAL_ENABLED 或兼容 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED）')
-  }
   const apiKey = resolveHunyuanVisionApiKey(params.config)
   if (!apiKey) {
     throw new Error('混元 OpenAI 多模态：缺少 HUNYUAN_VISION_API_KEY（sk- 开头 API Key）')
   }
-  const lp = params.localPath?.trim()
-  if (!lp || !fs.existsSync(lp)) {
-    throw new Error(`混元多模态：本地文件不存在：${lp || '(empty)'}`)
-  }
-
-  const buf = fs.readFileSync(lp)
-  const mime = guessMimeFromPath(lp, params.fileKind)
-  const dataUrl = `data:${mime};base64,${buf.toString('base64')}`
-
   const url =
     params.config.get<string>('HUNYUAN_OPENAI_BASE_URL')?.trim() ||
     HUNYUAN_OPENAI_CHAT_COMPLETIONS_URL_DEFAULT
-  const model =
-    params.config.get<string>('HUNYUAN_MULTIMODAL_MODEL')?.trim() || 'hunyuan-vision'
-  const temperature = parseFloat(params.config.get<string>('HUNYUAN_MULTIMODAL_TEMPERATURE') || '0.1')
   const timeoutMs = parseInt(params.config.get<string>('HUNYUAN_OPENAI_TIMEOUT_MS') || '180000', 10)
   const timeout = Number.isFinite(timeoutMs) && timeoutMs >= 10_000 ? timeoutMs : 180_000
 
-  const body = {
-    model,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: params.prompt },
-          {
-            type: 'image_url',
-            image_url: { url: dataUrl },
-          },
-        ],
-      },
-    ],
-    temperature: Number.isFinite(temperature) ? temperature : 0.1,
-  }
-
   try {
-    const { data, status } = await axios.post<Record<string, unknown>>(url, body, {
+    const { data, status } = await axios.post<Record<string, unknown>>(url, params.body, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -147,7 +146,8 @@ export async function runHunyuanOpenAiVisionChat(params: {
     return {
       text,
       promptTokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
-      completionTokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+      completionTokens:
+        typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : undefined,
       totalTokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : undefined,
     }
   } catch (e) {
@@ -159,6 +159,86 @@ export async function runHunyuanOpenAiVisionChat(params: {
     }
     throw e
   }
+}
+
+/** 多张 PNG/JPEG 分批送混元（单页/小批），避免整本 PDF Base64 过大 */
+export async function runHunyuanOpenAiVisionChatFromImages(params: {
+  config: ConfigService
+  images: Array<{ buffer: Buffer; mime?: string }>
+  prompt: string
+}): Promise<{
+  text: string
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}> {
+  if (!params.images.length) {
+    throw new Error('混元多模态：未提供任何页面图像')
+  }
+  const maxImageMb = parseInt(params.config.get<string>('HUNYUAN_COS_MULTIMODAL_MAX_IMAGE_MB') || '18', 10)
+  const maxImageBytes =
+    Number.isFinite(maxImageMb) && maxImageMb > 0 ? maxImageMb * 1024 * 1024 : 18 * 1024 * 1024
+  const dataUrls = params.images.map((img) => {
+    if (img.buffer.length > maxImageBytes) {
+      throw new Error(
+        `混元多模态：单页图像 ${(img.buffer.length / (1024 * 1024)).toFixed(1)}MB 超过上限 ${maxImageMb}MB`,
+      )
+    }
+    const mime = img.mime || 'image/png'
+    return `data:${mime};base64,${img.buffer.toString('base64')}`
+  })
+  const body = buildHunyuanVisionRequestBody({
+    config: params.config,
+    prompt: params.prompt,
+    imageDataUrls: dataUrls,
+  })
+  return postHunyuanOpenAiVision({ config: params.config, body })
+}
+
+/**
+ * 调用混元 OpenAI 兼容多模态接口（仅 axios）。
+ * Content 使用标准数组：[{type:text},{type:image_url,image_url:{url:data:...}}]
+ */
+export async function runHunyuanOpenAiVisionChat(params: {
+  config: ConfigService
+  localPath: string
+  fileKind: 'image' | 'pdf'
+  prompt: string
+}): Promise<{
+  text: string
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}> {
+  if (!isHunyuanMultimodalEnabled(params.config)) {
+    throw new Error('混元多模态未启用（HUNYUAN_MULTIMODAL_ENABLED 或兼容 HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED）')
+  }
+  const apiKey = resolveHunyuanVisionApiKey(params.config)
+  if (!apiKey) {
+    throw new Error('混元 OpenAI 多模态：缺少 HUNYUAN_VISION_API_KEY（sk- 开头 API Key）')
+  }
+  const lp = params.localPath?.trim()
+  if (!lp || !fs.existsSync(lp)) {
+    throw new Error(`混元多模态：本地文件不存在：${lp || '(empty)'}`)
+  }
+
+  const buf = fs.readFileSync(lp)
+  if (
+    params.fileKind === 'pdf' &&
+    isPdfTooLargeForHunyuanWholeFileBase64(params.config, buf.length)
+  ) {
+    throw new Error(
+      `PDF 体积 ${(buf.length / (1024 * 1024)).toFixed(1)}MB 超过整本直传混元上限（HUNYUAN_PDF_WHOLE_FILE_MAX_MB），请使用分页渲染链路（FILE_PARSE_PDF_PAGED_VISION 或自动分页）`,
+    )
+  }
+  const mime = guessMimeFromPath(lp, params.fileKind)
+  const dataUrl = `data:${mime};base64,${buf.toString('base64')}`
+  const body = buildHunyuanVisionRequestBody({
+    config: params.config,
+    prompt: params.prompt,
+    imageDataUrls: [dataUrl],
+  })
+  return postHunyuanOpenAiVision({ config: params.config, body })
 }
 
 /**
@@ -193,6 +273,12 @@ export function canTryHunyuanCosMultimodalParse(
       logger.warn(`Hunyuan OpenAI multimodal: PDF ${mb.toFixed(1)}MB 超过上限 ${maxMb}MB，跳过`)
       return false
     }
+    if (isPdfTooLargeForHunyuanWholeFileBase64(config, fileBytes)) {
+      logger.warn(
+        `Hunyuan OpenAI multimodal: PDF ${(fileBytes / (1024 * 1024)).toFixed(1)}MB 超过整本 Base64 直传上限，需分页渲染`,
+      )
+      return false
+    }
   }
   if (fileKind === 'image') {
     const maxMb = parseInt(config.get<string>('HUNYUAN_COS_MULTIMODAL_MAX_IMAGE_MB') || '18', 10)
@@ -205,7 +291,7 @@ export function canTryHunyuanCosMultimodalParse(
   return true
 }
 
-function buildStructuredRequirementPrompt(fileKind: 'image' | 'pdf'): string {
+export function buildStructuredRequirementPrompt(fileKind: 'image' | 'pdf'): string {
   const docLabel = fileKind === 'image' ? 'UI设计图' : 'PDF文档'
   return `你是资深产品需求分析师，请仔细分析这张${docLabel}，提取完整的结构化需求分析报告。
 

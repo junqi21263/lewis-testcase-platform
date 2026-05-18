@@ -27,6 +27,13 @@ import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.servic
 import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
+import {
+  buildStructuredRequirementPrompt,
+  isHunyuanMultimodalEnabled,
+  isPdfTooLargeForHunyuanWholeFileBase64,
+  resolveHunyuanVisionApiKey,
+  runHunyuanOpenAiVisionChatFromImages,
+} from '@/utils/multimodalAnalysis'
 
 @Injectable()
 export class FilesService implements OnModuleInit, OnModuleDestroy {
@@ -661,6 +668,86 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return this.config.get<string>('FILE_PARSE_PDF_PAGED_VISION')?.trim() === '1'
   }
 
+  /** 大 PDF 或显式开关时优先分页混元，避免整本 data:pdf;base64 触发混元 image download failed */
+  private shouldPreferPdfPagedHunyuan(fileBytes: number): boolean {
+    if (this.fileParsePdfPagedVisionEnabled()) return true
+    if (!this.documentVision.isPdfPageRenderAvailable()) return false
+    return isPdfTooLargeForHunyuanWholeFileBase64(this.config, fileBytes)
+  }
+
+  /**
+   * PDF 按页渲 PNG，再分批调用混元多模态（OpenAI 兼容通道）。
+   */
+  private async tryPdfHunyuanPagedVisionBatches(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+  ): Promise<{ text: string } | null> {
+    if (!this.documentVision.isPdfPageRenderAvailable()) return null
+    if (!isHunyuanMultimodalEnabled(this.config) || !resolveHunyuanVisionApiKey(this.config)) {
+      return null
+    }
+
+    const batchRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_BATCH_PAGES') || '2', 10)
+    const batchPages = Number.isFinite(batchRaw) && batchRaw > 0 ? Math.min(Math.max(batchRaw, 1), 4) : 2
+    const maxRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_MAX_PAGES') || '60', 10)
+    const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
+
+    const sections: string[] = []
+    let pageTotal = 0
+    let batchIndex = 0
+    let current: { pageNum: number; buffer: Buffer }[] = []
+    const pagePrompt = `${buildStructuredRequirementPrompt('image')}\n\n（以下为 PDF 的部分页面截图，请结合页序理解。）`
+
+    const flushBatch = async () => {
+      if (current.length === 0) return
+      batchIndex++
+      const first = current[0].pageNum
+      const last = current[current.length - 1].pageNum
+      await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+        phase: 'VISION',
+        message: 'hunyuan_pdf_page_batch',
+        pageCurrent: last,
+        pageTotal,
+        batchIndex,
+      })
+      try {
+        const out = await runHunyuanOpenAiVisionChatFromImages({
+          config: this.config,
+          images: current.map((p) => ({ buffer: p.buffer, mime: 'image/png' })),
+          prompt: pagePrompt,
+        })
+        if (out.text.trim()) {
+          sections.push(`【PDF 第 ${first}-${last} 页｜混元多模态】\n${out.text.trim()}`)
+        }
+      } catch (e) {
+        this.logger.warn(
+          `PDF 混元分页批次 ${batchIndex}（第 ${first}-${last} 页）失败: ${(e as Error).message}`,
+        )
+      }
+      current = []
+    }
+
+    try {
+      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath)) {
+        if (pageTotal >= maxPages) break
+        pageTotal++
+        current.push(page)
+        if (current.length >= batchPages) {
+          await flushBatch()
+        }
+      }
+      await flushBatch()
+    } catch (e) {
+      this.logger.warn(`PDF 混元分页渲染失败: ${(e as Error).message}`)
+      return null
+    }
+
+    if (sections.length === 0) return null
+    return {
+      text: `【混元多模态直读｜PDF 分页渲染】\n\n${sections.join('\n\n')}`,
+    }
+  }
+
   /**
    * 混元直读未命中后：在允许腾讯云兜底时走全本 OCR；否则抛错。
    * @param embeddedText 已抽取的内置文本（可为空，供 OCR 侧参考）
@@ -678,6 +765,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     embeddedText: string,
     numpages: number,
   ): Promise<string> {
+    if (isPdfTooLargeForHunyuanWholeFileBase64(this.config, ctx.fileBytes)) {
+      throw new Error(
+        '【解析失败】PDF 体积较大，整本 Base64 直传混元不可用，且分页渲染未产出有效正文。请确认 backend 镜像已安装 canvas（pnpm rebuild canvas），或设置 FILE_PARSE_PDF_PAGED_VISION=1；若允许 OCR 兜底可设 FILE_PARSE_TENCENT_OCR_FALLBACK=1。',
+      )
+    }
     throw new Error(
       '【解析失败】PDF 解析仅允许混元主链路：混元未返回足够长的有效正文。请核对 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED/HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF，并确认文件已上传至 COS。',
     )
@@ -710,38 +802,69 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         : {}),
     })
 
-    if (this.fileParsePdfPagedVisionEnabled()) {
+    if (this.shouldPreferPdfPagedHunyuan(ctx.fileBytes)) {
       if (!this.documentVision.isPdfPageRenderAvailable()) {
         this.logger.warn(
-          'FILE_PARSE_PDF_PAGED_VISION=1 但 canvas 不可用，跳过分页视觉，改用混元 COS PDF 直读',
+          'PDF 需分页混元解析，但 canvas 不可用；将尝试整本直传（大文件可能失败）。请重建含 canvas 的 backend 镜像或配置 FILE_PARSE_TENCENT_OCR_FALLBACK=1',
         )
       } else {
-        const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
-          filePath,
-          async (p) => {
-            await heartbeat('HUNYUAN_COS_MULTIMODAL', {
-              phase: 'VISION',
-              message: 'hunyuan_pdf_page_batch',
-              pageCurrent: p.pageCurrent,
-              pageTotal: p.pageTotal,
-              batchIndex: p.batchIndex,
-              batchTotal: p.batchTotal,
-            })
-          },
-        )
-        if (visionPaged?.text?.trim()) {
-          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
-            phase: 'VISION',
-            message: 'hunyuan_pdf_page_batch_done',
-            chars: visionPaged.text.length,
-          })
-          this.logger.log(
-            `PDF：已通过分页渲染 + 混元视觉完成主解析（model=${visionPaged.modelName}, chars=${visionPaged.text.length})`,
+        const hunyuanPaged = await this.tryPdfHunyuanPagedVisionBatches(filePath, heartbeat)
+        if (hunyuanPaged?.text?.trim()) {
+          const minChars = parseInt(
+            this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '40',
+            10,
           )
-          return visionPaged.text
+          const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
+          if (hunyuanPaged.text.trim().length >= floor) {
+            await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+              phase: 'VISION',
+              message: 'hunyuan_pdf_page_batch_done',
+              chars: hunyuanPaged.text.length,
+            })
+            this.logger.log(
+              `PDF：混元分页渲染主解析成功（chars=${hunyuanPaged.text.length}）`,
+            )
+            return hunyuanPaged.text
+          }
+          this.logger.warn(`PDF：混元分页正文过短（< ${floor} 字），继续后续链路`)
+        } else {
+          this.logger.warn('PDF：混元分页链路未返回有效正文')
         }
-        this.logger.warn('PDF：分页视觉链路未返回有效正文，尝试混元 PDF 直读 COS 兼容链路')
+
+        if (this.fileParsePdfPagedVisionEnabled()) {
+          const visionPaged = await this.documentVision.transcribePdfByVisionBatches(
+            filePath,
+            async (p) => {
+              await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+                phase: 'VISION',
+                message: 'gateway_pdf_page_batch',
+                pageCurrent: p.pageCurrent,
+                pageTotal: p.pageTotal,
+                batchIndex: p.batchIndex,
+                batchTotal: p.batchTotal,
+              })
+            },
+          )
+          if (visionPaged?.text?.trim()) {
+            await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+              phase: 'VISION',
+              message: 'gateway_pdf_page_batch_done',
+              chars: visionPaged.text.length,
+            })
+            return visionPaged.text
+          }
+        }
       }
+    }
+
+    if (isPdfTooLargeForHunyuanWholeFileBase64(this.config, ctx.fileBytes)) {
+      return this.finishPdfAfterHunyuanMiss(
+        filePath,
+        heartbeat,
+        ctx,
+        '',
+        0,
+      )
     }
 
     const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
