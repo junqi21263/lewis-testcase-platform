@@ -52,10 +52,10 @@ COPY backend/ .
 
 RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
 
-# canvas 的 install 脚本被 --ignore-scripts 跳过；pdf-to-img 运行时需要 build/Release/canvas.node
+# canvas 须为直接依赖（pnpm 才会链接到根 node_modules）；install 脚本被 --ignore-scripts 跳过，此处显式编译
 RUN echo "=== [backend builder] rebuild native canvas ===" && \
   pnpm rebuild canvas && \
-  node -e "require('canvas'); console.log('[build] canvas native OK')"
+  node -e "const p=require.resolve('canvas'); require(p); console.log('[build] canvas native OK:', p)"
 
 RUN set -o pipefail && pnpm build 2>&1 | tee build.log
 

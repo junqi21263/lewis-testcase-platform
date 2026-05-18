@@ -61,6 +61,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
+      canvas:
+        specifier: 3.2.1
+        version: 3.2.1
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1
