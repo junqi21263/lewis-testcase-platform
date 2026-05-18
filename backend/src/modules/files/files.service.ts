@@ -28,7 +28,8 @@ import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 import {
-  buildStructuredRequirementPrompt,
+  buildPdfPagedVisionExtractionPrompt,
+  isGenericHunyuanPlaceholderOutput,
   isHunyuanMultimodalEnabled,
   isPdfTooLargeForHunyuanWholeFileBase64,
   resolveHunyuanVisionApiKey,
@@ -629,7 +630,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         10,
       )
       const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
-      if (body.trim().length >= floor) {
+      if (body.trim().length >= floor && !isGenericHunyuanPlaceholderOutput(body)) {
         await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
           phase: 'VISION',
           message: 'hunyuan_cos_done',
@@ -646,7 +647,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         )
         return parts.join('\n\n')
       }
-      this.logger.warn(`混元 COS PDF 多模态正文过短（${body.trim().length} < ${floor}），继续后续流程`)
+      if (isGenericHunyuanPlaceholderOutput(body)) {
+        this.logger.warn('混元 COS PDF 多模态输出疑似模板占位，继续后续流程')
+      } else {
+        this.logger.warn(`混元 COS PDF 多模态正文过短（${body.trim().length} < ${floor}），继续后续流程`)
+      }
     }
     await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
       phase: 'VISION',
@@ -687,8 +692,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return null
     }
 
-    const batchRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_BATCH_PAGES') || '2', 10)
-    const batchPages = Number.isFinite(batchRaw) && batchRaw > 0 ? Math.min(Math.max(batchRaw, 1), 4) : 2
+    const batchRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_BATCH_PAGES') || '1', 10)
+    const batchPages = Number.isFinite(batchRaw) && batchRaw > 0 ? Math.min(Math.max(batchRaw, 1), 4) : 1
+    const scaleRaw = parseFloat(
+      this.config.get<string>('HUNYUAN_PDF_RENDER_SCALE') ||
+        this.config.get<string>('VISION_PDF_RENDER_SCALE') ||
+        '2',
+    )
+    const renderScale = Math.min(Math.max(scaleRaw || 2, 0.5), 3)
     const maxRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_MAX_PAGES') || '60', 10)
     const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
 
@@ -696,13 +707,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     let pageTotal = 0
     let batchIndex = 0
     let current: { pageNum: number; buffer: Buffer }[] = []
-    const pagePrompt = `${buildStructuredRequirementPrompt('image')}\n\n（以下为 PDF 的部分页面截图，请结合页序理解。）`
 
     const flushBatch = async () => {
       if (current.length === 0) return
       batchIndex++
       const first = current[0].pageNum
       const last = current[current.length - 1].pageNum
+      const pagePrompt = buildPdfPagedVisionExtractionPrompt(first, last)
       await heartbeat('HUNYUAN_COS_MULTIMODAL', {
         phase: 'VISION',
         message: 'hunyuan_pdf_page_batch',
@@ -716,8 +727,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           images: current.map((p) => ({ buffer: p.buffer, mime: 'image/png' })),
           prompt: pagePrompt,
         })
-        if (out.text.trim()) {
-          sections.push(`【PDF 第 ${first}-${last} 页｜混元多模态】\n${out.text.trim()}`)
+        const batchText = out.text.trim()
+        if (batchText && !isGenericHunyuanPlaceholderOutput(batchText)) {
+          sections.push(`【PDF 第 ${first}-${last} 页｜混元多模态】\n${batchText}`)
+        } else if (batchText) {
+          this.logger.warn(
+            `PDF 混元分页批次 ${batchIndex}（第 ${first}-${last} 页）输出疑似模板占位，已丢弃`,
+          )
         }
       } catch (e) {
         this.logger.warn(
@@ -728,7 +744,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath)) {
+      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath, {
+        scale: renderScale,
+      })) {
         if (pageTotal >= maxPages) break
         pageTotal++
         current.push(page)
@@ -792,6 +810,21 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       uploaderId?: string | null
     },
   ): Promise<string> {
+    let embeddedText = ''
+    let numpages = 0
+    try {
+      const layer = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
+      embeddedText = layer.text || ''
+      numpages = layer.numpages
+      if (embeddedText.trim()) {
+        this.logger.log(
+          `PDF：内置文本层 ${embeddedText.trim().length} 字 / ${numpages} 页（将与视觉转录合并）`,
+        )
+      }
+    } catch (e) {
+      this.logger.warn(`PDF：抽取内置文本层失败: ${(e as Error).message}`)
+    }
+
     const sizeMb = ctx.fileBytes / (1024 * 1024)
     await heartbeat('PDF', {
       phase: 'PDF',
@@ -815,18 +848,26 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             10,
           )
           const floor = Number.isFinite(minChars) && minChars > 0 ? minChars : 40
-          if (hunyuanPaged.text.trim().length >= floor) {
+          if (
+            hunyuanPaged.text.trim().length >= floor &&
+            !isGenericHunyuanPlaceholderOutput(hunyuanPaged.text)
+          ) {
+            const merged = this.mergePdfVisionWithEmbeddedLayer(hunyuanPaged.text, embeddedText)
             await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
               phase: 'VISION',
               message: 'hunyuan_pdf_page_batch_done',
-              chars: hunyuanPaged.text.length,
+              chars: merged.length,
             })
             this.logger.log(
-              `PDF：混元分页渲染主解析成功（chars=${hunyuanPaged.text.length}）`,
+              `PDF：混元分页渲染主解析成功（chars=${merged.length}）`,
             )
-            return hunyuanPaged.text
+            return merged
           }
-          this.logger.warn(`PDF：混元分页正文过短（< ${floor} 字），继续后续链路`)
+          if (isGenericHunyuanPlaceholderOutput(hunyuanPaged.text)) {
+            this.logger.warn('PDF：混元分页输出疑似模板占位，继续后续链路')
+          } else {
+            this.logger.warn(`PDF：混元分页正文过短（< ${floor} 字），继续后续链路`)
+          }
         } else {
           this.logger.warn('PDF：混元分页链路未返回有效正文')
         }
@@ -858,19 +899,34 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (isPdfTooLargeForHunyuanWholeFileBase64(this.config, ctx.fileBytes)) {
-      return this.finishPdfAfterHunyuanMiss(
-        filePath,
-        heartbeat,
-        ctx,
-        '',
-        0,
-      )
+      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
     }
 
-    const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(filePath, heartbeat, ctx, '')
+    const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(
+      filePath,
+      heartbeat,
+      ctx,
+      embeddedText,
+    )
     if (hunyuanBody) return hunyuanBody
 
-    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, '', 0)
+    if (embeddedText.trim()) {
+      const suff = this.pdfDocumentParse.evaluateTextLayerSufficiency(embeddedText, numpages)
+      if (suff.sufficient) {
+        this.logger.log('PDF：混元未命中，使用质量足够的内置文本层')
+        return `【PDF 内置文本层】\n${embeddedText.trim()}`
+      }
+    }
+
+    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
+  }
+
+  private mergePdfVisionWithEmbeddedLayer(visionText: string, embeddedText: string): string {
+    const vision = visionText.trim()
+    const embedded = embeddedText.trim()
+    if (!embedded) return vision
+    if (!vision) return `【PDF 内置文本层】\n${embedded}`
+    return `${vision}\n\n【PDF 内置文本层（原文检索备用）】\n${embedded}`
   }
 
   private getOcrBatchSize(): number {

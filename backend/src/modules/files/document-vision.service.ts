@@ -342,14 +342,19 @@ export class DocumentVisionService {
   /** 按页迭代渲染整本 PDF（pdf-to-img）；用于分页 OCR / 分批视觉理解 */
   async *iteratePdfPagesAsPng(
     pdfPath: string,
+    options?: { scale?: number },
   ): AsyncGenerator<{ pageNum: number; buffer: Buffer }, void, unknown> {
     if (!this.isPdfPageRenderAvailable()) {
       throw new Error(
         'PDF 本地渲染不可用：canvas 原生模块缺失。请重建 backend 镜像（Dockerfile 含 pnpm rebuild canvas），或关闭 FILE_PARSE_PDF_PAGED_VISION 以改用混元 COS 直读。',
       )
     }
-    const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')
-    const scale = Math.min(Math.max(parseFloat(scaleRaw || '1.2') || 1.2, 0.5), 3)
+    const scaleRaw =
+      options?.scale != null
+        ? String(options.scale)
+        : this.config.get<string>('HUNYUAN_PDF_RENDER_SCALE') ||
+          this.config.get<string>('VISION_PDF_RENDER_SCALE')
+    const scale = Math.min(Math.max(parseFloat(scaleRaw || '2') || 2, 0.5), 3)
     const { pdf } = await this.importPdfToImg()
     const document = await pdf(pdfPath, { scale })
     let pageNum = 0

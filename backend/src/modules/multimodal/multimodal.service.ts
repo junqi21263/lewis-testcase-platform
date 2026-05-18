@@ -395,7 +395,10 @@ export class MultimodalService {
     const md5 = args.localPath
       ? this.buildMd5FromFile(args.localPath)
       : this.buildMd5ByKey(`${args.storedPath}:${args.fileBytes}`)
-    const cached = await this.getCache(md5, args.moduleType)
+    /** 提示词/分页策略升级后 bump，避免返回旧版模板占位缓存 */
+    const cacheMd5 =
+      args.moduleType === 'FILE_PARSE' ? `hunyuan-parse-v2:${md5}` : md5
+    const cached = await this.getCache(cacheMd5, args.moduleType)
     if (cached) {
       const value =
         args.moduleType === 'FILE_PARSE'
@@ -466,7 +469,7 @@ export class MultimodalService {
             ? { analysisResult: text }
             : { testcaseResult: text }
       await this.setCache({
-        md5,
+        md5: cacheMd5,
         moduleType: args.moduleType,
         fileKind: args.fileKind,
         ...payload,
@@ -484,7 +487,7 @@ export class MultimodalService {
         latencyMs: Date.now() - started,
         mode: 'multimodal',
       })
-      return { text, md5, cacheHit: false }
+      return { text, md5: cacheMd5, cacheHit: false }
     } catch (e) {
       const msg = sanitizeErrorMessageForClient(e instanceof Error ? e.message : String(e), 1200)
       this.logger.warn(`tryDirectCosMultimodal failed: ${msg}`)

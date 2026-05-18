@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service'
 import * as multimodalAnalysis from '@/utils/multimodalAnalysis'
 import {
   canTryHunyuanCosMultimodalParse,
+  isGenericHunyuanPlaceholderOutput,
   isPdfTooLargeForHunyuanWholeFileBase64,
 } from '@/utils/multimodalAnalysis'
 
@@ -113,6 +114,18 @@ describe('canTryHunyuanCosMultimodalParse（OpenAI 兼容通道，本地 Base64�
     })
     const twoMb = 2 * 1024 * 1024
     expect(canTryHunyuanCosMultimodalParse(cfg, cosStub(), cosUri, 'pdf', twoMb, __filename)).toBe(false)
+  })
+
+  it('识别混元模板占位输出', () => {
+    const generic = `# 一、页面/文档功能概述
+- 页面名称：UI设计图
+| 模块1 | 展示设计流程 | 高 |
+| 接口1 | GET | /api/design/流程图 |
+以上是对该UI设计图的全面分析。请根据具体情况和实际需求进行进一步调整。`
+    expect(isGenericHunyuanPlaceholderOutput(generic)).toBe(true)
+    expect(
+      isGenericHunyuanPlaceholderOutput('储值卡商品卡片：商品已生效、商品未生效、商品已完结三种状态'),
+    ).toBe(false)
   })
 
   it('PDF 超过整本 Base64 直传上限时 canTry 返回 false', () => {
