@@ -689,8 +689,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-4">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold">生成完成</h3>
@@ -747,7 +747,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
         )}
       </div>
 
-      <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
+      <div className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -863,9 +863,9 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
         </div>
       </div>
 
-      <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
+      <div className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4">
         {filteredCases.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-8 text-center">
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-8 text-center">
             <ListFilter className="mx-auto mb-2 h-5 w-5 text-[hsl(var(--gcs-text-muted))]" />
             <p className="text-sm">没有匹配的用例</p>
             <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">调整搜索词或筛选条件试试</p>
@@ -885,10 +885,10 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           return (
             <Card
               key={caseId}
-              className="border-[hsl(var(--gcs-testcase-card-border))] bg-[hsl(var(--gcs-testcase-card-bg))] transition hover:bg-[hsl(var(--gcs-card-hover-bg))]"
+              className="overflow-hidden border-[hsl(var(--gcs-testcase-card-border))] bg-[hsl(var(--gcs-testcase-card-bg))] transition hover:bg-[hsl(var(--gcs-card-hover-bg))]"
             >
               <CardContent className="p-4">
-                <div className="mb-2 flex items-start gap-2">
+                <div className="mb-2 flex min-w-0 items-start gap-2">
                   <input
                     type="checkbox"
                     className="mt-1 h-4 w-4 rounded border-input"
@@ -897,7 +897,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h4 className="text-sm font-semibold">{c.title}</h4>
+                      <h4 className="text-sm font-semibold break-words [overflow-wrap:anywhere]">{c.title}</h4>
                       <div className="flex items-center gap-1.5">
                         <CasePriorityBadge priority={c.priority} />
                         <Badge
@@ -921,7 +921,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
                 {shortPrecondition && (
                   <div className="mb-2 rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2.5 py-2 text-xs">
                     <span className="font-medium text-[hsl(var(--gcs-text-secondary))]">前置条件：</span>
-                    <span className="text-[hsl(var(--gcs-text-secondary))]">{shortPrecondition}</span>
+                    <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{shortPrecondition}</span>
                   </div>
                 )}
 
@@ -929,7 +929,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
                   <p className="mb-1 font-medium text-[hsl(var(--gcs-text-secondary))]">步骤描述</p>
                   <ol className="list-decimal space-y-1 pl-4">
                     {showSteps.map((step) => (
-                      <li key={step.order} className="text-[hsl(var(--gcs-text-secondary))]">
+                      <li key={step.order} className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">
                         {step.action}
                         {step.expected ? (
                           <span className="ml-1 text-[hsl(var(--gcs-text-muted))]">（期望：{step.expected}）</span>
@@ -944,7 +944,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
 
                 <p className="mt-2 text-xs">
                   <span className="font-medium text-emerald-500">预期结果：</span>
-                  <span className="text-[hsl(var(--gcs-text-secondary))]">{c.expectedResult}</span>
+                  <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{c.expectedResult}</span>
                 </p>
 
                 <div className="mt-3 flex justify-end">
@@ -956,6 +956,9 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             </Card>
           )
         })}
+      </div>
+      <div className="gcs-result-panel-footer shrink-0 border-t px-3 py-2 text-xs text-[hsl(var(--gcs-text-muted))]">
+        当前筛选 {filteredCases.length} 条，已选择 {selected.size} 条
       </div>
     </div>
   )
@@ -1273,7 +1276,7 @@ export default function GeneratePage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(360px,40%)_minmax(0,60%)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-5 overflow-hidden xl:grid-cols-[minmax(360px,40%)_minmax(0,60%)]">
         <section className="gcs-appear-2 flex min-h-0 flex-col gap-4">
           <Card className="flex h-full border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] xl:min-h-0 xl:flex-1 xl:flex-col">
             <CardHeader className="pb-2">
@@ -1541,9 +1544,9 @@ export default function GeneratePage() {
           </Card>
         </section>
 
-        <section className="gcs-appear-3 min-h-0">
-          <Card className="flex h-full min-h-[420px] flex-col border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-result-panel-bg))]">
-            <CardHeader className="pb-3">
+        <section className="gcs-appear-3 flex min-h-0 flex-col overflow-hidden">
+          <Card className="gcs-result-panel flex h-full min-h-0 flex-col overflow-hidden border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-result-panel-bg))]">
+            <CardHeader className="gcs-result-panel-header shrink-0 border-b pb-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">AI Generation Console</CardTitle>
@@ -1552,9 +1555,10 @@ export default function GeneratePage() {
                 {isGenerating && <Badge variant="warning">生成中</Badge>}
               </div>
             </CardHeader>
-            <CardContent className="min-h-0 flex-1 overflow-y-auto">
+            <CardContent className="gcs-result-panel-body min-h-0 flex-1 overflow-hidden p-0">
+              <div className="flex h-full min-h-0 flex-col">
               {!isGenerating && generatedCases.length === 0 && (
-                <div className="flex h-full min-h-[360px] items-center justify-center">
+                <div className="flex min-h-0 flex-1 items-center justify-center p-5">
                   <div className="gcs-console-ready w-full max-w-2xl rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] p-8 text-center">
                     <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
                     <p className="text-sm font-semibold">配置输入后，AI 会在这里生成测试用例</p>
@@ -1577,7 +1581,7 @@ export default function GeneratePage() {
               )}
 
               {isGenerating && (
-                <div className="space-y-3">
+                <div className="gcs-result-body-scroll min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-4">
                   <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
                     <p className="mb-2 text-sm font-semibold">生成进度</p>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -1625,7 +1629,12 @@ export default function GeneratePage() {
                 </div>
               )}
 
-              {!isGenerating && generatedCases.length > 0 && <GenerateResult cases={generatedCases} />}
+                {!isGenerating && generatedCases.length > 0 && (
+                  <div className="min-h-0 flex-1 overflow-hidden p-4">
+                    <GenerateResult cases={generatedCases} />
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </section>
