@@ -101,7 +101,10 @@ export const filesApi = {
 
   /** 轮询文件解析状态，直到 status 为 PARSED 或 FAILED */
   getFileById: (id: string) =>
-    request.get<UploadedFile>(`/files/${id}`, { timeout: FILES_LONG_TIMEOUT_MS }),
+    request.get<UploadedFile>(`/files/${id}`, {
+      timeout: FILES_LONG_TIMEOUT_MS,
+      suppressToast: true,
+    }),
 
   /** 重新触发文件解析（可选仅内置文本层） */
   retryParse: (id: string, opts?: { textOnly?: boolean }) =>

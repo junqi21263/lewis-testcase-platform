@@ -12,6 +12,15 @@ type ErrorResponseData = Partial<{
   path: string
 }>
 
+export type AppRequestConfig = AxiosRequestConfig & {
+  /** Suppress non-auth global toast handling; useful for background polling with local retry UI. */
+  suppressToast?: boolean
+}
+
+function shouldSuppressToast(config?: AxiosRequestConfig): boolean {
+  return Boolean((config as AppRequestConfig | undefined)?.suppressToast)
+}
+
 function extractErrorMessage(data: unknown, fallback: string): string {
   if (!data || typeof data !== 'object') return fallback
   const message = (data as ErrorResponseData).message
@@ -61,7 +70,11 @@ instance.interceptors.response.use(
         ? data.message
         : '请求失败'
 
-    if (code === 401) {
+    const suppressToast = shouldSuppressToast(response.config) && code !== 401
+
+    if (suppressToast) {
+      // Caller owns the retry/error UX.
+    } else if (code === 401) {
       if (isAuthEntryRequest(requestUrl)) {
         toast.error(extractErrorMessage(data, '用户名或密码错误'))
       } else if (useAuthStore.getState().token) {
@@ -97,7 +110,8 @@ instance.interceptors.response.use(
       const { status, data } = error.response
       const requestUrl = error.config?.url as string | undefined
       const hasToken = !!useAuthStore.getState().token
-      switch (status) {
+      const suppressToast = shouldSuppressToast(error.config) && status !== 401
+      if (!suppressToast) switch (status) {
         case 400:
           toast.error(extractErrorMessage(data, '请求参数错误'))
           break
@@ -135,6 +149,7 @@ instance.interceptors.response.use(
           toast.error(extractErrorMessage(data, '网络异常，请稍后重试'))
       }
     } else if (error.request) {
+      if (shouldSuppressToast(error.config)) return Promise.reject(error)
       toast.error('网络连接失败，请检查网络')
     }
     return Promise.reject(error)
@@ -143,19 +158,19 @@ instance.interceptors.response.use(
 
 /** 封装请求方法，自动提取 data 字段 */
 export const request = {
-  get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  get<T>(url: string, config?: AppRequestConfig): Promise<T> {
     return instance.get<ApiResponse<T>>(url, config).then((res) => res.data.data)
   },
-  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  post<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
     return instance.post<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
-  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  put<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
     return instance.put<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
-  patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  patch<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
     return instance.patch<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
-  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  delete<T>(url: string, config?: AppRequestConfig): Promise<T> {
     return instance.delete<ApiResponse<T>>(url, config).then((res) => res.data.data)
   },
 }

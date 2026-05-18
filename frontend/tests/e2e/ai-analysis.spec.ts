@@ -1,7 +1,29 @@
 import { expect, test } from '@playwright/test'
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 
 function apiOk<T>(data: T) {
   return { code: 0, data }
+}
+
+async function createMockPdfBuffer(): Promise<Buffer> {
+  const pdfDoc = await PDFDocument.create()
+  const page = pdfDoc.addPage([595.28, 841.89])
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  page.drawText('AI analysis mock PDF upload test', {
+    x: 72,
+    y: 760,
+    size: 18,
+    font,
+    color: rgb(0.1, 0.1, 0.1),
+  })
+  page.drawText('Requirement: user can upload a PDF and wait for parsed result.', {
+    x: 72,
+    y: 720,
+    size: 12,
+    font,
+    color: rgb(0.2, 0.2, 0.2),
+  })
+  return Buffer.from(await pdfDoc.save())
 }
 
 test.describe('E2E: AI 需求分析全流程', () => {
@@ -383,5 +405,114 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 等待解析完成（匹配日志消息中的带勾版本）
     await expect(page.getByText('✅ 解析完成')).toBeVisible({ timeout: 15000 })
+  })
+
+  test('上传 mock PDF 时轮询遇到 502 会自动重试并恢复解析结果', async ({ page }) => {
+    await page.unroute('**/*')
+    let detailPollCount = 0
+
+    await page.route('**/*', async (route) => {
+      const url = new URL(route.request().url())
+      const p = url.pathname
+      const method = route.request().method()
+
+      if (p === '/api/ai/models' && method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(apiOk([{ id: 'm-1', name: 'GPT-4o', provider: 'openai', modelId: 'gpt-4o', isDefault: true }])),
+        })
+        return
+      }
+
+      if (p === '/api/files' && method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(apiOk({ list: [], total: 0, page: 1, pageSize: 20 })),
+        })
+        return
+      }
+
+      if (p === '/api/files/upload' && method === 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(apiOk({
+            id: 'file-pdf-502',
+            name: 'file-pdf-502.pdf',
+            originalName: 'mock-requirements.pdf',
+            size: 2048,
+            mimeType: 'application/pdf',
+            fileType: 'PDF',
+            status: 'PARSING',
+            parseStage: 'PDF',
+            uploaderId: 'u-1',
+            createdAt: '2026-05-15T00:00:00.000Z',
+            updatedAt: '2026-05-15T00:00:00.000Z',
+          })),
+        })
+        return
+      }
+
+      if (method === 'GET' && p === '/api/files/file-pdf-502/parse-events') {
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          body: 'data: {"status":"PARSING","parseStage":"PDF","parseProgress":null,"parseError":null}\n\n',
+        })
+        return
+      }
+
+      if (p === '/api/files/file-pdf-502' && method === 'GET') {
+        detailPollCount++
+        if (detailPollCount === 1) {
+          await route.fulfill({
+            status: 502,
+            contentType: 'text/html',
+            body: '<html><body><h1>502 Bad Gateway</h1></body></html>',
+          })
+          return
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(apiOk({
+            id: 'file-pdf-502',
+            name: 'file-pdf-502.pdf',
+            originalName: 'mock-requirements.pdf',
+            size: 2048,
+            mimeType: 'application/pdf',
+            fileType: 'PDF',
+            status: 'PARSED',
+            parseStage: 'DONE',
+            parsedContent: 'Mock PDF parsed requirement: 用户可以上传 PDF 并等待解析结果。',
+            structuredRequirements: ['用户可以上传 PDF 并等待解析结果'],
+            uploaderId: 'u-1',
+            createdAt: '2026-05-15T00:00:00.000Z',
+            updatedAt: '2026-05-15T00:00:02.000Z',
+          })),
+        })
+        return
+      }
+
+      await route.fallback()
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+
+    const fileInput = page.locator('input[type="file"]')
+    await fileInput.setInputFiles({
+      name: 'mock-requirements.pdf',
+      mimeType: 'application/pdf',
+      buffer: await createMockPdfBuffer(),
+    })
+
+    await expect(page.getByText(/文件上传成功/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/解析状态接口暂时不可用（HTTP 502）/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/解析状态连接已恢复/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/解析完成/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
   })
 })

@@ -208,6 +208,28 @@ function loadStoredPromptTemplate(): string {
 const POLL_INTERVAL_MS = 1000
 /** 与后端 FILE_PARSE_TIMEOUT_MINUTES（默认 15）对齐：约 15 分钟内每秒轮询一次 */
 const POLL_MAX_ROUNDS = 900
+const POLL_MAX_TRANSIENT_ERRORS = 90
+const TRANSIENT_POLL_HTTP_STATUS = new Set([502, 503, 504, 520, 522, 524])
+
+function getHttpStatus(error: unknown): number | undefined {
+  const status = (error as { response?: { status?: unknown } })?.response?.status
+  return typeof status === 'number' ? status : undefined
+}
+
+function isTransientPollError(error: unknown): boolean {
+  const status = getHttpStatus(error)
+  if (status != null) return TRANSIENT_POLL_HTTP_STATUS.has(status)
+
+  const err = error as { request?: unknown; code?: string; name?: string }
+  return Boolean(err?.request || err?.code === 'ECONNABORTED' || err?.name === 'TimeoutError')
+}
+
+function pollErrorLabel(error: unknown): string {
+  const status = getHttpStatus(error)
+  if (status != null) return `HTTP ${status}`
+  const code = (error as { code?: string })?.code
+  return code || '网络异常'
+}
 
 function nowTime(): string {
   const d = new Date()
@@ -1091,11 +1113,31 @@ function AiAnalysisPageInner() {
       onTick?: (f: UploadedFile) => void,
     ): Promise<UploadedFile> => {
       let lastStage: string | undefined
+      let transientErrors = 0
       for (let i = 0; i < POLL_MAX_ROUNDS; i++) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
         await sleep(POLL_INTERVAL_MS)
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-        const f = await filesApi.getFileById(fileId)
+        let f: UploadedFile
+        try {
+          f = await filesApi.getFileById(fileId)
+          if (transientErrors > 0) {
+            addLog('✅ 解析状态连接已恢复，继续等待服务端结果')
+            transientErrors = 0
+          }
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') throw e
+          if (isTransientPollError(e) && transientErrors < POLL_MAX_TRANSIENT_ERRORS) {
+            transientErrors++
+            if (transientErrors === 1 || transientErrors % 10 === 0) {
+              addLog(
+                `⚠️ 解析状态接口暂时不可用（${pollErrorLabel(e)}），正在自动重试 ${transientErrors}/${POLL_MAX_TRANSIENT_ERRORS}`,
+              )
+            }
+            continue
+          }
+          throw e
+        }
         const fTick = maybeShrinkParseErrorField(f)
         onTick?.(fTick)
         const stage = fTick.parseStage ?? undefined
