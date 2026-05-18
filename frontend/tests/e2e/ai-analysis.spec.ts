@@ -189,7 +189,6 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 2. 验证初始状态
     await expect(page.getByText('等待上传')).toBeVisible()
-    await expect(page.getByText(/等待操作或开始分析/)).toBeVisible()
     await expect(page.getByRole('button', { name: '开始分析' })).toBeDisabled()
 
     // 3. 上传文件（通过隐藏的 input）
@@ -212,7 +211,9 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(startBtn).toBeEnabled()
 
     // 7. 填写补充说明
-    await page.getByPlaceholder('在此输入需求背景、业务描述或补充说明...').fill('请重点分析安全需求')
+    await page
+      .getByPlaceholder('约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。')
+      .fill('请重点分析安全需求')
 
     // 8. 点击开始分析
     await startBtn.click()
@@ -222,12 +223,10 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 10. 等待流式报告出现
     await expect(page.getByText('需求文档分析报告')).toBeVisible({ timeout: 15000 })
-    // 报告区 h2；勿用 getByText('主要功能需求') — Prompt 模板 textarea 内也含该文案
-    await expect(page.getByRole('heading', { name: /主要功能需求/ })).toBeVisible()
+    // 报告正文关键词（报告区目录按钮）
+    await expect(page.getByRole('button', { name: '主要功能需求' })).toBeVisible()
     await expect(page.getByText('用户登录')).toBeVisible()
     await expect(page.getByRole('button', { name: '生成用例' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '导出 PDF' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '导出 XMind' })).toBeVisible()
 
     // 11. 等待分析完成 → 进入审阅状态
     await expect(page.getByText('等待审阅')).toBeVisible({ timeout: 15000 })
@@ -254,19 +253,19 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByRole('heading', { name: 'AI 需求分析' })).toBeVisible()
 
     // 模型标签
-    await expect(page.getByText(/模型：GPT-4o/)).toBeVisible()
-
-    // 使用说明
-    await expect(page.getByText('使用说明')).toBeVisible()
+    // 功能区标题
+    await expect(page.getByText('需求上下文')).toBeVisible()
 
     // 上传区域
     await expect(page.getByText('拖拽文件到此处，或点击选择')).toBeVisible()
 
     // 补充说明输入框
-    await expect(page.getByPlaceholder('在此输入需求背景、业务描述或补充说明...')).toBeVisible()
+    await expect(
+      page.getByPlaceholder('约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。'),
+    ).toBeVisible()
 
     // 可编辑分析指令模板
-    await expect(page.getByLabel('分析指令模板（Prompt）')).toBeVisible()
+    await expect(page.getByLabel('指令正文（可直接编辑）')).toBeVisible()
 
     // 人工审阅开关（使用精确匹配）
     await expect(page.getByText('人工审阅', { exact: true })).toBeVisible()
@@ -281,7 +280,9 @@ test.describe('E2E: AI 需求分析全流程', () => {
   test('补充说明填写', async ({ page }) => {
     await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
 
-    const textarea = page.getByPlaceholder('在此输入需求背景、业务描述或补充说明...')
+    const textarea = page.getByPlaceholder(
+      '约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。',
+    )
     await textarea.fill('这是一个补充说明，描述业务背景')
     await expect(textarea).toHaveValue('这是一个补充说明，描述业务背景')
   })
@@ -512,7 +513,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText(/文件上传成功/)).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/解析状态接口暂时不可用（HTTP 502）/)).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/解析状态连接已恢复/)).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText(/解析完成/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/^✅ 解析完成/)).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
   })
 })

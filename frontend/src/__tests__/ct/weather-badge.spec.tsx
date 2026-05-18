@@ -129,7 +129,7 @@ test.describe('WeatherBadge', () => {
 
     const component = await mount(<WeatherBadgeStory />)
     const textNode = component.getByText(/18°/)
-    await expect(textNode).toHaveClass(/text-muted-foreground/)
+    await expect(textNode).toHaveClass(/text-(muted-foreground|workspace-text-muted)/)
   })
 
   test('exception: weather api fails -> keeps UI stable (no crash)', async ({ mount, page }) => {

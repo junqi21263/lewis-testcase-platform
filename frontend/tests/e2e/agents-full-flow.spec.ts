@@ -129,15 +129,22 @@ test.describe('E2E: login -> generate -> export/share', () => {
     await expect(page.getByRole('heading', { name: '生成测试用例' })).toBeVisible()
 
     await page.getByRole('button', { name: '文本输入' }).click()
-    await page.getByPlaceholder('请输入需求描述、功能说明、API 文档等内容...').fill('用户可以登录系统')
-    await page.getByPlaceholder('例如：请根据以上需求生成完整的功能测试用例').fill('请输出标准测试用例')
+    await page
+      .getByPlaceholder('请输入需求描述、功能说明、接口文档内容或业务规则...')
+      .first()
+      .fill('用户可以登录系统')
+    await page
+      .getByPlaceholder('例如：请根据以上需求生成完整的功能测试用例，包含正向、逆向和边界测试...')
+      .first()
+      .fill('请输出标准测试用例')
     await page.getByLabel('流式输出').uncheck()
 
     await page.getByRole('button', { name: '开始生成' }).click()
     await expect(page.getByRole('heading', { name: '生成完成' })).toBeVisible()
-    await expect(page.getByText(/共生成 1 条测试用例/)).toBeVisible()
+    await expect(page.getByText(/共 1 条/)).toBeVisible()
 
     await expect(page.getByRole('button', { name: '导出 Excel' })).toBeVisible()
+    await page.getByRole('button', { name: '更多' }).click()
     await page.getByRole('button', { name: '生成分享链接' }).click()
     await expect(page.getByText(/分享链接已复制|分享已创建/)).toBeVisible()
   })
