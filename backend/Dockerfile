@@ -45,12 +45,17 @@ RUN echo "=== [backend builder] apk: cairo / pango (-dev) for node-canvas compil
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY backend/package.json backend/pnpm-lock.yaml ./
-# postinstall 会 prisma generate，但此时尚未 COPY prisma/；忽略脚本后由下一步显式 generate
+# postinstall 会 prisma generate，但此时尚未 COPY prisma/；忽略脚本后由下一步显式 generate + rebuild canvas
 RUN pnpm install --frozen-lockfile --prod=false --prefer-offline=false --ignore-scripts
 
 COPY backend/ .
 
 RUN pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
+
+# canvas 的 install 脚本被 --ignore-scripts 跳过；pdf-to-img 运行时需要 build/Release/canvas.node
+RUN echo "=== [backend builder] rebuild native canvas ===" && \
+  pnpm rebuild canvas && \
+  node -e "require('canvas'); console.log('[build] canvas native OK')"
 
 RUN set -o pipefail && pnpm build 2>&1 | tee build.log
 

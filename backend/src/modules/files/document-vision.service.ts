@@ -67,11 +67,32 @@ export type PdfFirstPageVisionOutcome =
 @Injectable()
 export class DocumentVisionService {
   private readonly logger = new Logger(DocumentVisionService.name)
+  /** 缓存 canvas 原生模块是否可用（pdf-to-img 依赖） */
+  private pdfPageRenderAvailable: boolean | undefined
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {}
+
+  /**
+   * pdf-to-img 依赖 node-canvas 原生模块；Docker 若 pnpm install --ignore-scripts 且未 rebuild 会为 false。
+   */
+  isPdfPageRenderAvailable(): boolean {
+    if (this.pdfPageRenderAvailable !== undefined) return this.pdfPageRenderAvailable
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('canvas')
+      this.pdfPageRenderAvailable = true
+    } catch (e) {
+      this.pdfPageRenderAvailable = false
+      const msg = e instanceof Error ? e.message : String(e)
+      this.logger.warn(
+        `PDF 本地分页渲染不可用（canvas 未安装或未编译）：${msg}`,
+      )
+    }
+    return this.pdfPageRenderAvailable
+  }
 
   /**
    * 解析顺序：环境变量 VISION_PARSE_MODEL_CONFIG_ID → 标记为「文档视觉解析」的模型
@@ -322,6 +343,11 @@ export class DocumentVisionService {
   async *iteratePdfPagesAsPng(
     pdfPath: string,
   ): AsyncGenerator<{ pageNum: number; buffer: Buffer }, void, unknown> {
+    if (!this.isPdfPageRenderAvailable()) {
+      throw new Error(
+        'PDF 本地渲染不可用：canvas 原生模块缺失。请重建 backend 镜像（Dockerfile 含 pnpm rebuild canvas），或关闭 FILE_PARSE_PDF_PAGED_VISION 以改用混元 COS 直读。',
+      )
+    }
     const scaleRaw = this.config.get<string>('VISION_PDF_RENDER_SCALE')
     const scale = Math.min(Math.max(parseFloat(scaleRaw || '1.2') || 1.2, 0.5), 3)
     const { pdf } = await this.importPdfToImg()

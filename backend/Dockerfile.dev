@@ -22,6 +22,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY backend/ ./
 RUN pnpm prisma generate --schema=./prisma/schema.prod.prisma
+RUN pnpm rebuild canvas && node -e "require('canvas'); console.log('canvas native OK')"
 
 EXPOSE 3000
 
