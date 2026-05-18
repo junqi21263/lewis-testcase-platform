@@ -25,7 +25,7 @@ import { copyTextToClipboard } from '@/utils/clipboard'
 import { rec, recordStatusBadge } from '@/utils/recordsUi'
 import { RecordsEmptyState } from '@/components/records/RecordsEmptyState'
 import { RecordsSegmentedTabs } from '@/components/records/RecordsSegmentedTabs'
-import { RecordsBatchBar } from '@/components/records/RecordsBatchBar'
+import { RecordsTableToolbar } from '@/components/records/RecordsTableToolbar'
 import { RecordsRowActions } from '@/components/records/RecordsRowActions'
 import type { GenerationRecord, GenerationStatus } from '@/types'
 import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
@@ -144,6 +144,7 @@ export default function RecordsPage() {
   const [pageSize, setPageSize] = useState(() => loadRecordsPageSize())
   const [cols, setCols] = useState(() => loadRecordsColumns())
   const [showColMenu, setShowColMenu] = useState(false)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
 
   const [list, setList] = useState<GenerationRecord[]>([])
   const [total, setTotal] = useState(0)
@@ -471,17 +472,28 @@ export default function RecordsPage() {
 
   const gridTemplate = useMemo(() => {
     const parts = [
-      '36px',
-      'minmax(200px,1fr)',
-      cols.model ? 'minmax(88px,1fr)' : '',
-      cols.cases ? '72px' : '',
-      cols.source ? '100px' : '',
-      cols.duration ? '72px' : '',
+      '40px',
+      'minmax(360px, 1fr)',
+      cols.model ? '160px' : '',
+      cols.cases ? '80px' : '',
+      cols.source ? '110px' : '',
+      cols.duration ? '90px' : '',
       cols.created ? '120px' : '',
-      cols.operator ? '88px' : '',
-      '120px',
+      cols.operator ? '100px' : '',
+      '150px',
     ].filter(Boolean)
     return parts.join(' ')
+  }, [cols])
+
+  const tableMinWidth = useMemo(() => {
+    let w = 40 + 360 + 150
+    if (cols.model) w += 160
+    if (cols.cases) w += 80
+    if (cols.source) w += 110
+    if (cols.duration) w += 90
+    if (cols.created) w += 120
+    if (cols.operator) w += 100
+    return w
   }, [cols])
 
   const hasActiveFilters = useMemo(() => {
@@ -497,11 +509,11 @@ export default function RecordsPage() {
     )
   }, [debouncedKeyword, statusSet, datePreset, dateFrom, dateTo, caseBucket, modelPick, sourcePick])
 
-  const filterSummary = useMemo(() => {
-    const parts: string[] = []
-    if (debouncedKeyword) parts.push(`关键词「${debouncedKeyword}」`)
+  const appliedFilterChips = useMemo(() => {
+    const chips: string[] = []
+    if (debouncedKeyword) chips.push(`关键词：${debouncedKeyword}`)
     if (statusSet.size) {
-      parts.push([...statusSet].map((s) => statusLabels[s]).join('、'))
+      chips.push(`状态：${[...statusSet].map((s) => statusLabels[s]).join('、')}`)
     }
     if (datePreset !== 'custom') {
       const labels: Record<string, string> = {
@@ -511,14 +523,21 @@ export default function RecordsPage() {
         thisMonth: '本月',
         lastMonth: '上月',
       }
-      parts.push(labels[datePreset] ?? '自定义时间')
+      chips.push(labels[datePreset] ?? '自定义时间')
     } else if (dateFrom || dateTo) {
-      parts.push(`日期 ${dateFrom || '…'} — ${dateTo || '…'}`)
+      chips.push(`日期 ${dateFrom || '…'} — ${dateTo || '…'}`)
     }
-    if (modelPick.length) parts.push(`模型 ${modelPick.length} 项`)
-    if (caseBucket !== 'all') parts.push('用例数筛选')
-    if (sourcePick.length) parts.push('来源筛选')
-    return parts.length ? `已应用：${parts.join(' · ')}` : ''
+    if (modelPick.length) chips.push(`模型：${modelPick.join('、')}`)
+    if (caseBucket !== 'all') {
+      const caseLabels: Record<string, string> = {
+        zero: '0 条',
+        small: '1–10 条',
+        large: '10 条以上',
+      }
+      chips.push(`用例数：${caseLabels[caseBucket] ?? caseBucket}`)
+    }
+    if (sourcePick.length) chips.push(`来源：${sourcePick.length} 项`)
+    return chips
   }, [
     debouncedKeyword,
     statusSet,
@@ -548,7 +567,7 @@ export default function RecordsPage() {
         : 'empty'
 
   return (
-    <div className={cn(rec.page, rec.container, 'space-y-6')}>
+    <div className={cn(rec.page, rec.container)}>
       <header className="records-fade-up space-y-3">
         <div>
           <h1 className={rec.headerTitle}>生成记录</h1>
@@ -565,89 +584,65 @@ export default function RecordsPage() {
         />
       </header>
 
-      <div className="records-fade-up-d1 sticky top-0 z-20 space-y-2">
+      <div className="records-fade-up-d1 filter-panel-wrap">
         <div className={rec.filterPanel}>
-          <div className="space-y-2.5">
-            <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
-              <div className="flex flex-1 items-center gap-2 min-w-0">
-                <div className="relative flex-1 min-w-0 max-w-md">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="搜索标题、需求原文、错误备注、用例集名称…"
-                    value={keyword}
-                    onChange={(e) => {
-                      setKeyword(e.target.value)
-                      setPage(1)
-                    }}
-                    onKeyDown={(e) => e.key === 'Enter' && void fetchList()}
-                    className="h-8 pl-9"
-                  />
-                </div>
-                <Button variant="outline" size="icon" onClick={() => void fetchList()} title="刷新">
-                  <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={clearAllFilters}>
-                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                  一键重置
-                </Button>
-                <div className="relative">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowColMenu((v) => !v)}
-                  >
-                    <Settings2 className="w-3.5 h-3.5 mr-1" />
-                    列显隐
-                  </Button>
-                  {showColMenu && (
-                    <div className="absolute right-0 z-40 mt-1 w-48 space-y-1 rounded-md border-0 bg-popover/95 p-2 text-sm shadow-xl ring-1 ring-inset ring-foreground/10 backdrop-blur-xl dark:ring-white/10">
-                      {(Object.keys(cols) as RecordsColumnKey[]).map((k) => (
-                        <label key={k} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={cols[k]}
-                            onChange={() => toggleCol(k)}
-                          />
-                          <span>
-                            {k === 'source'
-                              ? '来源'
-                              : k === 'duration'
-                                ? '耗时'
-                                : k === 'operator'
-                                  ? '操作人'
-                                  : k === 'model'
-                                    ? '模型'
-                                    : k === 'cases'
-                                      ? '用例数'
-                                      : '创建时间'}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+          <div className={rec.filterRow}>
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--records-text-muted))]" />
+              <Input
+                placeholder="搜索标题、需求原文、错误备注、用例集名称…"
+                value={keyword}
+                onChange={(e) => {
+                  setKeyword(e.target.value)
+                  setPage(1)
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && void fetchList()}
+                className={cn(rec.control, 'h-9 pl-9')}
+              />
             </div>
+            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => void fetchList()} title="刷新">
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            </Button>
+            <Button variant="outline" size="sm" className="h-9" onClick={clearAllFilters}>
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+              一键重置
+            </Button>
+            <Button variant="outline" size="sm" className="h-9 lg:hidden" onClick={() => setAdvancedFiltersOpen((v) => !v)}>
+              <Filter className="mr-1 h-3.5 w-3.5" />
+              筛选
+            </Button>
+            <div className="relative">
+              <Button variant="outline" size="sm" className="h-9" onClick={() => setShowColMenu((v) => !v)}>
+                <Settings2 className="mr-1 h-3.5 w-3.5" />
+                列显隐
+              </Button>
+              {showColMenu && (
+                <div className="absolute right-0 z-40 mt-1 w-48 space-y-1 rounded-md border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-panel-bg))] p-2 text-sm shadow-[var(--records-panel-shadow)]">
+                  {(Object.keys(cols) as RecordsColumnKey[]).map((k) => (
+                    <label key={k} className="flex cursor-pointer items-center gap-2">
+                      <input type="checkbox" checked={cols[k]} onChange={() => toggleCol(k)} />
+                      <span>
+                        {k === 'source' ? '来源' : k === 'duration' ? '耗时' : k === 'operator' ? '操作人' : k === 'model' ? '模型' : k === 'cases' ? '用例数' : '创建时间'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Filter className="w-3.5 h-3.5" />
-                状态
-              </span>
+          <div className={rec.filterRow}>
+            <span className={rec.filterRowLabel}>
+              <Filter className="mr-0.5 inline h-3.5 w-3.5" />
+              状态
+            </span>
               <button
                 type="button"
                 onClick={() => {
                   setStatusSet(new Set())
                   setPage(1)
                 }}
-                className={cn(
-                  'rounded-full border-0 px-2.5 py-1 text-xs shadow-sm ring-1 ring-inset transition-colors',
-                  statusSet.size === 0
-                    ? 'bg-primary text-primary-foreground ring-primary/40'
-                    : 'bg-secondary/55 ring-foreground/10 hover:bg-secondary dark:ring-white/10',
-                )}
+                className={cn(rec.chip, statusSet.size === 0 ? rec.chipActive : rec.chipGhost)}
               >
                 全部{summary ? `(${summary.total})` : ''}
               </button>
@@ -659,22 +654,23 @@ export default function RecordsPage() {
                     key={st}
                     type="button"
                     onClick={() => toggleStatus(st)}
-                    className={cn(
-                      'rounded-full border-0 px-2.5 py-1 text-xs shadow-sm ring-1 ring-inset transition-colors',
-                      on
-                        ? 'bg-primary text-primary-foreground ring-primary/40'
-                        : 'bg-secondary/45 ring-foreground/10 hover:bg-secondary/70 dark:ring-white/10',
-                    )}
+                    className={cn(rec.chip, on ? rec.chipActive : rec.chipGhost)}
                   >
                     {statusLabels[st]}({c})
                   </button>
                 )
               })}
-            </div>
+          </div>
 
-            <div className="flex flex-col xl:flex-row xl:items-center flex-wrap gap-3 text-sm">
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs text-muted-foreground mr-1">时间</span>
+          <div
+            className={cn(
+              rec.filterRow,
+              advancedFiltersOpen ? 'flex' : 'hidden',
+              'lg:flex',
+            )}
+          >
+            <span className={rec.filterRowLabel}>时间</span>
+            <div className="flex flex-wrap items-center gap-2">
                 {(
                   [
                     ['today', '今天'],
@@ -688,7 +684,7 @@ export default function RecordsPage() {
                     key={id}
                     size="sm"
                     variant={datePreset === id ? 'secondary' : 'ghost'}
-                    className="h-7 text-xs"
+                    className="h-9 text-xs"
                     onClick={() => applyPreset(id)}
                   >
                     {lab}
@@ -697,7 +693,7 @@ export default function RecordsPage() {
                 <Button
                   size="sm"
                   variant={datePreset === 'custom' ? 'secondary' : 'ghost'}
-                  className="h-7 text-xs"
+                  className="h-9 text-xs"
                   onClick={() => {
                     setDatePreset('custom')
                     setPage(1)
@@ -707,7 +703,7 @@ export default function RecordsPage() {
                 </Button>
                 <Input
                   type="date"
-                  className="h-8 w-[140px] text-xs"
+                  className={cn(rec.control, rec.controlSm, "h-9 w-[132px]")}
                   value={dateFrom}
                   onChange={(e) => {
                     setDateFrom(e.target.value)
@@ -718,7 +714,7 @@ export default function RecordsPage() {
                 <span className="text-muted-foreground">—</span>
                 <Input
                   type="date"
-                  className="h-8 w-[140px] text-xs"
+                  className={cn(rec.control, rec.controlSm, "h-9 w-[132px]")}
                   value={dateTo}
                   onChange={(e) => {
                     setDateTo(e.target.value)
@@ -740,7 +736,7 @@ export default function RecordsPage() {
                       ? `已选 ${modelPick.length} 个模型：${modelPick.join('、')}`
                       : '按住 Ctrl / ⌘ 可多选模型'
                   }
-                  className="h-8 w-[180px] max-w-[180px] shrink-0 rounded-md border-0 bg-background/55 px-2 py-0 text-xs leading-8 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
+                  className={cn(rec.control, rec.controlSm, "h-9 w-[160px] max-w-[160px] shrink-0")}
                   value={modelPick}
                   onChange={(e) => {
                     const v = [...e.target.selectedOptions].map((o) => o.value)
@@ -759,7 +755,7 @@ export default function RecordsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">用例数</span>
                 <select
-                  className="h-8 rounded-md border-0 bg-background/55 px-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
+                  className={cn(rec.control, rec.controlSm, "h-9")}
                   value={caseBucket}
                   onChange={(e) => {
                     setCaseBucket(e.target.value)
@@ -793,61 +789,51 @@ export default function RecordsPage() {
                         )
                         setPage(1)
                       }}
-                      className={cn(
-                        'rounded-md border-0 px-2 py-0.5 text-xs ring-1 ring-inset backdrop-blur-sm',
-                        on ? 'bg-primary/15 ring-primary/35' : 'bg-secondary/30 ring-foreground/10 dark:ring-white/10',
-                      )}
+                      className={cn(rec.chip, on ? rec.chipActive : rec.chipGhost)}
                     >
                       {lab}
                     </button>
                   )
                 })}
               </div>
-            </div>
           </div>
         </div>
-        {filterSummary ? <p className={rec.filterSummary}>{filterSummary}</p> : null}
       </div>
 
-      {selected.size > 0 && (
-        <RecordsBatchBar
-          count={selected.size}
-          mode={view}
-          onExport={view === 'list' ? exportBatchJson : undefined}
-          onArchive={view === 'list' ? () => runBatch('ARCHIVE') : undefined}
-          onDelete={
-            view === 'list'
-              ? () => setConfirm({ type: 'soft_delete', ids: [...selected] })
-              : undefined
-          }
-          onRestore={view === 'recycle' ? () => runBatch('RESTORE') : undefined}
-          onHardDelete={
-            view === 'recycle'
-              ? () => setConfirm({ type: 'hard_delete', ids: [...selected] })
-              : undefined
-          }
-          onClear={() => setSelected(new Set())}
-          onSelectAllMatching={view === 'list' ? () => void selectAllMatching() : undefined}
+      <section className={cn(rec.tablePanel, 'records-fade-up-d2 table-panel')}>
+        <RecordsTableToolbar
+          total={total}
+          loading={loading}
+          appliedChips={appliedFilterChips}
+          listLength={list.length}
+          selectedCount={selected.size}
+          allPageSelected={list.length > 0 && selected.size === list.length}
+          onSelectAllPage={selectAllPage}
+          batch={{
+            count: selected.size,
+            mode: view,
+            onExport: view === 'list' ? exportBatchJson : undefined,
+            onArchive: view === 'list' ? () => runBatch('ARCHIVE') : undefined,
+            onDelete:
+              view === 'list'
+                ? () => setConfirm({ type: 'soft_delete', ids: [...selected] })
+                : undefined,
+            onRestore: view === 'recycle' ? () => runBatch('RESTORE') : undefined,
+            onHardDelete:
+              view === 'recycle'
+                ? () => setConfirm({ type: 'hard_delete', ids: [...selected] })
+                : undefined,
+            onClear: () => setSelected(new Set()),
+            onSelectAllMatching: view === 'list' ? () => void selectAllMatching() : undefined,
+          }}
         />
-      )}
-
-      <section className={cn(rec.tablePanel, 'records-fade-up-d2')}>
-        <div className={cn(rec.tablePanelInner, 'border-b border-workspace-panel-border/55 pb-3 dark:border-white/[0.06]')}>
-          <div className="flex flex-row items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-workspace-text-primary">
-            {loading ? '加载中…' : `共 ${total} 条`}
-          </h2>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={list.length > 0 && selected.size === list.length}
-              onChange={selectAllPage}
-            />
-            全选本页
-          </label>
-          </div>
-        </div>
-        <div className={cn(rec.tablePanelInner, 'min-w-0', loading && 'records-table-loading opacity-70')}>
+        <div
+          className={cn(
+            rec.tableScrollBody,
+            'px-1 sm:px-2',
+            loading && 'records-table-loading opacity-70',
+          )}
+        >
           {error && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border-0 bg-destructive/10 p-4 ring-1 ring-inset ring-destructive/35 backdrop-blur-sm">
               <span className="text-sm">{error}</span>
@@ -879,12 +865,13 @@ export default function RecordsPage() {
               tabIndex={0}
               role="grid"
               aria-label="生成记录列表"
-              className="outline-none space-y-0 overflow-x-auto rounded-xl ring-1 ring-inset ring-foreground/10 dark:ring-white/10"
+              className={cn(rec.tableGrid, 'outline-none')}
+              style={{ minWidth: tableMinWidth }}
               onKeyDown={onKeyDown}
             >
               <div
-                className={rec.tableHead + " min-w-[920px]"}
-                style={{ gridTemplateColumns: gridTemplate }}
+                className={rec.tableHead}
+                style={{ gridTemplateColumns: gridTemplate, minWidth: tableMinWidth }}
               >
                 <span />
                 <span>标题 / 摘要</span>
@@ -918,15 +905,15 @@ export default function RecordsPage() {
                 const focused = focusIdx === idx
                 const inRecycle = view === 'recycle' || !!r.deletedAt
                 return (
-                  <div key={r.id} className="min-w-[1012px]">
+                  <div key={r.id} style={{ minWidth: tableMinWidth }}>
                     <div
                       role="row"
                       className={cn(
                         rec.tableRow,
                         rec.tableRowHover,
                         selected.has(r.id) && rec.tableRowSelected,
-                        expanded && 'bg-workspace-panel-muted/50',
-                        focused && !selected.has(r.id) && 'bg-workspace-panel-muted/35',
+                        expanded && 'bg-[hsl(var(--records-table-row-hover-bg))]',
+                        focused && !selected.has(r.id) && 'bg-[hsl(var(--records-table-row-hover-bg))]/60',
                       )}
                       style={{ gridTemplateColumns: gridTemplate }}
                       onClick={() => {
@@ -1016,9 +1003,9 @@ export default function RecordsPage() {
           )}
         </div>
 
-        {!loading && list.length > 0 && (
-          <div className={rec.paginationFooter}>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-workspace-text-muted">
+        {!loading && (
+          <div className={rec.tableFooter}>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[hsl(var(--records-text-muted))]">
               <span>第 {page} / {totalPages} 页</span>
               <span>·</span>
               <span>每页</span>

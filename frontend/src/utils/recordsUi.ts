@@ -1,45 +1,54 @@
 import type { GenerationStatus } from '@/types'
 import { cn } from '@/utils/cn'
 
-/** Friendly AI Workspace — 生成记录页面板与表格语义 class */
+/** Friendly AI Workspace — 生成记录页语义 class（依赖 --records-* token） */
 export const rec = {
-  page: 'min-h-full bg-workspace-page',
-  container: 'mx-auto min-w-0 w-full max-w-[1520px] px-6 pb-24 pt-1 sm:px-8',
-  headerTitle: 'text-[1.625rem] font-bold tracking-tight text-workspace-text-primary',
-  headerSub: 'mt-1.5 max-w-2xl text-sm leading-relaxed text-workspace-text-secondary',
-  panel:
-    'rounded-[20px] border border-workspace-panel-border/70 bg-workspace-panel/90 shadow-[0_22px_56px_-40px_rgba(59,130,246,0.18)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-workspace-panel/78 dark:shadow-[0_26px_64px_-40px_rgba(0,0,0,0.65)]',
+  page: 'records-page min-h-full bg-[hsl(var(--records-page-bg))]',
+  container:
+    'records-page__container mx-auto flex min-h-0 w-full max-w-[1520px] flex-col gap-5 px-6 pb-24 pt-1 sm:gap-6 sm:px-8',
+  headerTitle: 'text-[1.625rem] font-bold tracking-tight text-[hsl(var(--records-text-primary))]',
+  headerSub:
+    'mt-1.5 max-w-2xl text-sm leading-relaxed text-[hsl(var(--records-text-secondary))]',
   filterPanel:
-    'rounded-[18px] border border-workspace-panel-border/65 bg-workspace-panel-muted/75 p-3 shadow-[0_12px_32px_-28px_rgba(59,130,246,0.14)] backdrop-blur-lg dark:border-white/[0.07] dark:bg-workspace-panel-muted/55 sm:p-4',
+    'filter-panel rounded-[18px] border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-filter-panel-bg))] p-3 shadow-[var(--records-panel-shadow)] backdrop-blur-lg sm:p-4',
+  filterRow: 'filter-panel__row flex flex-wrap items-center gap-x-3 gap-y-2.5',
+  filterRowLabel:
+    'shrink-0 text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--records-text-muted))]',
   tablePanel:
-    'overflow-hidden rounded-[20px] border border-workspace-panel-border/70 bg-workspace-list-panel/95 dark:border-white/[0.08] dark:bg-workspace-list-panel/88',
-  tablePanelInner: 'p-4 sm:p-6',
+    'table-panel flex min-h-[min(640px,calc(100dvh-17rem))] flex-col overflow-hidden rounded-[20px] border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-table-panel-bg))] shadow-[var(--records-panel-shadow)] dark:border-white/[0.08]',
+  tableToolbar:
+    'table-toolbar flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-[hsl(var(--records-table-border))] bg-[hsl(var(--records-table-toolbar-bg))] px-4 py-3 sm:px-5',
+  toolbarTitle: 'text-sm font-semibold text-[hsl(var(--records-text-primary))]',
+  tableScrollBody:
+    'table-scroll-body min-h-0 flex-1 overflow-auto records-scrollbar',
+  tableGrid: 'records-table-grid min-w-0',
   tableHead:
-    'sticky top-0 z-[1] grid gap-2 border-b border-workspace-panel-border/60 bg-workspace-panel-muted/95 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-workspace-text-muted backdrop-blur-md dark:border-white/[0.06] dark:bg-workspace-panel-muted/90',
+    'sticky top-0 z-[2] grid items-center gap-x-2 border-b border-[hsl(var(--records-table-border))] bg-[hsl(var(--records-table-header-bg))] px-3 py-2.5 text-xs font-medium text-[hsl(var(--records-text-muted))] backdrop-blur-md',
   tableRow:
-    'group/row relative grid min-h-[68px] cursor-pointer items-center gap-2 border-b border-workspace-panel-border/45 px-3 py-2.5 transition-[background-color,opacity] duration-200 last:border-b-0 dark:border-white/[0.04]',
+    'group/row relative grid min-h-[72px] cursor-pointer items-center gap-x-2 border-b border-[hsl(var(--records-table-border))] bg-[hsl(var(--records-table-row-bg))] px-3 py-2.5 transition-[background-color,opacity] duration-200 last:border-b-0',
   tableRowHover:
-    'hover:bg-[hsl(var(--records-row-hover-bg))] hover:shadow-[inset_3px_0_0_0_hsl(var(--records-row-accent))]',
+    'hover:bg-[hsl(var(--records-table-row-hover-bg))] hover:shadow-[inset_3px_0_0_0_hsl(var(--records-row-accent))]',
   tableRowSelected:
-    'bg-[hsl(var(--records-row-selected-bg))] shadow-[inset_3px_0_0_0_hsl(var(--records-row-accent))]',
-  tableRowFocus: 'ring-0 outline-none',
+    'bg-[hsl(var(--records-table-row-selected-bg))] shadow-[inset_3px_0_0_0_hsl(var(--records-row-accent))]',
+  tableFooter:
+    'table-footer flex shrink-0 flex-col gap-3 border-t border-[hsl(var(--records-table-border))] bg-[hsl(var(--records-table-footer-bg))] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5',
   control:
-    'h-9 rounded-xl border-0 bg-workspace-panel/90 text-sm shadow-sm ring-1 ring-inset ring-workspace-panel-border/80 backdrop-blur-sm dark:bg-white/[0.04] dark:ring-white/10',
-  controlSm: 'h-8 rounded-lg text-xs',
-  chip:
-    'rounded-full border-0 px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-200',
+    'h-9 rounded-xl border-0 bg-[hsl(var(--records-input-bg))] text-sm shadow-sm ring-1 ring-inset ring-[hsl(var(--records-input-border))]',
+  controlSm: 'h-8 min-h-8 rounded-lg px-2 text-xs',
+  chip: 'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-200',
   chipGhost:
-    'bg-workspace-panel/70 text-workspace-text-secondary ring-workspace-panel-border/70 hover:bg-workspace-panel-muted dark:bg-white/[0.04] dark:ring-white/10',
+    'bg-[hsl(var(--records-chip-bg))] text-[hsl(var(--records-text-secondary))] ring-[hsl(var(--records-input-border))] hover:bg-[hsl(var(--records-table-row-hover-bg))]',
   chipActive:
-    'bg-primary/12 text-primary ring-primary/25 dark:bg-cyan-400/14 dark:text-cyan-100 dark:ring-cyan-400/30',
+    'bg-primary/10 text-primary ring-primary/20 dark:bg-cyan-400/12 dark:text-cyan-100 dark:ring-cyan-400/28',
+  appliedChip:
+    'inline-flex max-w-[200px] truncate rounded-md bg-[hsl(var(--records-chip-bg))] px-2 py-0.5 text-[11px] text-[hsl(var(--records-text-secondary))] ring-1 ring-inset ring-[hsl(var(--records-input-border))]',
   iconBtn:
-    'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-workspace-icon transition-[background-color,opacity,color] duration-200 hover:bg-workspace-panel-muted/90 dark:hover:bg-white/[0.06]',
-  iconBtnDanger: 'hover:bg-destructive/10 hover:text-destructive dark:hover:bg-red-500/12',
+    'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[hsl(var(--records-text-muted))] transition-[background-color,color] duration-200 hover:bg-[hsl(var(--records-icon-button-hover-bg))] hover:text-[hsl(var(--records-text-primary))]',
+  iconBtnDanger:
+    'hover:bg-destructive/10 hover:text-destructive dark:hover:bg-red-500/12',
   batchBar:
-    'flex flex-wrap items-center gap-2 rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/80 px-3 py-2.5 text-sm backdrop-blur-md dark:border-white/[0.07] dark:bg-workspace-panel-muted/50',
-  paginationFooter:
-    'mt-0 flex flex-col gap-3 border-t border-workspace-panel-border/55 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[0.06]',
-  filterSummary: 'text-xs text-workspace-text-muted',
+    'flex flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-table-toolbar-bg))] px-3 py-2.5 text-sm',
+  batchActions: 'flex flex-wrap items-center justify-end gap-1.5',
 } as const
 
 export const recordStatusBadgeClass: Record<GenerationStatus, string> = {

@@ -64,6 +64,27 @@
     --workspace-theme-toggle-inactive-icon: 215 18% 55%;
 
     /* ---------- Records page（生成记录）---------- */
+    --records-page-bg: 226 56% 98%;
+    --records-panel-bg: 0 0% 100%;
+    --records-panel-border: 220 24% 88%;
+    --records-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.2);
+    --records-filter-panel-bg: 220 45% 97%;
+    --records-table-panel-bg: 0 0% 100%;
+    --records-table-toolbar-bg: 220 48% 99%;
+    --records-table-header-bg: 220 42% 96%;
+    --records-table-row-bg: 0 0% 100%;
+    --records-table-row-hover-bg: 220 48% 97%;
+    --records-table-row-selected-bg: 195 85% 94%;
+    --records-table-border: 220 22% 90%;
+    --records-table-footer-bg: 220 48% 99%;
+    --records-input-bg: 0 0% 100%;
+    --records-input-border: 220 22% 86%;
+    --records-chip-bg: 220 40% 95%;
+    --records-icon-button-hover-bg: 220 42% 94%;
+    --records-text-primary: 222 47% 11%;
+    --records-text-secondary: 215 18% 38%;
+    --records-text-muted: 215 14% 52%;
+    --records-scrollbar-thumb: 215 18% 78%;
     --records-row-hover-bg: 220 48% 97%;
     --records-row-selected-bg: 195 85% 94%;
     --records-row-accent: 188 78% 42%;
@@ -304,6 +325,27 @@
     --workspace-theme-toggle-active-icon: 258 96% 82%;
     --workspace-theme-toggle-inactive-icon: 45 100% 68%;
 
+    --records-page-bg: 222 46% 7%;
+    --records-panel-bg: 222 48% 9%;
+    --records-panel-border: 217 26% 18%;
+    --records-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.72);
+    --records-filter-panel-bg: 222 42% 11%;
+    --records-table-panel-bg: 222 46% 9%;
+    --records-table-toolbar-bg: 222 44% 10%;
+    --records-table-header-bg: 217 32% 13%;
+    --records-table-row-bg: 222 46% 9%;
+    --records-table-row-hover-bg: 217 34% 14%;
+    --records-table-row-selected-bg: 217 38% 16%;
+    --records-table-border: 217 26% 16%;
+    --records-table-footer-bg: 222 44% 10%;
+    --records-input-bg: 222 42% 12%;
+    --records-input-border: 217 26% 22%;
+    --records-chip-bg: 217 32% 14%;
+    --records-icon-button-hover-bg: 217 30% 18%;
+    --records-text-primary: 210 40% 96%;
+    --records-text-secondary: 215 18% 72%;
+    --records-text-muted: 215 14% 58%;
+    --records-scrollbar-thumb: 217 22% 28%;
     --records-row-hover-bg: 217 34% 14%;
     --records-row-selected-bg: 217 38% 16%;
     --records-row-accent: 188 78% 52%;
@@ -1821,6 +1863,35 @@ html.light .login-page-root {
 
 .records-table-loading {
   transition: opacity 0.22s ease;
+}
+
+.records-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--records-scrollbar-thumb)) transparent;
+}
+
+.records-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.records-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--records-scrollbar-thumb) / 0.65);
+}
+
+.records-table-grid {
+  min-width: min(100%, 1100px);
+}
+
+.filter-panel-wrap .filter-panel > div[class*='filterRow']:last-child {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-panel-wrap .filter-panel > div[class*='filterRow']:last-child {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

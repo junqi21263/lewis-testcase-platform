@@ -36,7 +36,7 @@ export function RecordsEmptyState(props: {
 
   return (
     <div
-      className="flex min-h-[260px] max-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-workspace-panel-border/75 bg-workspace-empty-state/90 px-6 py-10 text-center dark:border-white/[0.08] dark:bg-workspace-empty-state/75"
+      className="mx-3 my-6 flex min-h-[260px] max-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[hsl(var(--records-panel-border))] bg-[hsl(var(--records-filter-panel-bg))] px-6 py-10 text-center sm:mx-4"
       role="status"
     >
       <div
@@ -46,8 +46,8 @@ export function RecordsEmptyState(props: {
         <Icon className="h-5 w-5 text-primary dark:text-cyan-300" strokeWidth={2} />
       </div>
       <div className="space-y-1.5">
-        <p className="text-sm font-semibold text-workspace-text-primary">{c.title}</p>
-        <p className="mx-auto max-w-sm text-xs leading-relaxed text-workspace-text-secondary">
+        <p className="text-sm font-semibold text-[hsl(var(--records-text-primary))]">{c.title}</p>
+        <p className="mx-auto max-w-sm text-xs leading-relaxed text-[hsl(var(--records-text-secondary))]">
           {c.description}
         </p>
       </div>
