@@ -7,6 +7,7 @@ export interface GenerateTestCasesPayload extends AIGenerateParams {
   text?: string
   templateId?: string
   customPrompt?: string
+  forceConfiguredModel?: boolean
 }
 
 export interface GenerateResult {

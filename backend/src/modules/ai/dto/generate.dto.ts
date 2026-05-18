@@ -44,4 +44,8 @@ export class GenerateDto {
   @IsOptional()
   @IsBoolean()
   stream?: boolean
+
+  @IsOptional()
+  @IsBoolean()
+  forceConfiguredModel?: boolean
 }

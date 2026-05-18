@@ -155,6 +155,8 @@ export interface AIGenerateParams {
   temperature?: number
   maxTokens?: number
   stream?: boolean
+  /** true 时跳过 hunyuan 直出分支，强制走后台所选模型 */
+  forceConfiguredModel?: boolean
 }
 
 // ==================== 提示词模板 ====================

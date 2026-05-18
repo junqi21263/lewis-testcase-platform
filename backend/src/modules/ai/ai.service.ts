@@ -541,8 +541,9 @@ export class AiService {
     })
 
     try {
-      // 单文件图片/PDF：优先混元 hunyuan-vision 端到端 JSON；失败或未解析出有效用例则回退配置模型
-      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady()) {
+      // 单文件图片/PDF：默认优先混元 hunyuan-vision 端到端 JSON；
+      // forceConfiguredModel=true 时跳过该捷径，直接走后台已选模型。
+      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
         const mime = (fileRow.mimeType || '').toLowerCase()
         const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
         if (isImgPdf && fileRow.path) {
@@ -749,8 +750,9 @@ export class AiService {
     let streamTruncationNoticeSent = false
     let finishReason: string | null = null
     try {
-      // 单文件图片/PDF：混元多模态若已产出可落库用例，则直接结束 SSE（与「流式完成」事件形态一致）
-      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady()) {
+      // 单文件图片/PDF：默认可走混元多模态直出；
+      // forceConfiguredModel=true 时跳过该捷径，始终走后台已选模型流式生成。
+      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
         const mime = (fileRow.mimeType || '').toLowerCase()
         const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
         if (isImgPdf && fileRow.path) {

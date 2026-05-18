@@ -1220,6 +1220,9 @@ export default function GeneratePage() {
             <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">
               模型：{aiParams.modelConfigId ? '已选择' : '自动默认'}
             </Badge>
+            <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">
+              执行策略：{aiParams.forceConfiguredModel === false ? '允许混元直出' : '强制所选模型'}
+            </Badge>
             <Badge
               variant={isGenerating ? 'warning' : generatedCases.length > 0 ? 'success' : 'outline'}
               className="bg-[hsl(var(--gcs-panel-muted-bg))]"
@@ -1465,6 +1468,15 @@ export default function GeneratePage() {
                     />
                     流式输出
                   </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={aiParams.forceConfiguredModel !== false}
+                      onChange={(e) => setAiParams({ forceConfiguredModel: e.target.checked })}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    强制使用后台所选模型
+                  </label>
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-[hsl(var(--gcs-text-muted))]">最大 Token</span>
                     <select
@@ -1480,6 +1492,9 @@ export default function GeneratePage() {
                     </select>
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-[hsl(var(--gcs-text-muted))]">
+                  开启后将跳过 hunyuan-vision 文件直出通道，始终按系统设置中的已选模型执行生成。
+                </p>
               </div>
 
               <div className="space-y-2 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">

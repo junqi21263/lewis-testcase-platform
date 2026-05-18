@@ -87,6 +87,7 @@ function buildBaseAiParams(): AIGenerateParams {
     temperature: prefs.defaultTemperature,
     maxTokens: prefs.defaultMaxTokens,
     stream: true,
+    forceConfiguredModel: true,
   }
 }
 
