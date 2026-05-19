@@ -34,8 +34,8 @@ function isAuthEntryRequest(url?: string): boolean {
   return url.includes('/auth/login') || url.includes('/auth/register')
 }
 
-/** 创建 axios 实例 */
-const instance: AxiosInstance = axios.create({
+/** 带统一鉴权与业务 code 校验的 axios 实例（multipart 上传等也应用此实例） */
+export const apiClient: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 60000,
   headers: {
@@ -44,7 +44,7 @@ const instance: AxiosInstance = axios.create({
 })
 
 /** 请求拦截器：自动携带 JWT Token */
-instance.interceptors.request.use(
+apiClient.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token
     if (token) {
@@ -56,7 +56,7 @@ instance.interceptors.request.use(
 )
 
 /** 响应拦截器：HTTP 200 但 body.code 非成功时，按业务错误处理（与后端统一报文约定一致） */
-instance.interceptors.response.use(
+apiClient.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
     const { data } = response
     const code = data.code
@@ -159,19 +159,19 @@ instance.interceptors.response.use(
 /** 封装请求方法，自动提取 data 字段 */
 export const request = {
   get<T>(url: string, config?: AppRequestConfig): Promise<T> {
-    return instance.get<ApiResponse<T>>(url, config).then((res) => res.data.data)
+    return apiClient.get<ApiResponse<T>>(url, config).then((res) => res.data.data)
   },
   post<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
-    return instance.post<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
+    return apiClient.post<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
   put<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
-    return instance.put<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
+    return apiClient.put<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
   patch<T>(url: string, data?: unknown, config?: AppRequestConfig): Promise<T> {
-    return instance.patch<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
+    return apiClient.patch<ApiResponse<T>>(url, data, config).then((res) => res.data.data)
   },
   delete<T>(url: string, config?: AppRequestConfig): Promise<T> {
-    return instance.delete<ApiResponse<T>>(url, config).then((res) => res.data.data)
+    return apiClient.delete<ApiResponse<T>>(url, config).then((res) => res.data.data)
   },
 }
 
@@ -321,4 +321,4 @@ export async function streamRequest(
   }
 }
 
-export default instance
+export default apiClient

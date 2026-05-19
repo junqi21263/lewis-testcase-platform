@@ -1,9 +1,7 @@
-import axios from 'axios'
-import { request } from '@/utils/request'
-import { useAuthStore } from '@/store/authStore'
-import type { UploadedFile, PaginatedData, PaginationParams } from '@/types'
+import type { AxiosRequestConfig } from 'axios'
+import { apiClient, request } from '@/utils/request'
+import type { UploadedFile, PaginatedData, PaginationParams, ApiResponse } from '@/types'
 import type { ChunkInfo } from '@/types/upload'
-import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 /** 超过此大小走 `upload/chunk` + `upload/merge`（须与后端一致） */
 export const CHUNK_THRESHOLD = 5 * 1024 * 1024
@@ -13,7 +11,28 @@ export const CHUNK_SIZE = 2 * 1024 * 1024
 /** 解析轮询 / 合并 / 重试解析：响应可能较大或链路较慢，长于全局 60s */
 const FILES_LONG_TIMEOUT_MS = 300_000
 
-const BASE_URL = getApiBaseUrl()
+function unwrapUploadResponse<T>(res: { data: ApiResponse<T> }): T {
+  const body = res.data
+  if ((body.code !== 0 && body.code !== 200) || body.data == null) {
+    const msg =
+      typeof body.message === 'string' && body.message.trim() ? body.message : '上传失败'
+    throw new Error(msg)
+  }
+  return body.data
+}
+
+function multipartConfig(
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
+): AxiosRequestConfig {
+  return {
+    signal,
+    headers: { 'Content-Type': undefined },
+    onUploadProgress(e) {
+      if (e.total) onProgress?.(Math.round((e.loaded * 100) / e.total))
+    },
+  }
+}
 
 export const filesApi = {
   /** 单请求上传（不超过 `MAX_FILE_SIZE` 时可直接使用） */
@@ -25,19 +44,9 @@ export const filesApi = {
     const formData = new FormData()
     formData.append('file', file)
 
-    const token = useAuthStore.getState().token
-    return axios
-      .post<{ data: UploadedFile }>(`${BASE_URL}/files/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal,
-        onUploadProgress(e) {
-          if (e.total) onProgress?.(Math.round((e.loaded * 100) / e.total))
-        },
-      })
-      .then((res) => res.data.data)
+    return apiClient
+      .post<ApiResponse<UploadedFile>>('/files/upload', formData, multipartConfig(onProgress, signal))
+      .then(unwrapUploadResponse)
   },
 
   /**
@@ -59,23 +68,13 @@ export const filesApi = {
     formData.append('chunkTotal', String(info.chunkTotal))
     formData.append('chunkSize', String(info.chunkSize))
 
-    const token = useAuthStore.getState().token
-    return axios
-      .post<{ data: { uploaded: boolean } }>(
-        `${BASE_URL}/files/upload/chunk`,
+    return apiClient
+      .post<ApiResponse<{ uploaded: boolean }>>(
+        '/files/upload/chunk',
         formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          signal,
-          onUploadProgress(e) {
-            if (e.total) onProgress?.(Math.round((e.loaded * 100) / e.total))
-          },
-        },
+        multipartConfig(onProgress, signal),
       )
-      .then((res) => res.data.data)
+      .then(unwrapUploadResponse)
   },
 
   /**

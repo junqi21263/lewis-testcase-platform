@@ -25,6 +25,27 @@ export function sanitizeCosObjectKey(key: string): string {
 }
 
 /** 读取 COS_PREFIX 等：去掉行内 `#` 注释（dotenv 若未剥离时由这里兜底） */
+/** 将 COS SDK 错误转为可操作的客户端提示（密钥/桶/地域/行内注释等） */
+export function formatCosClientError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err ?? '')).trim()
+  if (!msg) return 'COS 操作失败'
+  if (/signature.*invalid|invalid.*signature/i.test(msg)) {
+    return (
+      'COS 签名无效：请核对 VPS 上 COS_SECRET_ID、COS_SECRET_KEY 是否与腾讯云控制台一致；' +
+      'COS_BUCKET 须为「桶名-APPID」；COS_REGION 与桶地域一致（如 ap-guangzhou）；' +
+      '.env 中勿在同一行值后写 # 注释。' +
+      `（${msg}）`
+    )
+  }
+  if (/accessdenied|access denied|403/i.test(msg)) {
+    return `COS 权限不足：子账号需具备目标桶 PutObject 权限。（${msg}）`
+  }
+  if (/nosuchbucket|bucket.*not.*found/i.test(msg)) {
+    return `COS 桶不存在或名称错误：请检查 COS_BUCKET 是否含 APPID 后缀。（${msg}）`
+  }
+  return msg
+}
+
 export function sanitizeCosPrefixFromEnv(raw: string | undefined | null): string {
   const s0 = (raw ?? '').trim()
   const cut = s0.search(/\s+#/)

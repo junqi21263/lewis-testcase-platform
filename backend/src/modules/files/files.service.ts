@@ -20,7 +20,7 @@ import { maskSensitivePlainText } from '@/common/utils/sensitive-mask'
 import { v4 as uuid } from 'uuid'
 import axios from 'axios'
 import type { MergeChunksDto } from './dto/merge-chunks.dto'
-import { CosStorageService } from './cos-storage.service'
+import { CosStorageService, formatCosClientError } from './cos-storage.service'
 import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.service'
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
@@ -270,7 +270,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(created.id, uploaderId)
     } catch (e) {
       this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
-      throw new BadRequestException(`文件上传到 COS 失败：${(e as Error).message}`)
+      throw new BadRequestException(`文件上传到 COS 失败：${formatCosClientError(e)}`)
     }
   }
 
@@ -321,7 +321,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(created.id, uploaderId)
     } catch (e) {
       this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
-      throw new BadRequestException(`文件上传到 COS 失败：${(e as Error).message}`)
+      throw new BadRequestException(`文件上传到 COS 失败：${formatCosClientError(e)}`)
     }
   }
 
