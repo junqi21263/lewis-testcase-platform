@@ -94,6 +94,16 @@ sudo env DOCKER_BUILDKIT=1 STACK_PREFIX=testcase_dev FRONTEND_HOST_PORT=8080 \
 sudo docker exec testcase_dev_backend sh -c 'env | grep -E "TENCENT|PDF_TENCENT|IMAGE_OCR|COS_" | sort'
 ```
 
+**COS 签名失败但 `.env` 看起来正确时**：常见原因是 compose 用 `COS_SECRET_KEY=${COS_SECRET_KEY}` 插值时把密钥里的 `$` 展开掉了。仓库已在 `docker-compose.ghcr.yml` 用 `env_file` 原样注入 COS 四项。请对比文件与容器内**长度/后四位**（勿贴完整密钥）：
+
+```bash
+cd /opt/lewis_testcase_platform_dev
+bash scripts/diagnose-cos-vps.sh .env.development testcase_dev_backend
+curl -s http://127.0.0.1:3000/api/health/cos
+```
+
+改 env 后必须 **`up -d --force-recreate backend`**，仅 `restart` 不会刷新环境变量。
+
 ---
 
 ## 四、生产环境：使 `.env` 生效
