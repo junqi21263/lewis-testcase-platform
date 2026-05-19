@@ -354,7 +354,7 @@ export class DocumentVisionService {
         ? String(options.scale)
         : this.config.get<string>('HUNYUAN_PDF_RENDER_SCALE') ||
           this.config.get<string>('VISION_PDF_RENDER_SCALE')
-    const scale = Math.min(Math.max(parseFloat(scaleRaw || '2') || 2, 0.5), 3)
+    const scale = Math.min(Math.max(parseFloat(scaleRaw || '0.6') || 0.6, 0.5), 3)
     const { pdf } = await this.importPdfToImg()
     const document = await pdf(pdfPath, { scale })
     let pageNum = 0

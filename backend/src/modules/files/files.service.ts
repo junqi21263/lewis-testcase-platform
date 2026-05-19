@@ -96,6 +96,122 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (this.parseWorkerTimer) clearInterval(this.parseWorkerTimer)
   }
 
+  private parseTimeoutMinutes(): number {
+    const timeoutMin = parseInt(this.config.get<string>('FILE_PARSE_TIMEOUT_MINUTES') || '15', 10)
+    return Number.isFinite(timeoutMin) && timeoutMin > 0 ? timeoutMin : 15
+  }
+
+  /**
+   * 仅针对「进程重启/异常退出导致任务丢失」的僵尸 PARSING 自动恢复次数上限。
+   * 正常失败会直接落 FAILED，不依赖此兜底。
+   */
+  private parseRecoverMaxAttempts(): number {
+    const raw = parseInt(this.config.get<string>('FILE_PARSE_RECOVER_MAX_ATTEMPTS') || '3', 10)
+    return Number.isFinite(raw) && raw > 0 ? Math.min(raw, 10) : 3
+  }
+
+  private canRetrySourcePath(storedPath: string | null | undefined): boolean {
+    const p = storedPath?.trim()
+    if (!p) return false
+    return CosStorageService.isCosUri(p) || fs.existsSync(p)
+  }
+
+  private staleParsingDate(value: Date | null | undefined, fallback?: Date | null): Date | null {
+    if (value instanceof Date) return value
+    if (fallback instanceof Date) return fallback
+    return null
+  }
+
+  /**
+   * 服务重启后，先前已 CLAIMED / PARSING 的任务会留在数据库里，worker 不会主动再捞。
+   * 这里按超时阈值把僵尸任务重新排队；多次自动恢复后仍丢失的，改标 FAILED，避免永远卡住。
+   */
+  private async recoverStaleParsingFiles(): Promise<number> {
+    const deadline = new Date(Date.now() - this.parseTimeoutMinutes() * 60_000)
+    const stale = await this.prisma.uploadedFile.findMany({
+      where: {
+        status: FileStatus.PARSING,
+        OR: [
+          { lastHeartbeatAt: { lt: deadline } },
+          { lastHeartbeatAt: null, updatedAt: { lt: deadline } },
+        ],
+        path: { not: null },
+      },
+      orderBy: [{ lastHeartbeatAt: 'asc' }, { updatedAt: 'asc' }],
+      take: Math.max(this.parseWorkerMaxConcurrent * 4, 8),
+      select: {
+        id: true,
+        path: true,
+        originalName: true,
+        parseAttempts: true,
+        lastHeartbeatAt: true,
+        updatedAt: true,
+      },
+    })
+    if (!stale.length) return 0
+
+    const now = new Date()
+    const maxAttempts = this.parseRecoverMaxAttempts()
+    let recovered = 0
+
+    for (const row of stale) {
+      const attempts = Math.max(0, Number(row.parseAttempts || 0))
+      const canRetry = this.canRetrySourcePath(row.path)
+      const lockAt = this.staleParsingDate(row.lastHeartbeatAt, row.updatedAt)
+      if (canRetry && attempts < maxAttempts) {
+        const updated = await this.prisma.uploadedFile.updateMany({
+          where: {
+            id: row.id,
+            status: FileStatus.PARSING,
+            ...(lockAt ? { lastHeartbeatAt: lockAt } : { updatedAt: row.updatedAt }),
+          },
+          data: {
+            status: FileStatus.PENDING,
+            parseStage: 'PENDING',
+            parseError: null,
+            parseStartedAt: null,
+            parseFinishedAt: null,
+            parseProgress: Prisma.DbNull,
+            lastHeartbeatAt: now,
+          },
+        })
+        if (updated.count === 1) {
+          recovered++
+          this.logger.warn(
+            `后台解析 worker: 已回收僵尸任务并重新排队 file=${row.id} attempts=${attempts} name=${row.originalName}`,
+          )
+        }
+        continue
+      }
+
+      const reason = canRetry
+        ? `【解析失败】解析任务已自动恢复 ${attempts} 次仍未完成，请点击「重试解析」。`
+        : '【解析失败】源文件已不存在，无法自动恢复解析，请重新上传。'
+      const failed = await this.prisma.uploadedFile.updateMany({
+        where: {
+          id: row.id,
+          status: FileStatus.PARSING,
+          ...(lockAt ? { lastHeartbeatAt: lockAt } : { updatedAt: row.updatedAt }),
+        },
+        data: {
+          status: FileStatus.FAILED,
+          parseStage: 'FAILED',
+          parseError: reason,
+          parseFinishedAt: now,
+          parseProgress: Prisma.DbNull,
+          lastHeartbeatAt: now,
+        },
+      })
+      if (failed.count === 1) {
+        this.logger.warn(
+          `后台解析 worker: 僵尸任务恢复失败，已标记 FAILED file=${row.id} attempts=${attempts} retryable=${canRetry}`,
+        )
+      }
+    }
+
+    return recovered
+  }
+
   /** 将一次「按并发上限补认领」排入队列，避免多 tick / 多任务结束同时补位造成竞态 */
   private enqueueParseWorkerFill(): void {
     this.parseWorkerChain = this.parseWorkerChain.then(async () => {
@@ -109,6 +225,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   /** 在不超过并发上限时连续认领并启动解析，直到无 PENDING 或槽位已满 */
   private async drainParseWorkerSlots(): Promise<void> {
+    await this.recoverStaleParsingFiles()
     this.logger.debug(
       `后台解析 worker: 补位中 active=${this.activeParseWorkerJobs}/${this.parseWorkerMaxConcurrent}`,
     )
@@ -524,6 +641,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           content = '不支持的文件格式'
       }
 
+      content = this.sanitizeParsedText(content)
       const trimmed = content.trim()
       if (!trimmed || trimmed.startsWith('【解析失败】')) {
         throw new Error(trimmed || '内容为空，无法完成解析')
@@ -534,7 +652,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       const { requirements: structured, cleanedText } =
         await this.requirementStructure.structureRequirements(masked)
       const parsedBody =
-        cleanedText && cleanedText.trim().length > 0 ? cleanedText.trim() : masked
+        cleanedText && cleanedText.trim().length > 0
+          ? this.sanitizeParsedText(cleanedText).trim()
+          : masked
 
       await this.prisma.uploadedFile.update({
         where: { id: fileId },
@@ -694,6 +814,10 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return '识别失败'
   }
 
+  private sanitizeParsedText(text: string): string {
+    return text.replace(/\u0000/g, '')
+  }
+
   /**
    * 尝试混元 COS 多模态直读 PDF；成功则返回「混元理解在前 + 可选内置文本层附录」，失败返回 null。
    */
@@ -715,15 +839,46 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       message: 'hunyuan_cos_start',
       source: 'pdf',
     })
-    const res = await this.multimodal.tryDirectCosMultimodal({
-      moduleType: 'FILE_PARSE',
-      fileKind: 'PDF',
-      userId: ctx.uploaderId ?? 'system',
-      uploadedFileId: ctx.fileId,
-      storedPath: ctx.originalStoredPath,
-      localPath: filePath,
-      fileBytes: ctx.fileBytes,
-    })
+    let res: Awaited<ReturnType<MultimodalService['tryDirectCosMultimodal']>>
+    try {
+      res = await this.multimodal.tryDirectCosMultimodal({
+        moduleType: 'FILE_PARSE',
+        fileKind: 'PDF',
+        userId: ctx.uploaderId ?? 'system',
+        uploadedFileId: ctx.fileId,
+        storedPath: ctx.originalStoredPath,
+        localPath: filePath,
+        fileBytes: ctx.fileBytes,
+      })
+    } catch (e) {
+      if (
+        this.shouldRetryPdfWholeFileAsPagedHunyuan(e) &&
+        this.documentVision.isPdfPageRenderAvailable()
+      ) {
+        const reason = sanitizeErrorMessageForClient(
+          (e as Error).message || String(e),
+          400,
+        )
+        this.logger.warn(`PDF：整本混元直传失败，自动切换分页混元：${reason}`)
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_FALLBACK', {
+          phase: 'VISION',
+          message: 'hunyuan_cos_pdf_retry_paged',
+        })
+        const hunyuanPaged = await this.tryPdfHunyuanPagedVisionBatches(filePath, heartbeat)
+        if (hunyuanPaged?.text?.trim()) {
+          const merged = this.mergePdfVisionWithEmbeddedLayer(hunyuanPaged.text, embeddedTextLayer)
+          await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+            phase: 'VISION',
+            message: 'hunyuan_pdf_page_batch_done',
+            chars: merged.length,
+          })
+          this.logger.log(`PDF：整本混元失败后，分页混元回退成功（chars=${merged.length}）`)
+          return merged
+        }
+        return null
+      }
+      throw e
+    }
     if (res?.text?.trim()) {
       const body = res.text
       const minChars = parseInt(
@@ -766,6 +921,15 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return this.config.get<string>('FILE_PARSE_PDF_HUNYUAN_FIRST')?.trim() !== '0'
   }
 
+  private shouldRetryPdfWholeFileAsPagedHunyuan(err: unknown): boolean {
+    const raw = ((err as Error)?.message || String(err)).toLowerCase()
+    return (
+      raw.includes('image download failed') ||
+      (raw.includes('data/base64') && raw.includes('pdf')) ||
+      (raw.includes('整本') && raw.includes('base64'))
+    )
+  }
+
   /**
    * PDF 分页渲染 + 视觉分批（依赖 pdf-to-img/canvas）开关。
    * 为避免某些服务器环境下 native 依赖异常导致进程崩溃，默认关闭，需显式设 1 开启。
@@ -798,9 +962,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const scaleRaw = parseFloat(
       this.config.get<string>('HUNYUAN_PDF_RENDER_SCALE') ||
         this.config.get<string>('VISION_PDF_RENDER_SCALE') ||
-        '2',
+        '0.6',
     )
-    const renderScale = Math.min(Math.max(scaleRaw || 2, 0.5), 3)
+    const renderScale = Math.min(Math.max(scaleRaw || 0.6, 0.5), 3)
     const maxRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_MAX_PAGES') || '60', 10)
     const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
 
@@ -1453,17 +1617,46 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const file = await this.prisma.uploadedFile.findUnique({ where: { id } })
     if (!file) throw new NotFoundException('文件不存在')
 
-    // 若进程重启导致异步解析丢失，文件可能长期停留在 PARSING；这里做兜底超时标记，避免前端无限轮询。
+    // 若进程重启导致异步解析丢失，文件可能长期停留在 PARSING；
+    // 用户查询单条时顺带触发一次轻量恢复，避免前端无限轮询。
     if (file.status === FileStatus.PARSING) {
-      const timeoutMin = parseInt(this.config.get<string>('FILE_PARSE_TIMEOUT_MINUTES') || '15', 10)
-      const min = Number.isFinite(timeoutMin) && timeoutMin > 0 ? timeoutMin : 15
+      const min = this.parseTimeoutMinutes()
       const deadline = Date.now() - min * 60_000
-      if (file.updatedAt && file.updatedAt.getTime() < deadline) {
-        const msg = `【解析失败】解析超时（超过 ${min} 分钟未完成）。可能是服务重启导致解析任务丢失，可点击「重试解析」。`
+      const staleAt = this.staleParsingDate(file.lastHeartbeatAt, file.updatedAt)
+      if (staleAt && staleAt.getTime() < deadline) {
+        const attempts = Math.max(0, Number(file.parseAttempts || 0))
+        const canRetry = this.canRetrySourcePath(file.path)
+        const maxAttempts = this.parseRecoverMaxAttempts()
         try {
+          if (canRetry && attempts < maxAttempts) {
+            const updated = await this.prisma.uploadedFile.update({
+              where: { id },
+              data: {
+                status: FileStatus.PENDING,
+                parseStage: 'PENDING',
+                parseError: null,
+                parseStartedAt: null,
+                parseFinishedAt: null,
+                parseProgress: Prisma.DbNull,
+                lastHeartbeatAt: new Date(),
+              },
+            })
+            this.enqueueParseWorkerFill()
+            return updated
+          }
+          const msg = canRetry
+            ? `【解析失败】解析任务已自动恢复 ${attempts} 次仍未完成，请点击「重试解析」。`
+            : `【解析失败】解析超时（超过 ${min} 分钟未完成），且源文件已不存在，请重新上传。`
           const updated = await this.prisma.uploadedFile.update({
             where: { id },
-            data: { status: FileStatus.FAILED, parseError: msg },
+            data: {
+              status: FileStatus.FAILED,
+              parseStage: 'FAILED',
+              parseError: msg,
+              parseFinishedAt: new Date(),
+              parseProgress: Prisma.DbNull,
+              lastHeartbeatAt: new Date(),
+            },
           })
           return updated
         } catch (e) {

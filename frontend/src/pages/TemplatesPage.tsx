@@ -11,6 +11,7 @@ import { useGenerateStore } from '@/store/generateStore'
 import type { PromptTemplate, TemplateCategory } from '@/types'
 import toast from 'react-hot-toast'
 import { appConfirm } from '@/store/appConfirmStore'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { pushRecentTemplateId } from '@/utils/recentTemplates'
 
 const categoryLabels: Record<TemplateCategory, string> = {
@@ -150,12 +151,9 @@ export default function TemplatesPage() {
   }
 
   const copyContent = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success('已复制到剪贴板')
-    } catch {
-      toast.error('复制失败，请手动选择文本复制')
-    }
+    const ok = await copyTextToClipboard(text)
+    if (ok) toast.success('已复制到剪贴板')
+    else toast.error('复制失败，请手动选择文本复制')
   }
 
   const applyToGenerate = (tpl: PromptTemplate) => {

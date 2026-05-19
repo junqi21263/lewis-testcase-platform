@@ -50,6 +50,43 @@ describe('FilesService access and pagination guards', () => {
     await expect(svc.getFileById('file-1', 'user-a')).resolves.toEqual(file)
   })
 
+  it('getFileById requeues stale parsing task when source still exists', async () => {
+    const staleAt = new Date(Date.now() - 20 * 60_000)
+    const updated = {
+      id: 'file-1',
+      status: 'PENDING',
+      parseStage: 'PENDING',
+      parseError: null,
+    }
+    const prismaMock = {
+      uploadedFile: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'file-1' }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'file-1',
+          status: 'PARSING',
+          path: __filename,
+          parseAttempts: 1,
+          lastHeartbeatAt: staleAt,
+          updatedAt: staleAt,
+          uploaderId: 'user-a',
+        }),
+        update: jest.fn().mockResolvedValue(updated),
+      },
+    }
+    const svc = createFilesService(prismaMock)
+    await expect(svc.getFileById('file-1', 'user-a')).resolves.toEqual(updated)
+    expect(prismaMock.uploadedFile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'file-1' },
+        data: expect.objectContaining({
+          status: 'PENDING',
+          parseStage: 'PENDING',
+          parseError: null,
+        }),
+      }),
+    )
+  })
+
   it('getFileList clamps invalid page and oversized pageSize', async () => {
     const prismaMock = {
       uploadedFile: {
