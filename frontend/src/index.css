@@ -590,6 +590,44 @@ div.ui-toast .text-muted-foreground {
   }
 }
 
+/* 确认弹窗：视口 flex 居中（不依赖 transform，避免动画覆盖 translate） */
+.ui-confirm-dialog-overlay {
+  background: var(--ui-modal-overlay-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: ui-modal-overlay-in 0.2s ease-out both;
+}
+
+.ui-confirm-dialog-layer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.ui-confirm-dialog-panel {
+  pointer-events: auto;
+  width: 100%;
+  border-radius: 22px;
+  padding: 1.5rem;
+  background: var(--ui-modal-bg);
+  border: 1px solid var(--ui-modal-border);
+  box-shadow: var(--ui-modal-shadow);
+  animation: ui-modal-content-in 0.22s ease-out both;
+}
+
+.ui-confirm-dialog-panel--confirm {
+  max-width: min(calc(100vw - 32px), 480px);
+}
+
+.ui-confirm-dialog-panel--form {
+  max-width: min(calc(100vw - 32px), 680px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-overlay-animate {
     animation: none !important;
