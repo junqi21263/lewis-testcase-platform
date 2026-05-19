@@ -1,5 +1,33 @@
 # 更新日志
 
+## 2026-05-19
+
+### 生成记录（前端）
+
+- **生成记录页**按 Friendly AI Workspace 主题重构：筛选区 / 表格工具栏 / 可滚动表体与固定底栏；深色模式徽章与行距 token 化。
+
+### 文件解析与 PDF（后端）
+
+- **混元多模态**：大 PDF 自动分页渲染（避免整本 Base64 触发 `image download failed`）；分页提示改为忠实转录，拒绝模板占位输出；内置文本层与视觉结果合并。
+- **兜底链路**：混元未命中时依次尝试内置文本层、腾讯云 OCR（`FILE_PARSE_TENCENT_OCR_FALLBACK=1`）、本机分页 OCR（`FILE_PARSE_LOCAL_OCR_FALLBACK`，默认在未强制仅混元时开启）。
+- **Docker**：`canvas` 作为直接依赖并在镜像内 `pnpm rebuild`，修复 `canvas.node` 缺失；解析任务在 COS 下载失败时快速失败并上报阶段。
+- **并发**：上传后立即入队解析；文件详情/解析事件轮询豁免限流；瞬态 502/503 轮询重试（前端）。
+
+### COS 上传与部署
+
+- **上传 API**：`filesApi.upload` 走统一 `apiClient`，正确处理 HTTP 200 + `code: 400`，避免 `data: null` 导致前端 `Cannot read properties of null (reading 'id')`。
+- **COS 错误提示**：签名无效等 SDK 错误映射为可操作的配置说明；启动与 **`GET /api/health/cos`** 探针（PutObject 自检）。
+- **应急**：`FILE_UPLOAD_STORAGE=local` 可仅用本地 `uploads` 卷上传（不经 COS）。
+- **Compose**：`COS_SECRET_*` / `COS_BUCKET` / `COS_REGION` / `COS_PREFIX` 经 **`env_file` 原样注入**，避免 `${COS_SECRET_KEY}` 插值破坏含 `$` 的密钥；见 [`docs/deployment/VPS_GHCR_DUAL_ENV.md`](docs/deployment/VPS_GHCR_DUAL_ENV.md)。
+- **运维脚本**：[`scripts/diagnose-cos-vps.sh`](scripts/diagnose-cos-vps.sh) 对比 env 文件与容器内 COS 变量长度（不打印完整密钥）。
+
+### 生成用例与其它
+
+- **生成页**：结果面板全高内部滚动；可强制使用已配置模型而非混元快捷路径。
+- **安全**：记录/文件所有权校验加固；生成稳定性与 E2E 断言对齐当前 UI。
+
+---
+
 ## 2026-05-12
 
 ### 仓库整理

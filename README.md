@@ -31,7 +31,7 @@ CNB 命名空间与流水线配置说明见 [docs/cnb-migration.md](docs/cnb-mig
 | **工作台** | `/dashboard` | 总览与快捷入口 |
 | **AI 需求分析** | `/ai-analysis`（旧书签 `/upload` 会重定向至此），`POST /api/files/*`、`POST /api/ai/analyze/stream` | **上传**：单文件与分片上传，可选 **腾讯云 COS** 直传；PDF / Word / Excel / 图片等多格式解析与进度；**SSE 流式**结构化报告；Mermaid；**导出 XMind / PDF** |
 | **生成用例** | `/generate`，`POST /api/ai/generate`、`/api/ai/generate/stream` | 非流式与 **SSE 流式**生成测试用例；模型列表 `GET /api/ai/models` |
-| **生成记录** | `/records`，` /api/records` | 记录查询、分享、批量操作；定时清理等（见模块实现） |
+| **生成记录** | `/records`，`/api/records` | 记录查询、分享、批量操作；Friendly 主题表格与筛选布局（2026-05 重构） |
 | **模板管理** | `/templates`，`/api/templates` | 用例/提示模板维护 |
 | **团队管理** | `/teams`，`/api/teams` | 团队与成员权限 |
 | **系统设置** | `/settings`，`/api/settings` 等 | **AI 模型配置**；用户偏好；**天气城市**与**壁纸**（顶栏天气、全屏壁纸层，见 `WeatherBadge`、`WallpaperLayer`） |
@@ -39,7 +39,7 @@ CNB 命名空间与流水线配置说明见 [docs/cnb-migration.md](docs/cnb-mig
 | **管理员** | `/api/admin` | 运维与管理员能力（含模型连通性测试 `POST /api/ai/test` 等） |
 | **文档解析记录** | `/api/document-parse` | 解析任务与记录接口 |
 
-**健康检查**：`GET /health` 返回纯文本 `ok`；`GET /api/health` 返回 JSON。API 全局前缀为 **`/api`**（Swagger：`http://localhost:3000/api/docs`）。
+**健康检查**：`GET /health` 返回纯文本 `ok`；`GET /api/health` 返回 JSON；**`GET /api/health/cos`** 可诊断 COS 配置与 PutObject 探针（不返回密钥）。API 全局前缀为 **`/api`**（Swagger：`http://localhost:3000/api/docs`）。
 
 ## 技术栈
 
@@ -89,7 +89,7 @@ cd ../frontend && pnpm dev
 
 ## 解析与 AI 相关环境变量（摘要）
 
-图片解析性能、视觉模型 `detail`、OCR 超时、是否在视觉已识别正文时跳过第二轮结构化 LLM 等，见 **`backend/.env.example`**（如 `VISION_IMAGE_*`、`IMAGE_PARSE_SKIP_OCR_WHEN_VISION_OK`、`STRUCTURE_LLM_FOR_VISION_DOC`、`IMAGE_OCR_TIMEOUT_MS`）。
+图片/PDF 解析、混元分页视觉、OCR 兜底、COS 与上传存储等，见 **`backend/.env.example`**（如 `HUNYUAN_*`、`FILE_PARSE_*`、`FILE_UPLOAD_STORAGE`、`COS_*`、`VISION_*`、`IMAGE_OCR_*`）。VPS 双环境 env 同步与 COS 签名排查见 [**VPS_GHCR_DUAL_ENV.md**](docs/deployment/VPS_GHCR_DUAL_ENV.md)。
 
 ## 文档索引
 
@@ -100,7 +100,8 @@ cd ../frontend && pnpm dev
 | [docs/development/GIT_WORKFLOW.md](docs/development/GIT_WORKFLOW.md) | 分支与发布流程 |
 | [docs/development/ENVIRONMENT_VARIABLES.md](docs/development/ENVIRONMENT_VARIABLES.md) | 环境变量 |
 | [docs/deployment/VPS_DOCKER.md](docs/deployment/VPS_DOCKER.md) | 自托管 Docker 与 CI |
-| [docs/deployment/VPS_GHCR_DUAL_ENV.md](docs/deployment/VPS_GHCR_DUAL_ENV.md) | VPS 双目录（dev/prod）环境变量同步与 compose 命令步骤 |
+| [docs/deployment/VPS_GHCR_DUAL_ENV.md](docs/deployment/VPS_GHCR_DUAL_ENV.md) | VPS 双目录（dev/prod）环境变量同步、COS `env_file` 注入与 compose 命令 |
+| [scripts/diagnose-cos-vps.sh](scripts/diagnose-cos-vps.sh) | VPS 上对比 env 文件与容器内 COS 变量（仅长度/后四位） |
 | [docs/deployment/COMPOSE_FILES.md](docs/deployment/COMPOSE_FILES.md) | 根目录各 `docker-compose*.yml` |
 | [CHANGELOG.md](CHANGELOG.md) | 变更日志 |
 
@@ -121,12 +122,12 @@ cd ../frontend && pnpm dev
 
 仓库不提供默认口令。本地请注册或通过 seed / `ADMIN_*` 等运维流程创建管理员（见 `backend/.env.example`）。
 
-## 最近更新（2026-05 起）
+## 最近更新（2026-05-19）
 
-- **AI 需求分析**：XMind / PDF 导出、报告内 **Mermaid**、六段模板、流式终端与报告区布局优化。
-- **文件 / 图片解析**：跳过冗余 OCR 与可选第二轮结构化 LLM、可配置超时与 heartbeat（详见 CHANGELOG）。
-- **部署**：以 **CNB + `.cnb.yml`** 为主；GitHub Actions `deploy-vps` 多为手动触发。
-- **工程**：Express 作为后端生产直接依赖、依赖与 Compose 示例安全加固等。
+- **生成记录**：Friendly 主题页布局与深色模式 token 优化。
+- **PDF / 混元**：大文件分页多模态、忠实转录、OCR 多级兜底；Docker 内 `canvas` 修复。
+- **COS 上传**：统一 API 错误处理、`/api/health/cos` 探针、`FILE_UPLOAD_STORAGE=local` 应急；Compose **`env_file`** 注入 COS 密钥（避免 `$` 被 compose 展开）。
+- **部署**：CNB 推 `develop` / `main` 触发 `.cnb.yml`；VPS 勿与多个 backend 容器混用，见 CHANGELOG 与 `diagnose-cos-vps.sh`。
 
 完整条目见 **[CHANGELOG.md](CHANGELOG.md)**。
 
