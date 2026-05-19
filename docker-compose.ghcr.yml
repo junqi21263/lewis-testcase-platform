@@ -32,6 +32,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - AUTH_ALLOW_PLAINTEXT_PASSWORD=${AUTH_ALLOW_PLAINTEXT_PASSWORD:-}
       - UPLOAD_DIR=${UPLOAD_DIR:-./uploads}
+      # cos（默认，需 COS 四项）| local（仅用本地 uploads 卷，绕过 COS 签名问题）
+      - FILE_UPLOAD_STORAGE=${FILE_UPLOAD_STORAGE:-}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
       - APP_PORT=${APP_PORT:-3000}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
@@ -71,6 +73,7 @@ services:
       - COS_BUCKET=${COS_BUCKET:-}
       - COS_REGION=${COS_REGION:-}
       - COS_PREFIX=${COS_PREFIX:-}
+      - COS_SECURITY_TOKEN=${COS_SECURITY_TOKEN:-}
       - COS_PARSE_TEMP_DIR=${COS_PARSE_TEMP_DIR:-}
       # 混元 OpenAI 兼容多模态（Bearer sk-；本地文件 Base64，不依赖 COS 外链）
       - HUNYUAN_MULTIMODAL_ENABLED=${HUNYUAN_MULTIMODAL_ENABLED:-}

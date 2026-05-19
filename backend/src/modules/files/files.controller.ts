@@ -59,8 +59,17 @@ const effectiveMaxUpload =
 /** 单个分片请求体上限（略大于常见 2MB 分片） */
 const chunkRequestBodyMax = Math.min(8 * 1024 * 1024, effectiveMaxUpload)
 
-/** COS 四项齐全时：单文件上传走内存直传 COS，不落本地 uploads（与 CosStorageService.isConfigured 一致） */
+/** COS 四项齐全且未强制本地盘时：单文件上传走内存直传 COS */
 function cosDirectUploadEnabled(): boolean {
+  if (process.env.FILE_UPLOAD_STORAGE?.trim().toLowerCase() === 'local') return false
+  if (process.env.FILE_UPLOAD_STORAGE?.trim().toLowerCase() === 'cos') {
+    return !!(
+      process.env.COS_SECRET_ID?.trim() &&
+      process.env.COS_SECRET_KEY?.trim() &&
+      process.env.COS_BUCKET?.trim() &&
+      process.env.COS_REGION?.trim()
+    )
+  }
   return !!(
     process.env.COS_SECRET_ID?.trim() &&
     process.env.COS_SECRET_KEY?.trim() &&

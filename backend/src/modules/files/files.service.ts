@@ -221,6 +221,17 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return { ...next, path: next.path as string }
   }
 
+  private fileUploadStorageMode(): 'cos' | 'local' {
+    const mode = this.config.get<string>('FILE_UPLOAD_STORAGE')?.trim().toLowerCase()
+    if (mode === 'local') return 'local'
+    if (mode === 'cos') return 'cos'
+    return this.cosStorage.isConfigured() ? 'cos' : 'local'
+  }
+
+  private shouldUploadToCos(): boolean {
+    return this.fileUploadStorageMode() === 'cos'
+  }
+
   /** 保存上传记录并触发异步解析 */
   async saveUploadedFile(file: Express.Multer.File, uploaderId: string) {
     const fileType = this.detectFileType(file.mimetype, file.originalname)
@@ -228,9 +239,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       (file.filename && String(file.filename).trim()) ||
       `${uuid()}${path.extname(file.originalname) || ''}`
 
+    if (!this.shouldUploadToCos()) {
+      return this.saveUploadedFileLocally(file, uploaderId, fileType, safeName)
+    }
+
     if (!this.cosStorage.isConfigured()) {
       throw new BadRequestException(
-        '文件上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+        'FILE_UPLOAD_STORAGE=cos 但 COS 未配置完整。请设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION，或改为 FILE_UPLOAD_STORAGE=local。',
       )
     }
 
@@ -270,8 +285,59 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return this.getFileById(created.id, uploaderId)
     } catch (e) {
       this.logger.error(`COS 上传失败: ${(e as Error).message}`, e as Error)
-      throw new BadRequestException(`文件上传到 COS 失败：${formatCosClientError(e)}`)
+      const hint = formatCosClientError(e)
+      throw new BadRequestException(
+        `文件上传到 COS 失败：${hint}。可在 VPS 执行 curl /api/health/cos 查看探针；临时可设 FILE_UPLOAD_STORAGE=local。`,
+      )
     }
+  }
+
+  /** 本地磁盘存储（FILE_UPLOAD_STORAGE=local 或 COS 未配置时） */
+  private async saveUploadedFileLocally(
+    file: Express.Multer.File,
+    uploaderId: string,
+    fileType: FileType,
+    safeName: string,
+  ) {
+    let uploadBuffer = file.buffer
+    if ((!uploadBuffer || uploadBuffer.length === 0) && file.path?.trim()) {
+      const localPath = file.path.trim()
+      if (!fs.existsSync(localPath)) {
+        throw new BadRequestException(`上传文件不存在：${localPath}`)
+      }
+      uploadBuffer = fs.readFileSync(localPath)
+    }
+    if (!uploadBuffer || uploadBuffer.length < 1) {
+      throw new BadRequestException('上传文件为空（0 bytes），请重试。')
+    }
+
+    const storedPath = file.path?.trim()
+      ? path.resolve(file.path.trim())
+      : path.join(this.uploadDir, safeName)
+    if (!file.path?.trim()) {
+      fs.writeFileSync(storedPath, uploadBuffer)
+    }
+
+    const created = await this.prisma.uploadedFile.create({
+      data: {
+        name: safeName,
+        originalName: file.originalname,
+        path: storedPath,
+        size: uploadBuffer.length,
+        mimeType: file.mimetype,
+        fileType,
+        status: FileStatus.PENDING,
+        parseStage: 'PENDING',
+        uploaderId,
+      },
+    })
+    await this.tryStartParseImmediately({
+      id: created.id,
+      path: storedPath,
+      fileType,
+      mimeType: file.mimetype,
+    })
+    return this.getFileById(created.id, uploaderId)
   }
 
   /** 从本地路径上传（避免先整体读入内存），并创建上传记录 */
@@ -291,9 +357,33 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const fileType = this.detectFileType(mimeType, originalName)
     const safeName = `${uuid()}${path.extname(originalName) || ''}`
 
+    if (!this.shouldUploadToCos()) {
+      const storedPath = path.resolve(localPath)
+      const created = await this.prisma.uploadedFile.create({
+        data: {
+          name: safeName,
+          originalName,
+          path: storedPath,
+          size: stat.size,
+          mimeType,
+          fileType,
+          status: FileStatus.PENDING,
+          parseStage: 'PENDING',
+          uploaderId,
+        },
+      })
+      await this.tryStartParseImmediately({
+        id: created.id,
+        path: storedPath,
+        fileType,
+        mimeType,
+      })
+      return this.getFileById(created.id, uploaderId)
+    }
+
     if (!this.cosStorage.isConfigured()) {
       throw new BadRequestException(
-        '分片合并后上传已切换为 COS 主链路，但当前服务未配置 COS。请先设置 COS_SECRET_ID、COS_SECRET_KEY、COS_BUCKET、COS_REGION 并重启后端。',
+        'FILE_UPLOAD_STORAGE=cos 但 COS 未配置完整。请设置 COS 四项或改为 FILE_UPLOAD_STORAGE=local。',
       )
     }
 

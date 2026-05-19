@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
 import { createWriteStream } from 'fs'
@@ -24,7 +24,20 @@ export function sanitizeCosObjectKey(key: string): string {
   return k.replace(/\/{2,}/g, '/').replace(/^\//, '')
 }
 
-/** 读取 COS_PREFIX 等：去掉行内 `#` 注释（dotenv 若未剥离时由这里兜底） */
+/** 读取 COS_*：去 BOM、行内 `#` 注释、首尾引号（常见于 .env / docker --env-file） */
+export function sanitizeCosEnvValue(raw: string | undefined | null): string {
+  let s = (raw ?? '').trim().replace(/^\uFEFF/, '')
+  const cut = s.search(/\s+#/)
+  if (cut >= 0) s = s.slice(0, cut).trim()
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    s = s.slice(1, -1).trim()
+  }
+  return s.replace(/\r$/, '')
+}
+
 /** 将 COS SDK 错误转为可操作的客户端提示（密钥/桶/地域/行内注释等） */
 export function formatCosClientError(err: unknown): string {
   const msg = (err instanceof Error ? err.message : String(err ?? '')).trim()
@@ -54,27 +67,113 @@ export function sanitizeCosPrefixFromEnv(raw: string | undefined | null): string
 }
 
 @Injectable()
-export class CosStorageService {
+export class CosStorageService implements OnModuleInit {
   private readonly logger = new Logger(CosStorageService.name)
   private readonly cos: COS | null
+  private lastProbe: { ok: boolean; error?: string; at: string } | null = null
 
   constructor(private readonly config: ConfigService) {
-    const sid = config.get<string>('COS_SECRET_ID')?.trim()
-    const sk = config.get<string>('COS_SECRET_KEY')?.trim()
+    const sid = sanitizeCosEnvValue(config.get<string>('COS_SECRET_ID'))
+    const sk = sanitizeCosEnvValue(config.get<string>('COS_SECRET_KEY'))
+    const token = sanitizeCosEnvValue(config.get<string>('COS_SECURITY_TOKEN'))
     if (sid && sk) {
-      this.cos = new COS({ SecretId: sid, SecretKey: sk })
+      this.cos = new COS({
+        SecretId: sid,
+        SecretKey: sk,
+        ...(token ? { SecurityToken: token } : {}),
+      })
     } else {
       this.cos = null
     }
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (!this.isConfigured()) {
+      this.logger.warn(
+        'COS 未配置完整；上传可设 FILE_UPLOAD_STORAGE=local 使用本地 uploads 卷，或补齐 COS_SECRET_* / COS_BUCKET / COS_REGION',
+      )
+      return
+    }
+    const probe = await this.probePutAccess()
+    this.lastProbe = { ok: probe.ok, error: probe.error, at: new Date().toISOString() }
+    if (probe.ok) {
+      this.logger.log(
+        `COS 探针成功 bucket=${probe.bucket} region=${probe.region} secretIdSuffix=${probe.secretIdSuffix}`,
+      )
+    } else {
+      this.logger.error(
+        `COS 探针失败 bucket=${probe.bucket} region=${probe.region} secretIdSuffix=${probe.secretIdSuffix}: ${probe.error}`,
+      )
+    }
+  }
+
+  getLastProbe(): { ok: boolean; error?: string; at: string } | null {
+    return this.lastProbe
   }
 
   /** SecretId/SecretKey/Bucket/Region 齐全时可读写 COS */
   isConfigured(): boolean {
     return !!(
       this.cos &&
-      this.config.get<string>('COS_BUCKET')?.trim() &&
-      this.config.get<string>('COS_REGION')?.trim()
+      sanitizeCosEnvValue(this.config.get<string>('COS_BUCKET')) &&
+      sanitizeCosEnvValue(this.config.get<string>('COS_REGION'))
     )
+  }
+
+  getPublicConfigSummary(): {
+    configured: boolean
+    bucket: string
+    region: string
+    prefix: string
+    secretIdSuffix: string
+  } {
+    const sid = sanitizeCosEnvValue(this.config.get<string>('COS_SECRET_ID'))
+    return {
+      configured: this.isConfigured(),
+      bucket: sanitizeCosEnvValue(this.config.get<string>('COS_BUCKET')),
+      region: sanitizeCosEnvValue(this.config.get<string>('COS_REGION')),
+      prefix: this.normalizePrefix(this.config.get<string>('COS_PREFIX')),
+      secretIdSuffix: sid.length >= 4 ? sid.slice(-4) : sid ? '***' : '',
+    }
+  }
+
+  /** 写入 1 字节探针对象后删除，用于启动与 /health/cos */
+  async probePutAccess(): Promise<{
+    ok: boolean
+    error?: string
+    bucket: string
+    region: string
+    secretIdSuffix: string
+  }> {
+    const summary = this.getPublicConfigSummary()
+    if (!this.cos || !summary.configured) {
+      return { ok: false, error: 'COS 未配置完整', ...summary }
+    }
+    const region = summary.region
+    const bucket = summary.bucket
+    const key = `${summary.prefix}_health_probe_${uuid()}.txt`
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.cos!.putObject(
+          { Bucket: bucket, Region: region, Key: key, Body: Buffer.from('1'), ContentLength: 1 },
+          (err) => (err ? reject(err) : resolve()),
+        )
+      })
+      await new Promise<void>((resolve, reject) => {
+        this.cos!.deleteObject({ Bucket: bucket, Region: region, Key: key }, (err) =>
+          err ? reject(err) : resolve(),
+        )
+      })
+      return { ok: true, bucket, region, secretIdSuffix: summary.secretIdSuffix }
+    } catch (e) {
+      return {
+        ok: false,
+        error: formatCosClientError(e),
+        bucket,
+        region,
+        secretIdSuffix: summary.secretIdSuffix,
+      }
+    }
   }
 
   static isCosUri(storedPath: string | null | undefined): boolean {
@@ -100,16 +199,11 @@ export class CosStorageService {
   /**
    * 防御性清洗：去掉形如 `value # comment` 的行内注释，避免被当成真实配置值。
    */
-  private stripInlineComment(value: string | null | undefined): string {
-    if (!value) return ''
-    return value.replace(/\s+#.*$/, '').trim()
-  }
-
   /**
    * 仅允许用于 region/bucket 这类 token 场景，额外移除空白。
    */
   private normalizeToken(value: string | null | undefined): string {
-    return this.stripInlineComment(value).replace(/\s+/g, '')
+    return sanitizeCosEnvValue(value).replace(/\s+/g, '')
   }
 
   /**

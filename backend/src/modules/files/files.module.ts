@@ -22,6 +22,6 @@ import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
     CosStorageService,
   ],
   controllers: [FilesController],
-  exports: [FilesService],
+  exports: [FilesService, CosStorageService],
 })
 export class FilesModule {}

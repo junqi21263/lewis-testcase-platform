@@ -1,6 +1,7 @@
 import {
   CosStorageService,
   formatCosClientError,
+  sanitizeCosEnvValue,
   sanitizeCosObjectKey,
 } from '@/modules/files/cos-storage.service'
 
@@ -19,6 +20,11 @@ describe('COS path normalization (inline # comment in object key)', () => {
     expect(CosStorageService.normalizeCosStoredPath(dirty)).toBe(
       'cos://ap-guangzhou/lewistest-1420560890/ai-uploads/b2941a25-850a-4eb6-a0f3-4acd49c0a351.png',
     )
+  })
+
+  it('sanitizeCosEnvValue strips quotes and inline comments', () => {
+    expect(sanitizeCosEnvValue('  "AKIDxxx"  ')).toBe('AKIDxxx')
+    expect(sanitizeCosEnvValue('ai-uploads/  # comment')).toBe('ai-uploads/')
   })
 
   it('formatCosClientError maps invalid signature to actionable hint', () => {
