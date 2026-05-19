@@ -47,6 +47,7 @@ services:
       - FILE_PARSE_FORCE_HUNYUAN=${FILE_PARSE_FORCE_HUNYUAN:-}
       # =1 时混元失败后允许腾讯云 OCR/PDF 兜底（默认不设=仅混元，与上传解析统一混元策略一致）
       - FILE_PARSE_TENCENT_OCR_FALLBACK=${FILE_PARSE_TENCENT_OCR_FALLBACK:-}
+      - FILE_PARSE_LOCAL_OCR_FALLBACK=${FILE_PARSE_LOCAL_OCR_FALLBACK:-}
       - FILE_PARSE_PDF_HUNYUAN_FIRST=${FILE_PARSE_PDF_HUNYUAN_FIRST:-}
       # =1：PDF 按页渲染 PNG 再分批混元（避免整份 data:application/pdf Base64 触发 image download failed）；需镜像内 canvas/pdf 正常
       - FILE_PARSE_PDF_PAGED_VISION=${FILE_PARSE_PDF_PAGED_VISION:-}

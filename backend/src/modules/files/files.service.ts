@@ -584,6 +584,17 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     return this.isFileParseForceHunyuan() || !this.isFileParseTencentOcrFallbackAllowed()
   }
 
+  /**
+   * 混元失败后是否允许本机分页 OCR（Tesseract/可选视觉）兜底。
+   * 默认：未设 FILE_PARSE_FORCE_HUNYUAN=1 时启用；显式 FILE_PARSE_LOCAL_OCR_FALLBACK=0 可关闭。
+   */
+  private isFileParseLocalOcrFallbackAllowed(): boolean {
+    const v = this.config.get<string>('FILE_PARSE_LOCAL_OCR_FALLBACK')?.trim()
+    if (v === '0') return false
+    if (v === '1') return true
+    return !this.isFileParseForceHunyuan()
+  }
+
   /** 将底层 OCR 异常映射为前端可展示的简短原因 */
   private classifyOcrFailureMessage(err: unknown): string {
     const m = (err as Error)?.message ?? ''
@@ -767,7 +778,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 混元直读未命中后：在允许腾讯云兜底时走全本 OCR；否则抛错。
+   * 混元直读未命中后：内置文本层 → 腾讯云 OCR（若允许）→ 本机分页 OCR；均失败再抛错。
    * @param embeddedText 已抽取的内置文本（可为空，供 OCR 侧参考）
    */
   private async finishPdfAfterHunyuanMiss(
@@ -783,13 +794,86 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     embeddedText: string,
     numpages: number,
   ): Promise<string> {
+    const embedded = embeddedText.trim()
+    const minPartialRaw = parseInt(
+      this.config.get<string>('VISION_PDF_MIN_EMBEDDED_FALLBACK_CHARS') || '40',
+      10,
+    )
+    const minPartial =
+      Number.isFinite(minPartialRaw) && minPartialRaw > 0 ? minPartialRaw : 40
+
+    if (embedded.length >= minPartial) {
+      const suff = this.pdfDocumentParse.evaluateTextLayerSufficiency(embeddedText, numpages)
+      if (suff.sufficient) {
+        this.logger.log('PDF：混元未命中，使用质量足够的内置文本层')
+        return `【PDF 内置文本层】\n${embedded}`
+      }
+      this.logger.warn(
+        `PDF：混元未命中，降级使用部分内置文本层（${embedded.length} 字，未达 ${suff.minLen} 字阈值）`,
+      )
+      await heartbeat('PDF_EMBEDDED_FALLBACK', {
+        phase: 'PDF',
+        message: 'embedded_text_partial',
+        chars: embedded.length,
+      })
+      return `【PDF 内置文本层（混元未命中，以下为 PDF 抽取原文，可能不完整）】\n${embedded}`
+    }
+
+    if (this.isFileParseTencentOcrFallbackAllowed()) {
+      await heartbeat('PDF_OCR_TENCENT', { phase: 'OCR', message: 'tencent_fallback' })
+      try {
+        const tencent = await this.pdfDocumentParse.runTencentFullPdfOcr(
+          filePath,
+          embeddedText,
+          numpages,
+          heartbeat,
+          { originalStoredPath: ctx.originalStoredPath },
+        )
+        if (tencent?.trim()) {
+          this.logger.log('PDF：混元未命中，腾讯云 OCR 兜底成功')
+          return tencent
+        }
+      } catch (e) {
+        this.logger.warn(`PDF：腾讯云 OCR 兜底失败: ${(e as Error).message}`)
+      }
+    }
+
+    if (
+      this.isFileParseLocalOcrFallbackAllowed() &&
+      this.documentVision.isPdfPageRenderAvailable()
+    ) {
+      await heartbeat('PDF_OCR_LOCAL', { phase: 'OCR', message: 'local_ocr_fallback' })
+      try {
+        const ocr = await this.parsePdfOcrBatchedPipeline(
+          filePath,
+          embeddedText,
+          heartbeat,
+          ctx.fileId,
+          numpages,
+        )
+        if (ocr?.trim()) {
+          this.logger.log('PDF：混元未命中，本机 OCR 管线兜底成功')
+          return ocr
+        }
+      } catch (e) {
+        this.logger.warn(`PDF：本机 OCR 管线失败: ${(e as Error).message}`)
+      }
+    } else if (
+      !this.isFileParseLocalOcrFallbackAllowed() &&
+      !this.isFileParseTencentOcrFallbackAllowed()
+    ) {
+      this.logger.warn(
+        'PDF：混元未命中且未启用 OCR 兜底（FILE_PARSE_LOCAL_OCR_FALLBACK=0 且未设 FILE_PARSE_TENCENT_OCR_FALLBACK=1）',
+      )
+    }
+
     if (isPdfTooLargeForHunyuanWholeFileBase64(this.config, ctx.fileBytes)) {
       throw new Error(
-        '【解析失败】PDF 体积较大，整本 Base64 直传混元不可用，且分页渲染未产出有效正文。请确认 backend 镜像已安装 canvas（pnpm rebuild canvas），或设置 FILE_PARSE_PDF_PAGED_VISION=1；若允许 OCR 兜底可设 FILE_PARSE_TENCENT_OCR_FALLBACK=1。',
+        '【解析失败】PDF 体积较大，混元分页未产出有效正文，且 OCR 兜底未成功。请确认 backend 镜像已安装 canvas；可设 FILE_PARSE_LOCAL_OCR_FALLBACK=1（默认已开）或 FILE_PARSE_TENCENT_OCR_FALLBACK=1。',
       )
     }
     throw new Error(
-      '【解析失败】PDF 解析仅允许混元主链路：混元未返回足够长的有效正文。请核对 HUNYUAN_VISION_API_KEY（或 HUNYUAN_OPENAI_API_KEY）、HUNYUAN_MULTIMODAL_ENABLED/HUNYUAN_COS_MULTIMODAL_PARSE_ENABLED、HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF，并确认文件已上传至 COS。',
+      '【解析失败】混元未返回足够长的有效正文，且内置文本层/OCR 兜底均未成功。请核对 HUNYUAN_VISION_API_KEY、混元开关与 COS 配置；扫描件 PDF 需本机 OCR（FILE_PARSE_LOCAL_OCR_FALLBACK，默认开启）或腾讯云 OCR（FILE_PARSE_TENCENT_OCR_FALLBACK=1）。',
     )
   }
 
