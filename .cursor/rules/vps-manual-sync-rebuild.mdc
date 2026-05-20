@@ -14,13 +14,25 @@ alwaysApply: false
 1. 本地：`git push cnb develop`（无新改动可跳过）。
 2. VPS 路径：`/opt/lewis_testcase_platform_dev`，分支 **`develop`**。
 
+若 VPS 上 `git fetch cnb` 无凭证失败，从**本地已推送的 develop** rsync（与 `scripts/ci/cnb-deploy-vps.sh` 排除项一致）：
+
+```bash
+cd /path/to/lewis_testcase_platform && git checkout develop && git pull cnb develop
+rsync -az --delete -e "ssh" --rsync-path="sudo rsync" \
+  --exclude ".git/" --exclude ".env" --exclude ".env.*" \
+  --exclude "backend/.env" --exclude "frontend/.env" \
+  --exclude "node_modules/" --exclude "frontend/node_modules/" --exclude "backend/node_modules/" \
+  --exclude "backend/uploads/" --exclude "frontend/dist/" --exclude "backend/dist/" \
+  ./ testcase-server:/opt/lewis_testcase_platform_dev/
+```
+
+然后在 VPS 上：
+
 ```bash
 ssh testcase-server 'bash -s' <<'EOF'
 set -euo pipefail
 cd /opt/lewis_testcase_platform_dev
-git fetch origin develop
-git checkout develop
-git pull origin develop
+# 有凭证时：git fetch cnb develop && git reset --hard cnb/develop
 rm -rf frontend/dist
 BE_IMG="$(docker inspect testcase_dev_backend --format '{{.Config.Image}}')"
 FE_IMG="$(docker inspect testcase_dev_frontend --format '{{.Config.Image}}')"
@@ -42,13 +54,13 @@ EOF
 1. 须用户已确认合并/上线后：`git checkout main && git merge develop && git push cnb main`。
 2. VPS 路径：`/opt/lewis_testcase_platform`，分支 **`main`**。
 
+无凭证时从本地 **main** rsync 到 `/opt/lewis_testcase_platform/`（排除项同上），再在 VPS：
+
 ```bash
 ssh testcase-server 'bash -s' <<'EOF'
 set -euo pipefail
 cd /opt/lewis_testcase_platform
-git fetch origin main
-git checkout main
-git pull origin main
+# 有凭证时：git fetch cnb main && git reset --hard cnb/main
 rm -rf frontend/dist
 BE_IMG="$(docker inspect testcase_backend --format '{{.Config.Image}}')"
 FE_IMG="$(docker inspect testcase_frontend --format '{{.Config.Image}}')"
