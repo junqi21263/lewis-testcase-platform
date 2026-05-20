@@ -339,6 +339,11 @@ export class DocumentVisionService {
     return runImport('pdf-to-img')
   }
 
+  private loadSharp(): typeof import('sharp') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('sharp')
+  }
+
   /** 按页迭代渲染整本 PDF（pdf-to-img）；用于分页 OCR / 分批视觉理解 */
   async *iteratePdfPagesAsPng(
     pdfPath: string,
@@ -362,6 +367,66 @@ export class DocumentVisionService {
       pageNum++
       yield { pageNum, buffer: Buffer.from(image) }
     }
+  }
+
+  /**
+   * 将一张大画布 PNG 切成多个重叠 tile，适合单页交互稿/长图设计稿的小字转录。
+   */
+  async splitPngIntoTiles(
+    pngBuffer: Buffer,
+    options?: {
+      columns?: number
+      rows?: number
+      overlap?: number
+      maxTiles?: number
+      minTileWidth?: number
+      minTileHeight?: number
+    },
+  ): Promise<Array<{ index: number; buffer: Buffer; left: number; top: number }>> {
+    const sharp = this.loadSharp()
+    const image = sharp(pngBuffer)
+    const meta = await image.metadata()
+    const width = meta.width || 0
+    const height = meta.height || 0
+    if (width < 1 || height < 1) return []
+
+    const columnsRaw = options?.columns ?? 3
+    const columns = Math.min(Math.max(columnsRaw, 1), 4)
+    const rowsRaw = options?.rows
+    const overlap = Math.min(Math.max(options?.overlap ?? 72, 0), 240)
+    const maxTiles = Math.min(Math.max(options?.maxTiles ?? 12, 1), 24)
+    const minTileWidth = Math.max(options?.minTileWidth ?? 720, 240)
+    const minTileHeight = Math.max(options?.minTileHeight ?? 720, 240)
+
+    const baseTileWidth = Math.max(Math.ceil(width / columns), minTileWidth)
+    const rows =
+      rowsRaw != null
+        ? Math.min(Math.max(rowsRaw, 1), 6)
+        : Math.max(1, Math.ceil(height / minTileHeight))
+    const baseTileHeight = Math.max(Math.ceil(height / rows), minTileHeight)
+
+    const tiles: Array<{ index: number; buffer: Buffer; left: number; top: number }> = []
+    let idx = 0
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        if (tiles.length >= maxTiles) return tiles
+        const nominalLeft = col * Math.ceil(width / columns)
+        const nominalTop = row * Math.ceil(height / rows)
+        const left = Math.max(0, nominalLeft - (col > 0 ? overlap : 0))
+        const top = Math.max(0, nominalTop - (row > 0 ? overlap : 0))
+        const extractWidth = Math.min(width - left, baseTileWidth + (col < columns - 1 ? overlap : 0))
+        const extractHeight = Math.min(height - top, baseTileHeight + (row < rows - 1 ? overlap : 0))
+        if (extractWidth < 40 || extractHeight < 40) continue
+        const buffer = await image
+          .clone()
+          .extract({ left, top, width: extractWidth, height: extractHeight })
+          .png()
+          .toBuffer()
+        idx++
+        tiles.push({ index: idx, buffer, left, top })
+      }
+    }
+    return tiles
   }
 
   /**
