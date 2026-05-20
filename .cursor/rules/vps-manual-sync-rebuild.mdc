@@ -1,0 +1,71 @@
+---
+description: VPS 手动对齐分支、删 dist、重建前后端容器（开发 develop / 生产 main）
+alwaysApply: false
+---
+
+# VPS 手动同步与重建（develop / main）
+
+用户明确要求「提交推送 + VPS 对齐 + 删 `frontend/dist` + 重建 frontend/backend」时，按下列流程执行并回报验收项。
+
+**SSH**：`ssh testcase-server`（`139.199.69.115`，用户 `ubuntu`）。
+
+## 一、开发环境（`cnb/develop`）
+
+1. 本地：`git push cnb develop`（无新改动可跳过）。
+2. VPS 路径：`/opt/lewis_testcase_platform_dev`，分支 **`develop`**。
+
+```bash
+ssh testcase-server 'bash -s' <<'EOF'
+set -euo pipefail
+cd /opt/lewis_testcase_platform_dev
+git fetch origin develop
+git checkout develop
+git pull origin develop
+rm -rf frontend/dist
+BE_IMG="$(docker inspect testcase_dev_backend --format '{{.Config.Image}}')"
+FE_IMG="$(docker inspect testcase_dev_frontend --format '{{.Config.Image}}')"
+HPORT="$(docker port testcase_dev_frontend 80/tcp 2>/dev/null | head -1 | sed 's/.*://' || echo 8083)"
+export DOCKER_BUILDKIT=1 STACK_PREFIX=testcase_dev COMPOSE_ENV_FILE=.env.development
+export BACKEND_IMAGE="$BE_IMG" FRONTEND_IMAGE="$FE_IMG" FRONTEND_HOST_PORT="${HPORT:-8083}"
+export POSTGRES_HOST_PORT=5433 REDIS_HOST_PORT=6380
+sudo -E docker compose -f docker-compose.ghcr.yml -f docker-compose.dev.override.yml \
+  --env-file .env.development up -d --force-recreate frontend backend
+docker ps --filter name=testcase_dev --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+curl -fsS "http://127.0.0.1:${FRONTEND_HOST_PORT}/health" || true
+EOF
+```
+
+**回报**：`cnb/develop` 最新 SHA；容器名/镜像/状态；`http://139.199.69.115:<端口>/health`；页面是否为新 UI（可看 `index-*.js` 哈希或页面标题/布局）。
+
+## 二、生产环境（`cnb/main`）
+
+1. 须用户已确认合并/上线后：`git checkout main && git merge develop && git push cnb main`。
+2. VPS 路径：`/opt/lewis_testcase_platform`，分支 **`main`**。
+
+```bash
+ssh testcase-server 'bash -s' <<'EOF'
+set -euo pipefail
+cd /opt/lewis_testcase_platform
+git fetch origin main
+git checkout main
+git pull origin main
+rm -rf frontend/dist
+BE_IMG="$(docker inspect testcase_backend --format '{{.Config.Image}}')"
+FE_IMG="$(docker inspect testcase_frontend --format '{{.Config.Image}}')"
+export DOCKER_BUILDKIT=1 STACK_PREFIX=testcase COMPOSE_ENV_FILE=.env
+export BACKEND_IMAGE="$BE_IMG" FRONTEND_IMAGE="$FE_IMG"
+export FRONTEND_HOST_PORT=80 POSTGRES_HOST_PORT=5432 REDIS_HOST_PORT=6379
+sudo -E docker compose -f docker-compose.ghcr.yml --env-file .env \
+  up -d --force-recreate frontend backend
+docker ps --filter name=testcase_ --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' | grep -E 'frontend|backend' || true
+curl -fsS http://127.0.0.1/health || true
+EOF
+```
+
+**回报**：`cnb/main` 最新 SHA；前端容器镜像与静态资源（`docker exec testcase_frontend ls /usr/share/nginx/html/assets/index-*.js`）；生产 URL `/health`。
+
+## 注意
+
+- `docker-compose.ghcr.yml` 使用 **预构建镜像**；仅 `git pull` 不会更新容器内前端资源，除非 CI 已推送新 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 并在此脚本中 **pull** 新 tag。若用户要求「必须用仓库最新代码」，应先确认 CNB 流水线已对应当前 SHA 构建镜像，或在 VPS 上 `docker compose pull` 后再 `up -d --force-recreate`。
+- 删 `frontend/dist` 避免宿主机旧静态包干扰；容器内资源以镜像为准。
+- 生产推 `main` 须符合 `dev-prod-prompt-before-deploy.mdc`（用户明确指令除外）。

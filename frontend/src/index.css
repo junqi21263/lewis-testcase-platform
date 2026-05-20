@@ -109,6 +109,121 @@
     --records-icon-hover: #334155;
     --records-icon-danger: #be123c;
 
+    /* ---------- Templates page（模板管理）---------- */
+    --templates-page-bg: 226 56% 98%;
+    --templates-panel-bg: 0 0% 100%;
+    --templates-panel-border: 220 24% 88%;
+    --templates-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.18);
+    --templates-toolbar-bg: 220 45% 97%;
+    --templates-card-bg: 0 0% 100%;
+    --templates-card-border: 220 22% 88%;
+    --templates-card-hover-bg: 220 48% 99%;
+    --templates-card-shadow: 0 12px 32px -28px rgba(59, 130, 246, 0.14);
+    --templates-preview-bg: 220 42% 96%;
+    --templates-preview-border: 220 20% 90%;
+    --templates-preview-text: 215 22% 28%;
+    --templates-input-bg: 0 0% 100%;
+    --templates-input-border: 220 22% 86%;
+    --templates-chip-bg: 220 40% 95%;
+    --templates-text-primary: 222 47% 11%;
+    --templates-text-secondary: 215 18% 38%;
+    --templates-text-muted: 215 14% 52%;
+    --templates-scrollbar-thumb: 215 18% 78%;
+    --templates-icon-muted: #64748b;
+    --templates-icon-hover: #334155;
+    --templates-icon-danger: #be123c;
+    --templates-badge-functional-bg: rgba(59, 130, 246, 0.1);
+    --templates-badge-functional-text: #1d4ed8;
+    --templates-badge-functional-border: rgba(59, 130, 246, 0.22);
+    --templates-badge-performance-bg: rgba(249, 115, 22, 0.1);
+    --templates-badge-performance-text: #c2410c;
+    --templates-badge-performance-border: rgba(249, 115, 22, 0.22);
+    --templates-badge-security-bg: rgba(244, 63, 94, 0.08);
+    --templates-badge-security-text: #be123c;
+    --templates-badge-security-border: rgba(244, 63, 94, 0.2);
+    --templates-badge-api-bg: rgba(168, 85, 247, 0.1);
+    --templates-badge-api-text: #7c3aed;
+    --templates-badge-api-border: rgba(168, 85, 247, 0.22);
+    --templates-badge-ui-bg: rgba(16, 185, 129, 0.1);
+    --templates-badge-ui-text: #047857;
+    --templates-badge-ui-border: rgba(16, 185, 129, 0.22);
+    --templates-badge-custom-bg: rgba(100, 116, 139, 0.1);
+    --templates-badge-custom-text: #475569;
+    --templates-badge-custom-border: rgba(100, 116, 139, 0.2);
+
+    /* ---------- Teams page（团队管理）---------- */
+    --teams-page-bg: 226 56% 98%;
+    --teams-panel-bg: 0 0% 100%;
+    --teams-panel-border: 220 24% 88%;
+    --teams-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.18);
+    --teams-list-bg: 220 45% 97%;
+    --teams-detail-bg: 0 0% 100%;
+    --teams-item-bg: 0 0% 100%;
+    --teams-item-hover-bg: 220 48% 97%;
+    --teams-item-selected-bg: 195 85% 94%;
+    --teams-item-accent: 188 78% 42%;
+    --teams-metric-bg: 220 42% 96%;
+    --teams-input-bg: 0 0% 100%;
+    --teams-input-border: 220 22% 86%;
+    --teams-table-header-bg: 220 42% 96%;
+    --teams-table-row-bg: 0 0% 100%;
+    --teams-table-row-hover-bg: 220 48% 97%;
+    --teams-table-border: 220 22% 90%;
+    --teams-text-primary: 222 47% 11%;
+    --teams-text-secondary: 215 18% 38%;
+    --teams-text-muted: 215 14% 52%;
+    --teams-scrollbar-thumb: 215 18% 78%;
+    --teams-icon-muted: #64748b;
+    --teams-icon-hover: #334155;
+    --teams-icon-danger: #be123c;
+    --teams-badge-super-bg: rgba(139, 92, 246, 0.1);
+    --teams-badge-super-text: #6d28d9;
+    --teams-badge-super-border: rgba(139, 92, 246, 0.22);
+    --teams-badge-admin-bg: rgba(59, 130, 246, 0.1);
+    --teams-badge-admin-text: #1d4ed8;
+    --teams-badge-admin-border: rgba(59, 130, 246, 0.22);
+    --teams-badge-member-bg: rgba(16, 185, 129, 0.1);
+    --teams-badge-member-text: #047857;
+    --teams-badge-member-border: rgba(16, 185, 129, 0.22);
+    --teams-badge-viewer-bg: rgba(100, 116, 139, 0.1);
+    --teams-badge-viewer-text: #475569;
+    --teams-badge-viewer-border: rgba(100, 116, 139, 0.2);
+    --teams-empty-bg: 220 45% 97%;
+
+    /* ---------- Usage page（用量统计）---------- */
+    --usage-page-bg: 226 56% 98%;
+    --usage-panel-bg: 0 0% 100%;
+    --usage-panel-border: 220 24% 88%;
+    --usage-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.18);
+    --usage-metric-today-accent: 188 78% 42%;
+    --usage-metric-month-accent: 258 65% 58%;
+    --usage-metric-token-accent: 160 55% 40%;
+    --usage-metric-cost-accent: 38 92% 50%;
+    --usage-metric-bg: 0 0% 100%;
+    --usage-metric-border: 220 22% 88%;
+    --usage-chart-bar-bg: 220 40% 92%;
+    --usage-chart-bar-fill: 199 89% 48%;
+    --usage-table-header-bg: 220 42% 96%;
+    --usage-table-row-bg: 0 0% 100%;
+    --usage-table-row-hover-bg: 220 48% 97%;
+    --usage-table-border: 220 22% 90%;
+    --usage-input-bg: 0 0% 100%;
+    --usage-input-border: 220 22% 86%;
+    --usage-chip-bg: 220 40% 95%;
+    --usage-text-primary: 222 47% 11%;
+    --usage-text-secondary: 215 18% 38%;
+    --usage-text-muted: 215 14% 52%;
+    --usage-scrollbar-thumb: 215 18% 78%;
+    --usage-icon-muted: #64748b;
+    --usage-icon-hover: #334155;
+    --usage-badge-success-bg: #ecfdf5;
+    --usage-badge-success-border: rgba(16, 185, 129, 0.28);
+    --usage-badge-success-text: #047857;
+    --usage-badge-danger-bg: #fff1f2;
+    --usage-badge-danger-border: rgba(244, 63, 94, 0.28);
+    --usage-badge-danger-text: #be123c;
+    --usage-empty-bg: 220 45% 97%;
+
     /* ---------- Generate Case Studio tokens ---------- */
     --gcs-page-bg: 226 56% 98%;
     --gcs-panel-bg: 0 0% 100%;
@@ -389,6 +504,118 @@
     --records-icon-hover: #e2e8f0;
     --records-icon-danger: #fda4af;
 
+    --templates-page-bg: 222 46% 7%;
+    --templates-panel-bg: 222 48% 9%;
+    --templates-panel-border: 217 26% 18%;
+    --templates-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.65);
+    --templates-toolbar-bg: 222 42% 11%;
+    --templates-card-bg: 222 46% 10%;
+    --templates-card-border: 217 26% 20%;
+    --templates-card-hover-bg: 217 34% 13%;
+    --templates-card-shadow: 0 16px 40px -28px rgba(0, 0, 0, 0.55);
+    --templates-preview-bg: 222 44% 8%;
+    --templates-preview-border: 217 24% 18%;
+    --templates-preview-text: 215 18% 78%;
+    --templates-input-bg: 222 42% 12%;
+    --templates-input-border: 217 26% 22%;
+    --templates-chip-bg: 217 32% 14%;
+    --templates-text-primary: 210 40% 96%;
+    --templates-text-secondary: 215 18% 72%;
+    --templates-text-muted: 215 14% 58%;
+    --templates-scrollbar-thumb: 217 22% 28%;
+    --templates-icon-muted: #94a3b8;
+    --templates-icon-hover: #e2e8f0;
+    --templates-icon-danger: #fb7185;
+    --templates-badge-functional-bg: rgba(56, 189, 248, 0.12);
+    --templates-badge-functional-text: #7dd3fc;
+    --templates-badge-functional-border: rgba(56, 189, 248, 0.28);
+    --templates-badge-performance-bg: rgba(251, 146, 60, 0.12);
+    --templates-badge-performance-text: #fdba74;
+    --templates-badge-performance-border: rgba(251, 146, 60, 0.28);
+    --templates-badge-security-bg: rgba(251, 113, 133, 0.12);
+    --templates-badge-security-text: #fda4af;
+    --templates-badge-security-border: rgba(251, 113, 133, 0.28);
+    --templates-badge-api-bg: rgba(192, 132, 252, 0.12);
+    --templates-badge-api-text: #d8b4fe;
+    --templates-badge-api-border: rgba(192, 132, 252, 0.28);
+    --templates-badge-ui-bg: rgba(52, 211, 153, 0.12);
+    --templates-badge-ui-text: #6ee7b7;
+    --templates-badge-ui-border: rgba(52, 211, 153, 0.28);
+    --templates-badge-custom-bg: rgba(148, 163, 184, 0.1);
+    --templates-badge-custom-text: #cbd5e1;
+    --templates-badge-custom-border: rgba(148, 163, 184, 0.22);
+
+    --teams-page-bg: 222 46% 7%;
+    --teams-panel-bg: 222 48% 9%;
+    --teams-panel-border: 217 26% 18%;
+    --teams-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.65);
+    --teams-list-bg: 222 42% 11%;
+    --teams-detail-bg: 222 46% 9%;
+    --teams-item-bg: 222 46% 10%;
+    --teams-item-hover-bg: 217 34% 13%;
+    --teams-item-selected-bg: 217 38% 16%;
+    --teams-item-accent: 188 78% 52%;
+    --teams-metric-bg: 222 44% 11%;
+    --teams-input-bg: 222 42% 12%;
+    --teams-input-border: 217 26% 22%;
+    --teams-table-header-bg: 217 32% 13%;
+    --teams-table-row-bg: 222 46% 9%;
+    --teams-table-row-hover-bg: 217 34% 14%;
+    --teams-table-border: 217 26% 16%;
+    --teams-text-primary: 210 40% 96%;
+    --teams-text-secondary: 215 18% 72%;
+    --teams-text-muted: 215 14% 58%;
+    --teams-scrollbar-thumb: 217 22% 28%;
+    --teams-icon-muted: #94a3b8;
+    --teams-icon-hover: #e2e8f0;
+    --teams-icon-danger: #fb7185;
+    --teams-badge-super-bg: rgba(192, 132, 252, 0.12);
+    --teams-badge-super-text: #d8b4fe;
+    --teams-badge-super-border: rgba(192, 132, 252, 0.28);
+    --teams-badge-admin-bg: rgba(56, 189, 248, 0.12);
+    --teams-badge-admin-text: #7dd3fc;
+    --teams-badge-admin-border: rgba(56, 189, 248, 0.28);
+    --teams-badge-member-bg: rgba(52, 211, 153, 0.12);
+    --teams-badge-member-text: #6ee7b7;
+    --teams-badge-member-border: rgba(52, 211, 153, 0.28);
+    --teams-badge-viewer-bg: rgba(148, 163, 184, 0.1);
+    --teams-badge-viewer-text: #cbd5e1;
+    --teams-badge-viewer-border: rgba(148, 163, 184, 0.22);
+    --teams-empty-bg: 222 42% 11%;
+
+    --usage-page-bg: 222 46% 7%;
+    --usage-panel-bg: 222 48% 9%;
+    --usage-panel-border: 217 26% 18%;
+    --usage-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.65);
+    --usage-metric-today-accent: 188 78% 52%;
+    --usage-metric-month-accent: 258 80% 72%;
+    --usage-metric-token-accent: 160 60% 55%;
+    --usage-metric-cost-accent: 45 96% 58%;
+    --usage-metric-bg: 222 46% 10%;
+    --usage-metric-border: 217 26% 20%;
+    --usage-chart-bar-bg: 217 32% 14%;
+    --usage-chart-bar-fill: 199 89% 48%;
+    --usage-table-header-bg: 217 32% 13%;
+    --usage-table-row-bg: 222 46% 9%;
+    --usage-table-row-hover-bg: 217 34% 14%;
+    --usage-table-border: 217 26% 16%;
+    --usage-input-bg: 222 42% 12%;
+    --usage-input-border: 217 26% 22%;
+    --usage-chip-bg: 217 32% 14%;
+    --usage-text-primary: 210 40% 96%;
+    --usage-text-secondary: 215 18% 72%;
+    --usage-text-muted: 215 14% 58%;
+    --usage-scrollbar-thumb: 217 22% 28%;
+    --usage-icon-muted: #94a3b8;
+    --usage-icon-hover: #e2e8f0;
+    --usage-badge-success-bg: rgba(16, 185, 129, 0.14);
+    --usage-badge-success-border: rgba(52, 211, 153, 0.32);
+    --usage-badge-success-text: #6ee7b7;
+    --usage-badge-danger-bg: rgba(244, 63, 94, 0.14);
+    --usage-badge-danger-border: rgba(251, 113, 133, 0.32);
+    --usage-badge-danger-text: #fda4af;
+    --usage-empty-bg: 222 42% 11%;
+
     --gcs-page-bg: 222 46% 7%;
     --gcs-panel-bg: 222 48% 9%;
     --gcs-panel-border: 217 26% 18%;
@@ -580,14 +807,13 @@ div.ui-toast .text-muted-foreground {
   }
 }
 
+/* 仅淡入：勿在 keyframes 里写 transform，否则会覆盖 Dialog 的 translate(-50%,-50%) 居中 */
 @keyframes ui-modal-content-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -631,6 +857,179 @@ div.ui-toast .text-muted-foreground {
 .ui-confirm-dialog-panel--form {
   max-width: min(calc(100vw - 32px), 680px);
 }
+
+.ui-template-form-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(calc(100vw - 32px), 720px);
+  max-height: calc(100dvh - 80px);
+  margin: auto;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--ui-modal-bg);
+  border: 1px solid var(--ui-modal-border);
+  box-shadow: var(--ui-modal-shadow);
+  animation: ui-template-modal-in 0.24s ease-out both;
+  pointer-events: auto;
+}
+
+.ui-template-detail-panel {
+  max-width: min(calc(100vw - 32px), 760px);
+}
+
+.ui-template-form-panel__header,
+.ui-template-form-panel__footer {
+  flex-shrink: 0;
+}
+
+.ui-template-form-panel__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.ui-template-prompt-textarea:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 1px hsl(var(--templates-input-border)),
+    0 0 0 3px hsl(188 78% 42% / 0.22);
+}
+
+.dark .ui-template-prompt-textarea:focus {
+  box-shadow:
+    0 0 0 1px hsl(var(--templates-input-border)),
+    0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+.ui-template-checkbox {
+  accent-color: hsl(var(--primary));
+}
+
+@keyframes ui-template-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes templates-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.templates-fade-up {
+  animation: templates-fade-up 0.42s ease-out both;
+}
+
+.templates-fade-up-d1 {
+  animation: templates-fade-up 0.42s ease-out 0.06s both;
+}
+
+.templates-fade-up-d2 {
+  animation: templates-fade-up 0.42s ease-out 0.12s both;
+}
+
+.templates-spark-icon {
+  animation: records-spark-breathe 3.2s ease-in-out infinite;
+}
+
+.templates-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--templates-scrollbar-thumb)) transparent;
+}
+
+.templates-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.templates-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--templates-scrollbar-thumb) / 0.65);
+}
+
+.template-grid {
+  transition: opacity 0.22s ease;
+}
+
+.workspace-fade-up {
+  animation: templates-fade-up 0.42s ease-out both;
+}
+
+.workspace-fade-up-d1 {
+  animation: templates-fade-up 0.42s ease-out 0.06s both;
+}
+
+.workspace-fade-up-d2 {
+  animation: templates-fade-up 0.42s ease-out 0.12s both;
+}
+
+.workspace-fade-up-d3 {
+  animation: templates-fade-up 0.42s ease-out 0.18s both;
+}
+
+.teams-scrollbar,
+.usage-scrollbar {
+  scrollbar-width: thin;
+}
+
+.teams-scrollbar {
+  scrollbar-color: hsl(var(--teams-scrollbar-thumb)) transparent;
+}
+
+.usage-scrollbar {
+  scrollbar-color: hsl(var(--usage-scrollbar-thumb)) transparent;
+}
+
+.teams-scrollbar::-webkit-scrollbar,
+.usage-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.teams-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--teams-scrollbar-thumb) / 0.65);
+}
+
+.usage-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--usage-scrollbar-thumb) / 0.65);
+}
+
+.team-layout-panels {
+  min-height: min(720px, calc(100dvh - 14rem));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-template-form-panel {
+    animation: ui-modal-content-in 0.22s ease-out both;
+  }
+  .templates-fade-up,
+  .templates-fade-up-d1,
+  .templates-fade-up-d2,
+  .templates-spark-icon,
+  .workspace-fade-up,
+  .workspace-fade-up-d1,
+  .workspace-fade-up-d2,
+  .workspace-fade-up-d3 {
+    animation: none;
+  }
+  .template-grid {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-overlay-animate {
     animation: none !important;
