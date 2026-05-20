@@ -193,8 +193,8 @@ sudo docker exec testcase_backend sh -c 'env | grep -E "TENCENT|PDF_TENCENT|IMAG
 cd /opt/lewis_testcase_platform_dev
 export STACK_PREFIX=testcase_dev
 export COMPOSE_ENV_FILE=.env.development
-export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:develop
-export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:develop
+export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:dev
+export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:dev
 export FRONTEND_HOST_PORT=8083
 export POSTGRES_HOST_PORT=5433
 export REDIS_HOST_PORT=6380
@@ -210,8 +210,8 @@ sudo docker exec testcase_dev_frontend sh -lc "ls -1 /usr/share/nginx/html/asset
 cd /opt/lewis_testcase_platform
 export STACK_PREFIX=testcase
 export COMPOSE_ENV_FILE=.env
-export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:main
-export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:main
+export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:latest
+export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:latest
 export FRONTEND_HOST_PORT=80
 export POSTGRES_HOST_PORT=5432
 export REDIS_HOST_PORT=6379
