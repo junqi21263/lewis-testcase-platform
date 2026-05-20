@@ -109,6 +109,48 @@
     --records-icon-hover: #334155;
     --records-icon-danger: #be123c;
 
+    /* ---------- Templates page（模板管理）---------- */
+    --templates-page-bg: 226 56% 98%;
+    --templates-panel-bg: 0 0% 100%;
+    --templates-panel-border: 220 24% 88%;
+    --templates-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.18);
+    --templates-toolbar-bg: 220 45% 97%;
+    --templates-card-bg: 0 0% 100%;
+    --templates-card-border: 220 22% 88%;
+    --templates-card-hover-bg: 220 48% 99%;
+    --templates-card-shadow: 0 12px 32px -28px rgba(59, 130, 246, 0.14);
+    --templates-preview-bg: 220 42% 96%;
+    --templates-preview-border: 220 20% 90%;
+    --templates-preview-text: 215 22% 28%;
+    --templates-input-bg: 0 0% 100%;
+    --templates-input-border: 220 22% 86%;
+    --templates-chip-bg: 220 40% 95%;
+    --templates-text-primary: 222 47% 11%;
+    --templates-text-secondary: 215 18% 38%;
+    --templates-text-muted: 215 14% 52%;
+    --templates-scrollbar-thumb: 215 18% 78%;
+    --templates-icon-muted: #64748b;
+    --templates-icon-hover: #334155;
+    --templates-icon-danger: #be123c;
+    --templates-badge-functional-bg: rgba(59, 130, 246, 0.1);
+    --templates-badge-functional-text: #1d4ed8;
+    --templates-badge-functional-border: rgba(59, 130, 246, 0.22);
+    --templates-badge-performance-bg: rgba(249, 115, 22, 0.1);
+    --templates-badge-performance-text: #c2410c;
+    --templates-badge-performance-border: rgba(249, 115, 22, 0.22);
+    --templates-badge-security-bg: rgba(244, 63, 94, 0.08);
+    --templates-badge-security-text: #be123c;
+    --templates-badge-security-border: rgba(244, 63, 94, 0.2);
+    --templates-badge-api-bg: rgba(168, 85, 247, 0.1);
+    --templates-badge-api-text: #7c3aed;
+    --templates-badge-api-border: rgba(168, 85, 247, 0.22);
+    --templates-badge-ui-bg: rgba(16, 185, 129, 0.1);
+    --templates-badge-ui-text: #047857;
+    --templates-badge-ui-border: rgba(16, 185, 129, 0.22);
+    --templates-badge-custom-bg: rgba(100, 116, 139, 0.1);
+    --templates-badge-custom-text: #475569;
+    --templates-badge-custom-border: rgba(100, 116, 139, 0.2);
+
     /* ---------- Generate Case Studio tokens ---------- */
     --gcs-page-bg: 226 56% 98%;
     --gcs-panel-bg: 0 0% 100%;
@@ -389,6 +431,47 @@
     --records-icon-hover: #e2e8f0;
     --records-icon-danger: #fda4af;
 
+    --templates-page-bg: 222 46% 7%;
+    --templates-panel-bg: 222 48% 9%;
+    --templates-panel-border: 217 26% 18%;
+    --templates-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.65);
+    --templates-toolbar-bg: 222 42% 11%;
+    --templates-card-bg: 222 46% 10%;
+    --templates-card-border: 217 26% 20%;
+    --templates-card-hover-bg: 217 34% 13%;
+    --templates-card-shadow: 0 16px 40px -28px rgba(0, 0, 0, 0.55);
+    --templates-preview-bg: 222 44% 8%;
+    --templates-preview-border: 217 24% 18%;
+    --templates-preview-text: 215 18% 78%;
+    --templates-input-bg: 222 42% 12%;
+    --templates-input-border: 217 26% 22%;
+    --templates-chip-bg: 217 32% 14%;
+    --templates-text-primary: 210 40% 96%;
+    --templates-text-secondary: 215 18% 72%;
+    --templates-text-muted: 215 14% 58%;
+    --templates-scrollbar-thumb: 217 22% 28%;
+    --templates-icon-muted: #94a3b8;
+    --templates-icon-hover: #e2e8f0;
+    --templates-icon-danger: #fb7185;
+    --templates-badge-functional-bg: rgba(56, 189, 248, 0.12);
+    --templates-badge-functional-text: #7dd3fc;
+    --templates-badge-functional-border: rgba(56, 189, 248, 0.28);
+    --templates-badge-performance-bg: rgba(251, 146, 60, 0.12);
+    --templates-badge-performance-text: #fdba74;
+    --templates-badge-performance-border: rgba(251, 146, 60, 0.28);
+    --templates-badge-security-bg: rgba(251, 113, 133, 0.12);
+    --templates-badge-security-text: #fda4af;
+    --templates-badge-security-border: rgba(251, 113, 133, 0.28);
+    --templates-badge-api-bg: rgba(192, 132, 252, 0.12);
+    --templates-badge-api-text: #d8b4fe;
+    --templates-badge-api-border: rgba(192, 132, 252, 0.28);
+    --templates-badge-ui-bg: rgba(52, 211, 153, 0.12);
+    --templates-badge-ui-text: #6ee7b7;
+    --templates-badge-ui-border: rgba(52, 211, 153, 0.28);
+    --templates-badge-custom-bg: rgba(148, 163, 184, 0.1);
+    --templates-badge-custom-text: #cbd5e1;
+    --templates-badge-custom-border: rgba(148, 163, 184, 0.22);
+
     --gcs-page-bg: 222 46% 7%;
     --gcs-panel-bg: 222 48% 9%;
     --gcs-panel-border: 217 26% 18%;
@@ -629,6 +712,125 @@ div.ui-toast .text-muted-foreground {
 
 .ui-confirm-dialog-panel--form {
   max-width: min(calc(100vw - 32px), 680px);
+}
+
+.ui-template-form-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(calc(100vw - 32px), 720px);
+  max-height: calc(100dvh - 80px);
+  margin: auto;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--ui-modal-bg);
+  border: 1px solid var(--ui-modal-border);
+  box-shadow: var(--ui-modal-shadow);
+  animation: ui-template-modal-in 0.24s ease-out both;
+  pointer-events: auto;
+}
+
+.ui-template-detail-panel {
+  max-width: min(calc(100vw - 32px), 760px);
+}
+
+.ui-template-form-panel__header,
+.ui-template-form-panel__footer {
+  flex-shrink: 0;
+}
+
+.ui-template-form-panel__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.ui-template-prompt-textarea:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 1px hsl(var(--templates-input-border)),
+    0 0 0 3px hsl(188 78% 42% / 0.22);
+}
+
+.dark .ui-template-prompt-textarea:focus {
+  box-shadow:
+    0 0 0 1px hsl(var(--templates-input-border)),
+    0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+.ui-template-checkbox {
+  accent-color: hsl(var(--primary));
+}
+
+@keyframes ui-template-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes templates-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.templates-fade-up {
+  animation: templates-fade-up 0.42s ease-out both;
+}
+
+.templates-fade-up-d1 {
+  animation: templates-fade-up 0.42s ease-out 0.06s both;
+}
+
+.templates-fade-up-d2 {
+  animation: templates-fade-up 0.42s ease-out 0.12s both;
+}
+
+.templates-spark-icon {
+  animation: records-spark-breathe 3.2s ease-in-out infinite;
+}
+
+.templates-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--templates-scrollbar-thumb)) transparent;
+}
+
+.templates-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.templates-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--templates-scrollbar-thumb) / 0.65);
+}
+
+.template-grid {
+  transition: opacity 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-template-form-panel {
+    animation: ui-modal-content-in 0.22s ease-out both;
+  }
+  .templates-fade-up,
+  .templates-fade-up-d1,
+  .templates-fade-up-d2,
+  .templates-spark-icon {
+    animation: none;
+  }
+  .template-grid {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
