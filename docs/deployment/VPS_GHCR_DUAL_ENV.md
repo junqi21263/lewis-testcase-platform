@@ -1,5 +1,21 @@
 # VPS：开发 + 生产双目录、环境变量同步与应用
 
+## 0. 基线约束
+
+- VPS 部署只认 **CNB 镜像**，不认本机另一个源码副本。
+- 本地唯一真源仓库：
+  - `/Users/lewis/lewis_testcase_platform`
+- VPS **不要执行**：
+  - `git checkout develop`
+  - `git push cnb develop`
+  - `git checkout main`
+  - `git push cnb main`
+- 正确顺序是：
+  1. 在本地顶层仓库提交并推送到 `cnb/develop` 或 `cnb/main`
+  2. 等 CNB 构建完成
+  3. VPS 拉镜像并重建容器
+  4. 验证 `/health`、CORS、静态资源 hash
+
 同一台机器上常见 **两套部署目录**（与 [`scripts/ci/cnb-deploy-vps.sh`](../../scripts/ci/cnb-deploy-vps.sh) 默认一致）：
 
 | 环境 | 默认目录 | Compose 使用的 env 文件 | 说明 |
@@ -166,3 +182,45 @@ sudo docker exec testcase_backend sh -c 'env | grep -E "TENCENT|PDF_TENCENT|IMAG
 ## 六、与 CI 自动部署的关系
 
 推送 `develop` / `main` 触发 CNB 时，远端会执行 `remote-deploy-ghcr.sh`：已含 `pull` + `up -d`。你 **仅在服务器改 `.env`** 后，若不想等下一次流水线，在对应目录 **手动执行本文第三节或第四节** 即可让新环境变量生效。
+
+---
+
+## 七、人工发布最短手册
+
+### develop
+
+```bash
+cd /opt/lewis_testcase_platform_dev
+export STACK_PREFIX=testcase_dev
+export COMPOSE_ENV_FILE=.env.development
+export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:develop
+export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:develop
+export FRONTEND_HOST_PORT=8083
+export POSTGRES_HOST_PORT=5433
+export REDIS_HOST_PORT=6380
+sudo -E docker compose -f docker-compose.ghcr.yml -f docker-compose.dev.override.yml --env-file .env.development pull frontend backend
+sudo -E docker compose -f docker-compose.ghcr.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate frontend backend
+curl -s http://139.199.69.115:8083/health
+sudo docker exec testcase_dev_frontend sh -lc "ls -1 /usr/share/nginx/html/assets | egrep 'index-|TeamsPage|UsageStatsPage|TemplatesPage|DashboardPage'"
+```
+
+### production
+
+```bash
+cd /opt/lewis_testcase_platform
+export STACK_PREFIX=testcase
+export COMPOSE_ENV_FILE=.env
+export FRONTEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/frontend:main
+export BACKEND_IMAGE=docker.cnb.cool/lewis-test/lewis-testcase-platform/backend:main
+export FRONTEND_HOST_PORT=80
+export POSTGRES_HOST_PORT=5432
+export REDIS_HOST_PORT=6379
+sudo -E docker compose -f docker-compose.ghcr.yml --env-file .env pull frontend backend
+sudo -E docker compose -f docker-compose.ghcr.yml --env-file .env up -d --force-recreate frontend backend
+curl -s http://139.199.69.115/health
+curl -i -X OPTIONS \
+  -H 'Origin: http://139.199.69.115' \
+  -H 'Access-Control-Request-Method: POST' \
+  http://139.199.69.115/api/auth/login
+sudo docker exec testcase_frontend sh -lc "ls -1 /usr/share/nginx/html/assets | egrep 'index-|TeamsPage|UsageStatsPage|TemplatesPage|DashboardPage'"
+```
