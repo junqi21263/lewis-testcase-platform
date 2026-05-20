@@ -303,6 +303,17 @@ export function isGenericHunyuanPlaceholderOutput(text: string): boolean {
     /请根据具体情况和实际需求进行进一步调整/,
     /\| 模块1\s+\|/,
     /\| 接口1\s+\|/,
+    /###\s*界面截图/,
+    /###\s*流程图/,
+    /###\s*移动端界面示意图/,
+    /通过以上转录，可以(初步了解|较为全面地了解)/,
+    /上方多个界面截图/,
+    /多个ui组件和界面设计图/i,
+    /包括页面布局、按钮、表格等/,
+    /中间部分为(一个)?详细的流程图/,
+    /表示不同的界面或功能模块/,
+    /界面布局和设计/,
+    /后续的需求分析可以基于这些转录内容/,
   ]
   const matched = hits.filter((re) => re.test(t)).length
   return matched >= 2

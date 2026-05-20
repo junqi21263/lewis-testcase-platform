@@ -602,6 +602,8 @@ div.ui-toast .text-muted-foreground {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100vw;
+  min-height: 100dvh;
   padding: 1rem;
   pointer-events: none;
   background: transparent;
@@ -612,6 +614,7 @@ div.ui-toast .text-muted-foreground {
 .ui-confirm-dialog-panel {
   pointer-events: auto;
   width: 100%;
+  margin: auto;
   border-radius: 22px;
   padding: 1.5rem;
   background: var(--ui-modal-bg);

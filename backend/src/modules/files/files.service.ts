@@ -930,6 +930,22 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     )
   }
 
+  private buildPdfTileVisionExtractionPrompt(tileIndex: number, tileTotal: number): string {
+    return `你是交互稿视觉转录助手。当前图片是单页大画布 PDF 切出的局部区域（第 ${tileIndex}/${tileTotal} 块）。
+
+任务：逐行转录该局部里真实可见的中文/英文文案、表格内容、字段名、状态名、按钮文案、标注说明、流程节点、版本信息。该局部通常来自交互稿、活动页、流程稿，不要写概括性介绍。
+
+硬性规则：
+1. 只写看得清的内容；看不清写“未能识别”，禁止脑补。
+2. 禁止写“这是一个页面/流程图/示意图”“上方多个界面截图”“中间部分为流程图”这种泛泛描述，优先写实际文字。
+3. 如果有表格，尽量还原为 Markdown 表格。
+4. 如果有标注线或备注，按条列出原文。
+5. 不要输出需求总结，不要写结论，不要写“通过以上转录，可以初步了解”。
+6. 如果看到多个小界面/多个状态，请分别列出每个界面里能识别的文案，不要合并成一句概述。
+
+输出 Markdown，以“## 局部 ${tileIndex} 转录”开头。`
+  }
+
   /**
    * PDF 分页渲染 + 视觉分批（依赖 pdf-to-img/canvas）开关。
    * 为避免某些服务器环境下 native 依赖异常导致进程崩溃，默认关闭，需显式设 1 开启。
@@ -1032,6 +1048,103 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * 单页超大交互稿：先渲染整页，再切 tile 逐块送混元，避免整页缩放后小字全丢。
+   */
+  private async tryPdfSinglePageTiledVisionBatches(
+    filePath: string,
+    heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    options?: { dense?: boolean },
+  ): Promise<{ text: string } | null> {
+    if (!this.documentVision.isPdfPageRenderAvailable()) return null
+    if (!isHunyuanMultimodalEnabled(this.config) || !resolveHunyuanVisionApiKey(this.config)) {
+      return null
+    }
+
+    const dense = options?.dense === true
+    const scaleKey = dense ? 'HUNYUAN_PDF_TILE_RENDER_SCALE_DENSE' : 'HUNYUAN_PDF_TILE_RENDER_SCALE'
+    const scaleDefault = dense ? '2.4' : '1.8'
+    const scaleRaw = parseFloat(this.config.get<string>(scaleKey) || scaleDefault)
+    const renderScale = Math.min(Math.max(scaleRaw || parseFloat(scaleDefault), 0.8), 3)
+    let firstPage: Buffer | null = null
+    for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath, { scale: renderScale })) {
+      firstPage = page.buffer
+      break
+    }
+    if (!firstPage) return null
+
+    const tileColumns = Math.min(
+      Math.max(
+        parseInt(
+          this.config.get<string>(dense ? 'HUNYUAN_PDF_TILE_COLUMNS_DENSE' : 'HUNYUAN_PDF_TILE_COLUMNS') ||
+            (dense ? '4' : '3'),
+          10,
+        ) || (dense ? 4 : 3),
+        1,
+      ),
+      4,
+    )
+    const tileRows = Math.min(
+      Math.max(
+        parseInt(
+          this.config.get<string>(dense ? 'HUNYUAN_PDF_TILE_ROWS_DENSE' : 'HUNYUAN_PDF_TILE_ROWS') ||
+            (dense ? '4' : '0'),
+          10,
+        ) || (dense ? 4 : 0),
+        0,
+      ),
+      6,
+    )
+    const maxTiles = Math.min(
+      Math.max(
+        parseInt(
+          this.config.get<string>(dense ? 'HUNYUAN_PDF_TILE_MAX_TILES_DENSE' : 'HUNYUAN_PDF_TILE_MAX_TILES') ||
+            (dense ? '16' : '12'),
+          10,
+        ) || (dense ? 16 : 12),
+        1,
+      ),
+      24,
+    )
+    const tiles = await this.documentVision.splitPngIntoTiles(firstPage, {
+      columns: tileColumns,
+      ...(tileRows > 0 ? { rows: tileRows } : {}),
+      maxTiles,
+      overlap: dense ? 96 : 72,
+      minTileWidth: dense ? 520 : 720,
+      minTileHeight: dense ? 520 : 720,
+    })
+    if (!tiles.length) return null
+
+    const sections: string[] = []
+    for (const tile of tiles) {
+      await heartbeat('HUNYUAN_COS_MULTIMODAL', {
+        phase: 'VISION',
+        message: 'hunyuan_pdf_tile_batch',
+        tileIndex: tile.index,
+        tileTotal: tiles.length,
+      })
+      try {
+        const out = await runHunyuanOpenAiVisionChatFromImages({
+          config: this.config,
+          images: [{ buffer: tile.buffer, mime: 'image/png' }],
+          prompt: this.buildPdfTileVisionExtractionPrompt(tile.index, tiles.length),
+        })
+        const text = out.text.trim()
+        if (text && !isGenericHunyuanPlaceholderOutput(text)) {
+          sections.push(`【PDF 局部 ${tile.index}/${tiles.length}】\n${text}`)
+        }
+      } catch (e) {
+        this.logger.warn(`PDF 分块混元第 ${tile.index}/${tiles.length} 块失败: ${(e as Error).message}`)
+      }
+    }
+
+    if (!sections.length) return null
+    return {
+      text: `【混元多模态直读｜PDF 分块渲染】\n\n${sections.join('\n\n')}`,
+    }
+  }
+
+  /**
    * 混元直读未命中后：内置文本层 → 腾讯云 OCR（若允许）→ 本机分页 OCR；均失败再抛错。
    * @param embeddedText 已抽取的内置文本（可为空，供 OCR 侧参考）
    */
@@ -1098,12 +1211,25 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     ) {
       await heartbeat('PDF_OCR_LOCAL', { phase: 'OCR', message: 'local_ocr_fallback' })
       try {
+        const singlePageNoText =
+          numpages <= 1 &&
+          !this.pdfDocumentParse.evaluateTextLayerSufficiency(embeddedText, numpages).sufficient
+        const ocrScaleRaw = parseFloat(
+          this.config.get<string>(
+            singlePageNoText ? 'PDF_OCR_RENDER_SCALE_SINGLE_PAGE' : 'PDF_OCR_RENDER_SCALE',
+          ) || (singlePageNoText ? '2.2' : '0.6'),
+        )
+        const ocrRenderScale = Math.min(
+          Math.max(ocrScaleRaw || (singlePageNoText ? 2.2 : 0.6), 0.6),
+          3,
+        )
         const ocr = await this.parsePdfOcrBatchedPipeline(
           filePath,
           embeddedText,
           heartbeat,
           ctx.fileId,
           numpages,
+          { renderScale: ocrRenderScale },
         )
         if (ocr?.trim()) {
           this.logger.log('PDF：混元未命中，本机 OCR 管线兜底成功')
@@ -1150,13 +1276,18 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   ): Promise<string> {
     let embeddedText = ''
     let numpages = 0
+    let embeddedSufficient = false
     try {
       const layer = await this.pdfDocumentParse.extractTextLayerWithMeta(filePath)
       embeddedText = layer.text || ''
       numpages = layer.numpages
       if (embeddedText.trim()) {
+        embeddedSufficient = this.pdfDocumentParse.evaluateTextLayerSufficiency(
+          embeddedText,
+          numpages,
+        ).sufficient
         this.logger.log(
-          `PDF：内置文本层 ${embeddedText.trim().length} 字 / ${numpages} 页（将与视觉转录合并）`,
+          `PDF：内置文本层 ${embeddedText.trim().length} 字 / ${numpages} 页（sufficient=${embeddedSufficient}）`,
         )
       }
     } catch (e) {
@@ -1172,6 +1303,39 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
         : {}),
     })
+
+    if (!this.fileParsePdfHunyuanFirst() && embeddedSufficient) {
+      this.logger.log('PDF：按配置优先使用质量足够的内置文本层，跳过混元优先链路')
+      await heartbeat('PDF_EMBEDDED_PRIMARY', {
+        phase: 'PDF',
+        message: 'embedded_text_primary',
+        chars: embeddedText.trim().length,
+        numpages,
+      })
+      return `【PDF 内置文本层】\n${embeddedText.trim()}`
+    }
+
+    const shouldDenseTileSinglePage = numpages <= 1 && !embeddedSufficient
+
+    if (numpages <= 1 && this.shouldPreferPdfPagedHunyuan(ctx.fileBytes)) {
+      const tiled = await this.tryPdfSinglePageTiledVisionBatches(filePath, heartbeat, {
+        dense: shouldDenseTileSinglePage,
+      })
+      if (tiled?.text?.trim()) {
+        const merged = this.mergePdfVisionWithEmbeddedLayer(tiled.text, embeddedText)
+        await heartbeat('HUNYUAN_COS_MULTIMODAL_DONE', {
+          phase: 'VISION',
+          message: 'hunyuan_pdf_tile_done',
+          chars: merged.length,
+        })
+        this.logger.log(`PDF：单页大画布分块混元成功（chars=${merged.length}）`)
+        return merged
+      }
+      if (!embeddedSufficient) {
+        this.logger.warn('PDF：单页交互稿未获得有效分块正文，跳过整页分页概述，转 OCR/文本兜底')
+        return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
+      }
+    }
 
     if (this.shouldPreferPdfPagedHunyuan(ctx.fileBytes)) {
       if (!this.documentVision.isPdfPageRenderAvailable()) {
@@ -1248,12 +1412,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     )
     if (hunyuanBody) return hunyuanBody
 
-    if (embeddedText.trim()) {
-      const suff = this.pdfDocumentParse.evaluateTextLayerSufficiency(embeddedText, numpages)
-      if (suff.sufficient) {
-        this.logger.log('PDF：混元未命中，使用质量足够的内置文本层')
-        return `【PDF 内置文本层】\n${embeddedText.trim()}`
-      }
+    if (embeddedSufficient) {
+      this.logger.log('PDF：混元未命中，使用质量足够的内置文本层')
+      return `【PDF 内置文本层】\n${embeddedText.trim()}`
     }
 
     return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
@@ -1404,6 +1565,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
     fileId: string,
     totalPagesHint: number,
+    options?: { renderScale?: number },
   ): Promise<string> {
     await heartbeat('PDF_OCR_PIPELINE', {
       phase: 'OCR',
@@ -1418,7 +1580,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     let cur: { pageNum: number; buffer: Buffer }[] = []
 
     try {
-      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath)) {
+      for await (const page of this.documentVision.iteratePdfPagesAsPng(filePath, {
+        ...(options?.renderScale != null ? { scale: options.renderScale } : {}),
+      })) {
         cur.push(page)
         if (cur.length >= batchSize) {
           batches.push(cur)
