@@ -21,6 +21,17 @@ http {
         root /usr/share/nginx/html;
         index index.html index.htm;
 
+        location = /index.html {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+            add_header Pragma "no-cache";
+            add_header Expires "0";
+        }
+
+        location /assets/ {
+            try_files $uri =404;
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
+
         # 与后端裸路由 GET /health 对齐（负载均衡 / 平台探活）
         location = /health {
             proxy_pass http://$backend_host:3000/health;
