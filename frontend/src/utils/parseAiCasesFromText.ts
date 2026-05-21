@@ -43,6 +43,23 @@ export function extractCaseRowsFromText(raw: string): unknown[] {
     if (Array.isArray(parsed)) return parsed
   }
 
+  let searchPos = text.length
+  for (let i = 0; i < 8; i++) {
+    const keyIdx = text.lastIndexOf('"cases"', searchPos - 1)
+    if (keyIdx < 0) break
+    const start = text.lastIndexOf('{', keyIdx)
+    if (start >= 0) {
+      const end = text.lastIndexOf('}')
+      if (end > start) {
+        parsed = tryJson(text.slice(start, end + 1)) as { cases?: unknown[] } | null
+        if (parsed?.cases && Array.isArray(parsed.cases) && parsed.cases.length > 0) {
+          return parsed.cases
+        }
+      }
+    }
+    searchPos = keyIdx
+  }
+
   return []
 }
 
