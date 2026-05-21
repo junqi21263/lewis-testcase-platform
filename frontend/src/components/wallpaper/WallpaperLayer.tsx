@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { preferencesApi, type UserPreferences } from '@/api/preferences'
 import { wallpaperApi } from '@/api/wallpaper'
+import { loadAppearanceUiPrefs } from '@/utils/settingsAppearancePrefs'
+import { cn } from '@/utils/cn'
 
 function preloadImage(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -36,6 +38,14 @@ export function WallpaperLayer() {
     }, 350)
     fadeTimeoutsRef.current.push(timer)
   }
+
+  const [overlayPrefs, setOverlayPrefs] = useState(() => loadAppearanceUiPrefs())
+
+  useEffect(() => {
+    const refresh = () => setOverlayPrefs(loadAppearanceUiPrefs())
+    window.addEventListener('settings-appearance-ui-updated', refresh)
+    return () => window.removeEventListener('settings-appearance-ui-updated', refresh)
+  }, [])
 
   const style = useMemo(() => {
     if (!enabled || !url) return undefined
@@ -157,20 +167,23 @@ export function WallpaperLayer() {
 
   if (!enabled || !url) return null
 
+  const dimExtra = overlayPrefs.reduceWallpaperBrightness ? 'wallpaper-layer--dim' : ''
+
   return (
-    <div className="pointer-events-none fixed inset-0 z-0">
+    <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden">
       <div
-        className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
+        className={cn(
+          'absolute inset-0 bg-cover bg-center transition-opacity duration-300 motion-reduce:transition-none',
+          dimExtra,
+        )}
         style={style}
       />
       <div
-        className={[
-          'absolute inset-0',
-          // 轻遮罩：卡片已承担主要对比度，此处略减不透明度以露出更多壁纸
-          'bg-gradient-to-b from-background/18 via-background/28 to-background/58 dark:from-background/22 dark:via-background/32 dark:to-background/62',
+        className={cn(
+          'wallpaper-layer__overlay absolute inset-0 transition-opacity duration-300 motion-reduce:transition-none',
+          overlayPrefs.readabilityMask ? 'wallpaper-layer__overlay--readable' : 'wallpaper-layer__overlay--light',
           fading ? 'opacity-80' : 'opacity-100',
-          'transition-opacity duration-300',
-        ].join(' ')}
+        )}
       />
     </div>
   )

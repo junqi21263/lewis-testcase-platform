@@ -224,6 +224,48 @@
     --usage-badge-danger-text: #be123c;
     --usage-empty-bg: 220 45% 97%;
 
+    /* ---------- Settings page（系统设置）---------- */
+    --settings-page-bg: 226 56% 98%;
+    --settings-card-bg: 0 0% 100%;
+    --settings-card-border: 220 24% 88%;
+    --settings-card-border-hover: 220 28% 82%;
+    --settings-card-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.16);
+    --settings-card-shadow-hover: 0 22px 52px -34px rgba(59, 130, 246, 0.22);
+    --settings-nav-active-bg: 195 85% 94%;
+    --settings-info-bg: 220 45% 97%;
+    --settings-input-bg: 0 0% 100%;
+    --settings-input-border: 220 22% 86%;
+    --settings-input-focus: 188 78% 42%;
+    --settings-select-bg: 0 0% 100%;
+    --settings-textarea-bg: 220 48% 98%;
+    --settings-button-secondary-bg: 220 42% 96%;
+    --settings-text-primary: 222 47% 11%;
+    --settings-text-secondary: 215 18% 38%;
+    --settings-text-muted: 215 14% 52%;
+    --settings-empty-bg: 220 45% 97%;
+    --settings-scrollbar-thumb: 215 18% 78%;
+    --settings-icon-muted: #64748b;
+    --settings-icon-hover: #334155;
+    --settings-weather-pill-bg: 0 0% 100% / 0.82;
+    --settings-weather-pill-border: 220 24% 86%;
+    --settings-weather-pill-shadow: 0 10px 28px -18px rgba(59, 130, 246, 0.2);
+    --settings-weather-icon-color: 199 89% 40%;
+    --settings-wallpaper-overlay-from: 226 56% 98% / 0.22;
+    --settings-wallpaper-overlay-via: 226 52% 96% / 0.38;
+    --settings-wallpaper-overlay-to: 226 48% 94% / 0.62;
+    --settings-badge-info-bg: rgba(59, 130, 246, 0.08);
+    --settings-badge-info-text: #1d4ed8;
+    --settings-badge-info-border: rgba(59, 130, 246, 0.22);
+    --settings-badge-success-bg: #ecfdf5;
+    --settings-badge-success-text: #047857;
+    --settings-badge-success-border: rgba(16, 185, 129, 0.28);
+    --settings-badge-danger-bg: #fff1f2;
+    --settings-badge-danger-text: #be123c;
+    --settings-badge-danger-border: rgba(244, 63, 94, 0.28);
+    --settings-badge-violet-bg: rgba(139, 92, 246, 0.1);
+    --settings-badge-violet-text: #6d28d9;
+    --settings-badge-violet-border: rgba(139, 92, 246, 0.22);
+
     /* ---------- Generate Case Studio tokens ---------- */
     --gcs-page-bg: 226 56% 98%;
     --gcs-panel-bg: 0 0% 100%;
@@ -616,6 +658,47 @@
     --usage-badge-danger-text: #fda4af;
     --usage-empty-bg: 222 42% 11%;
 
+    --settings-page-bg: 222 46% 7%;
+    --settings-card-bg: 222 48% 9%;
+    --settings-card-border: 217 26% 18%;
+    --settings-card-border-hover: 217 28% 24%;
+    --settings-card-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.55);
+    --settings-card-shadow-hover: 0 28px 60px -30px rgba(0, 0, 0, 0.62);
+    --settings-nav-active-bg: 217 38% 16%;
+    --settings-info-bg: 222 44% 11%;
+    --settings-input-bg: 222 42% 12%;
+    --settings-input-border: 217 26% 22%;
+    --settings-input-focus: 188 78% 52%;
+    --settings-select-bg: 222 42% 12%;
+    --settings-textarea-bg: 222 42% 11%;
+    --settings-button-secondary-bg: 217 32% 14%;
+    --settings-text-primary: 210 40% 96%;
+    --settings-text-secondary: 215 18% 72%;
+    --settings-text-muted: 215 14% 58%;
+    --settings-empty-bg: 222 42% 11%;
+    --settings-scrollbar-thumb: 217 22% 28%;
+    --settings-icon-muted: #94a3b8;
+    --settings-icon-hover: #e2e8f0;
+    --settings-weather-pill-bg: 222 48% 11% / 0.88;
+    --settings-weather-pill-border: 217 26% 22%;
+    --settings-weather-pill-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.5);
+    --settings-weather-icon-color: 199 89% 62%;
+    --settings-wallpaper-overlay-from: 222 46% 7% / 0.35;
+    --settings-wallpaper-overlay-via: 222 44% 8% / 0.48;
+    --settings-wallpaper-overlay-to: 222 42% 9% / 0.72;
+    --settings-badge-info-bg: rgba(56, 189, 248, 0.12);
+    --settings-badge-info-text: #7dd3fc;
+    --settings-badge-info-border: rgba(56, 189, 248, 0.28);
+    --settings-badge-success-bg: rgba(16, 185, 129, 0.14);
+    --settings-badge-success-text: #6ee7b7;
+    --settings-badge-success-border: rgba(52, 211, 153, 0.32);
+    --settings-badge-danger-bg: rgba(244, 63, 94, 0.14);
+    --settings-badge-danger-text: #fda4af;
+    --settings-badge-danger-border: rgba(251, 113, 133, 0.32);
+    --settings-badge-violet-bg: rgba(192, 132, 252, 0.12);
+    --settings-badge-violet-text: #d8b4fe;
+    --settings-badge-violet-border: rgba(192, 132, 252, 0.28);
+
     --gcs-page-bg: 222 46% 7%;
     --gcs-panel-bg: 222 48% 9%;
     --gcs-panel-border: 217 26% 18%;
@@ -1005,6 +1088,318 @@ div.ui-toast .text-muted-foreground {
 .usage-scrollbar::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: hsl(var(--usage-scrollbar-thumb) / 0.65);
+}
+
+.settings-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--settings-scrollbar-thumb)) transparent;
+}
+
+.settings-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--settings-scrollbar-thumb) / 0.65);
+}
+
+.settings-checkbox {
+  accent-color: hsl(var(--primary));
+}
+
+.ui-settings-form-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(calc(100vw - 32px), 480px);
+  max-height: calc(100dvh - 80px);
+  margin: auto;
+  overflow: hidden;
+  border-radius: 22px;
+  background: hsl(var(--settings-card-bg));
+  border: 1px solid hsl(var(--settings-card-border));
+  box-shadow: var(--settings-card-shadow);
+  animation: ui-template-modal-in 0.24s ease-out both;
+  pointer-events: auto;
+}
+
+.ui-settings-form-panel__header,
+.ui-settings-form-panel__footer {
+  flex-shrink: 0;
+}
+
+.ui-settings-form-panel__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.wallpaper-layer__overlay--readable {
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--settings-wallpaper-overlay-from)),
+    hsl(var(--settings-wallpaper-overlay-via)),
+    hsl(var(--settings-wallpaper-overlay-to))
+  );
+}
+
+.wallpaper-layer__overlay--light {
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--settings-wallpaper-overlay-from) / 0.65),
+    hsl(var(--settings-wallpaper-overlay-via) / 0.75),
+    hsl(var(--settings-wallpaper-overlay-to) / 0.85)
+  );
+}
+
+.wallpaper-layer--dim {
+  filter: brightness(0.88) saturate(0.92);
+}
+
+.dark .wallpaper-layer--dim {
+  filter: brightness(0.72) saturate(0.85);
+}
+
+/* Weather icon micro-motion */
+@keyframes weather-sun-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes weather-moon-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.92;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes weather-cloud-drift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes weather-rain-fall {
+  0% {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+
+@keyframes weather-thunder-flash {
+  0%,
+  92%,
+  100% {
+    opacity: 0;
+  }
+  93%,
+  95% {
+    opacity: 0.35;
+  }
+}
+
+.weather-icon--sunny svg {
+  animation: weather-sun-spin 18s linear infinite;
+  transform-origin: center;
+}
+
+.weather-icon--night svg {
+  animation: weather-moon-float 4s ease-in-out infinite;
+}
+
+.weather-icon--cloudy svg,
+.weather-icon--default svg {
+  animation: weather-cloud-drift 5s ease-in-out infinite;
+}
+
+.weather-icon--rain svg,
+.weather-icon--thunder svg {
+  animation: weather-cloud-drift 4.5s ease-in-out infinite;
+}
+
+.weather-icon--thunder svg {
+  filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.25));
+}
+
+.weather-icon__rain-streak::before,
+.weather-icon__rain-streak::after {
+  content: '';
+  position: absolute;
+  left: 35%;
+  width: 1px;
+  height: 8px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.35;
+  animation: weather-rain-fall 1.2s ease-in infinite;
+}
+
+.weather-icon__rain-streak::after {
+  left: 58%;
+  animation-delay: 0.35s;
+}
+
+.weather-icon--fog svg {
+  opacity: 0.85;
+  animation: weather-cloud-drift 7s ease-in-out infinite;
+}
+
+.weather-icon__snow-dots::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1px);
+  background-size: 6px 6px;
+  opacity: 0.25;
+  animation: weather-cloud-drift 6s ease-in-out infinite;
+}
+
+.weather-pill.weather-pill--rain::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0.12;
+  background: linear-gradient(180deg, transparent 40%, currentColor 100%);
+}
+
+/* Weather atmosphere backgrounds */
+.weather-atmosphere__base {
+  opacity: 0.55;
+  transition: opacity 0.5s ease;
+}
+
+.weather-atmosphere--light .weather-atmosphere__base {
+  opacity: 0.42;
+}
+
+.weather-atmosphere--dim .weather-atmosphere__base,
+.weather-atmosphere--soft .weather-atmosphere__particles {
+  opacity: 0.35;
+}
+
+.weather-atmosphere--readable.weather-atmosphere--dim .weather-atmosphere__base {
+  opacity: 0.28;
+}
+
+.weather-atmosphere--sunny .weather-atmosphere__base {
+  background: radial-gradient(ellipse 80% 60% at 70% 10%, rgba(251, 191, 36, 0.22), transparent 55%),
+    linear-gradient(165deg, rgba(186, 230, 253, 0.35) 0%, transparent 50%);
+}
+
+.weather-atmosphere--night .weather-atmosphere__base {
+  background: radial-gradient(ellipse 50% 40% at 75% 15%, rgba(199, 210, 254, 0.2), transparent 50%),
+    linear-gradient(180deg, rgba(30, 41, 59, 0.5) 0%, transparent 60%);
+}
+
+.weather-atmosphere--cloudy .weather-atmosphere__base {
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.2) 0%, transparent 55%);
+}
+
+.weather-atmosphere--rain .weather-atmosphere__base,
+.weather-atmosphere--thunder .weather-atmosphere__base {
+  background: linear-gradient(180deg, rgba(100, 116, 139, 0.28) 0%, transparent 58%);
+}
+
+.weather-atmosphere--fog .weather-atmosphere__base {
+  background: linear-gradient(180deg, rgba(203, 213, 225, 0.35) 0%, transparent 65%);
+}
+
+.weather-atmosphere--snow .weather-atmosphere__base {
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.3) 0%, transparent 60%);
+}
+
+.weather-atmosphere--default .weather-atmosphere__base {
+  background: linear-gradient(
+    145deg,
+    rgba(56, 189, 248, 0.08) 0%,
+    rgba(167, 139, 250, 0.06) 45%,
+    transparent 70%
+  );
+}
+
+.weather-atmosphere--dark.weather-atmosphere--sunny .weather-atmosphere__base {
+  background: radial-gradient(ellipse 70% 50% at 65% 8%, rgba(251, 191, 36, 0.12), transparent 50%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.4) 0%, transparent 55%);
+}
+
+.weather-atmosphere__particles {
+  background-image: repeating-linear-gradient(
+    115deg,
+    transparent,
+    transparent 12px,
+    rgba(148, 163, 184, 0.06) 12px,
+    rgba(148, 163, 184, 0.06) 13px
+  );
+  opacity: 0.4;
+  animation: weather-cloud-drift 24s linear infinite;
+}
+
+.weather-atmosphere--rain .weather-atmosphere__particles,
+.weather-atmosphere--thunder .weather-atmosphere__particles {
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent,
+    transparent 14px,
+    rgba(148, 163, 184, 0.14) 14px,
+    rgba(148, 163, 184, 0.14) 15px
+  );
+  animation: weather-rain-fall 1.8s linear infinite;
+  opacity: 0.25;
+}
+
+.weather-atmosphere--snow .weather-atmosphere__particles {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: weather-cloud-drift 20s linear infinite;
+}
+
+.weather-atmosphere--thunder .weather-atmosphere__flash {
+  background: rgba(255, 255, 255, 0.04);
+  animation: weather-thunder-flash 8s ease-in infinite;
+}
+
+.weather-atmosphere--static .weather-atmosphere__particles,
+.weather-atmosphere--static .weather-atmosphere__flash {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-icon--sunny svg,
+  .weather-icon--night svg,
+  .weather-icon--cloudy svg,
+  .weather-icon--rain svg,
+  .weather-icon--thunder svg,
+  .weather-icon--fog svg,
+  .weather-icon--default svg,
+  .weather-icon__rain-streak::before,
+  .weather-icon__rain-streak::after,
+  .weather-atmosphere__particles,
+  .weather-atmosphere__flash {
+    animation: none !important;
+  }
 }
 
 .team-layout-panels {
