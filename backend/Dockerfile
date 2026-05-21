@@ -116,12 +116,33 @@ COPY --from=builder /app/scripts/lightweight-cloud-cleanup.sh ./scripts/lightwei
 RUN chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh scripts/lightweight-cloud-cleanup.sh
 
 # pdfkit 需独立 OTF（.ttc 集合字体会导致 fontkit 嵌入失败）。仓库内文件名为 NotoSansCJKsc-*（非旧名 NotoSansSC-*）
+ARG FONT_DOWNLOAD_TIMEOUT=20
+ARG FONT_DOWNLOAD_RETRIES=2
 RUN apk add --no-cache wget ca-certificates \
   && mkdir -p /app/fonts \
-  && wget -qO /app/fonts/NotoSansSC-Regular.otf \
+  && fetch_font() { \
+    target="$1"; \
+    shift; \
+    for url in "$@"; do \
+      echo "[backend runner] fetching $(basename "$target") from $url"; \
+      if wget -T "$FONT_DOWNLOAD_TIMEOUT" -t "$FONT_DOWNLOAD_RETRIES" -qO "${target}.part" "$url"; then \
+        mv "${target}.part" "$target"; \
+        return 0; \
+      fi; \
+      rm -f "${target}.part"; \
+      echo "[backend runner] font fetch failed: $url"; \
+    done; \
+    echo "[backend runner] failed to download $(basename "$target") from all mirrors" >&2; \
+    exit 1; \
+  }; \
+  fetch_font /app/fonts/NotoSansSC-Regular.otf \
     "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
-  && wget -qO /app/fonts/NotoSansSC-Bold.otf \
-    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"
+    "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
+    "https://ghfast.top/https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
+  && fetch_font /app/fonts/NotoSansSC-Bold.otf \
+    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf" \
+    "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf" \
+    "https://ghfast.top/https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"
 
 ENV ANALYSIS_REPORT_PDF_FONT_REGULAR=/app/fonts/NotoSansSC-Regular.otf \
     ANALYSIS_REPORT_PDF_FONT_BOLD=/app/fonts/NotoSansSC-Bold.otf
