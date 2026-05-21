@@ -16,6 +16,19 @@
 4. 你还需要在 VPS 上执行一次部署命令。
 5. 浏览器最后需要强制刷新。
 
+## 零、推荐替代手工流程
+
+为避免“本地代码是新的，但 VPS 上源码目录还是旧的”，优先使用仓库内脚本：
+
+```bash
+bash scripts/ops/vps-sync-rebuild.sh develop frontend
+bash scripts/ops/vps-sync-rebuild.sh develop all
+bash scripts/ops/vps-sync-rebuild.sh main frontend
+bash scripts/ops/vps-sync-rebuild.sh main all
+```
+
+这个脚本会先把本地当前仓库 `rsync` 到 VPS 对应目录，再执行 `docker compose build` 和 `up -d --force-recreate`。
+
 ## 一、总原则
 
 - 只在本地开发仓库改代码：`/Users/lewis/lewis_testcase_platform`
@@ -302,4 +315,34 @@ cd /opt/lewis_testcase_platform
 export STACK_PREFIX=testcase FRONTEND_HOST_PORT=80 POSTGRES_HOST_PORT=5432 REDIS_HOST_PORT=6379
 sudo -E docker compose -f docker-compose.full.yml --env-file .env build frontend
 sudo -E docker compose -f docker-compose.full.yml --env-file .env up -d --force-recreate frontend
+```
+
+## 九、磁盘自动清理
+
+仓库内已提供两份脚本：
+
+- `scripts/ops/vps-disk-guard.sh`
+- `scripts/ops/install-vps-disk-guard.sh`
+
+安装到 VPS 并设置为超过 75% 自动清理：
+
+```bash
+cd /Users/lewis/lewis_testcase_platform
+bash scripts/ops/install-vps-disk-guard.sh 75
+```
+
+安装完成后，VPS 每 10 分钟检查一次根分区占用。超过阈值后会执行：
+
+- `docker builder prune`
+- `docker image prune`
+- `docker container prune`
+- `docker network prune`
+- `journalctl --vacuum-time=7d`
+- `apt-get clean`
+- 清理旧的 `/tmp`、`/var/tmp`
+
+手动立即执行一次：
+
+```bash
+ssh testcase-server 'sudo DISK_GUARD_THRESHOLD_PERCENT=75 /usr/local/bin/vps-disk-guard.sh'
 ```
