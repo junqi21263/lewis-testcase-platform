@@ -30,6 +30,16 @@ type AnalysisMarkdownTopSection =
   | { kind: 'preface'; body: string }
   | { kind: 'h2'; heading: string; body: string }
 
+function flattenCodeBlockChildren(children: React.ReactNode): string {
+  if (typeof children === 'string') return children
+  if (Array.isArray(children)) {
+    return children
+      .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
+      .join('')
+  }
+  return String(children ?? '')
+}
+
 /** 顶层 `## 标题` 分段（不含 `###`），用于折叠块；正文内若再出现 `##` 由 nested 渲染器处理 */
 function splitMarkdownByTopLevelH2(markdown: string): AnalysisMarkdownTopSection[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
@@ -99,7 +109,8 @@ function buildMdComponents(variant: 'default' | 'nested', isStreaming: boolean):
       const inline = !className
       const lang = /language-(\w+)/.exec(className ?? '')?.[1]
       if (!inline && lang === 'mermaid') {
-        const chart = String(children).replace(/\n$/, '')
+        const chart = flattenCodeBlockChildren(children).replace(/\n$/, '')
+        if (!chart.trim()) return null
         return <MermaidBlock chart={chart} isStreaming={isStreaming} />
       }
       if (inline) {

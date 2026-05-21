@@ -49,6 +49,22 @@ import type { TestCase, PromptTemplate, FileStatus, GenerationRecord } from '@/t
 import { useNavigate } from 'react-router-dom'
 
 const INPUT_LENGTH_SOFT_WARN_CHARS = 85_000
+
+/** 合并生成接口所需的文本来源（文本输入 / 需求描述 / 补充说明） */
+function buildGenerateRequestText(
+  inputText: string,
+  requirementDescription: string,
+  userNotes: string,
+): string {
+  const parts: string[] = []
+  const main = inputText.trim()
+  const desc = requirementDescription.trim()
+  const notes = userNotes.trim()
+  if (main) parts.push(main)
+  if (desc && desc !== main) parts.push(`【需求描述】\n${desc}`)
+  if (notes) parts.push(`【补充说明】\n${notes}`)
+  return parts.join('\n\n')
+}
 const FILE_POLL_INTERVAL_MS = 1000
 const FILE_POLL_MAX_ROUNDS = 900
 const FILE_POLL_MAX_TRANSIENT_ERRORS = 90
@@ -975,6 +991,8 @@ export default function GeneratePage() {
     setUploadedFile,
     inputText,
     setInputText,
+    requirementDescription,
+    setRequirementDescription,
     userNotes,
     setUserNotes,
     customPrompt,
@@ -1008,13 +1026,21 @@ export default function GeneratePage() {
     setCustomPrompt(h.filledPrompt)
     setSelectedTemplateId(h.templateId)
     setSourceType('text')
-    setInputText('')
+    if (h.handoffSource === 'ai-analysis') {
+      setInputText(h.combinedInputText?.trim() ?? '')
+      setRequirementDescription(h.requirementDescription?.trim() ?? '')
+      setUserNotes(h.supplementaryNotes?.trim() ?? '')
+    } else {
+      setInputText('')
+      setRequirementDescription('')
+      setUserNotes('')
+    }
     setUploadedFile(null)
     setStep('prompt')
     useGenerateStore.getState().setPendingGenerateHandoff(null)
     toast.success(
       h.handoffSource === 'ai-analysis'
-        ? '已从 AI 需求分析载入材料，可直接生成'
+        ? '已从 AI 需求分析填入文本输入、需求描述与补充说明'
         : '已从需求材料载入需求与提示词，可直接生成',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1086,7 +1112,10 @@ export default function GeneratePage() {
     { key: 'result', label: '结果处理' },
   ] as const
 
-  const textReady = inputText.trim().length > 0
+  const textReady =
+    inputText.trim().length > 0 ||
+    requirementDescription.trim().length > 0 ||
+    userNotes.trim().length > 0
   const promptReady = customPrompt.trim().length > 0
   const fileReady = sourceType !== 'file' || (uploadedFile && uploadedFile.status === 'PARSED')
   const sourceReady = sourceType === 'file' ? Boolean(uploadedFile) : textReady
@@ -1146,7 +1175,7 @@ export default function GeneratePage() {
           {
             sourceType,
             fileId: uploadedFile?.id,
-            text: inputText,
+            text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
             customPrompt,
             templateId: selectedTemplateId ?? undefined,
             ...aiParams,
@@ -1181,7 +1210,7 @@ export default function GeneratePage() {
         const result = await aiApi.generateTestCases({
           sourceType,
           fileId: uploadedFile?.id,
-          text: inputText,
+          text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
           customPrompt,
           templateId: selectedTemplateId ?? undefined,
           ...aiParams,
@@ -1345,8 +1374,8 @@ export default function GeneratePage() {
 
               <SoftTextarea
                 title="需求描述"
-                value={inputText}
-                onChange={setInputText}
+                value={requirementDescription}
+                onChange={setRequirementDescription}
                 placeholder="请输入需求描述、功能说明、接口文档内容或业务规则..."
                 countLimit={5000}
                 minHClass="min-h-[140px]"
@@ -1643,8 +1672,8 @@ export default function GeneratePage() {
       <ExpandedEditorDialog
         open={expandField === 'requirement'}
         title="展开编辑：需求描述"
-        value={inputText}
-        onChange={setInputText}
+        value={requirementDescription}
+        onChange={setRequirementDescription}
         onOpenChange={(open) => setExpandField(open ? 'requirement' : null)}
         placeholder="请输入需求描述、功能说明、接口文档内容或业务规则..."
       />

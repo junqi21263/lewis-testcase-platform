@@ -31,7 +31,7 @@ export function MermaidBlock({ chart, isStreaming = false }: Props) {
   const normalized = useMemo(() => normalizeMermaidSource(trimmed), [trimmed])
 
   useEffect(() => {
-    const delay = isStreaming ? 650 : 120
+    const delay = isStreaming ? 900 : 200
     const t = window.setTimeout(() => setDebouncedChart(chart), delay)
     return () => window.clearTimeout(t)
   }, [chart, isStreaming])

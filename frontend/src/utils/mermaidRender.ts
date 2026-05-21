@@ -31,7 +31,13 @@ export function normalizeMermaidSource(raw: string): string {
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
+    .replace(/[（]/g, '(')
+    .replace(/[）]/g, ')')
+    .replace(/[→⇒➔➜]/g, '-->')
+    .replace(/[－—–]/g, '-')
     .trim()
+
+  if (!s || /^%%\s*$/m.test(s)) return 'flowchart TD\n  A[暂无流程图]'
 
   const lines = s.split('\n')
   const firstIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('%%'))
@@ -75,8 +81,11 @@ export function isMermaidSourceLikelyComplete(src: string): boolean {
 export function isMermaidErrorSvg(svg: string): boolean {
   return (
     /Syntax error in text/i.test(svg) ||
+    /error-text/i.test(svg) ||
+    /error-icon/i.test(svg) ||
     /aria-roledescription=["']error["']/i.test(svg) ||
-    /class=["'][^"']*error[^"']*["']/i.test(svg)
+    /class=["'][^"']*error[^"']*["']/i.test(svg) ||
+    /viewBox=["']0 0 2412 512["']/i.test(svg)
   )
 }
 
@@ -88,6 +97,7 @@ async function loadMermaid(theme: MermaidThemeMode) {
     const dark = theme === 'dark'
     mermaid.initialize({
       startOnLoad: false,
+      suppressErrorRendering: true,
       theme: dark ? 'dark' : 'base',
       securityLevel: 'loose',
       fontFamily: 'ui-sans-serif, system-ui, sans-serif',
@@ -132,6 +142,11 @@ export async function renderMermaidSvg(
 
   const tryRender = async (src: string) => {
     const id = `${idPrefix}-${Math.random().toString(36).slice(2, 9)}`
+    try {
+      await mermaid.parse(src)
+    } catch (parseErr) {
+      throw parseErr instanceof Error ? parseErr : new Error(String(parseErr))
+    }
     const { svg } = await mermaid.render(id, src)
     if (isMermaidErrorSvg(svg)) {
       throw new Error('Mermaid 返回了错误图示（Syntax error in text）')
@@ -139,15 +154,33 @@ export async function renderMermaidSvg(
     return svg
   }
 
-  try {
-    return await tryRender(trimmed)
-  } catch (first) {
-    const patched = stripInvalidErDiagramEnumSyntax(trimmed)
-    if (patched !== trimmed) {
-      return await tryRender(patched)
+  const attempts = [
+    trimmed,
+    stripInvalidErDiagramEnumSyntax(trimmed),
+    simplifyFlowchartLabels(trimmed),
+    simplifyFlowchartLabels(stripInvalidErDiagramEnumSyntax(trimmed)),
+  ]
+  const unique = [...new Set(attempts.map((a) => a.trim()).filter(Boolean))]
+
+  let lastErr: unknown
+  for (const src of unique) {
+    try {
+      return await tryRender(src)
+    } catch (e) {
+      lastErr = e
     }
-    throw first
   }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+}
+
+/** 将方括号节点内未转义的特殊字符用引号包裹，减少 flowchart 解析失败 */
+function simplifyFlowchartLabels(src: string): string {
+  return src.replace(/\[([^\]"\n]+)\]/g, (_m, label: string) => {
+    const t = label.trim()
+    if (!t || t.startsWith('"')) return `[${label}]`
+    if (/[(),:;\\/]/.test(t)) return `["${t.replace(/"/g, '#quot;')}"]`
+    return `[${label}]`
+  })
 }
 
 export function svgToPngBlob(svgMarkup: string): Promise<Blob> {

@@ -57,6 +57,7 @@ import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
 import { maybeShrinkParseErrorField, sanitizeErrorForDisplay } from '@/utils/sanitizeErrorForDisplay'
 import { recordsApi } from '@/api/records'
 import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromptDefault'
+import { extractAnalysisReportHandoffFields } from '@/utils/analysisReportSections'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
@@ -1079,6 +1080,7 @@ function AiAnalysisPageInner() {
     }
     const ctx = parts.filter(Boolean).join('\n\n')
     const filledPrompt = `请根据以下材料生成完整、可执行的测试用例（遵守平台模板与输出格式要求）。\n\n${ctx ? `${ctx}\n\n` : ''}【AI 需求分析报告】\n${report}`
+    const handoffFields = extractAnalysisReportHandoffFields(report)
     setPendingGenerateHandoff({
       filledPrompt,
       templateId: null,
@@ -1086,6 +1088,9 @@ function AiAnalysisPageInner() {
       fileIds: uploadedFile?.id ? [uploadedFile.id] : [],
       rawText: report,
       handoffSource: 'ai-analysis',
+      combinedInputText: handoffFields.combinedInputText,
+      requirementDescription: handoffFields.requirementDescription.slice(0, REQ_DESC_MAX),
+      supplementaryNotes: handoffFields.supplementaryNotes.slice(0, REQ_SUPP_MAX),
     })
     navigate('/generate')
   }, [
