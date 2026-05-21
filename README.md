@@ -103,6 +103,7 @@ cd ../frontend && pnpm dev
 | [docs/deployment/VPS_GHCR_DUAL_ENV.md](docs/deployment/VPS_GHCR_DUAL_ENV.md) | VPS 双目录（dev/prod）环境变量同步、COS `env_file` 注入与 compose 命令 |
 | [scripts/diagnose-cos-vps.sh](scripts/diagnose-cos-vps.sh) | VPS 上对比 env 文件与容器内 COS 变量（仅长度/后四位） |
 | [docs/deployment/COMPOSE_FILES.md](docs/deployment/COMPOSE_FILES.md) | 根目录各 `docker-compose*.yml` |
+| [docs/operations/VPS_RELEASE_RUNBOOK.md](docs/operations/VPS_RELEASE_RUNBOOK.md) | 当前实际使用的 VPS 发布命令手册 |
 | [CHANGELOG.md](CHANGELOG.md) | 变更日志 |
 
 ## 仓库结构（摘要）

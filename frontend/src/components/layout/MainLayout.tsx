@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { WallpaperLayer } from '@/components/wallpaper/WallpaperLayer'
+import { WeatherAtmosphereLayer } from '@/components/wallpaper/WeatherAtmosphereLayer'
 import { settingsApi } from '@/api/settings'
 import { usageApi } from '@/api/usage'
 import toast from 'react-hot-toast'
@@ -35,6 +36,7 @@ export default function MainLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-workspace-page">
+      <WeatherAtmosphereLayer />
       <WallpaperLayer />
       {/* 侧边栏 */}
       <Sidebar />

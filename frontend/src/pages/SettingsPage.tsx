@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Save,
@@ -12,10 +12,13 @@ import {
   Star,
   RefreshCw,
   ClipboardList,
-  Image as ImageIcon,
-  CloudSun,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { AppearanceWeatherSection } from '@/components/settings/AppearanceWeatherSection'
+import { CopyableValue } from '@/components/settings/CopyableValue'
+import { PasswordChangeModal } from '@/components/settings/PasswordChangeModal'
+import { SettingsCard } from '@/components/settings/SettingsCard'
+import { SettingsNav } from '@/components/settings/SettingsNav'
+import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +45,9 @@ import { preferencesApi, type UserPreferences } from '@/api/preferences'
 import { weatherApi, type WeatherCityItem } from '@/api/weather'
 import { wallpaperApi } from '@/api/wallpaper'
 import { notify } from '@/utils/notify'
+import { cn } from '@/utils/cn'
+import { set, roleBadgeClass, type SettingsNavItem } from '@/utils/settingsUi'
+import { useThemeStore } from '@/store/themeStore'
 
 function roleLabel(role: UserRole): string {
   const m: Record<UserRole, string> = {
@@ -107,7 +113,9 @@ export default function SettingsPage() {
   const [avatar, setAvatar] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
 
-  const [showPassword, setShowPassword] = useState(false)
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState('section-profile')
+  const theme = useThemeStore((s) => s.theme)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -235,7 +243,7 @@ export default function SettingsPage() {
       setOldPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      setShowPassword(false)
+      setPasswordModalOpen(false)
     } catch {
       /* interceptor */
     } finally {
@@ -510,6 +518,25 @@ export default function SettingsPage() {
     }
   }
 
+  const navItems: SettingsNavItem[] = useMemo(
+    () => [
+      { id: 'section-profile', label: '个人资料' },
+      { id: 'section-runtime', label: '运行环境' },
+      ...(admin ? [{ id: 'section-multimodal', label: '多模态配置' }] : []),
+      { id: 'section-gen-prefs', label: '生成默认' },
+      { id: 'appearance-weather', label: '外观天气' },
+      { id: 'section-ai-models', label: 'AI 模型' },
+      ...(superAdmin ? [{ id: 'section-super-admin', label: '管理工具' }] : []),
+      ...(superAdmin ? [{ id: 'section-audit', label: '审计日志' }] : []),
+    ],
+    [admin, superAdmin],
+  )
+
+  const themeLabel = theme === 'dark' ? '深色模式' : '浅色模式'
+  const cityHeaderLabel = userPrefs?.weatherCityName
+    ? `${userPrefs.weatherCityName}${userPrefs.weatherCityAdm1 ? ` · ${userPrefs.weatherCityAdm1}` : ''}`
+    : '天气城市未设置'
+
   const updateSelectedUserRole = async (role: UserRole) => {
     if (!superAdmin) return
     if (!adminSelectedUser) return
@@ -527,490 +554,396 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-10">
-      <div>
-        <h1 className="text-2xl font-bold">系统设置</h1>
-        <p className="text-muted-foreground mt-1">个人资料、运行环境、AI 模型与生成默认参数</p>
-      </div>
+    <div className={set.page}>
+      <div className={set.container}>
+        <SettingsPageHeader themeLabel={themeLabel} cityLabel={cityHeaderLabel} />
 
-      {/* 个人资料 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <User className="w-4 h-4" />
-            个人资料
-          </CardTitle>
-          <CardDescription>修改显示名称与头像链接</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">用户名</label>
-              <Input value={username} onChange={(e) => setUsername(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">邮箱</label>
-              <Input value={user?.email ?? ''} readOnly className="bg-muted" />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-sm font-medium">头像 URL（可选）</label>
-              <Input
-                value={avatar}
-                onChange={(e) => setAvatar(e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button className="gap-2" onClick={saveProfile} disabled={profileSaving}>
-              <Save className="w-4 h-4" />
-              保存资料
-            </Button>
-            {user?.role && (
-              <Badge variant="secondary" className="text-xs">
-                {roleLabel(user.role)}
-              </Badge>
-            )}
-          </div>
+        <div className={set.layout}>
+          <SettingsNav items={navItems} activeId={activeSection} onSelect={setActiveSection} />
 
-          <Separator />
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <KeyRound className="w-4 h-4" />
-                登录密码
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setShowPassword((v) => !v)}>
-                {showPassword ? '收起' : '修改密码'}
-              </Button>
-            </div>
-            {showPassword && (
-              <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
-                <Input
-                  type="password"
-                  placeholder="当前密码"
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
-                />
-                <div />
-                <Input
-                  type="password"
-                  placeholder="新密码"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
-                <Input
-                  type="password"
-                  placeholder="确认新密码"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-                <div className="sm:col-span-2">
-                  <Button size="sm" onClick={savePassword} disabled={pwdSaving}>
-                    更新密码
+          <div className={set.content}>
+            <SettingsCard
+              id="section-profile"
+              icon={User}
+              title="个人资料"
+              description="修改显示名称与头像链接"
+              footer={
+                <div className="flex w-full flex-wrap items-center gap-3">
+                  <Button className={set.btnPrimary} onClick={saveProfile} disabled={profileSaving}>
+                    <Save className="h-4 w-4" />
+                    保存资料
                   </Button>
+                  {user?.role ? (
+                    <span className={roleBadgeClass(user.role)}>{roleLabel(user.role)}</span>
+                  ) : null}
+                </div>
+              }
+            >
+              <div className={set.formGrid}>
+                <div className={set.formRow}>
+                  <label className={set.label}>用户名</label>
+                  <Input
+                    className={set.control}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+                <div className={set.formRow}>
+                  <label className={set.label}>邮箱</label>
+                  <Input
+                    className={cn(set.control, 'opacity-90')}
+                    value={user?.email ?? ''}
+                    readOnly
+                  />
+                </div>
+                <div className={cn(set.formRow, 'sm:col-span-2')}>
+                  <label className={set.label}>头像 URL（可选）</label>
+                  <Input
+                    className={cn(set.control, 'font-mono text-xs')}
+                    value={avatar}
+                    onChange={(e) => setAvatar(e.target.value)}
+                    placeholder="https://..."
+                  />
                 </div>
               </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 运行环境 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Server className="w-4 h-4" />
-            运行环境
-          </CardTitle>
-          <CardDescription>只读信息，来自服务端环境变量与当前前端配置</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">前端 API 基址</p>
-              <code className="text-xs bg-muted px-2 py-1 rounded block break-all">
-                {getApiBaseUrl()}
-              </code>
-            </div>
-            {runtime && (
-              <>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">单文件上传上限</p>
-                  <p className="font-medium">{runtime.maxUploadMb} MB</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">全局限流</p>
-                  <p className="font-medium">
-                    {runtime.throttleLimit} 次 / {runtime.throttleTtlSec} 秒
-                  </p>
-                </div>
-                {typeof runtime.visionPdfMinTextChars === 'number' && (
-                  <div className="sm:col-span-2">
-                    <p className="text-xs text-muted-foreground mb-0.5">PDF 视觉补充阈值</p>
-                    <p className="font-medium text-xs">
-                      提取文本少于 {runtime.visionPdfMinTextChars} 字时尝试首页视觉
-                      {runtime.visionPdfAlways ? '（已强制对所有 PDF 尝试视觉）' : ''}
-                    </p>
+              <Separator className="bg-[hsl(var(--settings-card-border))]/60" />
+              <div className={set.toggleRow}>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-[hsl(var(--settings-text-secondary))]" />
+                  <div>
+                    <p className={set.toggleLabel}>登录密码</p>
+                    <p className={set.toggleHint}>定期更新密码以保障账号安全</p>
                   </div>
-                )}
-              </>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            调整上传大小请在部署环境设置 <code className="bg-muted px-1 rounded">MAX_FILE_SIZE</code>（字节）。
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* 多模态配置 */}
-      {admin && multimodalConfig && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              多模态配置
-            </CardTitle>
-            <CardDescription>全局多模态开关、并发、缓存和成本阈值（实时生效，无需重启）</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={multimodalConfig.multimodalEnabled}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, multimodalEnabled: e.target.checked } : prev,
-                    )
-                  }
-                />
-                启用多模态理解
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={multimodalConfig.autoDowngradeWhenOverBudget}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            autoDowngradeWhenOverBudget: e.target.checked,
-                          }
-                        : prev,
-                    )
-                  }
-                />
-                超阈值自动降级
-              </label>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">默认多模态模型</label>
-                <Input
-                  value={multimodalConfig.multimodalDefaultModel}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, multimodalDefaultModel: e.target.value } : prev,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">默认纯文本模型</label>
-                <Input
-                  value={multimodalConfig.textFallbackModel}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, textFallbackModel: e.target.value } : prev,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">最大并发处理数</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={multimodalConfig.maxConcurrentTasks}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, maxConcurrentTasks: Number(e.target.value) } : prev,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">缓存天数</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={multimodalConfig.cacheTtlDays}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, cacheTtlDays: Number(e.target.value) } : prev,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">月度费用预警阈值（CNY）</label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={multimodalConfig.monthlyCostAlertCny}
-                  onChange={(e) =>
-                    setMultimodalConfig((prev) =>
-                      prev ? { ...prev, monthlyCostAlertCny: Number(e.target.value) } : prev,
-                    )
-                  }
-                />
-              </div>
-            </div>
-            <Button className="gap-2" onClick={saveMultimodalConfig} disabled={multimodalSaving}>
-              <Save className="w-4 h-4" />
-              保存多模态配置
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 生成默认参数（本地） */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            生成默认参数
-          </CardTitle>
-          <CardDescription>保存在本机浏览器，用于「生成测试用例」页的默认温度与 Token 上限</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 max-w-md">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">默认 temperature</label>
-              <Input
-                type="number"
-                step="0.05"
-                min={0}
-                max={2}
-                value={genPrefs.defaultTemperature}
-                onChange={(e) =>
-                  setGenPrefs((p) => ({ ...p, defaultTemperature: Number(e.target.value) }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">默认 maxTokens</label>
-              <Input
-                type="number"
-                step={256}
-                min={256}
-                max={128000}
-                value={genPrefs.defaultMaxTokens}
-                onChange={(e) =>
-                  setGenPrefs((p) => ({ ...p, defaultMaxTokens: Number(e.target.value) }))
-                }
-              />
-            </div>
-          </div>
-          <Button className="gap-2" onClick={saveGenPreferences} disabled={prefsSaving}>
-            <Save className="w-4 h-4" />
-            保存生成默认参数
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* 外观与天气（云端偏好） */}
-      <Card id="appearance-weather">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <ImageIcon className="w-4 h-4" />
-            外观与天气
-          </CardTitle>
-          <CardDescription>保存在账号下，用于动态壁纸与 Header 天气展示（城市需手动选择）</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <p className="text-sm font-medium">动态壁纸（网页背景）</p>
-                <p className="text-xs text-muted-foreground">
-                  开启后会在页面背景加载 Bing 每日壁纸；默认每次进入换一张
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!!userPrefs?.wallpaperEnabled}
-                  onChange={(e) => saveUserPreferences({ wallpaperEnabled: e.target.checked })}
-                  disabled={userPrefsSaving}
-                />
-                开启
-              </label>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">更换频率</label>
-                <select
-                  className="h-10 w-full rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
-                  value={String(userPrefs?.wallpaperIntervalSec ?? 0)}
-                  onChange={(e) => saveUserPreferences({ wallpaperIntervalSec: Number(e.target.value) })}
-                  disabled={userPrefsSaving}
+                </div>
+                <Button
+                  variant="outline"
+                  className={set.btnSecondary}
+                  onClick={() => setPasswordModalOpen(true)}
                 >
-                  <option value="0">每次进入（手动触发）</option>
-                  <option value={String(3600)}>每小时</option>
-                  <option value={String(24 * 3600)}>每日</option>
-                </select>
-              </div>
-              <div className="flex items-end gap-2">
-                <Button variant="outline" onClick={rotateWallpaperNow} disabled={userPrefsSaving}>
-                  换一张
+                  修改密码
                 </Button>
-                {userPrefs?.wallpaperLastAt && (
-                  <span className="text-xs text-muted-foreground">
-                    上次：{format(new Date(userPrefs.wallpaperLastAt), 'yyyy-MM-dd HH:mm')}
-                  </span>
-                )}
               </div>
-            </div>
-          </div>
+            </SettingsCard>
 
-          <Separator />
+            <PasswordChangeModal
+              open={passwordModalOpen}
+              oldPassword={oldPassword}
+              newPassword={newPassword}
+              confirmPassword={confirmPassword}
+              saving={pwdSaving}
+              onOldChange={setOldPassword}
+              onNewChange={setNewPassword}
+              onConfirmChange={setConfirmPassword}
+              onClose={() => setPasswordModalOpen(false)}
+              onSave={savePassword}
+            />
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <CloudSun className="w-4 h-4" />
-              天气（手动城市）
-            </div>
-            <div className="text-xs text-muted-foreground">
-              当前城市：{userPrefs?.weatherCityName ? `${userPrefs.weatherCityName}` : '未设置'}
-            </div>
+            <SettingsCard
+              id="section-runtime"
+              icon={Server}
+              title="运行环境"
+              description="只读信息，来自服务端环境变量与当前前端配置"
+            >
+              <p className={set.infoPill}>
+                此区域为运行环境只读信息，需在服务端配置中修改。
+              </p>
+              <div className={set.infoGrid}>
+                <div className={set.infoItem}>
+                  <p className={set.infoLabel}>前端 API 基址</p>
+                  <CopyableValue value={getApiBaseUrl()} />
+                </div>
+                {runtime ? (
+                  <>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>单文件上传上限</p>
+                      <p className={set.infoValue}>{runtime.maxUploadMb} MB</p>
+                    </div>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>全局限流</p>
+                      <p className={set.infoValue}>
+                        {runtime.throttleLimit} 次 / {runtime.throttleTtlSec} 秒
+                      </p>
+                    </div>
+                    {typeof runtime.visionPdfMinTextChars === 'number' ? (
+                      <div className={cn(set.infoItem, 'sm:col-span-2')}>
+                        <p className={set.infoLabel}>PDF 视觉补充阈值</p>
+                        <p className={cn(set.infoValue, 'font-sans text-sm')}>
+                          提取文本少于 {runtime.visionPdfMinTextChars} 字时尝试首页视觉
+                          {runtime.visionPdfAlways ? '（已强制对所有 PDF 尝试视觉）' : ''}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+              <p className={set.hint}>
+                调整上传大小请在部署环境设置{' '}
+                <code className="rounded bg-[hsl(var(--settings-info-bg))] px-1.5 py-0.5 font-mono text-xs">
+                  MAX_FILE_SIZE
+                </code>{' '}
+               （字节）。
+              </p>
+            </SettingsCard>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                value={cityQuery}
-                onChange={(e) => setCityQuery(e.target.value)}
-                placeholder="搜索城市（如：北京、上海、深圳）"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void searchCities(cityQuery)
-                  }
-                }}
-              />
-              <Button
-                variant="outline"
-                onClick={() => searchCities(cityQuery)}
-                disabled={citySearching || userPrefsSaving}
-              >
-                {citySearching ? '搜索中...' : '搜索'}
-              </Button>
-            </div>
-
-            {cityResults.length > 0 && (
-              <div className="divide-y divide-border/25 overflow-hidden rounded-lg bg-muted/25 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:divide-white/10 dark:ring-white/10">
-                {cityResults.slice(0, 8).map((c) => (
-                  <button
-                    key={c.id}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center justify-between gap-2"
-                    onClick={() => pickCity(c)}
+            {admin && multimodalConfig ? (
+              <SettingsCard
+                id="section-multimodal"
+                icon={Sparkles}
+                title="多模态配置"
+                description="全局多模态开关、并发、缓存和成本阈值（实时生效，无需重启）"
+                footer={
+                  <Button
+                    className={set.btnPrimary}
+                    onClick={saveMultimodalConfig}
+                    disabled={multimodalSaving}
                   >
-                    <span className="truncate">
-                      {c.name}
-                      {c.adm1 ? ` · ${c.adm1}` : ''}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{c.id}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                    <Save className="h-4 w-4" />
+                    保存多模态配置
+                  </Button>
+                }
+              >
+                <div className="flex flex-wrap gap-2">
+                  {multimodalConfig.multimodalEnabled ? (
+                    <span className={cn(set.statusChip, set.badgeSuccess)}>多模态已启用</span>
+                  ) : (
+                    <span className={cn(set.statusChip, set.badgeMuted)}>多模态已关闭</span>
+                  )}
+                  <span className={cn(set.statusChip, set.badgeMuted)}>
+                    自动降级{multimodalConfig.autoDowngradeWhenOverBudget ? '开启' : '关闭'}
+                  </span>
+                  <span className={cn(set.statusChip, set.badgeMuted)}>
+                    缓存 {multimodalConfig.cacheTtlDays} 天
+                  </span>
+                </div>
+                <div className={set.formGrid}>
+                  <label className={cn(set.toggleRow, 'sm:col-span-1')}>
+                    <span className={set.toggleLabel}>启用多模态理解</span>
+                    <input
+                      type="checkbox"
+                      className="settings-checkbox h-4 w-4"
+                      checked={multimodalConfig.multimodalEnabled}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, multimodalEnabled: e.target.checked } : prev,
+                        )
+                      }
+                    />
+                  </label>
+                  <label className={set.toggleRow}>
+                    <span className={set.toggleLabel}>超阈值自动降级</span>
+                    <input
+                      type="checkbox"
+                      className="settings-checkbox h-4 w-4"
+                      checked={multimodalConfig.autoDowngradeWhenOverBudget}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev
+                            ? { ...prev, autoDowngradeWhenOverBudget: e.target.checked }
+                            : prev,
+                        )
+                      }
+                    />
+                  </label>
+                  <div className={set.formRow}>
+                    <label className={set.label}>默认多模态模型</label>
+                    <Input
+                      className={set.control}
+                      value={multimodalConfig.multimodalDefaultModel}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, multimodalDefaultModel: e.target.value } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className={set.formRow}>
+                    <label className={set.label}>默认纯文本模型</label>
+                    <Input
+                      className={set.control}
+                      value={multimodalConfig.textFallbackModel}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, textFallbackModel: e.target.value } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className={set.formRow}>
+                    <label className={set.label}>最大并发处理数</label>
+                    <Input
+                      className={set.control}
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={multimodalConfig.maxConcurrentTasks}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, maxConcurrentTasks: Number(e.target.value) } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className={set.formRow}>
+                    <label className={set.label}>缓存天数</label>
+                    <Input
+                      className={set.control}
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={multimodalConfig.cacheTtlDays}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, cacheTtlDays: Number(e.target.value) } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className={cn(set.formRow, 'sm:col-span-2')}>
+                    <label className={set.label}>月度费用预警阈值（CNY）</label>
+                    <Input
+                      className={set.control}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={multimodalConfig.monthlyCostAlertCny}
+                      onChange={(e) =>
+                        setMultimodalConfig((prev) =>
+                          prev ? { ...prev, monthlyCostAlertCny: Number(e.target.value) } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </SettingsCard>
+            ) : null}
 
-      {/* AI 模型 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Bot className="w-4 h-4" />
-                AI 模型配置
-              </CardTitle>
-              <CardDescription>
-                {admin
-                  ? '管理员可增删改模型、设置默认；API Key 仅创建/更新时提交，列表中不会回显。'
-                  : '当前账号可查看已启用的模型；配置变更请联系管理员。'}
-              </CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="gap-1" onClick={refreshModels} disabled={loadingModels}>
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingModels ? 'animate-spin' : ''}`} />
-                刷新
-              </Button>
-              {admin && (
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCreate((s) => !s)}>
-                  <Plus className="w-4 h-4" />
-                  {showCreate ? '收起' : '添加模型'}
+            <SettingsCard
+              id="section-gen-prefs"
+              icon={Sparkles}
+              title="生成默认参数"
+              description="保存在本机浏览器，用于「生成测试用例」页的默认温度与 Token 上限"
+              footer={
+                <Button
+                  variant="outline"
+                  className={set.btnSecondary}
+                  onClick={saveGenPreferences}
+                  disabled={prefsSaving}
+                >
+                  <Save className="h-4 w-4" />
+                  保存生成默认参数
                 </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {admin && showCreate && (
-            <div className="space-y-3 rounded-xl bg-muted/30 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
-              <p className="text-sm font-medium">新模型</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Input
-                  placeholder="显示名称"
-                  value={createForm.name}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-                />
-                <Input
-                  placeholder="提供商"
-                  value={createForm.provider}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, provider: e.target.value }))}
-                />
-                <Input
-                  placeholder="Model ID（如 gpt-4o）"
-                  value={createForm.modelId}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, modelId: e.target.value }))}
-                />
-                <Input
-                  placeholder="Base URL"
-                  value={createForm.baseUrl}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, baseUrl: e.target.value }))}
-                />
-                <Input
-                  className="sm:col-span-2"
-                  placeholder="API Key"
-                  type="password"
-                  autoComplete="off"
-                  value={createForm.apiKey}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, apiKey: e.target.value }))}
-                />
-                <Input
-                  type="number"
-                  placeholder="maxTokens"
-                  value={createForm.maxTokens}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, maxTokens: Number(e.target.value) }))
-                  }
-                />
-                <Input
-                  type="number"
-                  step="0.05"
-                  placeholder="temperature"
-                  value={createForm.temperature}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, temperature: Number(e.target.value) }))
-                  }
-                />
+              }
+            >
+              <div className={set.formGrid}>
+                <div className={set.formRow}>
+                  <label className={set.label}>默认 temperature</label>
+                  <p className={set.hint}>越高越发散，建议 0.3–1.0</p>
+                  <div className={set.sliderRow}>
+                    <input
+                      type="range"
+                      className={set.slider}
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      value={genPrefs.defaultTemperature}
+                      onChange={(e) =>
+                        setGenPrefs((p) => ({
+                          ...p,
+                          defaultTemperature: Number(e.target.value),
+                        }))
+                      }
+                    />
+                    <Input
+                      className={cn(set.control, 'w-24 shrink-0')}
+                      type="number"
+                      step="0.05"
+                      min={0}
+                      max={2}
+                      value={genPrefs.defaultTemperature}
+                      onChange={(e) =>
+                        setGenPrefs((p) => ({
+                          ...p,
+                          defaultTemperature: Number(e.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className={set.formRow}>
+                  <label className={set.label}>默认 maxTokens</label>
+                  <p className={set.hint}>控制单次生成上限</p>
+                  <Input
+                    className={set.control}
+                    type="number"
+                    step={256}
+                    min={256}
+                    max={128000}
+                    value={genPrefs.defaultMaxTokens}
+                    onChange={(e) =>
+                      setGenPrefs((p) => ({ ...p, defaultMaxTokens: Number(e.target.value) }))
+                    }
+                  />
+                </div>
+              </div>
+            </SettingsCard>
+
+            <AppearanceWeatherSection
+              userPrefs={userPrefs}
+              userPrefsSaving={userPrefsSaving}
+              cityQuery={cityQuery}
+              cityResults={cityResults}
+              citySearching={citySearching}
+              onCityQueryChange={setCityQuery}
+              onSearchCities={() => void searchCities(cityQuery)}
+              onPickCity={pickCity}
+              onSaveUserPreferences={saveUserPreferences}
+              onRotateWallpaper={rotateWallpaperNow}
+            />
+
+            <SettingsCard
+              id="section-ai-models"
+              icon={Bot}
+              title="AI 模型配置"
+              description={
+                admin
+                  ? '管理员可增删改模型、设置默认；API Key 仅创建/更新时提交，列表中不会回显。'
+                  : '当前账号可查看已启用的模型；配置变更请联系管理员。'
+              }
+              actions={
+                <>
+                  <Button
+                    variant="outline"
+                    className={set.btnSecondary}
+                    onClick={refreshModels}
+                    disabled={loadingModels}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', loadingModels && 'animate-spin')} />
+                    刷新
+                  </Button>
+                  {admin ? (
+                    <Button
+                      className={set.btnPrimary}
+                      onClick={() => setShowCreate((s) => !s)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      {showCreate ? '收起' : '添加模型'}
+                    </Button>
+                  ) : null}
+                </>
+              }
+            >
+              <div className="space-y-4">
+              {admin && showCreate && (
+            <div className="space-y-3 rounded-[18px] border border-[hsl(var(--settings-card-border))] bg-[hsl(var(--settings-info-bg))]/60 p-4">
+              <p className={set.label}>新模型</p>
+              <div className={set.formGrid}>
+                <Input className={set.control} placeholder="显示名称" value={createForm.name} onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))} />
+                <Input className={set.control} placeholder="提供商" value={createForm.provider} onChange={(e) => setCreateForm((f) => ({ ...f, provider: e.target.value }))} />
+                <Input className={set.control} placeholder="Model ID（如 gpt-4o）" value={createForm.modelId} onChange={(e) => setCreateForm((f) => ({ ...f, modelId: e.target.value }))} />
+                <Input className={set.control} placeholder="Base URL" value={createForm.baseUrl} onChange={(e) => setCreateForm((f) => ({ ...f, baseUrl: e.target.value }))} />
+                <Input className={cn(set.control, 'sm:col-span-2')} placeholder="API Key" type="password" autoComplete="off" value={createForm.apiKey} onChange={(e) => setCreateForm((f) => ({ ...f, apiKey: e.target.value }))} />
+                <Input className={set.control} type="number" placeholder="maxTokens" value={createForm.maxTokens} onChange={(e) => setCreateForm((f) => ({ ...f, maxTokens: Number(e.target.value) }))} />
+                <Input className={set.control} type="number" step="0.05" placeholder="temperature" value={createForm.temperature} onChange={(e) => setCreateForm((f) => ({ ...f, temperature: Number(e.target.value) }))} />
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -1038,22 +971,24 @@ export default function SettingsPage() {
                 />
                 作为「文档视觉解析」专用模型（全局仅选一个；与生成用例的默认模型可不同）
               </label>
-              <Button size="sm" onClick={submitCreate}>
+              <Button className={set.btnPrimary} onClick={submitCreate}>
                 创建
               </Button>
             </div>
-          )}
+              )}
 
-          {admin && adminModels.length === 0 && !showCreate && (
-            <div className="rounded-xl py-8 text-center text-sm text-muted-foreground ring-2 ring-dashed ring-foreground/15 dark:ring-white/12">
-              <Bot className="mx-auto mb-2 h-8 w-8 opacity-50" />
-              <p>暂无模型，请点击「添加模型」</p>
+              {admin && adminModels.length === 0 && !showCreate ? (
+            <div className={set.empty}>
+              <Bot className={set.emptyIcon} />
+              <p className={set.emptyTitle}>暂无模型</p>
+              <p className={set.emptySub}>请点击「添加模型」创建配置</p>
             </div>
-          )}
+              ) : null}
 
+              <div className={admin ? set.modelList : 'space-y-4'}>
           {admin &&
             adminModels.map((model) => (
-              <div key={model.id} className="space-y-3 rounded-xl bg-muted/20 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
+              <div key={model.id} className={set.modelCard}>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-sm">{model.name}</p>
@@ -1077,9 +1012,7 @@ export default function SettingsPage() {
                       </Badge>
                     )}
                     {model.useForDocumentVisionParse && (
-                      <Badge className="text-xs bg-violet-600 text-white hover:bg-violet-600">
-                        文档视觉解析
-                      </Badge>
+                      <span className={cn(set.badge, set.badgeViolet)}>文档视觉解析</span>
                     )}
                     {model.lastTestAt != null && (
                       <Badge
@@ -1105,15 +1038,13 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     {admin && model.isActive && !model.isDefault && (
-                      <Button variant="ghost" size="sm" className="h-8" onClick={() => setDefault(model.id)}>
+                      <Button className={set.btnGhost} onClick={() => setDefault(model.id)}>
                         设默认
                       </Button>
                     )}
                     {admin && (
                       <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8"
+                        className={set.btnGhost}
                         onClick={() => testModel(model.id)}
                         disabled={!model.hasApiKey || testingModelId === model.id}
                         title={!model.hasApiKey ? '请先配置 API Key' : '发送一个小请求测试连通性'}
@@ -1122,64 +1053,31 @@ export default function SettingsPage() {
                       </Button>
                     )}
                     {admin && (
-                      <Button variant="ghost" size="sm" className="h-8" onClick={() => startEdit(model)}>
+                      <Button className={set.btnGhost} onClick={() => startEdit(model)}>
                         编辑
                       </Button>
                     )}
                     {admin && (
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
+                        className={set.btnDanger}
                         onClick={() => archive(model.id)}
                         disabled={!model.isActive}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
                   </div>
                 </div>
 
                 {editingId === model.id ? (
-                  <div className="grid gap-2 pt-2 sm:grid-cols-2 shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.12)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
-                    <Input
-                      value={editDraft.name}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                    />
-                    <Input
-                      value={editDraft.provider}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, provider: e.target.value }))}
-                    />
-                    <Input
-                      value={editDraft.modelId}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, modelId: e.target.value }))}
-                    />
-                    <Input
-                      value={editDraft.baseUrl}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, baseUrl: e.target.value }))}
-                    />
-                    <Input
-                      type="number"
-                      value={editDraft.maxTokens}
-                      onChange={(e) =>
-                        setEditDraft((d) => ({ ...d, maxTokens: Number(e.target.value) }))
-                      }
-                    />
-                    <Input
-                      type="number"
-                      step="0.05"
-                      value={editDraft.temperature}
-                      onChange={(e) =>
-                        setEditDraft((d) => ({ ...d, temperature: Number(e.target.value) }))
-                      }
-                    />
-                    <Input
-                      className="sm:col-span-2"
-                      type="password"
-                      placeholder="新 API Key（留空不修改）"
-                      value={editDraft.apiKey}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, apiKey: e.target.value }))}
-                    />
+                  <div className={cn(set.formGrid, 'border-t border-[hsl(var(--settings-card-border))]/60 pt-4')}>
+                    <Input className={set.control} value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
+                    <Input className={set.control} value={editDraft.provider} onChange={(e) => setEditDraft((d) => ({ ...d, provider: e.target.value }))} />
+                    <Input className={set.control} value={editDraft.modelId} onChange={(e) => setEditDraft((d) => ({ ...d, modelId: e.target.value }))} />
+                    <Input className={set.control} value={editDraft.baseUrl} onChange={(e) => setEditDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
+                    <Input className={set.control} type="number" value={editDraft.maxTokens} onChange={(e) => setEditDraft((d) => ({ ...d, maxTokens: Number(e.target.value) }))} />
+                    <Input className={set.control} type="number" step="0.05" value={editDraft.temperature} onChange={(e) => setEditDraft((d) => ({ ...d, temperature: Number(e.target.value) }))} />
+                    <Input className={cn(set.control, 'sm:col-span-2')} type="password" placeholder="新 API Key（留空不修改）" value={editDraft.apiKey} onChange={(e) => setEditDraft((d) => ({ ...d, apiKey: e.target.value }))} />
                     <label className="flex items-center gap-2 text-sm sm:col-span-2">
                       <input
                         type="checkbox"
@@ -1220,211 +1118,230 @@ export default function SettingsPage() {
                       文档视觉解析专用（全局仅一个）
                     </label>
                     <div className="flex gap-2 sm:col-span-2">
-                      <Button size="sm" onClick={() => saveEdit(model.id)}>
+                      <Button className={set.btnPrimary} onClick={() => saveEdit(model.id)}>
                         保存
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
+                      <Button className={set.btnSecondary} onClick={() => setEditingId(null)}>
                         取消
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">提供商</p>
-                      <p>{model.provider}</p>
+                  <div className={set.infoGrid}>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>提供商</p>
+                      <p className={cn(set.infoValue, 'font-sans')}>{model.provider}</p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Model ID</p>
-                      <p className="break-all">{model.modelId}</p>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>Model ID</p>
+                      <p className={cn(set.infoValue, 'font-sans')}>{model.modelId}</p>
                     </div>
-                    <div className="col-span-2">
-                      <p className="text-xs text-muted-foreground mb-1">Base URL</p>
-                      <p className="break-all text-xs">{model.baseUrl}</p>
+                    <div className={cn(set.infoItem, 'sm:col-span-2')}>
+                      <p className={set.infoLabel}>Base URL</p>
+                      <p className={set.infoValue}>{model.baseUrl}</p>
                     </div>
                   </div>
                 )}
               </div>
             ))}
+              </div>
 
           {!admin &&
             (publicModels.length === 0 ? (
-              <div className="rounded-xl py-8 text-center text-sm text-muted-foreground ring-2 ring-dashed ring-foreground/15 dark:ring-white/12">
-                暂无可用模型
+              <div className={set.empty}>
+                <p className={set.emptyTitle}>暂无可用模型</p>
               </div>
             ) : (
               publicModels.map((model) => (
-                <div key={model.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted/20 p-4 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
-                  <div>
-                    <p className="font-medium text-sm">{model.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {model.provider} · {model.modelId}
-                    </p>
+                <div key={model.id} className={set.modelCard}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm text-[hsl(var(--settings-text-primary))]">{model.name}</p>
+                      <p className={cn(set.hint, 'mt-1')}>
+                        {model.provider} · {model.modelId}
+                      </p>
+                    </div>
+                    {model.isDefault ? <span className={cn(set.badge, set.badgeSuccess)}>默认</span> : null}
                   </div>
-                  {model.isDefault && <Badge>默认</Badge>}
                 </div>
               ))
             ))}
-        </CardContent>
-      </Card>
+              </div>
+            </SettingsCard>
 
-      {/* 超级管理员：用户运维 */}
-      {superAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <KeyRound className="w-4 h-4" />
-              超级管理员工具
-            </CardTitle>
-            <CardDescription>用户查询、重置密码、修改角色（仅超级管理员可见）</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="搜索邮箱或用户名（最多展示 20 条）"
-                value={adminKeyword}
-                onChange={(e) => setAdminKeyword(e.target.value)}
-              />
-              <Button variant="outline" onClick={refreshAdminUsers} disabled={adminLoadingUsers}>
-                <RefreshCw className={`w-4 h-4 ${adminLoadingUsers ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="max-h-72 overflow-y-auto rounded-xl bg-muted/20 p-3 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
-                {adminUsers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">暂无数据，请搜索或刷新</p>
-                ) : (
-                  <div className="space-y-2">
-                    {adminUsers.map((u) => {
-                      const active = adminSelectedUser?.id === u.id
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => setAdminSelectedUser(u)}
-                          className={`w-full rounded-lg p-2 text-left ring-1 ring-inset transition-colors ${active ? 'bg-primary/10 ring-primary/40' : 'bg-secondary/20 ring-foreground/10 hover:bg-accent dark:ring-white/10'}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{u.username}</p>
-                              <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+            {superAdmin ? (
+              <SettingsCard
+                id="section-super-admin"
+                icon={KeyRound}
+                title="超级管理员工具"
+                description="用户查询、重置密码、修改角色（仅超级管理员可见）"
+              >
+                <div className="flex gap-2">
+                  <Input
+                    className={cn(set.control, 'flex-1')}
+                    placeholder="搜索邮箱或用户名（最多展示 20 条）"
+                    value={adminKeyword}
+                    onChange={(e) => setAdminKeyword(e.target.value)}
+                  />
+                  <Button
+                    variant="outline"
+                    className={set.btnSecondary}
+                    onClick={refreshAdminUsers}
+                    disabled={adminLoadingUsers}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', adminLoadingUsers && 'animate-spin')} />
+                  </Button>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className={cn(set.adminList, 'rounded-[18px] border border-[hsl(var(--settings-card-border))] p-3')}>
+                    {adminUsers.length === 0 ? (
+                      <div className={set.empty}>
+                        <p className={set.emptyTitle}>暂无数据</p>
+                        <p className={set.emptySub}>请搜索或刷新用户列表</p>
+                      </div>
+                    ) : (
+                      adminUsers.map((u) => {
+                        const active = adminSelectedUser?.id === u.id
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => setAdminSelectedUser(u)}
+                            className={cn(
+                              set.adminUserBtn,
+                              active ? set.adminUserBtnActive : set.adminUserBtnIdle,
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-[hsl(var(--settings-text-primary))]">{u.username}</p>
+                                <p className="truncate text-xs text-[hsl(var(--settings-text-muted))]">{u.email}</p>
+                              </div>
+                              <span className={roleBadgeClass(u.role)}>{roleLabel(u.role)}</span>
                             </div>
-                            <Badge variant="secondary" className="text-xs">{roleLabel(u.role)}</Badge>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+                  <div className={cn(set.modelCard, 'min-h-[12rem]')}>
+                    {!adminSelectedUser ? (
+                      <div className={set.empty}>
+                        <p className={set.emptySub}>选择左侧用户后，可重置密码或修改角色</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className={set.label}>{adminSelectedUser.username}</p>
+                          <p className={set.hint}>{adminSelectedUser.email}</p>
+                        </div>
+                        <Separator className="my-3 bg-[hsl(var(--settings-card-border))]/60" />
+                        <div className={set.formRow}>
+                          <label className={set.label}>修改角色</label>
+                          <select
+                            className={set.select}
+                            value={adminSelectedUser.role}
+                            onChange={(e) => updateSelectedUserRole(e.target.value as UserRole)}
+                            disabled={adminOpLoading}
+                          >
+                            {(['SUPER_ADMIN', 'ADMIN', 'MEMBER', 'VIEWER'] as UserRole[]).map((r) => (
+                              <option key={r} value={r}>
+                                {roleLabel(r)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className={set.hint}>角色层级：SUPER_ADMIN &gt; ADMIN &gt; MEMBER &gt; VIEWER</p>
+                        </div>
+                        <Separator className="my-3 bg-[hsl(var(--settings-card-border))]/60" />
+                        <div className={set.formRow}>
+                          <label className={set.label}>重置密码</label>
+                          <Input
+                            className={set.control}
+                            type="password"
+                            placeholder="新密码（建议至少 8 位）"
+                            value={adminNewPwd}
+                            onChange={(e) => setAdminNewPwd(e.target.value)}
+                            disabled={adminOpLoading}
+                          />
+                          <Button
+                            className={set.btnPrimary}
+                            onClick={resetSelectedUserPassword}
+                            disabled={adminOpLoading}
+                          >
+                            重置密码
+                          </Button>
+                          <p className={set.hint}>
+                            {passwordPolicyMessage(adminNewPwd || '') === true
+                              ? '密码强度 OK'
+                              : passwordPolicyMessage(adminNewPwd || '')}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {superAdmin ? (
+              <SettingsCard
+                id="section-audit"
+                icon={ClipboardList}
+                title="运维审计日志"
+                description="仅记录操作类型与目标用户，不记录密码内容"
+                actions={
+                  <Button
+                    variant="outline"
+                    className={set.btnSecondary}
+                    onClick={() => void refreshAuditLogs()}
+                    disabled={adminAuditLoading}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', adminAuditLoading && 'animate-spin')} />
+                    刷新
+                  </Button>
+                }
+              >
+                {adminAuditLogs.length === 0 && !adminAuditLoading ? (
+                  <div className={set.empty}>
+                    <ClipboardList className={set.emptyIcon} />
+                    <p className={set.emptyTitle}>暂无审计记录</p>
+                    <p className={set.emptySub}>管理员操作将显示在此处</p>
+                  </div>
+                ) : (
+                  <div className={set.auditList}>
+                    {adminAuditLogs.map((log) => {
+                      const extra = formatAuditExtra(log.action, log.detail)
+                      return (
+                        <div key={log.id} className={set.auditItem}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className={set.auditTime}>
+                              {format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')}
+                            </span>
+                            <span className={cn(set.badge, set.badgeMuted)}>{auditActionLabel(log.action)}</span>
                           </div>
-                        </button>
+                          <p className="break-words text-[hsl(var(--settings-text-primary))]">
+                            <span className="text-[hsl(var(--settings-text-muted))]">操作者：</span>
+                            {log.operator.username}
+                            <span className="mx-1 text-[hsl(var(--settings-text-muted))]">→</span>
+                            <span className="text-[hsl(var(--settings-text-muted))]">目标：</span>
+                            {log.targetUser.username}
+                            {extra ? (
+                              <span className="ml-1 text-[hsl(var(--settings-text-muted))]">（{extra}）</span>
+                            ) : null}
+                          </p>
+                          {log.ip ? (
+                            <p className="text-[hsl(var(--settings-text-muted))]">IP：{log.ip}</p>
+                          ) : null}
+                        </div>
                       )
                     })}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-3 rounded-xl bg-muted/20 p-3 shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10">
-                {!adminSelectedUser ? (
-                  <p className="text-sm text-muted-foreground">选择左侧用户后，可重置密码或修改角色</p>
-                ) : (
-                  <>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">{adminSelectedUser.username}</p>
-                      <p className="text-xs text-muted-foreground">{adminSelectedUser.email}</p>
-                    </div>
-                    <Separator />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">修改角色</label>
-                      <div className="flex gap-2">
-                        <select
-                          className="h-10 flex-1 rounded-md border-0 bg-background/55 px-3 text-sm shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-md dark:ring-white/10"
-                          value={adminSelectedUser.role}
-                          onChange={(e) => updateSelectedUserRole(e.target.value as UserRole)}
-                          disabled={adminOpLoading}
-                        >
-                          {(['SUPER_ADMIN', 'ADMIN', 'MEMBER', 'VIEWER'] as UserRole[]).map((r) => (
-                            <option key={r} value={r}>
-                              {roleLabel(r)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        角色有层级：SUPER_ADMIN {'>'} ADMIN {'>'} MEMBER {'>'} VIEWER
-                      </p>
-                    </div>
-                    <Separator />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">重置密码</label>
-                      <Input
-                        type="password"
-                        placeholder="新密码（建议至少 8 位）"
-                        value={adminNewPwd}
-                        onChange={(e) => setAdminNewPwd(e.target.value)}
-                        disabled={adminOpLoading}
-                      />
-                      <Button onClick={resetSelectedUserPassword} disabled={adminOpLoading}>
-                        重置密码
-                      </Button>
-                      <p className="text-xs text-muted-foreground">
-                        {passwordPolicyMessage(adminNewPwd || '') === true
-                          ? '密码强度 OK'
-                          : passwordPolicyMessage(adminNewPwd || '')}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {superAdmin && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4" />
-                  运维审计日志
-                </CardTitle>
-                <CardDescription>仅记录操作类型与目标用户，不记录密码内容</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" className="gap-1" onClick={() => void refreshAuditLogs()} disabled={adminAuditLoading}>
-                <RefreshCw className={`w-3.5 h-3.5 ${adminAuditLoading ? 'animate-spin' : ''}`} />
-                刷新
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {adminAuditLogs.length === 0 && !adminAuditLoading ? (
-              <p className="text-sm text-muted-foreground">暂无审计记录</p>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {adminAuditLogs.map((log) => {
-                  const extra = formatAuditExtra(log.action, log.detail)
-                  return (
-                    <div key={log.id} className="space-y-1 rounded-lg bg-muted/25 p-2 text-xs shadow-sm ring-1 ring-inset ring-foreground/10 backdrop-blur-sm dark:ring-white/10">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-muted-foreground">
-                          {format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')}
-                        </span>
-                        <Badge variant="outline">{auditActionLabel(log.action)}</Badge>
-                      </div>
-                      <p className="break-words">
-                        <span className="text-muted-foreground">操作者：</span>
-                        {log.operator.username}
-                        <span className="text-muted-foreground mx-1">→</span>
-                        <span className="text-muted-foreground">目标：</span>
-                        {log.targetUser.username}
-                        {extra ? <span className="ml-1 text-muted-foreground">（{extra}）</span> : null}
-                      </p>
-                      {log.ip ? <p className="text-muted-foreground">IP：{log.ip}</p> : null}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              </SettingsCard>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

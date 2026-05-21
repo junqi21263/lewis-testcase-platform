@@ -15,6 +15,12 @@ export interface PendingGenerateHandoff {
   rawText: string
   /** 用于生成页首屏提示文案 */
   handoffSource?: 'document-parse' | 'ai-analysis'
+  /** 生成页「文本输入」：主要功能 + 非功能摘要 */
+  combinedInputText?: string
+  /** 生成页「需求描述」 */
+  requirementDescription?: string
+  /** 生成页「补充说明」 */
+  supplementaryNotes?: string
 }
 
 const defaultGenerationOptions: GenerationOptions = {
@@ -39,6 +45,10 @@ interface GenerateState {
 
   inputText: string
   setInputText: (text: string) => void
+
+  /** 生成页「需求描述」（与文本输入可分离） */
+  requirementDescription: string
+  setRequirementDescription: (text: string) => void
 
   inputUrl: string
   setInputUrl: (url: string) => void
@@ -97,6 +107,7 @@ const buildInitial = (): Omit<
   | 'setSourceType'
   | 'setUploadedFile'
   | 'setInputText'
+  | 'setRequirementDescription'
   | 'setInputUrl'
   | 'setSelectedTemplateId'
   | 'setCustomPrompt'
@@ -118,6 +129,7 @@ const buildInitial = (): Omit<
   sourceType: 'file',
   uploadedFile: null,
   inputText: '',
+  requirementDescription: '',
   inputUrl: '',
   selectedTemplateId: null,
   customPrompt: '',
@@ -143,6 +155,7 @@ export const useGenerateStore = create<GenerateState>()(
       setSourceType: (type) => set({ sourceType: type }),
       setUploadedFile: (file) => set({ uploadedFile: file }),
       setInputText: (text) => set({ inputText: text }),
+      setRequirementDescription: (text) => set({ requirementDescription: text }),
       setInputUrl: (url) => set({ inputUrl: url }),
       setSelectedTemplateId: (id) => set({ selectedTemplateId: id }),
       setCustomPrompt: (prompt) => set({ customPrompt: prompt }),
@@ -157,7 +170,12 @@ export const useGenerateStore = create<GenerateState>()(
       setGeneratedCases: (cases) => set({ generatedCases: cases }),
       setIsGenerating: (v) => set({ isGenerating: v }),
       appendStreamContent: (chunk) =>
-        set((state) => ({ streamContent: state.streamContent + chunk })),
+        set((state) => {
+          const maxStore = 200_000
+          let next = state.streamContent + chunk
+          if (next.length > maxStore) next = next.slice(-maxStore)
+          return { streamContent: next }
+        }),
       clearStreamContent: () => set({ streamContent: '' }),
       setQualityMeta: (score, suggestions) =>
         set({ qualityScore: score, qualitySuggestions: suggestions }),
@@ -198,6 +216,7 @@ export const useGenerateStore = create<GenerateState>()(
         currentStep: s.currentStep,
         sourceType: s.sourceType,
         inputText: s.inputText,
+        requirementDescription: s.requirementDescription,
         inputUrl: s.inputUrl,
         customPrompt: s.customPrompt,
         userNotes: s.userNotes,

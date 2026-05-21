@@ -30,6 +30,16 @@ type AnalysisMarkdownTopSection =
   | { kind: 'preface'; body: string }
   | { kind: 'h2'; heading: string; body: string }
 
+function flattenCodeBlockChildren(children: React.ReactNode): string {
+  if (typeof children === 'string') return children
+  if (Array.isArray(children)) {
+    return children
+      .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
+      .join('')
+  }
+  return String(children ?? '')
+}
+
 /** 顶层 `## 标题` 分段（不含 `###`），用于折叠块；正文内若再出现 `##` 由 nested 渲染器处理 */
 function splitMarkdownByTopLevelH2(markdown: string): AnalysisMarkdownTopSection[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
@@ -69,7 +79,7 @@ function splitMarkdownByTopLevelH2(markdown: string): AnalysisMarkdownTopSection
 }
 
 /** 章节内再出现的 `##`：与二级视觉一致但不重复折叠控件 */
-function buildMdComponents(variant: 'default' | 'nested'): Components {
+function buildMdComponents(variant: 'default' | 'nested', isStreaming: boolean): Components {
   const h2ForNested =
     variant === 'nested'
       ? ({ children }: { children?: React.ReactNode }) => <h2 className="!mt-3 !mb-1.5">{children}</h2>
@@ -99,8 +109,9 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
       const inline = !className
       const lang = /language-(\w+)/.exec(className ?? '')?.[1]
       if (!inline && lang === 'mermaid') {
-        const chart = String(children).replace(/\n$/, '')
-        return <MermaidBlock chart={chart} />
+        const chart = flattenCodeBlockChildren(children).replace(/\n$/, '')
+        if (!chart.trim()) return null
+        return <MermaidBlock chart={chart} isStreaming={isStreaming} />
       }
       if (inline) {
         return <code className="max-w-full break-words [overflow-wrap:anywhere]">{children}</code>
@@ -145,10 +156,16 @@ function buildMdComponents(variant: 'default' | 'nested'): Components {
   }
 }
 
-const mdDefault = buildMdComponents('default')
-const mdNested = buildMdComponents('nested')
 
-function CollapsibleH2Section({ heading, body }: { heading: string; body: string }) {
+function CollapsibleH2Section({
+  heading,
+  body,
+  isStreaming,
+}: {
+  heading: string
+  body: string
+  isStreaming: boolean
+}) {
   const [open, setOpen] = useState(true)
   const panelId = useId()
 
@@ -194,7 +211,11 @@ function CollapsibleH2Section({ heading, body }: { heading: string; body: string
       >
         <div id={panelId} className="min-h-0 overflow-hidden">
           <div className="max-w-full pt-1 pl-7 pr-0 sm:pr-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} components={mdNested}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+              components={buildMdComponents('nested', isStreaming)}
+            >
               {body}
             </ReactMarkdown>
           </div>
@@ -204,9 +225,19 @@ function CollapsibleH2Section({ heading, body }: { heading: string; body: string
   )
 }
 
-export function AnalysisMarkdownReport({ text, className }: { text: string; className?: string }) {
+export function AnalysisMarkdownReport({
+  text,
+  className,
+  isStreaming = false,
+}: {
+  text: string
+  className?: string
+  /** 报告流式生成中：Mermaid 延迟/等待完整语法后再渲染 */
+  isStreaming?: boolean
+}) {
   const sections = useMemo(() => splitMarkdownByTopLevelH2(text), [text])
   const hasCollapsible = sections.some((s) => s.kind === 'h2')
+  const mdDefault = useMemo(() => buildMdComponents('default', isStreaming), [isStreaming])
 
   if (!hasCollapsible) {
     return (
@@ -231,7 +262,12 @@ export function AnalysisMarkdownReport({ text, className }: { text: string; clas
             {sec.body}
           </ReactMarkdown>
         ) : (
-          <CollapsibleH2Section key={`h2-${i}-${sec.heading}`} heading={sec.heading} body={sec.body} />
+          <CollapsibleH2Section
+            key={`h2-${i}-${sec.heading}`}
+            heading={sec.heading}
+            body={sec.body}
+            isStreaming={isStreaming}
+          />
         ),
       )}
     </div>

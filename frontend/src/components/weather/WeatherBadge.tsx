@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { preferencesApi, type UserPreferences } from '@/api/preferences'
 import { weatherApi, type WeatherNow } from '@/api/weather'
-import { Badge } from '@/components/ui/badge'
+import { WeatherIcon } from '@/components/weather/WeatherIcon'
+import { cn } from '@/utils/cn'
+import { resolveWeatherCondition } from '@/utils/weatherCondition'
 
 export function WeatherBadge() {
   const navigate = useNavigate()
@@ -11,10 +13,19 @@ export function WeatherBadge() {
 
   const cityLabel = useMemo(() => {
     if (!prefs?.weatherCityName) return '未设置城市'
-    const parts = [prefs.weatherCityName]
-    if (prefs.weatherCityAdm1) parts.push(prefs.weatherCityAdm1)
-    return parts[0]
+    return prefs.weatherCityName
   }, [prefs])
+
+  const condition = useMemo(() => resolveWeatherCondition(now), [now])
+
+  const fullTitle = useMemo(() => {
+    if (!prefs?.weatherCityId) return '未设置城市 · 点击设置'
+    const parts = [cityLabel]
+    if (prefs.weatherCityAdm1) parts.push(prefs.weatherCityAdm1)
+    if (now?.temp != null) parts.push(`${now.temp}°`)
+    if (now?.text) parts.push(now.text)
+    return parts.join(' · ')
+  }, [prefs, cityLabel, now])
 
   useEffect(() => {
     let mounted = true
@@ -59,25 +70,47 @@ export function WeatherBadge() {
   const onClick = () => navigate('/settings#appearance-weather')
 
   return (
-    <button type="button" onClick={onClick} className="hidden md:block">
-      <Badge
-        variant="secondary"
-        className="gap-2 rounded-full border border-workspace-panel-border/55 bg-workspace-control/90 px-3 py-1.5 text-xs font-medium text-workspace-text-primary shadow-[0_10px_26px_-16px_rgba(15,23,42,0.12)] backdrop-blur-md hover:bg-workspace-control dark:border-white/10 dark:bg-workspace-control/90 dark:text-workspace-text-primary dark:shadow-[0_12px_28px_-16px_rgba(0,0,0,0.4)]"
-      >
-        <span className="max-w-[6rem] truncate text-workspace-text-primary">{cityLabel}</span>
-        {prefs?.weatherCityId ? (
-          now?.temp !== null && now?.temp !== undefined ? (
-            <span className={now.stale ? 'text-workspace-text-muted' : 'text-workspace-text-secondary'}>
-              {now.temp}° {now.text ?? ''}
+    <button
+      type="button"
+      onClick={onClick}
+      title={fullTitle}
+      className={cn(
+        'weather-pill group/weather hidden max-w-[min(100%,14rem)] md:inline-flex',
+        'h-9 min-h-9 items-center gap-2 rounded-full border px-3 py-1.5',
+        'border-[hsl(var(--settings-weather-pill-border))] bg-[hsl(var(--settings-weather-pill-bg))]',
+        'text-xs font-medium text-[hsl(var(--settings-text-primary))]',
+        'shadow-[var(--settings-weather-pill-shadow)] backdrop-blur-md',
+        'transition-[background-color,border-color,box-shadow] duration-200',
+        'hover:border-[hsl(var(--settings-card-border-hover))] hover:shadow-[var(--settings-card-shadow-hover)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--settings-input-focus))]/35',
+        'motion-reduce:transition-none',
+      )}
+    >
+      <WeatherIcon condition={prefs?.weatherCityId ? condition : 'default'} size={17} />
+      <span className="hidden min-w-0 truncate sm:inline max-w-[5rem]">{cityLabel}</span>
+      {prefs?.weatherCityId ? (
+        now?.temp !== null && now?.temp !== undefined ? (
+          <>
+            <span
+              className={cn(
+                'tabular-nums shrink-0',
+                now.stale
+                  ? 'text-[hsl(var(--settings-text-muted))]'
+                  : 'text-[hsl(var(--settings-text-secondary))]',
+              )}
+            >
+              {now.temp}°
             </span>
-          ) : (
-            <span className="text-workspace-text-muted">加载中</span>
-          )
+            <span className="hidden min-w-0 truncate text-[hsl(var(--settings-text-muted))] lg:inline max-w-[4.5rem]">
+              {now.text ?? ''}
+            </span>
+          </>
         ) : (
-          <span className="text-workspace-text-muted">点击设置</span>
-        )}
-      </Badge>
+          <span className="text-[hsl(var(--settings-text-muted))]">加载中</span>
+        )
+      ) : (
+        <span className="truncate text-[hsl(var(--settings-text-muted))]">点击设置</span>
+      )}
     </button>
   )
 }
-

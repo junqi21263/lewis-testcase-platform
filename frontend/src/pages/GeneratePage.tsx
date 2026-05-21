@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useDeferredValue } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   Upload,
@@ -21,6 +21,7 @@ import {
   ListFilter,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   MoreHorizontal,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -49,6 +50,32 @@ import type { TestCase, PromptTemplate, FileStatus, GenerationRecord } from '@/t
 import { useNavigate } from 'react-router-dom'
 
 const INPUT_LENGTH_SOFT_WARN_CHARS = 85_000
+const STREAM_LOG_DISPLAY_MAX_CHARS = 48_000
+const CASE_PAGE_SIZES = [10, 20, 30, 50] as const
+const DEFAULT_CASE_PAGE_SIZE = 10
+
+function tailStreamLogForDisplay(content: string): string {
+  if (content.length <= STREAM_LOG_DISPLAY_MAX_CHARS) return content
+  const tailKb = Math.round(STREAM_LOG_DISPLAY_MAX_CHARS / 1000)
+  const totalKb = Math.round(content.length / 1000)
+  return `…（流式输出较长，仅显示末尾 ${tailKb}KB / 共 ${totalKb}KB）\n\n${content.slice(-STREAM_LOG_DISPLAY_MAX_CHARS)}`
+}
+
+/** 合并生成接口所需的文本来源（文本输入 / 需求描述 / 补充说明） */
+function buildGenerateRequestText(
+  inputText: string,
+  requirementDescription: string,
+  userNotes: string,
+): string {
+  const parts: string[] = []
+  const main = inputText.trim()
+  const desc = requirementDescription.trim()
+  const notes = userNotes.trim()
+  if (main) parts.push(main)
+  if (desc && desc !== main) parts.push(`【需求描述】\n${desc}`)
+  if (notes) parts.push(`【补充说明】\n${notes}`)
+  return parts.join('\n\n')
+}
 const FILE_POLL_INTERVAL_MS = 1000
 const FILE_POLL_MAX_ROUNDS = 900
 const FILE_POLL_MAX_TRANSIENT_ERRORS = 90
@@ -525,6 +552,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showMoreActions, setShowMoreActions] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_CASE_PAGE_SIZE)
 
   const canExport = Boolean(lastSuiteId) || cases.length > 0
   const availableTypes = useMemo(() => Array.from(new Set(cases.map((c) => c.type))), [cases])
@@ -538,6 +567,24 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       return hitQuery && hitPriority && hitType
     })
   }, [cases, query, priorityFilter, typeFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, priorityFilter, typeFilter])
+
+  const totalFiltered = filteredCases.length
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
+  const safePage = Math.min(page, totalPages)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const paginatedCases = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return filteredCases.slice(start, start + pageSize)
+  }, [filteredCases, safePage, pageSize])
+
   const stats = useMemo(() => {
     const typeMap = filteredCases.reduce<Record<string, number>>((acc, c) => {
       acc[c.type] = (acc[c.type] ?? 0) + 1
@@ -695,7 +742,10 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           <div>
             <h3 className="text-base font-semibold">生成完成</h3>
             <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
-              共 {stats.total} 条 · 功能 {stats.functional} · 异常 {stats.negative} · 边界 {stats.edge}
+              共 {cases.length} 条
+              {stats.total !== cases.length ? `（筛选 ${stats.total} 条）` : ''}
+              {' '}
+              · 功能 {stats.functional} · 异常 {stats.negative} · 边界 {stats.edge}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -790,10 +840,10 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             variant="ghost"
             size="sm"
             className="h-9"
-            onClick={() => setExpanded(new Set(filteredCases.map((c) => c.id)))}
+            onClick={() => setExpanded(new Set(paginatedCases.map((c) => c.id)))}
           >
             <ChevronDown className="h-4 w-4" />
-            展开全部
+            展开本页
           </Button>
           <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setExpanded(new Set())}>
             <ChevronUp className="h-4 w-4" />
@@ -807,9 +857,19 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             variant="outline"
             size="sm"
             className="h-8"
-            onClick={() => setSelected(new Set(filteredCases.map((c) => c.id)))}
+            onClick={() => setSelected(new Set(paginatedCases.map((c) => c.id)))}
           >
-            全选
+            全选本页
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => setSelected(new Set(filteredCases.map((c) => c.id)))}
+            disabled={totalFiltered === 0}
+          >
+            全选筛选结果
           </Button>
           <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setSelected(new Set())}>
             清空选择
@@ -872,8 +932,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           </div>
         )}
 
-        {filteredCases.map((c, i) => {
-          const caseId = c.id || `idx-${i}`
+        {paginatedCases.map((c, i) => {
+          const caseId = c.id || `idx-${safePage}-${i}`
           const isExpanded = expanded.has(caseId)
           const caseModule = extractModuleFromTags(c.tags)
           const caseTags = (c.tags ?? []).filter((t) => t && !t.startsWith('模块:'))
@@ -957,8 +1017,54 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           )
         })}
       </div>
-      <div className="gcs-result-panel-footer shrink-0 border-t px-3 py-2 text-xs text-[hsl(var(--gcs-text-muted))]">
-        当前筛选 {filteredCases.length} 条，已选择 {selected.size} 条
+      <div className="gcs-result-panel-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-[hsl(var(--gcs-text-muted))]">
+        <span>
+          共 {cases.length} 条 · 筛选 {totalFiltered} 条 · 已选 {selected.size} 条
+        </span>
+        {totalFiltered > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              第 {safePage} / {totalPages} 页
+            </span>
+            <span>·</span>
+            <span>每页</span>
+            <select
+              className="h-7 rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-2 text-xs"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value))
+                setPage(1)
+              }}
+            >
+              {CASE_PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span>条</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              disabled={safePage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -975,6 +1081,8 @@ export default function GeneratePage() {
     setUploadedFile,
     inputText,
     setInputText,
+    requirementDescription,
+    setRequirementDescription,
     userNotes,
     setUserNotes,
     customPrompt,
@@ -994,6 +1102,12 @@ export default function GeneratePage() {
     clearStreamContent,
   } = useGenerateStore()
 
+  const deferredStreamContent = useDeferredValue(streamContent)
+  const streamLogDisplay = useMemo(
+    () => tailStreamLogForDisplay(deferredStreamContent),
+    [deferredStreamContent],
+  )
+
   const [templateOptions, setTemplateOptions] = useState<PromptTemplate[]>([])
   const [recentTplIds, setRecentTplIds] = useState<string[]>(() => loadRecentTemplateIds())
   const [templateKeyword, setTemplateKeyword] = useState('')
@@ -1008,13 +1122,21 @@ export default function GeneratePage() {
     setCustomPrompt(h.filledPrompt)
     setSelectedTemplateId(h.templateId)
     setSourceType('text')
-    setInputText('')
+    if (h.handoffSource === 'ai-analysis') {
+      setInputText(h.combinedInputText?.trim() ?? '')
+      setRequirementDescription(h.requirementDescription?.trim() ?? '')
+      setUserNotes(h.supplementaryNotes?.trim() ?? '')
+    } else {
+      setInputText('')
+      setRequirementDescription('')
+      setUserNotes('')
+    }
     setUploadedFile(null)
     setStep('prompt')
     useGenerateStore.getState().setPendingGenerateHandoff(null)
     toast.success(
       h.handoffSource === 'ai-analysis'
-        ? '已从 AI 需求分析载入材料，可直接生成'
+        ? '已从 AI 需求分析填入文本输入、需求描述与补充说明'
         : '已从需求材料载入需求与提示词，可直接生成',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1086,7 +1208,10 @@ export default function GeneratePage() {
     { key: 'result', label: '结果处理' },
   ] as const
 
-  const textReady = inputText.trim().length > 0
+  const textReady =
+    inputText.trim().length > 0 ||
+    requirementDescription.trim().length > 0 ||
+    userNotes.trim().length > 0
   const promptReady = customPrompt.trim().length > 0
   const fileReady = sourceType !== 'file' || (uploadedFile && uploadedFile.status === 'PARSED')
   const sourceReady = sourceType === 'file' ? Boolean(uploadedFile) : textReady
@@ -1146,7 +1271,7 @@ export default function GeneratePage() {
           {
             sourceType,
             fileId: uploadedFile?.id,
-            text: inputText,
+            text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
             customPrompt,
             templateId: selectedTemplateId ?? undefined,
             ...aiParams,
@@ -1162,10 +1287,16 @@ export default function GeneratePage() {
               try {
                 cases = await testcasesApi.getCasesBySuiteId(meta.suiteId)
               } catch {
+                toast.error('用例集加载失败，将尝试从流式输出解析')
                 cases = []
               }
             }
-            if (cases.length === 0) cases = parseAiCasesFromText(fullText)
+            if (cases.length === 0) {
+              cases = parseAiCasesFromText(fullText)
+              if (cases.length === 1 && cases[0]?.tags?.includes('ai-raw-output')) {
+                toast.error('未能解析为结构化用例，请到「生成记录」查看或缩小单次生成范围')
+              }
+            }
             setGeneratedCases(cases)
             setStep('result')
             if (cases.length === 0) toast.error('未生成任何用例，请检查模型或输入内容')
@@ -1181,7 +1312,7 @@ export default function GeneratePage() {
         const result = await aiApi.generateTestCases({
           sourceType,
           fileId: uploadedFile?.id,
-          text: inputText,
+          text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
           customPrompt,
           templateId: selectedTemplateId ?? undefined,
           ...aiParams,
@@ -1345,8 +1476,8 @@ export default function GeneratePage() {
 
               <SoftTextarea
                 title="需求描述"
-                value={inputText}
-                onChange={setInputText}
+                value={requirementDescription}
+                onChange={setRequirementDescription}
                 placeholder="请输入需求描述、功能说明、接口文档内容或业务规则..."
                 countLimit={5000}
                 minHClass="min-h-[140px]"
@@ -1622,7 +1753,7 @@ export default function GeneratePage() {
                     </div>
                     {showLogs && (
                       <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3 font-mono text-xs">
-                        {streamContent || '等待 AI 响应...'}
+                        {streamLogDisplay || '等待 AI 响应...'}
                       </pre>
                     )}
                   </div>
@@ -1643,8 +1774,8 @@ export default function GeneratePage() {
       <ExpandedEditorDialog
         open={expandField === 'requirement'}
         title="展开编辑：需求描述"
-        value={inputText}
-        onChange={setInputText}
+        value={requirementDescription}
+        onChange={setRequirementDescription}
         onOpenChange={(open) => setExpandField(open ? 'requirement' : null)}
         placeholder="请输入需求描述、功能说明、接口文档内容或业务规则..."
       />
