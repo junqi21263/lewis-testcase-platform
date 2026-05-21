@@ -24,6 +24,49 @@ export function stripInvalidErDiagramEnumSyntax(src: string): string {
   return out
 }
 
+/** AI 常把多条边写在同一行：`A[首页]    E --> F[...]` */
+export function splitConcatenatedFlowchartLines(src: string): string {
+  const head =
+    src
+      .split('\n')
+      .find((l) => l.trim() && !l.trim().startsWith('%%'))
+      ?.trim() ?? ''
+  if (!/^(flowchart|graph)\s/i.test(head)) return src
+
+  return src.replace(
+    /([\]\}"\)])\s+([A-Za-z_][\w-]*\s*(?:-->|---|-\.-|==>))/g,
+    '$1\n$2',
+  )
+}
+
+/** 去掉末尾未闭合节点/边的残缺行，避免 parse 在流式截断时失败 */
+function dropTrailingIncompleteFlowLine(src: string): string {
+  const lines = src.split('\n')
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1]!.trim()
+    if (!last) {
+      lines.pop()
+      continue
+    }
+    let square = 0
+    let inQuote = false
+    for (let i = 0; i < last.length; i++) {
+      const ch = last[i]!
+      if (ch === '"' && last[i - 1] !== '\\') inQuote = !inQuote
+      if (!inQuote) {
+        if (ch === '[') square++
+        if (ch === ']') square--
+      }
+    }
+    if (square > 0 || inQuote || /(-->|---|-\.-|==>)\s*$/.test(last)) {
+      lines.pop()
+      continue
+    }
+    break
+  }
+  return lines.join('\n')
+}
+
 /** 规范化 AI 生成的 Mermaid 文本，降低 Syntax error 概率 */
 export function normalizeMermaidSource(raw: string): string {
   let s = raw
@@ -45,7 +88,10 @@ export function normalizeMermaidSource(raw: string): string {
     s = `flowchart TD\n${s}`
   }
 
-  return stripInvalidErDiagramEnumSyntax(s)
+  s = splitConcatenatedFlowchartLines(s)
+  s = dropTrailingIncompleteFlowLine(s)
+  s = stripInvalidErDiagramEnumSyntax(s)
+  return simplifyFlowchartLabels(s)
 }
 
 /** 流式输出过程中：语法未闭合时不应调用 mermaid.render */
@@ -154,11 +200,15 @@ export async function renderMermaidSvg(
     return svg
   }
 
+  const split = splitConcatenatedFlowchartLines(trimmed)
   const attempts = [
     trimmed,
+    split,
     stripInvalidErDiagramEnumSyntax(trimmed),
+    stripInvalidErDiagramEnumSyntax(split),
     simplifyFlowchartLabels(trimmed),
-    simplifyFlowchartLabels(stripInvalidErDiagramEnumSyntax(trimmed)),
+    simplifyFlowchartLabels(split),
+    simplifyFlowchartLabels(stripInvalidErDiagramEnumSyntax(split)),
   ]
   const unique = [...new Set(attempts.map((a) => a.trim()).filter(Boolean))]
 
@@ -175,11 +225,17 @@ export async function renderMermaidSvg(
 
 /** 将方括号节点内未转义的特殊字符用引号包裹，减少 flowchart 解析失败 */
 function simplifyFlowchartLabels(src: string): string {
-  return src.replace(/\[([^\]"\n]+)\]/g, (_m, label: string) => {
+  return src.replace(/\[([^\]\n]*)\]/g, (_m, label: string) => {
     const t = label.trim()
-    if (!t || t.startsWith('"')) return `[${label}]`
-    if (/[(),:;\\/]/.test(t)) return `["${t.replace(/"/g, '#quot;')}"]`
-    return `[${label}]`
+    if (!t) return '[]'
+    const needsQuotes = /["'(),:;\\/]/.test(t)
+    if (!needsQuotes) return `[${label}]`
+    let inner = t
+    if (inner.startsWith('"') && inner.endsWith('"') && inner.length > 1) {
+      inner = inner.slice(1, -1)
+    }
+    inner = inner.replace(/"/g, '#quot;').replace(/'/g, '#39;')
+    return `["${inner}"]`
   })
 }
 
