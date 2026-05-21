@@ -2856,6 +2856,7 @@ ${state.reportText}
                         <AnalysisMarkdownReport
                           text={state.reportText}
                           className="break-words [word-break:break-word]"
+                          isStreaming={isAnalyzingStream}
                         />
                       </div>
                     </>
