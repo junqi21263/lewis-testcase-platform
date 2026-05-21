@@ -9,6 +9,7 @@ import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
 import { WeatherBadge } from '@/components/weather/WeatherBadge'
 import { cn } from '@/utils/cn'
+import { resolveAvatarDisplayUrl } from '@/utils/avatarUrl'
 
 function ThemeToggle() {
   const theme = useThemeStore((s) => s.theme)
@@ -95,6 +96,7 @@ export default function Header() {
   }
 
   const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : 'U'
+  const avatarSrc = resolveAvatarDisplayUrl(user?.avatar)
 
   const controlPill =
     'rounded-full border border-workspace-panel-border/50 bg-workspace-control/88 text-workspace-text-primary shadow-[0_10px_28px_-18px_rgba(15,23,42,0.12)] backdrop-blur-md transition-[transform,opacity,background-color] duration-200 hover:bg-workspace-control dark:border-white/10 dark:bg-workspace-control/90 dark:text-workspace-text-primary dark:shadow-[0_12px_30px_-18px_rgba(0,0,0,0.45)] motion-reduce:transition-none'
@@ -124,7 +126,7 @@ export default function Header() {
               )}
             >
               <Avatar className="h-8 w-8">
-                <AvatarImage src={user?.avatar} />
+                <AvatarImage src={avatarSrc} alt="" referrerPolicy="no-referrer" />
                 <AvatarFallback className="text-xs text-workspace-text-primary">{initials}</AvatarFallback>
               </Avatar>
               <span className="hidden min-w-0 truncate text-sm font-medium text-workspace-text-primary sm:block">

@@ -48,6 +48,8 @@ import { notify } from '@/utils/notify'
 import { cn } from '@/utils/cn'
 import { set, roleBadgeClass, type SettingsNavItem } from '@/utils/settingsUi'
 import { useThemeStore } from '@/store/themeStore'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { isAvatarHostingPageUrl, resolveAvatarDisplayUrl } from '@/utils/avatarUrl'
 
 function roleLabel(role: UserRole): string {
   const m: Record<UserRole, string> = {
@@ -137,6 +139,8 @@ export default function SettingsPage() {
 
   const admin = isAdminRole(user?.role)
   const superAdmin = user?.role === 'SUPER_ADMIN'
+  const avatarPreviewSrc = resolveAvatarDisplayUrl(avatar || user?.avatar)
+  const avatarInitials = (username || user?.username || 'U').slice(0, 2).toUpperCase()
 
   const [adminKeyword, setAdminKeyword] = useState('')
   const [adminUsers, setAdminUsers] = useState<AdminUserItem[]>([])
@@ -574,7 +578,9 @@ export default function SettingsPage() {
                     保存资料
                   </Button>
                   {user?.role ? (
-                    <span className={roleBadgeClass(user.role)}>{roleLabel(user.role)}</span>
+                    <span className={cn(roleBadgeClass(user.role), 'inline-flex h-10 items-center px-3')}>
+                      {roleLabel(user.role)}
+                    </span>
                   ) : null}
                 </div>
               }
@@ -598,12 +604,26 @@ export default function SettingsPage() {
                 </div>
                 <div className={cn(set.formRow, 'sm:col-span-2')}>
                   <label className={set.label}>头像 URL（可选）</label>
-                  <Input
-                    className={cn(set.control, 'font-mono text-xs')}
-                    value={avatar}
-                    onChange={(e) => setAvatar(e.target.value)}
-                    placeholder="https://..."
-                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <Avatar className="h-14 w-14 shrink-0 ring-2 ring-[hsl(var(--settings-card-border))]">
+                      <AvatarImage src={avatarPreviewSrc} alt="" referrerPolicy="no-referrer" />
+                      <AvatarFallback className="text-sm">{avatarInitials}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Input
+                        className={cn(set.control, 'font-mono text-xs')}
+                        value={avatar}
+                        onChange={(e) => setAvatar(e.target.value)}
+                        placeholder="https://i.ibb.co/.../avatar.png"
+                      />
+                      <p className={set.hint}>
+                        请使用图片直链（如 ImgBB 的「直接链接」）。页面链接（ibb.co/xxx）保存时会自动解析。
+                        {isAvatarHostingPageUrl(avatar) && !avatarPreviewSrc
+                          ? ' 当前为页面链接，保存后将尝试解析。'
+                          : null}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
               <Separator className="bg-[hsl(var(--settings-card-border))]/60" />

@@ -22,6 +22,7 @@ import {
   ResetPasswordDto,
 } from './dto/auth.dto'
 import { PasswordValidator } from '@/common/validators/password.validator'
+import { isDirectAvatarImageUrl, resolveAvatarUrlForStorage } from '@/common/avatar-url.util'
 import { MailService } from '@/modules/mail/mail.service'
 
 const OTP_TTL_MS = 15 * 60 * 1000
@@ -356,7 +357,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -370,6 +371,8 @@ export class AuthService {
         updatedAt: true,
       },
     })
+    if (!user) return null
+    return this.ensureResolvedAvatar(user)
   }
 
   async updateProfile(userId: string, data: { username?: string; avatar?: string }) {
@@ -380,11 +383,40 @@ export class AuthService {
       }
     }
 
-    return this.prisma.user.update({
+    let avatar: string | null | undefined
+    if (data.avatar !== undefined) {
+      try {
+        avatar = await resolveAvatarUrlForStorage(data.avatar)
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : '头像 URL 无效')
+      }
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
-      data,
+      data: {
+        ...(data.username !== undefined ? { username: data.username } : {}),
+        ...(avatar !== undefined ? { avatar } : {}),
+      },
       select: { id: true, email: true, username: true, role: true, avatar: true },
     })
+    return updated
+  }
+
+  /** 历史数据若存的是图床页面链接，读取时尝试解析为直链并回写 */
+  private async ensureResolvedAvatar<T extends { id: string; avatar: string | null }>(user: T): Promise<T> {
+    const raw = user.avatar?.trim()
+    if (!raw || isDirectAvatarImageUrl(raw)) return user
+    try {
+      const resolved = await resolveAvatarUrlForStorage(raw)
+      if (resolved && resolved !== raw) {
+        await this.prisma.user.update({ where: { id: user.id }, data: { avatar: resolved } })
+        return { ...user, avatar: resolved }
+      }
+    } catch {
+      // 保留原值，前端显示 fallback
+    }
+    return user
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {

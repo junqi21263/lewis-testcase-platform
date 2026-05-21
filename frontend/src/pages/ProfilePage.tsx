@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { resolveAvatarDisplayUrl } from '@/utils/avatarUrl'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
@@ -54,6 +55,7 @@ export default function ProfilePage() {
   }
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'U'
+  const avatarSrc = resolveAvatarDisplayUrl(user?.avatar)
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -67,7 +69,7 @@ export default function ProfilePage() {
         <CardHeader>
           <div className="flex items-center gap-4">
             <Avatar className="w-16 h-16">
-              <AvatarImage src={user?.avatar} />
+              <AvatarImage src={avatarSrc} alt="" referrerPolicy="no-referrer" />
               <AvatarFallback className="text-xl">{initials}</AvatarFallback>
             </Avatar>
             <div>
