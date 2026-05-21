@@ -63,8 +63,8 @@ export FRONTEND_HOST_PORT=8083
 export POSTGRES_HOST_PORT=5433
 export REDIS_HOST_PORT=6380
 
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development build frontend backend
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development up -d --force-recreate frontend backend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development build frontend backend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate frontend backend
 
 curl -s http://127.0.0.1:8083/health
 ```
@@ -83,8 +83,8 @@ export FRONTEND_HOST_PORT=8083
 export POSTGRES_HOST_PORT=5433
 export REDIS_HOST_PORT=6380
 
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development build frontend
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development up -d --force-recreate frontend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development build frontend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate frontend
 
 curl -I http://127.0.0.1:8083/ai-analysis
 curl -I http://127.0.0.1:8083/assets/not-real-asset.js
@@ -104,8 +104,8 @@ export FRONTEND_HOST_PORT=8083
 export POSTGRES_HOST_PORT=5433
 export REDIS_HOST_PORT=6380
 
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development build backend
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development up -d --force-recreate backend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development build backend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate backend
 
 curl -s http://127.0.0.1:3000/health
 ```
@@ -124,7 +124,7 @@ export FRONTEND_HOST_PORT=8083
 export POSTGRES_HOST_PORT=5433
 export REDIS_HOST_PORT=6380
 
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development up -d --force-recreate frontend backend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate frontend backend
 ```
 
 ## 四、main 发布命令
@@ -208,7 +208,7 @@ sudo -E docker compose -f docker-compose.full.yml --env-file .env up -d --force-
 ```bash
 ssh testcase-server
 cd /opt/lewis_testcase_platform_dev
-sudo docker compose -f docker-compose.dev.full.yml --env-file .env.development run --rm backend npx prisma migrate deploy --schema=./backend/prisma/schema.prod.prisma
+sudo docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development run --rm backend npx prisma migrate deploy --schema=./backend/prisma/schema.prod.prisma
 ```
 
 ### main
@@ -290,8 +290,8 @@ curl -I http://127.0.0.1/assets/not-real-asset.js
 ssh testcase-server
 cd /opt/lewis_testcase_platform_dev
 export STACK_PREFIX=testcase_dev FRONTEND_HOST_PORT=8083 POSTGRES_HOST_PORT=5433 REDIS_HOST_PORT=6380
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development build frontend
-sudo -E docker compose -f docker-compose.dev.full.yml --env-file .env.development up -d --force-recreate frontend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development build frontend
+sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override.yml --env-file .env.development up -d --force-recreate frontend
 ```
 
 ### main 前端更新
