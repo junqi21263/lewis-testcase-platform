@@ -46,6 +46,12 @@ export function extractCaseRowsFromText(raw: string): unknown[] {
   return []
 }
 
+function stableLocalCaseId(index: number, seed: string): string {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
+  return `local-${index}-${(h >>> 0).toString(36)}`
+}
+
 function buildRawPlaceholderCase(content: string): TestCase {
   const body =
     content.length > 200_000
@@ -67,7 +73,7 @@ function buildRawPlaceholderCase(content: string): TestCase {
 
 function looseRowToTestCase(c: LooseCaseRow, i: number): TestCase {
   return {
-    id: `local-${i}-${Math.random().toString(36).slice(2, 9)}`,
+    id: stableLocalCaseId(i, c.title || String(i)),
     title: c.title,
     precondition: c.precondition,
     description: undefined,
@@ -86,8 +92,9 @@ function looseRowToTestCase(c: LooseCaseRow, i: number): TestCase {
 }
 
 function normalizeToTestCase(c: any, i: number): TestCase {
+  const titleSeed = c?.title != null ? String(c.title) : `case-${i}`
   return {
-    id: c?.id ? String(c.id) : `local-${i}-${Date.now()}`,
+    id: c?.id ? String(c.id) : stableLocalCaseId(i, titleSeed),
     title: c?.title != null && String(c.title).trim() ? String(c.title).slice(0, 500) : `用例 ${i + 1}`,
     precondition: c?.precondition != null ? String(c.precondition) : undefined,
     description: c?.description != null ? String(c.description) : undefined,

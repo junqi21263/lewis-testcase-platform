@@ -170,7 +170,12 @@ export const useGenerateStore = create<GenerateState>()(
       setGeneratedCases: (cases) => set({ generatedCases: cases }),
       setIsGenerating: (v) => set({ isGenerating: v }),
       appendStreamContent: (chunk) =>
-        set((state) => ({ streamContent: state.streamContent + chunk })),
+        set((state) => {
+          const maxStore = 200_000
+          let next = state.streamContent + chunk
+          if (next.length > maxStore) next = next.slice(-maxStore)
+          return { streamContent: next }
+        }),
       clearStreamContent: () => set({ streamContent: '' }),
       setQualityMeta: (score, suggestions) =>
         set({ qualityScore: score, qualitySuggestions: suggestions }),
