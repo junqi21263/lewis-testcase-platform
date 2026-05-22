@@ -25,7 +25,9 @@ export const rev = {
   caseRow:
     'mb-1.5 w-full rounded-xl border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-200',
   caseRowIdle:
-    'border-transparent bg-transparent hover:bg-[hsl(var(--review-row-hover-bg))]',
+    'border-[hsl(var(--review-border))]/60 bg-[hsl(var(--review-row-bg))] hover:border-[hsl(var(--review-row-accent))]/25 hover:bg-[hsl(var(--review-row-hover-bg))]',
+  caseRowChecked:
+    'border-[hsl(var(--review-row-accent))]/30 bg-[hsl(var(--review-row-checked-bg))]',
   caseRowActive:
     'border-[hsl(var(--review-row-accent))]/35 bg-[hsl(var(--review-row-active-bg))] shadow-[inset_3px_0_0_0_hsl(var(--review-row-accent))]',
   chip:

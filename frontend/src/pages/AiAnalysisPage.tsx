@@ -161,14 +161,19 @@ function pageReducer(state: PageState, action: Action): PageState {
       return { ...state, status: 'review' }
     case 'SET_REVIEW_TEXT':
       return { ...state, reviewText: action.text }
-    case 'REVIEW':
+    case 'REVIEW': {
+      const round = state.revisionCount + 1
+      const header = state.reportText.trim()
+        ? `\n\n---\n\n## 修订分析（第 ${round} 轮）\n\n`
+        : ''
       return {
         ...state,
         status: 'analyzing',
         logs: [],
-        reportText: '',
-        revisionCount: state.revisionCount + 1,
+        reportText: state.reportText + header,
+        revisionCount: round,
       }
+    }
     case 'APPROVE':
       return { ...state, status: 'approved' }
     case 'RESET':
@@ -1019,7 +1024,10 @@ function AiAnalysisPageInner() {
         {
           markdown,
           documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
-          version: 'V1.0',
+          version:
+            state.revisionCount > 0
+              ? `V1.${state.revisionCount}（含 ${state.revisionCount} 轮修订）`
+              : 'V1.0',
           mermaidImagesBase64:
             mermaidImagesBase64 && mermaidImagesBase64.length > 0 ? mermaidImagesBase64 : undefined,
         },
@@ -1031,7 +1039,7 @@ function AiAnalysisPageInner() {
     } finally {
       setExportingPdf(false)
     }
-  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+  }, [state.reportText, state.revisionCount, uploadDisplayName, uploadedFile?.originalName])
 
   const handleExportXmind = useCallback(async () => {
     const markdown = state.reportText.trim()

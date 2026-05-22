@@ -877,13 +877,14 @@ export class AiService {
         const contentDelta = typeof d?.content === 'string' ? d.content : ''
         const reasoningDelta = typeof d?.reasoning_content === 'string' ? d.reasoning_content : ''
         const streamDelta = contentDelta || reasoningDelta
+        const persistDelta = contentDelta || reasoningDelta
         if (streamDelta) {
-          if (contentDelta && !fullContentTruncated) {
+          if (persistDelta && !fullContentTruncated) {
             const remaining = maxFullContentChars - fullContent.length
             if (remaining > 0) {
-              fullContent += contentDelta.slice(0, remaining)
+              fullContent += persistDelta.slice(0, remaining)
             }
-            if (contentDelta.length > remaining) {
+            if (persistDelta.length > remaining) {
               fullContentTruncated = true
               if (!streamTruncationNoticeSent) {
                 streamTruncationNoticeSent = true

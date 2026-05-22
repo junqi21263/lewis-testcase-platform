@@ -296,13 +296,22 @@ export default function ReviewCenterPage() {
 
   const batchStatus = async (status: CaseReviewStatus) => {
     if (!recordId || checked.size === 0) return
+    const ids = [...checked]
+    const label =
+      status === 'approved' ? '通过' : status === 'changes_requested' ? '待修改' : '更新'
+    const ok = await appConfirm({
+      title: `批量${label} ${ids.length} 条用例？`,
+      description: '将同时更新所选用例的评审状态。',
+      confirmText: `确认批量${label}`,
+    })
+    if (!ok) return
     setStatusBusy(true)
     try {
       await reviewsApi.batchStatus(recordId, {
-        caseIds: [...checked],
+        caseIds: ids,
         status,
       })
-      toast.success(`已批量更新 ${checked.size} 条`)
+      toast.success(`已批量${label} ${ids.length} 条`)
       setChecked(new Set())
       await loadWorkspace()
       if (selectedId) await loadCaseDetail(selectedId)
@@ -364,6 +373,23 @@ export default function ReviewCenterPage() {
       const n = new Set(prev)
       if (n.has(id)) n.delete(id)
       else n.add(id)
+      return n
+    })
+  }
+
+  const filteredIds = useMemo(() => filteredCases.map((c) => c.id), [filteredCases])
+  const allFilteredChecked =
+    filteredIds.length > 0 && filteredIds.every((id) => checked.has(id))
+  const someFilteredChecked = filteredIds.some((id) => checked.has(id))
+
+  const toggleSelectAllFiltered = () => {
+    setChecked((prev) => {
+      const n = new Set(prev)
+      if (allFilteredChecked) {
+        for (const id of filteredIds) n.delete(id)
+      } else {
+        for (const id of filteredIds) n.add(id)
+      }
       return n
     })
   }
@@ -514,6 +540,21 @@ export default function ReviewCenterPage() {
                 />
               </div>
             </div>
+            {filteredCases.length > 0 ? (
+              <label className="mx-2 mb-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[hsl(var(--review-text-secondary))] hover:bg-[hsl(var(--review-row-hover-bg))]">
+                <input
+                  type="checkbox"
+                  className="shrink-0 accent-[hsl(var(--review-row-accent))]"
+                  checked={allFilteredChecked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someFilteredChecked && !allFilteredChecked
+                  }}
+                  onChange={toggleSelectAllFiltered}
+                  data-testid="review-select-all"
+                />
+                全选当前列表（{filteredCases.length}）
+              </label>
+            ) : null}
             <div className={rev.listScroll}>
               {filteredCases.length === 0 ? (
                 <p className="px-2 py-6 text-center text-sm text-[hsl(var(--review-text-muted))]">
@@ -709,14 +750,16 @@ function CaseListItem(props: {
     <div
       className={cn(
         rev.caseRow,
-        active ? rev.caseRowActive : rev.caseRowIdle,
+        active ? rev.caseRowActive : checked ? rev.caseRowChecked : rev.caseRowIdle,
       )}
+      data-testid="review-case-row"
     >
       <div className="flex gap-2">
         <input
           type="checkbox"
-          className="mt-1 shrink-0"
+          className="mt-1 shrink-0 accent-[hsl(var(--review-row-accent))]"
           checked={checked}
+          data-testid="review-case-checkbox"
           onChange={(e) => {
             e.stopPropagation()
             onCheck()

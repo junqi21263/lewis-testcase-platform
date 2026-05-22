@@ -337,11 +337,49 @@ export class ReviewsService {
     status: CaseReviewStatus,
     comment?: string,
   ) {
+    if (user.role === UserRole.VIEWER) throw new ForbiddenException('只读用户不可评审')
     if (!caseIds.length) throw new BadRequestException('请选择用例')
-    for (const id of caseIds) {
-      await this.updateReviewStatus(recordId, id, user, status, comment)
+    const uniqueIds = [...new Set(caseIds)]
+    await this.getOwnedRecord(recordId, user)
+
+    const reviews = await this.prisma.testCaseReview.findMany({
+      where: { recordId, caseId: { in: uniqueIds } },
+    })
+    const found = new Set(reviews.map((r) => r.caseId))
+    const missing = uniqueIds.filter((id) => !found.has(id))
+    if (missing.length) {
+      throw new NotFoundException(`部分用例尚无评审记录：${missing.slice(0, 3).join(', ')}`)
     }
-    return { ok: true, count: caseIds.length }
+
+    const trimmedComment = comment?.trim()
+    await this.prisma.$transaction(async (tx) => {
+      for (const review of reviews) {
+        await tx.testCaseReview.update({
+          where: { caseId: review.caseId },
+          data: {
+            reviewStatus: status,
+            reviewerId: user.id,
+            reviewedAt: new Date(),
+            latestComment: trimmedComment || review.latestComment,
+          },
+        })
+        if (trimmedComment) {
+          await tx.testCaseComment.create({
+            data: {
+              caseId: review.caseId,
+              recordId,
+              commentType:
+                status === CaseReviewStatus.changes_requested ? 'change_request' : 'note',
+              content: trimmedComment,
+              createdBy: user.id,
+            },
+          })
+        }
+      }
+    })
+
+    await this.recomputeRecordReviewStatus(recordId)
+    return { ok: true, count: uniqueIds.length }
   }
 
   async listVersions(caseId: string, user: SessionUser) {

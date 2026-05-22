@@ -118,8 +118,10 @@
     --review-border: 220 22% 90%;
     --review-input-bg: 0 0% 100%;
     --review-chip-bg: 220 40% 95%;
+    --review-row-bg: 0 0% 100%;
     --review-row-hover-bg: 220 48% 97%;
     --review-row-active-bg: 195 85% 94%;
+    --review-row-checked-bg: 195 72% 92%;
     --review-row-accent: 188 78% 42%;
     --review-text-primary: 222 47% 11%;
     --review-text-secondary: 215 18% 38%;
@@ -570,8 +572,10 @@
     --review-border: 217 26% 16%;
     --review-input-bg: 222 42% 12%;
     --review-chip-bg: 217 32% 14%;
+    --review-row-bg: 222 42% 11%;
     --review-row-hover-bg: 217 34% 14%;
     --review-row-active-bg: 217 38% 16%;
+    --review-row-checked-bg: 217 36% 18%;
     --review-row-accent: 188 78% 52%;
     --review-text-primary: 210 40% 96%;
     --review-text-secondary: 215 18% 72%;
