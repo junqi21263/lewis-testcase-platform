@@ -112,37 +112,14 @@ COPY --from=builder /app/start.sh ./start.sh
 COPY --from=builder /app/migrate-release.sh ./migrate-release.sh
 COPY --from=builder /app/prisma-resolve-stuck-migrations.sh ./prisma-resolve-stuck-migrations.sh
 COPY --from=builder /app/scripts/lightweight-cloud-cleanup.sh ./scripts/lightweight-cloud-cleanup.sh
+COPY --from=builder /app/fonts ./fonts
 
 RUN chmod +x start.sh migrate-release.sh prisma-resolve-stuck-migrations.sh scripts/lightweight-cloud-cleanup.sh
 
-# pdfkit 需独立 OTF（.ttc 集合字体会导致 fontkit 嵌入失败）。仓库内文件名为 NotoSansCJKsc-*（非旧名 NotoSansSC-*）
-ARG FONT_DOWNLOAD_TIMEOUT=8
-ARG FONT_DOWNLOAD_RETRIES=1
-RUN apk add --no-cache wget ca-certificates \
-  && mkdir -p /app/fonts \
-  && fetch_font() { \
-    target="$1"; \
-    shift; \
-    for url in "$@"; do \
-      echo "[backend runner] fetching $(basename "$target") from $url"; \
-      if wget -T "$FONT_DOWNLOAD_TIMEOUT" -t "$FONT_DOWNLOAD_RETRIES" -qO "${target}.part" "$url"; then \
-        mv "${target}.part" "$target"; \
-        return 0; \
-      fi; \
-      rm -f "${target}.part"; \
-      echo "[backend runner] font fetch failed: $url"; \
-    done; \
-    echo "[backend runner] failed to download $(basename "$target") from all mirrors" >&2; \
-    exit 1; \
-  }; \
-  fetch_font /app/fonts/NotoSansSC-Regular.otf \
-    "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
-    "https://ghfast.top/https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
-    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
-  && fetch_font /app/fonts/NotoSansSC-Bold.otf \
-    "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf" \
-    "https://ghfast.top/https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf" \
-    "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"
+# pdfkit 需独立 OTF（.ttc 集合字体会导致 fontkit 嵌入失败）。
+# 将 OTF 固化进仓库，避免 CI/VPS 构建期依赖外网拉取 raw.githubusercontent.com / jsDelivr。
+RUN test -s /app/fonts/NotoSansSC-Regular.otf \
+  && test -s /app/fonts/NotoSansSC-Bold.otf
 
 ENV ANALYSIS_REPORT_PDF_FONT_REGULAR=/app/fonts/NotoSansSC-Regular.otf \
     ANALYSIS_REPORT_PDF_FONT_BOLD=/app/fonts/NotoSansSC-Bold.otf
