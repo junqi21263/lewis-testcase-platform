@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Archive,
   ArchiveRestore,
+  ClipboardCheck,
   Copy,
   Download,
   Eye,
@@ -41,6 +42,7 @@ export function RecordsRowActions(props: {
   inRecycle: boolean
   loading: boolean
   onView: () => void
+  onReview?: () => void
   onReuse: () => void
   onExport: () => void
   onShare: () => void
@@ -55,6 +57,7 @@ export function RecordsRowActions(props: {
     inRecycle,
     loading,
     onView,
+    onReview,
     onReuse,
     onExport,
     onShare,
@@ -95,6 +98,11 @@ export function RecordsRowActions(props: {
       <IconAction title="查看详情" onClick={onView}>
         <Eye className={iconClass} />
       </IconAction>
+      {!inRecycle && onReview && props.record.status === 'SUCCESS' && props.record.suiteId ? (
+        <IconAction title="进入评审" onClick={onReview}>
+          <ClipboardCheck className={iconClass} />
+        </IconAction>
+      ) : null}
       {!inRecycle && (
         <>
           <IconAction title="一键复用" onClick={onReuse}>
@@ -116,6 +124,20 @@ export function RecordsRowActions(props: {
           >
             {!inRecycle && (
               <>
+                {onReview && r.status === 'SUCCESS' && r.suiteId ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[hsl(var(--records-text-secondary))] hover:bg-[hsl(var(--records-table-row-hover-bg))]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onReview()
+                    }}
+                  >
+                    <ClipboardCheck className="h-3.5 w-3.5 text-[color:var(--records-icon-muted)]" />{' '}
+                    进入评审
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   role="menuitem"

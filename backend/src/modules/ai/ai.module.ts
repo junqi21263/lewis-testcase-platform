@@ -3,9 +3,10 @@ import { AiService } from './ai.service'
 import { AiController } from './ai.controller'
 import { AnalysisReportPdfService } from './analysis-report-pdf.service'
 import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
+import { ReviewsModule } from '@/modules/reviews/reviews.module'
 
 @Module({
-  imports: [MultimodalModule],
+  imports: [MultimodalModule, ReviewsModule],
   providers: [AiService, AnalysisReportPdfService],
   controllers: [AiController],
   exports: [AiService, AnalysisReportPdfService],

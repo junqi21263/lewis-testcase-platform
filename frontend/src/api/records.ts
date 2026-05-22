@@ -45,6 +45,8 @@ export interface RecordsListQuery {
   filterTeamId?: string
   caseCountMin?: string
   caseCountMax?: string
+  /** 逗号分隔评审状态 */
+  reviewStatuses?: string
 }
 
 export interface RecordModelOption {

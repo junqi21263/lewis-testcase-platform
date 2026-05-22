@@ -109,6 +109,22 @@
     --records-icon-hover: #334155;
     --records-icon-danger: #be123c;
 
+    /* ---------- Review center（用例评审）---------- */
+    --review-page-bg: 226 56% 98%;
+    --review-panel-bg: 0 0% 100%;
+    --review-panel-border: 220 24% 88%;
+    --review-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.2);
+    --review-toolbar-bg: 220 48% 99%;
+    --review-border: 220 22% 90%;
+    --review-input-bg: 0 0% 100%;
+    --review-chip-bg: 220 40% 95%;
+    --review-row-hover-bg: 220 48% 97%;
+    --review-row-active-bg: 195 85% 94%;
+    --review-row-accent: 188 78% 42%;
+    --review-text-primary: 222 47% 11%;
+    --review-text-secondary: 215 18% 38%;
+    --review-text-muted: 215 14% 52%;
+
     /* ---------- Templates page（模板管理）---------- */
     --templates-page-bg: 226 56% 98%;
     --templates-panel-bg: 0 0% 100%;
@@ -545,6 +561,21 @@
     --records-icon-muted: #94a3b8;
     --records-icon-hover: #e2e8f0;
     --records-icon-danger: #fda4af;
+
+    --review-page-bg: 222 46% 7%;
+    --review-panel-bg: 222 48% 9%;
+    --review-panel-border: 217 26% 18%;
+    --review-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.72);
+    --review-toolbar-bg: 222 44% 10%;
+    --review-border: 217 26% 16%;
+    --review-input-bg: 222 42% 12%;
+    --review-chip-bg: 217 32% 14%;
+    --review-row-hover-bg: 217 34% 14%;
+    --review-row-active-bg: 217 38% 16%;
+    --review-row-accent: 188 78% 52%;
+    --review-text-primary: 210 40% 96%;
+    --review-text-secondary: 215 18% 72%;
+    --review-text-muted: 215 14% 58%;
 
     --templates-page-bg: 222 46% 7%;
     --templates-panel-bg: 222 48% 9%;
@@ -2752,6 +2783,19 @@ html.light .login-page-root {
   background: hsl(var(--records-scrollbar-thumb) / 0.65);
 }
 
+.review-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--records-scrollbar-thumb)) transparent;
+}
+.review-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.review-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--records-scrollbar-thumb) / 0.65);
+}
+
 .records-table-grid {
   min-width: min(100%, 1100px);
 }
@@ -2773,4 +2817,17 @@ html.light .login-page-root {
   .records-spark-icon {
     animation: none;
   }
+}
+
+.review-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--records-scrollbar-thumb)) transparent;
+}
+.review-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.review-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--records-scrollbar-thumb) / 0.65);
 }

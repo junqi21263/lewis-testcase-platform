@@ -774,6 +774,15 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
                 查看记录
               </Button>
             )}
+            {lastRecordId && lastSuiteId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/reviews/${lastRecordId}`)}
+              >
+                进入评审中心
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleCreateShare} disabled={!lastRecordId}>
               生成分享链接
             </Button>

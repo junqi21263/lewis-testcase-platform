@@ -29,6 +29,7 @@ import {
   roughTokenEstimateFromChars,
 } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
+import { ReviewsService } from '@/modules/reviews/reviews.service'
 
 @Injectable()
 export class AiService {
@@ -288,6 +289,7 @@ export class AiService {
     private prisma: PrismaService,
     private config: ConfigService,
     private readonly multimodal: MultimodalService,
+    private readonly reviews: ReviewsService,
   ) {}
 
   /** 环境级混元 OpenAI 多模态（HUNYUAN_MULTIMODAL_ENABLED + HUNYUAN_VISION_API_KEY） */
@@ -295,6 +297,14 @@ export class AiService {
     if (!isHunyuanMultimodalEnabled(this.config)) return false
     if (!resolveHunyuanVisionApiKey(this.config)) return false
     return true
+  }
+
+  private async bootstrapReviewsSafe(recordId: string, suiteId: string, userId: string) {
+    try {
+      await this.reviews.bootstrapForRecord(recordId, suiteId, userId)
+    } catch (e) {
+      this.logger.warn(`评审数据初始化失败: ${(e as Error).message}`)
+    }
   }
 
   private isOnlyAiRawOutputRows(rows: any[]): boolean {
@@ -599,6 +609,7 @@ export class AiService {
                   duration,
                 },
               })
+              await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               const warnings: string[] = [
                 '已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。',
@@ -692,6 +703,7 @@ export class AiService {
           tokensUsed: completion.usage?.total_tokens,
         },
       })
+      await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
       await this.bumpTemplateUsage(dto.templateId)
 
@@ -816,6 +828,7 @@ export class AiService {
                   duration: Date.now() - startTime,
                 },
               })
+              await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               res.write(
                 `data: ${JSON.stringify({
@@ -960,6 +973,7 @@ export class AiService {
         where: { id: record.id },
         data: { status: GenerationStatus.SUCCESS, caseCount: suite.cases.length, suiteId: suite.id, duration: Date.now() - startTime },
       })
+      await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
       await this.bumpTemplateUsage(dto.templateId)
 
