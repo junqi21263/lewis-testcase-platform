@@ -6,7 +6,7 @@ import { Children, isValidElement, useCallback, useId, useMemo, useState, type K
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import { MermaidBlock } from './MermaidBlock'
+import { SafeMermaidRenderer } from './SafeMermaidRenderer'
 import { cn } from '@/utils/cn'
 
 const sanitizeSchema = {
@@ -111,7 +111,7 @@ function buildMdComponents(variant: 'default' | 'nested', isStreaming: boolean):
       if (!inline && lang === 'mermaid') {
         const chart = flattenCodeBlockChildren(children).replace(/\n$/, '')
         if (!chart.trim()) return null
-        return <MermaidBlock chart={chart} isStreaming={isStreaming} />
+        return <SafeMermaidRenderer rawSource={chart} isStreaming={isStreaming} />
       }
       if (inline) {
         return <code className="max-w-full break-words [overflow-wrap:anywhere]">{children}</code>

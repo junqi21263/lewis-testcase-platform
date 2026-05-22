@@ -403,6 +403,13 @@
     --ui-report-border: #e2e8f0;
     --ui-report-inline-bg: rgba(241, 245, 249, 0.95);
     --ui-report-h2-accent: #2563eb;
+    --ui-mermaid-error-bg: #fff5f5;
+    --ui-mermaid-error-border: #fecdd3;
+    --ui-mermaid-error-title: #9f1239;
+    --ui-mermaid-error-desc: #9f1239;
+    --ui-mermaid-code-bg: #f8fafc;
+    --ui-mermaid-code-border: #e2e8f0;
+    --ui-mermaid-code-text: #334155;
 
     --ui-terminal-line: #334155;
     --ui-terminal-meta: #475569;
@@ -857,6 +864,13 @@
     --ui-report-border: rgba(148, 163, 184, 0.22);
     --ui-report-inline-bg: rgba(30, 41, 59, 0.85);
     --ui-report-h2-accent: #38bdf8;
+    --ui-mermaid-error-bg: rgba(69, 10, 22, 0.35);
+    --ui-mermaid-error-border: rgba(190, 24, 93, 0.28);
+    --ui-mermaid-error-title: #fecdd3;
+    --ui-mermaid-error-desc: #fda4af;
+    --ui-mermaid-code-bg: rgba(15, 23, 42, 0.65);
+    --ui-mermaid-code-border: rgba(148, 163, 184, 0.2);
+    --ui-mermaid-code-text: #cbd5e1;
 
     --ui-terminal-line: #e2e8f0;
     --ui-terminal-meta: #94a3b8;
