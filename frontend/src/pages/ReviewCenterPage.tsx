@@ -450,111 +450,119 @@ export default function ReviewCenterPage() {
         <div className={rev.workspace}>
           <aside className={rev.listPanel}>
             <div className={rev.listToolbar}>
-              <div className="relative mb-2">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--review-text-muted))]" />
-                <Input
-                  className="h-9 pl-8"
-                  placeholder="搜索标题…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+              <div className={rev.listToolbarSection}>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--review-text-muted))]" />
+                  <Input
+                    className={cn(rev.input, 'h-10 pl-9')}
+                    placeholder="搜索标题…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    className={rev.select}
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as CaseReviewStatus | 'all')}
+                  >
+                    <option value="all">全部状态</option>
+                    {(
+                      [
+                        'pending_review',
+                        'approved',
+                        'changes_requested',
+                        'rejected',
+                        'draft',
+                      ] as CaseReviewStatus[]
+                    ).map((s) => (
+                      <option key={s} value={s}>
+                        {caseReviewStatusLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={rev.select}
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                  >
+                    <option value="all">优先级</option>
+                    {['P0', 'P1', 'P2', 'P3'].map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={rev.select}
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                  >
+                    <option value="all">类型</option>
+                    {CASE_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {CASE_TYPE_LABELS[t] ?? t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                <select
-                  className="h-8 max-w-full rounded-lg bg-[hsl(var(--review-input-bg))] px-2 text-xs ring-1 ring-[hsl(var(--review-border))]"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as CaseReviewStatus | 'all')}
-                >
-                  <option value="all">全部状态</option>
-                  {(
-                    [
-                      'pending_review',
-                      'approved',
-                      'changes_requested',
-                      'rejected',
-                      'draft',
-                    ] as CaseReviewStatus[]
-                  ).map((s) => (
-                    <option key={s} value={s}>
-                      {caseReviewStatusLabel(s)}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="h-8 rounded-lg bg-[hsl(var(--review-input-bg))] px-2 text-xs ring-1 ring-[hsl(var(--review-border))]"
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                >
-                  <option value="all">优先级</option>
-                  {['P0', 'P1', 'P2', 'P3'].map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="h-8 rounded-lg bg-[hsl(var(--review-input-bg))] px-2 text-xs ring-1 ring-[hsl(var(--review-border))]"
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                >
-                  <option value="all">类型</option>
-                  {CASE_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {CASE_TYPE_LABELS[t] ?? t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  className={onlyFailed ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip}
-                  onClick={() => setOnlyFailed((v) => !v)}
-                >
-                  未通过
-                </button>
-                <button
-                  type="button"
-                  className={
-                    onlyComments ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip
-                  }
-                  onClick={() => setOnlyComments((v) => !v)}
-                >
-                  有评论
-                </button>
-                <button
-                  type="button"
-                  className={onlyDirty ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip}
-                  onClick={() => setOnlyDirty((v) => !v)}
-                >
-                  有未保存修改
-                </button>
-              </div>
-              <div className="mt-3">
-                <BulkActionBar
-                  count={checked.size}
-                  busy={statusBusy}
-                  onClear={() => setChecked(new Set())}
-                  onApprove={() => void batchStatus('approved')}
-                  onRequestChanges={() => void batchStatus('changes_requested')}
-                />
+              <div className={rev.listToolbarSection}>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={onlyFailed ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip}
+                    onClick={() => setOnlyFailed((v) => !v)}
+                  >
+                    未通过
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      onlyComments ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip
+                    }
+                    onClick={() => setOnlyComments((v) => !v)}
+                  >
+                    有评论
+                  </button>
+                  <button
+                    type="button"
+                    className={onlyDirty ? rev.chipActive + ' ' + rev.chip : rev.chipGhost + ' ' + rev.chip}
+                    onClick={() => setOnlyDirty((v) => !v)}
+                  >
+                    有未保存修改
+                  </button>
+                </div>
               </div>
             </div>
-            {filteredCases.length > 0 ? (
-              <label className="mx-2 mb-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[hsl(var(--review-text-secondary))] hover:bg-[hsl(var(--review-row-hover-bg))]">
-                <input
-                  type="checkbox"
-                  className="shrink-0 accent-[hsl(var(--review-row-accent))]"
-                  checked={allFilteredChecked}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someFilteredChecked && !allFilteredChecked
-                  }}
-                  onChange={toggleSelectAllFiltered}
-                  data-testid="review-select-all"
-                />
-                全选当前列表（{filteredCases.length}）
-              </label>
-            ) : null}
+
+            <div className={rev.listBulkZone}>
+              <BulkActionBar
+                count={checked.size}
+                busy={statusBusy}
+                onClear={() => setChecked(new Set())}
+                onApprove={() => void batchStatus('approved')}
+                onRequestChanges={() => void batchStatus('changes_requested')}
+              />
+              {filteredCases.length > 0 ? (
+                <label className="flex w-full cursor-pointer items-center gap-2 rounded-lg py-1 hover:bg-[hsl(var(--review-row-hover-bg))]">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 accent-[hsl(var(--review-row-accent))]"
+                    checked={allFilteredChecked}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someFilteredChecked && !allFilteredChecked
+                    }}
+                    onChange={toggleSelectAllFiltered}
+                    data-testid="review-select-all"
+                  />
+                  <span className="text-xs font-medium text-[hsl(var(--review-text-secondary))]">
+                    全选当前列表（{filteredCases.length}）
+                  </span>
+                </label>
+              ) : null}
+            </div>
+
             <div className={rev.listScroll}>
               {filteredCases.length === 0 ? (
                 <p className="px-2 py-6 text-center text-sm text-[hsl(var(--review-text-muted))]">
@@ -578,138 +586,162 @@ export default function ReviewCenterPage() {
             </div>
           </aside>
 
-          <main className={cn(rev.detailPanel, 'relative')}>
+          <main className={rev.detailPanel}>
             {!selectedCase || !draft ? (
-              <div className="flex flex-1 items-center justify-center text-sm text-[hsl(var(--review-text-muted))]">
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[hsl(var(--review-text-muted))]">
                 {workspace.cases.length === 0 ? '该记录暂无用例' : '请选择一条用例'}
               </div>
             ) : (
-              <div className="relative flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col">
                 <div className={rev.detailToolbar} data-testid="review-detail-toolbar">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 pr-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <CaseReviewStatusBadge status={selectedCase.reviewStatus} />
                       <span className="text-xs text-[hsl(var(--review-text-muted))]">
                         v{selectedCase.currentVersionNumber}
                         {isDirty ? (
-                          <span className="ml-2 font-medium text-amber-600 dark:text-amber-300">
+                          <span className="ml-2 font-medium text-[hsl(var(--review-badge-warning-text))]">
                             · 未保存
                           </span>
                         ) : null}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-sm font-medium text-[hsl(var(--review-text-primary))]">
+                    <p className="mt-2 line-clamp-2 text-base font-semibold leading-snug text-[hsl(var(--review-text-primary))]">
                       {selectedCase.title}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 gap-1"
-                      disabled={statusBusy}
-                      data-testid="review-approve-btn"
-                      onClick={() => void setReviewStatus('approved')}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      通过
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8"
-                      disabled={statusBusy}
-                      onClick={() => void setReviewStatus('changes_requested')}
-                    >
-                      待修改
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 gap-1 text-rose-600"
-                      disabled={statusBusy}
-                      onClick={() => void setReviewStatus('rejected')}
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                      驳回
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 gap-1"
-                      data-testid="review-versions-btn"
-                      onClick={() => void openVersions()}
-                    >
-                      <History className="h-3.5 w-3.5" />
-                      版本
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 gap-1"
-                      onClick={() => void openDiff()}
-                    >
-                      <GitCompare className="h-3.5 w-3.5" />
-                      Diff
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className={rev.actionGroup}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className={rev.btnPrimary}
+                        disabled={statusBusy}
+                        data-testid="review-approve-btn"
+                        onClick={() => void setReviewStatus('approved')}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        通过
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={rev.btnSecondary}
+                        disabled={statusBusy}
+                        onClick={() => void setReviewStatus('changes_requested')}
+                      >
+                        待修改
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={rev.btnDanger}
+                        disabled={statusBusy}
+                        onClick={() => void setReviewStatus('rejected')}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        驳回
+                      </Button>
+                    </div>
+                    <span className={rev.actionDivider} aria-hidden />
+                    <div className={rev.actionGroup}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className={rev.btnGhost}
+                        data-testid="review-versions-btn"
+                        onClick={() => void openVersions()}
+                      >
+                        <History className="h-3.5 w-3.5" />
+                        版本
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className={rev.btnGhost}
+                        onClick={() => void openDiff()}
+                      >
+                        <GitCompare className="h-3.5 w-3.5" />
+                        Diff
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
                 <div className={rev.detailBody}>
-                  <TestCaseEditor
-                    value={draft}
-                    onChange={(next) => {
-                      setDraft(next)
-                      if (selectedId && snapshotKey(next) !== savedKeyRef.current) {
-                        dirtyIdsRef.current.add(selectedId)
-                      }
-                    }}
-                    errors={editorErrors}
-                  />
-
-                  <div className="mt-8 border-t border-[hsl(var(--review-border))] pt-6">
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--review-text-primary))]">
-                      <MessageSquare className="h-4 w-4" />
-                      评论与修改建议
-                    </h3>
-                    {commentsLoading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <ReviewCommentList comments={comments} />
-                    )}
-                    <ReviewCommentComposer
-                      busy={statusBusy}
-                      onSubmit={async (content, commentType) => {
-                        if (!recordId || !selectedId) return
-                        await reviewsApi.addComment(recordId, selectedId, {
-                          content,
-                          commentType,
-                        })
-                        toast.success('评论已提交')
-                        await loadCaseDetail(selectedId)
+                  <div key={selectedId} className="review-detail-fade">
+                    <TestCaseEditor
+                      value={draft}
+                      onChange={(next) => {
+                        setDraft(next)
+                        if (selectedId && snapshotKey(next) !== savedKeyRef.current) {
+                          dirtyIdsRef.current.add(selectedId)
+                        }
                       }}
+                      errors={editorErrors}
                     />
+
+                    <section className={rev.commentSection}>
+                      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--review-text-primary))]">
+                        <MessageSquare className="h-4 w-4 text-[hsl(var(--review-text-muted))]" />
+                        评论与修改建议
+                      </h3>
+                      {commentsLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--review-text-muted))]" />
+                      ) : (
+                        <ReviewCommentList comments={comments} />
+                      )}
+                      <ReviewCommentComposer
+                        busy={statusBusy}
+                        onSubmit={async (content, commentType) => {
+                          if (!recordId || !selectedId) return
+                          await reviewsApi.addComment(recordId, selectedId, {
+                            content,
+                            commentType,
+                          })
+                          toast.success('评论已提交')
+                          await loadCaseDetail(selectedId)
+                        }}
+                      />
+                    </section>
                   </div>
                 </div>
 
-                <div className="relative z-[30] flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[hsl(var(--review-border))] bg-[hsl(var(--review-panel-bg))] px-4 py-3">
-                  <Button size="sm" variant="ghost" disabled={saving || !isDirty} onClick={() => void handleCancelEdit()}>
-                    取消修改
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="gap-1"
-                    disabled={saving || !isDirty}
-                    data-testid="review-save-btn"
-                    onClick={() => void handleSave()}
-                  >
-                    {saving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    保存
-                  </Button>
+                <div className={rev.detailStickyFooter}>
+                  <p className="mb-2 text-[11px] text-[hsl(var(--review-text-muted))]">
+                    用例编辑保存区 — 仅保存结构化字段，与上方评论提交无关
+                  </p>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className={rev.btnGhost}
+                      disabled={saving || !isDirty}
+                      onClick={() => void handleCancelEdit()}
+                    >
+                      取消修改
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={rev.btnPrimary}
+                      disabled={saving || !isDirty}
+                      data-testid="review-save-btn"
+                      onClick={() => void handleSave()}
+                    >
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      保存用例
+                    </Button>
+                  </div>
                 </div>
 
                 {sidePanel === 'versions' ? (
@@ -754,10 +786,10 @@ function CaseListItem(props: {
       )}
       data-testid="review-case-row"
     >
-      <div className="flex gap-2">
+      <div className={rev.caseRowInner}>
         <input
           type="checkbox"
-          className="mt-1 shrink-0 accent-[hsl(var(--review-row-accent))]"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[hsl(var(--review-row-accent))]"
           checked={checked}
           data-testid="review-case-checkbox"
           onChange={(e) => {
@@ -767,17 +799,17 @@ function CaseListItem(props: {
           onClick={(e) => e.stopPropagation()}
         />
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onSelect}>
-          <div className="flex items-start justify-between gap-2">
-            <span className="line-clamp-2 text-sm font-medium text-[hsl(var(--review-text-primary))]">
-              {item.title}
-            </span>
+          <div className="flex items-start justify-between gap-3">
+            <span className={rev.caseTitle}>{item.title}</span>
             <CaseReviewStatusBadge status={item.reviewStatus} />
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-[hsl(var(--review-text-muted))]">
-            <span>{item.priority}</span>
-            <span>{CASE_TYPE_LABELS[item.type] ?? item.type}</span>
-            <span>v{item.currentVersionNumber}</span>
-            {dirty ? <span className="text-amber-600 dark:text-amber-300">未保存</span> : null}
+          <div className={rev.caseMeta}>
+            <span className={rev.caseMetaPill}>{item.priority}</span>
+            <span className={rev.caseMetaPill}>{CASE_TYPE_LABELS[item.type] ?? item.type}</span>
+            <span className={rev.caseMetaPill}>v{item.currentVersionNumber}</span>
+            {dirty ? (
+              <span className="font-medium text-[hsl(var(--review-badge-warning-text))]">未保存</span>
+            ) : null}
           </div>
         </button>
       </div>

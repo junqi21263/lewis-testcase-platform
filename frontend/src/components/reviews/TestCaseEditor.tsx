@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { CaseSnapshot } from '@/types/reviews'
 import { CASE_PRIORITIES, CASE_TYPE_LABELS, CASE_TYPES, rev } from '@/utils/reviewsUi'
+import { cn } from '@/utils/cn'
 
 export type TestCaseEditorErrors = Partial<{
   title: string
@@ -77,11 +78,11 @@ export function TestCaseEditor(props: {
   const tagsStr = (value.tags ?? []).join(', ')
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className={rev.fieldSection}>
       <div>
         <label
           htmlFor="review-case-title"
-          className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]"
+          className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]"
         >
           标题 *
         </label>
@@ -97,11 +98,11 @@ export function TestCaseEditor(props: {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]">
+          <label className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
             优先级
           </label>
           <select
-            className={rev.input}
+            className={cn(rev.input, 'h-10')}
             value={value.priority}
             disabled={readOnly}
             onChange={(e) => update({ priority: e.target.value })}
@@ -117,11 +118,11 @@ export function TestCaseEditor(props: {
           ) : null}
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]">
+          <label className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
             类型
           </label>
           <select
-            className={rev.input}
+            className={cn(rev.input, 'h-10')}
             value={value.type}
             disabled={readOnly}
             onChange={(e) => update({ type: e.target.value })}
@@ -134,7 +135,7 @@ export function TestCaseEditor(props: {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]">
+          <label className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
             标签（逗号分隔）
           </label>
           <input
@@ -154,11 +155,11 @@ export function TestCaseEditor(props: {
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]">
+        <label className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
           前置条件
         </label>
         <textarea
-          className={rev.input + ' min-h-[72px] resize-y'}
+          className={rev.textarea}
           value={value.precondition ?? ''}
           disabled={readOnly}
           onChange={(e) => update({ precondition: e.target.value })}
@@ -166,29 +167,28 @@ export function TestCaseEditor(props: {
       </div>
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs font-medium text-[hsl(var(--review-text-muted))]">步骤 *</label>
+        <div className={rev.fieldSectionHeader}>
+          <span className={rev.fieldSectionTitle}>步骤 *</span>
           {!readOnly && (
-            <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={addStep}>
+            <Button type="button" size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={addStep}>
               <Plus className="h-3 w-3" />
               添加步骤
             </Button>
           )}
         </div>
         {errors?.steps ? <p className="mb-2 text-xs text-rose-500">{errors.steps}</p> : null}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {value.steps.map((step, idx) => (
-            <div
-              key={idx}
-              className="rounded-xl border border-[hsl(var(--review-border))] bg-[hsl(var(--review-input-bg))] p-3"
-            >
-              <div className="mb-2 flex items-center justify-between text-xs font-medium text-[hsl(var(--review-text-muted))]">
-                步骤 {idx + 1}
+            <div key={idx} className={rev.fieldCard}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
+                  步骤 {idx + 1}
+                </span>
                 {!readOnly && (
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-0.5">
                     <button
                       type="button"
-                      className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+                      className={rev.iconBtn}
                       disabled={idx === 0}
                       onClick={() => moveStep(idx, -1)}
                       aria-label="上移"
@@ -197,7 +197,7 @@ export function TestCaseEditor(props: {
                     </button>
                     <button
                       type="button"
-                      className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+                      className={rev.iconBtn}
                       disabled={idx === value.steps.length - 1}
                       onClick={() => moveStep(idx, 1)}
                       aria-label="下移"
@@ -206,7 +206,7 @@ export function TestCaseEditor(props: {
                     </button>
                     <button
                       type="button"
-                      className="rounded p-1 text-rose-500 hover:bg-rose-500/10"
+                      className={rev.iconBtnDanger}
                       disabled={value.steps.length <= 1}
                       onClick={() => removeStep(idx)}
                       aria-label="删除步骤"
@@ -217,7 +217,7 @@ export function TestCaseEditor(props: {
                 )}
               </div>
               <textarea
-                className={rev.input + ' min-h-[56px] resize-y'}
+                className={rev.textarea}
                 placeholder="操作步骤"
                 value={step.action}
                 disabled={readOnly}
@@ -229,16 +229,14 @@ export function TestCaseEditor(props: {
       </div>
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs font-medium text-[hsl(var(--review-text-muted))]">
-            预期结果 *
-          </label>
+        <div className={rev.fieldSectionHeader}>
+          <span className={rev.fieldSectionTitle}>预期结果 *</span>
           {!readOnly && (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 gap-1 text-xs"
+              className="h-8 gap-1 text-xs"
               onClick={addExpected}
             >
               <Plus className="h-3 w-3" />
@@ -249,37 +247,42 @@ export function TestCaseEditor(props: {
         {errors?.expectedResults ? (
           <p className="mb-2 text-xs text-rose-500">{errors.expectedResults}</p>
         ) : null}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {(value.expectedResults ?? ['']).map((exp, idx) => (
-            <div key={idx} className="flex gap-2">
+            <div key={idx} className={rev.fieldCard}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
+                  预期结果 {idx + 1}
+                </span>
+                {!readOnly && (value.expectedResults?.length ?? 0) > 1 ? (
+                  <button
+                    type="button"
+                    className={rev.iconBtnDanger}
+                    onClick={() => removeExpected(idx)}
+                    aria-label="删除预期"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
               <textarea
-                className={rev.input + ' min-h-[48px] flex-1 resize-y'}
-                placeholder={`预期结果 ${idx + 1}`}
+                className={rev.textarea}
+                placeholder={`描述预期结果 ${idx + 1}`}
                 value={exp}
                 disabled={readOnly}
                 onChange={(e) => updateExpected(idx, e.target.value)}
               />
-              {!readOnly && (value.expectedResults?.length ?? 0) > 1 ? (
-                <button
-                  type="button"
-                  className="mt-2 shrink-0 rounded p-2 text-rose-500 hover:bg-rose-500/10"
-                  onClick={() => removeExpected(idx)}
-                  aria-label="删除预期"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              ) : null}
             </div>
           ))}
         </div>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-[hsl(var(--review-text-muted))]">
+        <label className="mb-1.5 block text-xs font-semibold text-[hsl(var(--review-text-secondary))]">
           备注（可选）
         </label>
         <textarea
-          className={rev.input + ' min-h-[56px] resize-y'}
+          className={rev.textarea}
           value={value.remarks ?? ''}
           disabled={readOnly}
           onChange={(e) => update({ remarks: e.target.value })}
