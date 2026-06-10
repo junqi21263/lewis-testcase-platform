@@ -7,8 +7,35 @@ export type MermaidThemeMode = 'light' | 'dark'
 const DIAGRAM_HEAD =
   /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|C4Context|block-beta)\b/i
 
+const FLOWCHART_HEAD = /^(flowchart|graph)\s/i
+
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null
 let lastTheme: MermaidThemeMode | null = null
+
+const DEV = typeof import.meta !== 'undefined' && import.meta.env?.DEV
+
+function devLog(label: string, payload: Record<string, unknown>) {
+  if (!DEV) return
+  console.debug(`[mermaid] ${label}`, payload)
+}
+
+/** HTML / 半残实体 → 可读字符（避免 #quot; 直接进 Mermaid） */
+export function decodeHtmlEntities(text: string): string {
+  let s = text
+  s = s.replace(/#quot;/gi, '"')
+  s = s.replace(/&quot;/gi, '"')
+  s = s.replace(/#39;/gi, "'")
+  s = s.replace(/&#39;/g, "'")
+  s = s.replace(/&apos;/gi, "'")
+  s = s.replace(/&amp;/gi, '&')
+  s = s.replace(/&lt;/gi, '<')
+  s = s.replace(/&gt;/gi, '>')
+  s = s.replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+    String.fromCodePoint(parseInt(hex, 16)),
+  )
+  s = s.replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)))
+  return s
+}
 
 export function stripInvalidErDiagramEnumSyntax(src: string): string {
   let out = src.replace(/\benum\s+\w+\s*\[[^\]]*\]/gi, (full) => {
@@ -31,7 +58,7 @@ export function splitConcatenatedFlowchartLines(src: string): string {
       .split('\n')
       .find((l) => l.trim() && !l.trim().startsWith('%%'))
       ?.trim() ?? ''
-  if (!/^(flowchart|graph)\s/i.test(head)) return src
+  if (!FLOWCHART_HEAD.test(head)) return src
 
   return src.replace(
     /([\]\}"\)])\s+([A-Za-z_][\w-]*\s*(?:-->|---|-\.-|==>))/g,
@@ -39,7 +66,6 @@ export function splitConcatenatedFlowchartLines(src: string): string {
   )
 }
 
-/** 去掉末尾未闭合节点/边的残缺行，避免 parse 在流式截断时失败 */
 function dropTrailingIncompleteFlowLine(src: string): string {
   const lines = src.split('\n')
   while (lines.length > 0) {
@@ -67,17 +93,119 @@ function dropTrailingIncompleteFlowLine(src: string): string {
   return lines.join('\n')
 }
 
+function stripMarkdownFences(raw: string): string {
+  const m = raw.match(/^```(?:mermaid)?\s*\n?([\s\S]*?)```\s*$/i)
+  return m?.[1] != null ? m[1] : raw
+}
+
+function normalizeArrows(s: string): string {
+  return s
+    .replace(/[→⇒➔➜⟹]/g, '-->')
+    .replace(/[－—–]/g, '-')
+    .replace(/\s*--\s*>/g, '-->')
+    .replace(/\s*==\s*>/g, '==>')
+    .replace(/->>/g, '-->')
+    .replace(/<<-/g, '<--')
+}
+
+function cleanLabelInner(raw: string): string {
+  let t = decodeHtmlEntities(raw).trim()
+  t = t.replace(/^[`]+|[`]+$/g, '')
+  t = t.replace(/^["""''「」『』]+|["""''「」『』]+$/g, '')
+  t = t.replace(/\s+/g, ' ')
+  t = t.replace(/\\/g, '\\\\')
+  return t
+}
+
+/** 方括号节点 label 安全化（不再写入 #quot;） */
+function formatBracketLabel(inner: string): string {
+  const t = cleanLabelInner(inner)
+  if (!t) return '""'
+  const needsQuotes = /["'[\]#;|]/.test(t) || /[,:?()]/.test(t) || /\s/.test(t)
+  if (!needsQuotes) return t
+  const safe = t.replace(/"/g, "'")
+  return `"${safe}"`
+}
+
+/** 花括号决策节点 */
+function formatBraceLabel(inner: string): string {
+  const t = cleanLabelInner(inner)
+  if (!t) return '""'
+  if (/["'[\]#;|]/.test(t)) return `"${t.replace(/"/g, "'")}"`
+  return t
+}
+
+/** 圆角 / 圆形节点 ( ) */
+function formatParenLabel(inner: string): string {
+  const t = cleanLabelInner(inner)
+  if (!t) return '""'
+  if (/[()"[\]#;|]/.test(t)) return `"${t.replace(/"/g, "'")}"`
+  return t
+}
+
+/** 逐行清洗 flowchart 节点定义 */
+function sanitizeFlowchartNodeLabels(src: string): string {
+  const headLine =
+    src
+      .split('\n')
+      .find((l) => l.trim() && !l.trim().startsWith('%%'))
+      ?.trim() ?? ''
+  if (!FLOWCHART_HEAD.test(headLine)) return src
+
+  return src
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('%%')) return line
+
+      let out = line
+
+      out = out.replace(
+        /(\b[A-Za-z_][\w-]*)\s*\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]/g,
+        (_m, id: string, label: string) => `${id}[${formatBracketLabel(label)}]`,
+      )
+      out = out.replace(
+        /(\b[A-Za-z_][\w-]*)\s*\{\s*((?:[^{}"']|"[^"]*")*?)\s*\}/g,
+        (_m, id: string, label: string) => `${id}{${formatBraceLabel(label)}}`,
+      )
+      out = out.replace(
+        /(\b[A-Za-z_][\w-]*)\s*\(\s*((?:[^()"']|"[^"]*")*?)\s*\)/g,
+        (_m, id: string, label: string) => `${id}(${formatParenLabel(label)})`,
+      )
+      out = out.replace(
+        /(\b[A-Za-z_][\w-]*)\s*\[\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]\]/g,
+        (_m, id: string, label: string) => `${id}[[${formatBracketLabel(label)}]]`,
+      )
+
+      return out
+    })
+    .join('\n')
+}
+
+function removeStrayBackticks(src: string): string {
+  return src.replace(/```/g, '').replace(/`([^`\n]+)`/g, '$1')
+}
+
 /** 规范化 AI 生成的 Mermaid 文本，降低 Syntax error 概率 */
 export function normalizeMermaidSource(raw: string): string {
-  let s = raw
+  let s = stripMarkdownFences(raw)
+  s = decodeHtmlEntities(s)
+  s = s
     .replace(/\r\n/g, '\n')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[（]/g, '(')
     .replace(/[）]/g, ')')
-    .replace(/[→⇒➔➜]/g, '-->')
-    .replace(/[－—–]/g, '-')
+    .replace(/[：]/g, ':')
+    .replace(/[；]/g, ';')
+  s = normalizeArrows(s)
+  s = removeStrayBackticks(s)
+  s = s
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+$/g, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
 
   if (!s || /^%%\s*$/m.test(s)) return 'flowchart TD\n  A[暂无流程图]'
@@ -89,17 +217,24 @@ export function normalizeMermaidSource(raw: string): string {
   }
 
   s = splitConcatenatedFlowchartLines(s)
+  s = sanitizeFlowchartNodeLabels(s)
   s = dropTrailingIncompleteFlowLine(s)
   s = stripInvalidErDiagramEnumSyntax(s)
-  return simplifyFlowchartLabels(s)
+
+  devLog('normalize', {
+    rawPreview: raw.slice(0, 240),
+    normalizedPreview: s.slice(0, 240),
+  })
+
+  return s
 }
 
 /** 流式输出过程中：语法未闭合时不应调用 mermaid.render */
 export function isMermaidSourceLikelyComplete(src: string): boolean {
-  const s = src.trim()
+  const s = normalizeMermaidSource(src).trim()
   if (s.length < 12) return false
   if (!DIAGRAM_HEAD.test(s.split('\n').find((l) => l.trim() && !l.trim().startsWith('%%'))?.trim() ?? '')) {
-    if (!/^(flowchart|graph)\s/i.test(s) && !s.includes('-->') && !s.includes('---')) {
+    if (!FLOWCHART_HEAD.test(s) && !s.includes('-->') && !s.includes('---')) {
       return false
     }
   }
@@ -133,6 +268,16 @@ export function isMermaidErrorSvg(svg: string): boolean {
     /class=["'][^"']*error[^"']*["']/i.test(svg) ||
     /viewBox=["']0 0 2412 512["']/i.test(svg)
   )
+}
+
+/** 用户可见的简短错误说明（不暴露堆栈） */
+export function friendlyMermaidErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  if (/Syntax error/i.test(raw) || /错误图示/i.test(raw)) {
+    return '流程图语法暂时无法解析，可展开查看原始定义。'
+  }
+  if (/parse/i.test(raw)) return '流程图结构不完整或含非法符号，请查看原始源码。'
+  return '流程图暂时无法渲染，已保留原始定义供查看。'
 }
 
 async function loadMermaid(theme: MermaidThemeMode) {
@@ -206,37 +351,32 @@ export async function renderMermaidSvg(
     split,
     stripInvalidErDiagramEnumSyntax(trimmed),
     stripInvalidErDiagramEnumSyntax(split),
-    simplifyFlowchartLabels(trimmed),
-    simplifyFlowchartLabels(split),
-    simplifyFlowchartLabels(stripInvalidErDiagramEnumSyntax(split)),
+    sanitizeFlowchartNodeLabels(trimmed),
+    sanitizeFlowchartNodeLabels(split),
   ]
   const unique = [...new Set(attempts.map((a) => a.trim()).filter(Boolean))]
 
   let lastErr: unknown
   for (const src of unique) {
     try {
-      return await tryRender(src)
+      const svg = await tryRender(src)
+      devLog('render ok', { idPrefix, attemptLen: src.length })
+      return svg
     } catch (e) {
       lastErr = e
+      devLog('render attempt failed', {
+        idPrefix,
+        message: e instanceof Error ? e.message : String(e),
+        srcPreview: src.slice(0, 180),
+      })
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
-}
 
-/** 将方括号节点内未转义的特殊字符用引号包裹，减少 flowchart 解析失败 */
-function simplifyFlowchartLabels(src: string): string {
-  return src.replace(/\[([^\]\n]*)\]/g, (_m, label: string) => {
-    const t = label.trim()
-    if (!t) return '[]'
-    const needsQuotes = /["'(),:;\\/]/.test(t)
-    if (!needsQuotes) return `[${label}]`
-    let inner = t
-    if (inner.startsWith('"') && inner.endsWith('"') && inner.length > 1) {
-      inner = inner.slice(1, -1)
-    }
-    inner = inner.replace(/"/g, '#quot;').replace(/'/g, '#39;')
-    return `["${inner}"]`
+  devLog('render failed', {
+    idPrefix,
+    message: lastErr instanceof Error ? lastErr.message : String(lastErr),
   })
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
 }
 
 export function svgToPngBlob(svgMarkup: string): Promise<Blob> {

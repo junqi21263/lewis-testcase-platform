@@ -299,10 +299,18 @@ export interface PublicSharePayload {
   cases: PublicShareCase[]
 }
 
+export type RecordReviewStatus =
+  | 'pending_review'
+  | 'in_review'
+  | 'approved'
+  | 'changes_requested'
+  | 'rejected'
+
 export interface GenerationRecord {
   id: string
   title: string
   status: GenerationStatus
+  reviewStatus?: RecordReviewStatus
   sourceType: string
   generationSource?: GenerationSource
   prompt: string

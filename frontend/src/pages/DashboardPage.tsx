@@ -361,7 +361,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Action tiles */}
+      {/* 快捷入口 + 指标：同一 grid 保证列对齐 */}
       <section className="dash-enter dash-enter-delay-2 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {quickActions.map((action) => {
           const TileIcon = action.icon
@@ -371,7 +371,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => navigate(action.to)}
               className={cn(
-                'group relative flex flex-col overflow-hidden rounded-[20px] border border-workspace-panel-border/65 bg-workspace-action-tile/90 p-5 text-left',
+                'group relative flex min-w-0 flex-col overflow-hidden rounded-[20px] border border-workspace-panel-border/65 bg-workspace-action-tile/90 p-5 text-left',
                 'shadow-[0_18px_44px_-36px_rgba(59,130,246,0.2)] backdrop-blur-xl transition-[transform,box-shadow,opacity] duration-300',
                 'hover:-translate-y-1 hover:shadow-[0_28px_60px_-32px_rgba(56,189,248,0.35)]',
                 'dark:border-white/[0.08] dark:bg-workspace-action-tile/75 dark:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.65)] dark:hover:shadow-[0_32px_70px_-28px_rgba(99,102,241,0.25)]',
@@ -412,17 +412,13 @@ export default function DashboardPage() {
             </button>
           )
         })}
-      </section>
-
-      {/* Metrics */}
-      <section className="dash-enter dash-enter-delay-3 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {statCards.map((card) => {
           const Icon = card.icon
           const isRate = 'isRate' in card && card.isRate === true
           return (
             <div
               key={card.title}
-              className={cn('relative overflow-hidden p-5', dash.panel, 'transition-shadow duration-300 hover:shadow-[0_26px_60px_-36px_rgba(99,102,241,0.18)] dark:hover:shadow-[0_28px_64px_-38px_rgba(99,102,241,0.12)]')}
+              className={cn('relative min-w-0 overflow-hidden p-5', dash.panel, 'transition-shadow duration-300 hover:shadow-[0_26px_60px_-36px_rgba(99,102,241,0.18)] dark:hover:shadow-[0_28px_64px_-38px_rgba(99,102,241,0.12)]')}
             >
               <div
                 className={cn(
@@ -523,7 +519,7 @@ export default function DashboardPage() {
       </section>
 
       {/* Lists — 与上方同一 dash.panel token；modern list + 软空状态 */}
-      <div className="dash-enter dash-enter-delay-5 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-7">
+      <div className="dash-enter dash-enter-delay-4 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-7">
         <DashRecentPanel
           kicker="Activity"
           title="最近生成记录"

@@ -291,7 +291,24 @@ export class AnalysisReportPdfService {
         continue
       }
 
-      const para = this.stripInlineMarkdown(line.trim())
+      const paraLines: string[] = [line.trim()]
+      let j = i + 1
+      while (j < lines.length) {
+        const next = lines[j]
+        if (
+          next.trim() === '' ||
+          /^#{1,6}\s+/.test(next) ||
+          this.isTableHeaderRow(next, lines[j + 1]) ||
+          /^\s*[-*+]\s+/.test(next) ||
+          /^\s*\d+\.\s+/.test(next) ||
+          /^```/.test(next.trim())
+        ) {
+          break
+        }
+        paraLines.push(next.trim())
+        j++
+      }
+      const para = this.stripInlineMarkdown(paraLines.join(' '))
       setFont('regular', BODY_PT)
       doc.fillColor(COLOR_BODY)
       const h = doc.heightOfString(para, { width: contentWidth, lineGap: LINE_GAP_BODY })
@@ -302,7 +319,7 @@ export class AnalysisReportPdfService {
         lineGap: LINE_GAP_BODY,
       })
       cursorY += h + PARAGRAPH_GAP_PT
-      i++
+      i = j
     }
 
     // ── 页眉页脚（每页）──
@@ -460,9 +477,24 @@ export class AnalysisReportPdfService {
 
     const cols = Math.max(...rows.map((r) => r.length))
     const colW = contentWidth / cols
-    const rowHeight = BODY_PT * 1.5 + 8
+    const cellPad = 8
+    const minRowHeight = BODY_PT * 1.5 + cellPad * 2
+
+    const measureRowHeight = (cells: string[], header: boolean) => {
+      opts.setFont(header ? 'bold' : 'regular', BODY_PT)
+      let maxH = minRowHeight
+      for (let c = 0; c < cols; c++) {
+        const cell = cells[c] ?? ''
+        const innerW = colW - cellPad * 2
+        const h =
+          doc.heightOfString(cell || ' ', { width: innerW, lineGap: 4 }) + cellPad * 2
+        if (h > maxH) maxH = h
+      }
+      return maxH
+    }
 
     const drawRow = (cells: string[], header: boolean, alt: boolean) => {
+      const rowHeight = measureRowHeight(cells, header)
       if (cursorY + rowHeight > contentBottom - 4) {
         doc.addPage()
         cursorY = contentTop
@@ -480,11 +512,9 @@ export class AnalysisReportPdfService {
         doc.strokeColor(COLOR_TABLE_BORDER).rect(x, y0, colW, rowHeight).stroke()
         opts.setFont(header ? 'bold' : 'regular', BODY_PT)
         doc.fillColor(header ? '#ffffff' : COLOR_TABLE_CELL_TEXT)
-        doc.text(cell, x + 8, y0 + 8, {
-          width: colW - 16,
-          height: rowHeight - 16,
+        doc.text(cell, x + cellPad, y0 + cellPad, {
+          width: colW - cellPad * 2,
           lineGap: 4,
-          ellipsis: true,
         })
         doc.restore()
         x += colW
@@ -530,12 +560,13 @@ export class AnalysisReportPdfService {
           cursorY = ctx.contentTop
         }
       }
-      ensureBottom(440)
+      const maxImgH = Math.min(420, ctx.contentBottom - ctx.contentTop - 24)
+      ensureBottom(maxImgH + 16)
       doc.image(buf, ctx.marginPt, cursorY, {
-        fit: [ctx.contentWidth, 400],
+        fit: [ctx.contentWidth, maxImgH],
         align: 'center',
       })
-      cursorY = doc.y + PARAGRAPH_GAP_PT
+      cursorY = Math.max(doc.y, cursorY + maxImgH * 0.5) + PARAGRAPH_GAP_PT
     } catch (e) {
       this.logger.warn(`嵌入 Mermaid 图片失败: ${(e as Error).message}`)
     }

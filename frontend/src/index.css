@@ -109,6 +109,49 @@
     --records-icon-hover: #334155;
     --records-icon-danger: #be123c;
 
+    /* ---------- Review center（用例评审）---------- */
+    --review-page-bg: 226 56% 98%;
+    --review-panel-bg: 0 0% 100%;
+    --review-panel-border: 220 24% 86%;
+    --review-panel-shadow: 0 18px 48px -36px rgba(59, 130, 246, 0.2);
+    --review-toolbar-bg: 220 48% 99%;
+    --review-card-bg: 0 0% 100%;
+    --review-card-hover-bg: 220 48% 97%;
+    --review-card-selected-bg: 195 80% 95%;
+    --review-border: 220 22% 88%;
+    --review-divider: 220 20% 92%;
+    --review-input-bg: 0 0% 100%;
+    --review-input-border: 220 22% 84%;
+    --review-input-focus: 188 78% 42%;
+    --review-chip-bg: 220 40% 95%;
+    --review-row-bg: 0 0% 100%;
+    --review-row-hover-bg: 220 48% 97%;
+    --review-row-active-bg: 195 80% 95%;
+    --review-row-checked-bg: 195 72% 92%;
+    --review-row-accent: 188 78% 42%;
+    --review-text-primary: 222 47% 11%;
+    --review-text-secondary: 215 20% 32%;
+    --review-text-muted: 215 16% 46%;
+    --review-sticky-footer-bg: 0 0% 100% / 0.92;
+    --review-sticky-footer-border: 220 22% 88%;
+    --review-comment-bg: 220 45% 98%;
+    --review-scrollbar-thumb: 215 16% 72%;
+    --review-badge-success-bg: 152 76% 94%;
+    --review-badge-success-border: 152 45% 78%;
+    --review-badge-success-text: 160 84% 28%;
+    --review-badge-warning-bg: 45 96% 94%;
+    --review-badge-warning-border: 42 85% 78%;
+    --review-badge-warning-text: 32 85% 32%;
+    --review-badge-danger-bg: 0 86% 96%;
+    --review-badge-danger-border: 0 72% 82%;
+    --review-badge-danger-text: 0 72% 38%;
+    --review-badge-info-bg: 199 89% 94%;
+    --review-badge-info-border: 199 70% 80%;
+    --review-badge-info-text: 201 90% 32%;
+    --review-btn-danger-bg: 0 72% 96%;
+    --review-btn-danger-border: 0 55% 82%;
+    --review-btn-danger-text: 0 65% 38%;
+
     /* ---------- Templates page（模板管理）---------- */
     --templates-page-bg: 226 56% 98%;
     --templates-panel-bg: 0 0% 100%;
@@ -360,6 +403,13 @@
     --ui-report-border: #e2e8f0;
     --ui-report-inline-bg: rgba(241, 245, 249, 0.95);
     --ui-report-h2-accent: #2563eb;
+    --ui-mermaid-error-bg: #fff5f5;
+    --ui-mermaid-error-border: #fecdd3;
+    --ui-mermaid-error-title: #9f1239;
+    --ui-mermaid-error-desc: #9f1239;
+    --ui-mermaid-code-bg: #f8fafc;
+    --ui-mermaid-code-border: #e2e8f0;
+    --ui-mermaid-code-text: #334155;
 
     --ui-terminal-line: #334155;
     --ui-terminal-meta: #475569;
@@ -545,6 +595,48 @@
     --records-icon-muted: #94a3b8;
     --records-icon-hover: #e2e8f0;
     --records-icon-danger: #fda4af;
+
+    --review-page-bg: 222 46% 7%;
+    --review-panel-bg: 222 48% 9%;
+    --review-panel-border: 217 26% 20%;
+    --review-panel-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.72);
+    --review-toolbar-bg: 222 44% 10%;
+    --review-card-bg: 222 44% 11%;
+    --review-card-hover-bg: 217 34% 14%;
+    --review-card-selected-bg: 217 36% 15%;
+    --review-border: 217 26% 20%;
+    --review-divider: 217 24% 16%;
+    --review-input-bg: 222 42% 12%;
+    --review-input-border: 217 26% 24%;
+    --review-input-focus: 188 78% 52%;
+    --review-chip-bg: 217 32% 14%;
+    --review-row-bg: 222 42% 11%;
+    --review-row-hover-bg: 217 34% 14%;
+    --review-row-active-bg: 217 36% 15%;
+    --review-row-checked-bg: 217 34% 16%;
+    --review-row-accent: 188 78% 52%;
+    --review-text-primary: 210 40% 96%;
+    --review-text-secondary: 215 20% 78%;
+    --review-text-muted: 215 16% 62%;
+    --review-sticky-footer-bg: 222 48% 9% / 0.94;
+    --review-sticky-footer-border: 217 26% 20%;
+    --review-comment-bg: 222 42% 11%;
+    --review-scrollbar-thumb: 217 20% 38%;
+    --review-badge-success-bg: 160 45% 14%;
+    --review-badge-success-border: 160 35% 26%;
+    --review-badge-success-text: 152 65% 72%;
+    --review-badge-warning-bg: 38 55% 14%;
+    --review-badge-warning-border: 38 45% 26%;
+    --review-badge-warning-text: 45 90% 72%;
+    --review-badge-danger-bg: 0 45% 14%;
+    --review-badge-danger-border: 0 38% 26%;
+    --review-badge-danger-text: 0 75% 78%;
+    --review-badge-info-bg: 199 45% 14%;
+    --review-badge-info-border: 199 38% 26%;
+    --review-badge-info-text: 199 80% 78%;
+    --review-btn-danger-bg: 0 38% 14%;
+    --review-btn-danger-border: 0 32% 24%;
+    --review-btn-danger-text: 0 70% 78%;
 
     --templates-page-bg: 222 46% 7%;
     --templates-panel-bg: 222 48% 9%;
@@ -772,6 +864,13 @@
     --ui-report-border: rgba(148, 163, 184, 0.22);
     --ui-report-inline-bg: rgba(30, 41, 59, 0.85);
     --ui-report-h2-accent: #38bdf8;
+    --ui-mermaid-error-bg: rgba(69, 10, 22, 0.35);
+    --ui-mermaid-error-border: rgba(190, 24, 93, 0.28);
+    --ui-mermaid-error-title: #fecdd3;
+    --ui-mermaid-error-desc: #fda4af;
+    --ui-mermaid-code-bg: rgba(15, 23, 42, 0.65);
+    --ui-mermaid-code-border: rgba(148, 163, 184, 0.2);
+    --ui-mermaid-code-text: #cbd5e1;
 
     --ui-terminal-line: #e2e8f0;
     --ui-terminal-meta: #94a3b8;
@@ -2752,6 +2851,56 @@ html.light .login-page-root {
   background: hsl(var(--records-scrollbar-thumb) / 0.65);
 }
 
+.review-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--review-scrollbar-thumb) / 0.75) transparent;
+}
+.review-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.review-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--review-scrollbar-thumb) / 0.75);
+}
+
+@keyframes reviewDetailIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes reviewBulkIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.review-detail-fade {
+  animation: reviewDetailIn 0.22s ease-out both;
+}
+
+.review-bulk-enter {
+  animation: reviewBulkIn 0.2s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-detail-fade,
+  .review-bulk-enter {
+    animation: none;
+  }
+}
+
 .records-table-grid {
   min-width: min(100%, 1100px);
 }
@@ -2773,4 +2922,17 @@ html.light .login-page-root {
   .records-spark-icon {
     animation: none;
   }
+}
+
+.review-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--records-scrollbar-thumb)) transparent;
+}
+.review-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.review-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: hsl(var(--records-scrollbar-thumb) / 0.65);
 }

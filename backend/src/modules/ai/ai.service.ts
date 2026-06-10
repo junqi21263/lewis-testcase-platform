@@ -29,6 +29,7 @@ import {
   roughTokenEstimateFromChars,
 } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
+import { ReviewsService } from '@/modules/reviews/reviews.service'
 
 @Injectable()
 export class AiService {
@@ -72,6 +73,24 @@ export class AiService {
       if (Array.isArray(parsed)) return parsed
     }
 
+    // 思考过程 + 末尾 JSON 混排时，优先取最后一次出现的 "cases" 块
+    let searchPos = text.length
+    for (let i = 0; i < 8; i++) {
+      const keyIdx = text.lastIndexOf('"cases"', searchPos - 1)
+      if (keyIdx < 0) break
+      const start = text.lastIndexOf('{', keyIdx)
+      if (start >= 0) {
+        const end = text.lastIndexOf('}')
+        if (end > start) {
+          parsed = tryJson(text.slice(start, end + 1))
+          if (parsed?.cases && Array.isArray(parsed.cases) && parsed.cases.length > 0) {
+            return parsed.cases
+          }
+        }
+      }
+      searchPos = keyIdx
+    }
+
     return []
   }
 
@@ -112,7 +131,7 @@ export class AiService {
           },
         ],
         temperature: 0,
-        max_tokens: 4096,
+        max_tokens: 16384,
         response_format: { type: 'json_object' },
       })
       const choice = completion.choices?.[0]
@@ -270,6 +289,7 @@ export class AiService {
     private prisma: PrismaService,
     private config: ConfigService,
     private readonly multimodal: MultimodalService,
+    private readonly reviews: ReviewsService,
   ) {}
 
   /** 环境级混元 OpenAI 多模态（HUNYUAN_MULTIMODAL_ENABLED + HUNYUAN_VISION_API_KEY） */
@@ -277,6 +297,14 @@ export class AiService {
     if (!isHunyuanMultimodalEnabled(this.config)) return false
     if (!resolveHunyuanVisionApiKey(this.config)) return false
     return true
+  }
+
+  private async bootstrapReviewsSafe(recordId: string, suiteId: string, userId: string) {
+    try {
+      await this.reviews.bootstrapForRecord(recordId, suiteId, userId)
+    } catch (e) {
+      this.logger.warn(`评审数据初始化失败: ${(e as Error).message}`)
+    }
   }
 
   private isOnlyAiRawOutputRows(rows: any[]): boolean {
@@ -581,6 +609,7 @@ export class AiService {
                   duration,
                 },
               })
+              await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               const warnings: string[] = [
                 '已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。',
@@ -674,6 +703,7 @@ export class AiService {
           tokensUsed: completion.usage?.total_tokens,
         },
       })
+      await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
       await this.bumpTemplateUsage(dto.templateId)
 
@@ -798,6 +828,7 @@ export class AiService {
                   duration: Date.now() - startTime,
                 },
               })
+              await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               res.write(
                 `data: ${JSON.stringify({
@@ -843,16 +874,17 @@ export class AiService {
         const fr = ch0?.finish_reason
         if (fr) finishReason = fr
         const d = ch0?.delta as { content?: string; reasoning_content?: string } | undefined
-        const delta =
-          (typeof d?.content === 'string' ? d.content : '') ||
-          (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
-        if (delta) {
-          if (!fullContentTruncated) {
+        const contentDelta = typeof d?.content === 'string' ? d.content : ''
+        const reasoningDelta = typeof d?.reasoning_content === 'string' ? d.reasoning_content : ''
+        const streamDelta = contentDelta || reasoningDelta
+        const persistDelta = contentDelta || reasoningDelta
+        if (streamDelta) {
+          if (persistDelta && !fullContentTruncated) {
             const remaining = maxFullContentChars - fullContent.length
             if (remaining > 0) {
-              fullContent += delta.slice(0, remaining)
+              fullContent += persistDelta.slice(0, remaining)
             }
-            if (delta.length > remaining) {
+            if (persistDelta.length > remaining) {
               fullContentTruncated = true
               if (!streamTruncationNoticeSent) {
                 streamTruncationNoticeSent = true
@@ -863,13 +895,25 @@ export class AiService {
               }
             }
           }
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+          res.write(`data: ${JSON.stringify({ content: streamDelta })}\n\n`)
         }
       }
 
       if (finishReason === 'length') {
         this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
         this.logger.warn('流式生成：模型输出因 max_tokens 被截断')
+      }
+
+      if (!fullContent.trim()) {
+        this.writeStreamNotice(
+          res,
+          '未收到可用于入库的正式输出（content）。若流式区仅有思考过程，请关闭深度思考或更换模型，并确保最终输出 { "cases": [...] } JSON。',
+        )
+      } else if (fullContentTruncated) {
+        this.writeStreamNotice(
+          res,
+          '正式 JSON 输出可能因长度上限未完整入库；流式日志中的思考过程不会写入用例集。请提高 maxTokens 或缩小范围后重试。',
+        )
       }
 
       const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, fullContent)
@@ -908,6 +952,10 @@ export class AiService {
       }
 
       if (rows.length > 0 && rows[0]?.tags?.includes?.('ai-raw-output')) {
+        this.writeStreamNotice(
+          res,
+          '模型未输出可解析的 JSON 用例（常见原因：深度思考占满 Token、或仅输出编号场景清单）。已保存 1 条占位记录，请换模型/关思考/强调仅输出 JSON 后重试。',
+        )
         this.logger.warn('流式输出未解析为 JSON 用例，已保存为单条原文占位用例')
       } else if (rows.length > 0 && rows.some((r: any) => r?.tags?.includes?.('ai-parsed-markdown'))) {
         this.logger.warn(`流式输出已用 Markdown 启发式拆分为 ${rows.length} 条用例（建议模板中强调仅输出 JSON）`)
@@ -926,6 +974,7 @@ export class AiService {
         where: { id: record.id },
         data: { status: GenerationStatus.SUCCESS, caseCount: suite.cases.length, suiteId: suite.id, duration: Date.now() - startTime },
       })
+      await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
       await this.bumpTemplateUsage(dto.templateId)
 

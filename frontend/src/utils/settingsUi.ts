@@ -43,7 +43,7 @@ export const set = {
   cardActions: 'flex shrink-0 flex-wrap items-center gap-2',
   cardBody: 'space-y-5 px-6 py-5',
   cardFooter:
-    'flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--settings-card-border))]/70 px-6 py-4',
+    'flex flex-wrap items-center justify-start gap-3 border-t border-[hsl(var(--settings-card-border))]/70 px-6 py-4',
   formGrid: 'grid gap-4 sm:grid-cols-2',
   formRow: 'space-y-1.5 min-w-0',
   label: 'text-sm font-medium text-[hsl(var(--settings-text-primary))]',
@@ -56,7 +56,7 @@ export const set = {
     'h-10 w-full min-w-0 appearance-none rounded-xl border-0 bg-[hsl(var(--settings-select-bg))] px-3 text-sm shadow-sm ring-1 ring-inset ring-[hsl(var(--settings-input-border))] text-[hsl(var(--settings-text-primary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--settings-input-focus))]/35',
   textarea:
     'min-h-[88px] w-full resize-y rounded-xl border-0 bg-[hsl(var(--settings-textarea-bg))] px-3 py-2.5 text-sm ring-1 ring-inset ring-[hsl(var(--settings-input-border))]',
-  infoGrid: 'grid gap-3 sm:grid-cols-2',
+  infoGrid: 'grid gap-3 sm:grid-cols-2 sm:items-start',
   infoItem:
     'min-w-0 rounded-xl border border-[hsl(var(--settings-card-border))]/80 bg-[hsl(var(--settings-info-bg))] px-4 py-3',
   infoLabel: 'text-xs font-medium text-[hsl(var(--settings-text-muted))]',

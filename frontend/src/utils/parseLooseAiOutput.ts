@@ -236,6 +236,26 @@ function splitIntoCaseChunks(text: string): string[] {
   return [inner]
 }
 
+/** 模型把多条「场景清单」写成 1. 2. 3. 编号列表时，拆成多条用例 */
+function tryExplodeNumberedScenarioList(row: LooseCaseRow): LooseCaseRow[] {
+  const n = row.steps.length
+  if (n < 8) return [row]
+  const actions = row.steps.map((s) => s.action.trim())
+  const avg = actions.reduce((sum, a) => sum + a.length, 0) / n
+  if (avg > 160) return [row]
+  const metaLike = actions.filter((a) => /^(第.+步|步骤|优先级|类型|模块|tags)/i.test(a)).length
+  if (metaLike > n * 0.3) return [row]
+  return actions.map((action, i) => ({
+    title: action.slice(0, 500) || `场景 ${i + 1}`,
+    precondition: row.precondition,
+    steps: [{ order: 1, action: '待根据场景补充操作步骤', expected: '' }],
+    expectedResult: '（待补充预期结果）',
+    priority: row.priority,
+    type: row.type,
+    tags: row.tags,
+  }))
+}
+
 export function parseLooseMarkdownToCaseRows(raw: string): LooseCaseRow[] {
   const base = unwrapWrongJsonWrapper((raw || '').trim())
   if (!base.trim()) return []
@@ -299,6 +319,11 @@ export function parseLooseMarkdownToCaseRows(raw: string): LooseCaseRow[] {
       }
       if (out2.length >= 2) return out2
     }
+  }
+
+  if (out.length === 1) {
+    const exploded = tryExplodeNumberedScenarioList(out[0])
+    if (exploded.length >= 2) return exploded
   }
 
   return out

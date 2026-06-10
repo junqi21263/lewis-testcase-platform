@@ -473,6 +473,16 @@ export default function RecordDetailPage() {
           <Wand2 className="w-3.5 h-3.5" />
           一键复用
         </Button>
+        {record.status === 'SUCCESS' && record.suiteId ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            onClick={() => void navWithGuard(`/reviews/${record.id}`)}
+          >
+            进入评审中心
+          </Button>
+        ) : null}
         {canEdit && record.suiteId && (
           <Button
             size="sm"

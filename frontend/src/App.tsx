@@ -18,6 +18,8 @@ const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AiAnalysisPage = lazy(() => import('@/pages/AiAnalysisPage'))
 const UsageStatsPage = lazy(() => import('@/pages/UsageStatsPage'))
+const ReviewCenterPage = lazy(() => import('@/pages/ReviewCenterPage'))
+const ReviewsIndexPage = lazy(() => import('@/pages/ReviewsIndexPage'))
 
 function RouteFallback() {
   return (
@@ -95,6 +97,8 @@ export default function App() {
             <Route path="/generate" element={<GeneratePage />} />
             <Route path="/records" element={<RecordsPage />} />
             <Route path="/records/:id" element={<RecordDetailPage />} />
+            <Route path="/reviews" element={<ReviewsIndexPage />} />
+            <Route path="/reviews/:recordId" element={<ReviewCenterPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/profile" element={<ProfilePage />} />

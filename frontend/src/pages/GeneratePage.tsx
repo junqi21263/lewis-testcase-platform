@@ -774,6 +774,15 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
                 查看记录
               </Button>
             )}
+            {lastRecordId && lastSuiteId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/reviews/${lastRecordId}`)}
+              >
+                进入评审中心
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleCreateShare} disabled={!lastRecordId}>
               生成分享链接
             </Button>
@@ -1300,7 +1309,28 @@ export default function GeneratePage() {
             setGeneratedCases(cases)
             setStep('result')
             if (cases.length === 0) toast.error('未生成任何用例，请检查模型或输入内容')
-            else toast.success(`用例生成完成，共 ${cases.length} 条`)
+            else {
+              toast.success(`用例生成完成，共 ${cases.length} 条`)
+              if (
+                meta?.caseCount != null &&
+                meta.caseCount > 0 &&
+                meta.caseCount !== cases.length
+              ) {
+                toast(
+                  `服务端入库 ${meta.caseCount} 条，当前页展示 ${cases.length} 条，请以生成记录为准`,
+                  { duration: 9000 },
+                )
+              }
+              if (cases.length === 1 && cases[0]?.tags?.includes('ai-parsed-markdown')) {
+                const stepN = cases[0].steps?.length ?? 0
+                if (stepN >= 15) {
+                  toast(
+                    '模型可能只输出了场景清单而未输出 JSON；已尝试拆条，建议关闭深度思考并强调仅输出 { "cases": [...] }',
+                    { duration: 10000 },
+                  )
+                }
+              }
+            }
           },
           (err) => {
             setIsGenerating(false)

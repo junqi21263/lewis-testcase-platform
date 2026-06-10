@@ -25,7 +25,9 @@ import { RecordsEmptyState } from '@/components/records/RecordsEmptyState'
 import { RecordsSegmentedTabs } from '@/components/records/RecordsSegmentedTabs'
 import { RecordsTableToolbar } from '@/components/records/RecordsTableToolbar'
 import { RecordsRowActions } from '@/components/records/RecordsRowActions'
-import type { GenerationRecord, GenerationStatus } from '@/types'
+import type { GenerationRecord, GenerationStatus, RecordReviewStatus } from '@/types'
+import { RecordReviewStatusBadge } from '@/components/reviews/ReviewStatusBadge'
+import { recordReviewStatusLabel } from '@/utils/reviewsUi'
 import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStore'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
@@ -51,6 +53,14 @@ const STATUS_ORDER: GenerationStatus[] = [
   'FAILED',
   'ARCHIVED',
   'CANCELLED',
+]
+
+const REVIEW_STATUS_ORDER: RecordReviewStatus[] = [
+  'pending_review',
+  'in_review',
+  'approved',
+  'changes_requested',
+  'rejected',
 ]
 
 const statusLabels: Record<GenerationStatus, string> = {
@@ -120,6 +130,7 @@ export default function RecordsPage() {
   const [keyword, setKeyword] = useState('')
   const debouncedKeyword = useDebouncedValue(keyword, 400)
   const [statusSet, setStatusSet] = useState<Set<GenerationStatus>>(new Set())
+  const [reviewStatusSet, setReviewStatusSet] = useState<Set<RecordReviewStatus>>(new Set())
   const [summary, setSummary] = useState<RecordsSummary | null>(null)
 
   const [datePreset, setDatePreset] = useState<DatePresetId>('custom')
@@ -171,6 +182,8 @@ export default function RecordsPage() {
     const recycle = view === 'recycle' ? '1' : undefined
     const statuses =
       statusSet.size > 0 ? [...statusSet].sort().join(',') : undefined
+    const reviewStatuses =
+      reviewStatusSet.size > 0 ? [...reviewStatusSet].sort().join(',') : undefined
     let df = dateFrom || undefined
     let dt = dateTo || undefined
     if (datePreset !== 'custom') {
@@ -185,6 +198,7 @@ export default function RecordsPage() {
       pageSize,
       keyword: debouncedKeyword || undefined,
       statuses,
+      reviewStatuses,
       dateFrom: df,
       dateTo: dt,
       models: modelPick.length ? modelPick.join(',') : undefined,
@@ -200,6 +214,7 @@ export default function RecordsPage() {
     pageSize,
     debouncedKeyword,
     statusSet,
+    reviewStatusSet,
     dateFrom,
     dateTo,
     datePreset,
@@ -263,6 +278,16 @@ export default function RecordsPage() {
       CANCELLED: summary.cancelled,
     } as Record<GenerationStatus, number>
   }, [summary])
+
+  const toggleReviewStatus = (st: RecordReviewStatus) => {
+    setReviewStatusSet((prev) => {
+      const n = new Set(prev)
+      if (n.has(st)) n.delete(st)
+      else n.add(st)
+      return n
+    })
+    setPage(1)
+  }
 
   const toggleStatus = (st: GenerationStatus) => {
     setStatusSet((prev) => {
@@ -659,6 +684,35 @@ export default function RecordsPage() {
               })}
           </div>
 
+          {view === 'list' ? (
+            <div className={rec.filterStatusRow}>
+              <span className={rec.filterRowLabel}>评审</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewStatusSet(new Set())
+                  setPage(1)
+                }}
+                className={cn(rec.chip, reviewStatusSet.size === 0 ? rec.chipActive : rec.chipGhost)}
+              >
+                全部评审
+              </button>
+              {REVIEW_STATUS_ORDER.map((st) => {
+                const on = reviewStatusSet.has(st)
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => toggleReviewStatus(st)}
+                    className={cn(rec.chip, on ? rec.chipActive : rec.chipGhost)}
+                  >
+                    {recordReviewStatusLabel(st)}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
           <div
             className={cn(
               rec.filterAdvancedRow,
@@ -937,9 +991,14 @@ export default function RecordsPage() {
                         <p className={rec.tableSummary}>
                           {promptSummary(r.prompt || '', 30)}
                         </p>
-                        <span className={cn(recordStatusBadge(r.status), 'mt-2 inline-flex')}>
-                          {statusLabels[r.status]}
-                        </span>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className={cn(recordStatusBadge(r.status), 'inline-flex')}>
+                            {statusLabels[r.status]}
+                          </span>
+                          {r.reviewStatus && r.status === 'SUCCESS' ? (
+                            <RecordReviewStatusBadge status={r.reviewStatus} />
+                          ) : null}
+                        </div>
                       </div>
                       {cols.model && (
                         <span className="truncate text-xs text-[hsl(var(--records-text-secondary))]" title={r.modelName}>
@@ -970,6 +1029,11 @@ export default function RecordsPage() {
                         inRecycle={inRecycle}
                         loading={rowLoading === r.id}
                         onView={() => navigate(`/records/${r.id}`)}
+                        onReview={
+                          r.status === 'SUCCESS' && r.suiteId
+                            ? () => navigate(`/reviews/${r.id}`)
+                            : undefined
+                        }
                         onReuse={() => void openReuse(r)}
                         onExport={() => exportOne(r)}
                         onShare={() => void copyShare(r)}

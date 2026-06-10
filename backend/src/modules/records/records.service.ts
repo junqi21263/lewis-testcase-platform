@@ -8,7 +8,13 @@ import {
 } from '@nestjs/common'
 import { randomBytes } from 'crypto'
 import { PrismaService } from '@/prisma/prisma.service'
-import { GenerationSource, GenerationStatus, Prisma, UserRole } from '@prisma/client'
+import {
+  GenerationSource,
+  GenerationStatus,
+  Prisma,
+  RecordReviewStatus,
+  UserRole,
+} from '@prisma/client'
 import type { BatchRecordAction } from './dto/batch-records.dto'
 import type { UpdateGenerationRecordDto } from './dto/update-generation-record.dto'
 import type { CreateRecordShareDto } from './dto/create-record-share.dto'
@@ -33,6 +39,8 @@ export type RecordsListParams = {
   filterTeamId?: string
   caseCountMin?: string
   caseCountMax?: string
+  /** 逗号分隔：pending_review,in_review,approved,... */
+  reviewStatuses?: string
 }
 
 function splitCsv(s?: string): string[] | undefined {
@@ -157,6 +165,11 @@ export class RecordsService {
     const st = splitCsv(p.statuses)
     if (st?.length) {
       ands.push({ status: { in: st as GenerationStatus[] } })
+    }
+
+    const reviewSt = splitCsv(p.reviewStatuses)
+    if (reviewSt?.length) {
+      ands.push({ reviewStatus: { in: reviewSt as RecordReviewStatus[] } })
     }
 
     const kw = p.keyword?.trim()
