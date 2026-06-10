@@ -102,8 +102,12 @@ function normalizeArrows(s: string): string {
   return s
     .replace(/[→⇒➔➜⟹]/g, '-->')
     .replace(/[－—–]/g, '-')
-    .replace(/\s*--\s*>/g, '-->')
-    .replace(/\s*==\s*>/g, '==>')
+    .replace(/(--|==)\s+([^-=\n][^\n]*?)\s+\1>/g, (_m, op: string, label: string) => {
+      const safeLabel = decodeHtmlEntities(label).trim().replace(/\|/g, '/')
+      return `${op}>|${safeLabel}|`
+    })
+    .replace(/--\s+>/g, '-->')
+    .replace(/==\s+>/g, '==>')
     .replace(/->>/g, '-->')
     .replace(/<<-/g, '<--')
 }
@@ -161,6 +165,10 @@ function sanitizeFlowchartNodeLabels(src: string): string {
       let out = line
 
       out = out.replace(
+        /(\b[A-Za-z_][\w-]*)\s*\[\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]\]/g,
+        (_m, id: string, label: string) => `${id}[[${formatBracketLabel(label)}]]`,
+      )
+      out = out.replace(
         /(\b[A-Za-z_][\w-]*)\s*\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]/g,
         (_m, id: string, label: string) => `${id}[${formatBracketLabel(label)}]`,
       )
@@ -172,11 +180,6 @@ function sanitizeFlowchartNodeLabels(src: string): string {
         /(\b[A-Za-z_][\w-]*)\s*\(\s*((?:[^()"']|"[^"]*")*?)\s*\)/g,
         (_m, id: string, label: string) => `${id}(${formatParenLabel(label)})`,
       )
-      out = out.replace(
-        /(\b[A-Za-z_][\w-]*)\s*\[\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]\]/g,
-        (_m, id: string, label: string) => `${id}[[${formatBracketLabel(label)}]]`,
-      )
-
       return out
     })
     .join('\n')

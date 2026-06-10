@@ -41,6 +41,7 @@ import {
   testcaseDelimitedValues,
   TESTCASE_EXPORT_COLUMNS_CN,
 } from '@/utils/testcaseExportFormat'
+import { downloadTestcasesXlsx } from '@/utils/exportTestcasesXlsx'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
@@ -665,6 +666,24 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       }
     }
     const tsName = `${exportFilenameTimestamp()}`
+    const resolveModuleLabel = async () => {
+      if (!cases[0]?.suiteId) return ''
+      try {
+        const suite = await testcasesApi.getSuiteById(cases[0].suiteId)
+        return (suite.projectName && suite.projectName.trim()) || suite.name || ''
+      } catch {
+        return ''
+      }
+    }
+    if (format === 'EXCEL') {
+      try {
+        await downloadTestcasesXlsx(cases, { moduleLabel: await resolveModuleLabel() })
+        toast.success('已导出 Excel')
+      } catch {
+        toast.error('导出 Excel 失败，请稍后重试')
+      }
+      return
+    }
     if (format === 'JSON') {
       downloadTextFile(`${tsName}.json`, JSON.stringify(cases, null, 2), 'application/json;charset=utf-8')
       toast.success('已导出 JSON')
@@ -676,15 +695,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       return
     }
     if (format === 'CSV') {
-      let moduleLabel = ''
-      if (cases[0]?.suiteId) {
-        try {
-          const suite = await testcasesApi.getSuiteById(cases[0].suiteId)
-          moduleLabel = (suite.projectName && suite.projectName.trim()) || suite.name || ''
-        } catch {
-          // ignore
-        }
-      }
+      const moduleLabel = await resolveModuleLabel()
       const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
       const header = TESTCASE_EXPORT_COLUMNS_CN.map((h) => esc(h)).join(',')
       const rows = cases.map((c) => testcaseDelimitedValues(c, moduleLabel).map(esc).join(','))
@@ -692,7 +703,6 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       toast.success('已导出 CSV')
       return
     }
-    toast.error('Excel 需服务端用例集。请到「生成记录」内导出。')
   }
 
   const handleCopyJson = async () => {

@@ -19,15 +19,21 @@ function svgToPngBase64(svgMarkup: string): Promise<string> {
   )
 }
 
-/** 按文档中出现顺序返回每张 Mermaid 图的 PNG base64（不含前缀） */
-export async function renderMermaidChartsToPngBase64(markdown: string): Promise<string[]> {
+/** 提取并规范化 Markdown 中的 Mermaid 代码块，供 PDF 导出和契约测试共用。 */
+export function extractMermaidBlocksForPdf(markdown: string): string[] {
   const blocks: string[] = []
-  const re = /```mermaid\s*\n([\s\S]*?)```/gi
+  const re = /```\s*mermaid[^\n]*\n?([\s\S]*?)```/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(markdown)) !== null) {
     const body = m[1]?.trim() ?? ''
     if (body) blocks.push(normalizeMermaidSource(body))
   }
+  return blocks
+}
+
+/** 按文档中出现顺序返回每张 Mermaid 图的 PNG base64（不含前缀） */
+export async function renderMermaidChartsToPngBase64(markdown: string): Promise<string[]> {
+  const blocks = extractMermaidBlocksForPdf(markdown)
   if (blocks.length === 0) return []
 
   const out: string[] = []
