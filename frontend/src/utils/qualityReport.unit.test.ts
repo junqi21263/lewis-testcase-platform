@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { QualityReport } from '@/types'
 import {
+  buildLocalQualityReport,
   buildCoverageSummaryLabel,
   pickTopQualityIssues,
   summarizeQualitySuggestions,
@@ -55,6 +56,71 @@ const report: QualityReport = {
 }
 
 describe('qualityReport helpers', () => {
+  it('builds a local fallback report when backend qualityReport is missing', () => {
+    const fallback = buildLocalQualityReport(
+      `
+1. 用户可以使用手机号密码登录
+2. 登录失败时需要提示账号或密码错误
+3. 非管理员不能删除订单
+`.trim(),
+      [
+        {
+          id: 'case-1',
+          title: '登录-手机号密码登录成功',
+          precondition: '用户已注册',
+          steps: [
+            { order: 1, action: '输入手机号和密码' },
+            { order: 2, action: '点击登录按钮' },
+          ],
+          expectedResult: '[1] 输入校验通过\n[2] 登录成功并进入首页',
+          priority: 'P0',
+          type: 'FUNCTIONAL',
+          tags: ['模块:登录'],
+          status: 'DRAFT',
+          suiteId: '',
+        },
+        {
+          id: 'case-2',
+          title: '登录-手机号密码登录成功',
+          precondition: '用户已注册',
+          steps: [
+            { order: 1, action: '输入手机号和密码' },
+            { order: 2, action: '点击登录按钮' },
+          ],
+          expectedResult: '[1] 输入校验通过\n[2] 登录成功并进入首页',
+          priority: 'P0',
+          type: 'FUNCTIONAL',
+          tags: ['模块:登录'],
+          status: 'DRAFT',
+          suiteId: '',
+        },
+        {
+          id: 'case-3',
+          title: '验证功能正常',
+          precondition: '',
+          steps: [{ order: 1, action: '验证功能' }],
+          expectedResult: '符合预期',
+          priority: 'P3',
+          type: 'FUNCTIONAL',
+          tags: ['模块:通用'],
+          status: 'DRAFT',
+          suiteId: '',
+        },
+      ],
+    )
+
+    expect(fallback.coverageRate).toBe(33)
+    expect(fallback.coverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ requirement: '非管理员不能删除订单', status: 'missing' }),
+      ]),
+    )
+    expect(fallback.duplicateCount).toBe(1)
+    expect(fallback.genericCount).toBe(1)
+    expect(fallback.nonExecutableCount).toBe(1)
+    expect(fallback.suggestions.join('；')).toContain('非管理员不能删除订单')
+  })
+
   it('builds readable coverage summary text', () => {
     expect(buildCoverageSummaryLabel(report)).toBe('已覆盖 3 / 4 个需求点（75%）')
   })

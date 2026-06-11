@@ -48,6 +48,7 @@ import { downloadTestcasesXlsx } from '@/utils/exportTestcasesXlsx'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 import {
+  buildLocalQualityReport,
   buildCoverageSummaryLabel,
   pickTopQualityIssues,
   summarizeQualitySuggestions,
@@ -1408,6 +1409,7 @@ export default function GeneratePage() {
         : '请补充提示词'
 
   const handleGenerate = async () => {
+    let generationInputText = buildGenerateRequestText(inputText, requirementDescription, userNotes)
     if (sourceType === 'file' && !uploadedFile) {
       toast.error('请先上传文件')
       return
@@ -1438,6 +1440,7 @@ export default function GeneratePage() {
         toast.error('文件没有可用文本。请改用文本输入补充需求，或换一份文档。')
         return
       }
+      if (!generationInputText.trim()) generationInputText = file.parsedContent
     }
 
     setIsGenerating(true)
@@ -1451,7 +1454,7 @@ export default function GeneratePage() {
           {
             sourceType,
             fileId: uploadedFile?.id,
-            text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
+            text: generationInputText,
             customPrompt,
             templateId: selectedTemplateId ?? undefined,
             ...aiParams,
@@ -1462,7 +1465,6 @@ export default function GeneratePage() {
             setIsGenerating(false)
             setLastRecordId(meta?.recordId ?? null)
             setLastSuiteId(meta?.suiteId ?? null)
-            setQualityReport(meta?.qualityReport ?? null)
             let cases: TestCase[] = []
             if (meta?.suiteId) {
               try {
@@ -1478,6 +1480,9 @@ export default function GeneratePage() {
                 toast.error('未能解析为结构化用例，请到「生成记录」查看或缩小单次生成范围')
               }
             }
+            setQualityReport(
+              meta?.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, cases),
+            )
             setGeneratedCases(cases)
             setStep('result')
             if (cases.length === 0) toast.error('未生成任何用例，请检查模型或输入内容')
@@ -1514,14 +1519,16 @@ export default function GeneratePage() {
         const result = await aiApi.generateTestCases({
           sourceType,
           fileId: uploadedFile?.id,
-          text: buildGenerateRequestText(inputText, requirementDescription, userNotes),
+          text: generationInputText,
           customPrompt,
           templateId: selectedTemplateId ?? undefined,
           ...aiParams,
         })
         setGeneratedCases(result.cases)
         setLastRecordId(result.recordId ?? null)
-        setQualityReport(result.qualityReport ?? null)
+        setQualityReport(
+          result.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, result.cases),
+        )
         try {
           const rec = await recordsApi.getRecordById(result.recordId)
           setLastSuiteId(rec.suiteId ?? null)
