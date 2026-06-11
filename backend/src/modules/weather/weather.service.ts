@@ -27,6 +27,19 @@ type OpenMeteoForecastResponse = {
   }
 }
 
+type WttrResponse = {
+  current_condition?: Array<{
+    localObsDateTime?: string
+    observation_time?: string
+    temp_C?: string
+    FeelsLikeC?: string
+    humidity?: string
+    weatherCode?: string
+    weatherDesc?: Array<{ value?: string }>
+    winddirDegree?: string
+  }>
+}
+
 type CacheEntry<T> = { value: T; expiresAt: number }
 
 type NominatimSearchItem = {
@@ -66,6 +79,10 @@ export class WeatherService {
 
   private weatherHost(): string {
     return 'https://api.open-meteo.com'
+  }
+
+  private wttrHost(): string {
+    return 'https://wttr.in'
   }
 
   private cacheGet<T>(key: string): T | null {
@@ -260,6 +277,74 @@ export class WeatherService {
     return { text: '未知', icon: 'unknown' }
   }
 
+  private parseOptionalNumber(value: unknown): number | null {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null
+    if (typeof value !== 'string') return null
+    const n = Number(value.trim())
+    return Number.isFinite(n) ? n : null
+  }
+
+  private wttrCodeToText(code: string | null, rawText: string | null): { text: string; icon: string } {
+    const c = code ? Number(code) : NaN
+    if ([113].includes(c)) return { text: '晴', icon: 'sun' }
+    if ([116, 119, 122].includes(c)) return { text: '多云', icon: 'cloud' }
+    if ([143, 248, 260].includes(c)) return { text: '雾', icon: 'fog' }
+    if ([179, 227, 230, 323, 326, 329, 332, 335, 338, 368, 371, 392, 395].includes(c)) {
+      return { text: '雪', icon: 'snow' }
+    }
+    if (
+      [
+        176, 182, 185, 263, 266, 281, 284, 293, 296, 299, 302, 305, 308, 311, 314,
+        317, 320, 353, 356, 359, 362, 365, 374, 377,
+      ].includes(c)
+    ) {
+      return { text: '雨', icon: 'rain' }
+    }
+    if ([200, 386, 389].includes(c)) return { text: '雷暴', icon: 'thunder' }
+
+    const t = (rawText ?? '').toLowerCase()
+    if (/thunder/.test(t)) return { text: '雷暴', icon: 'thunder' }
+    if (/snow|sleet|ice|blizzard/.test(t)) return { text: '雪', icon: 'snow' }
+    if (/fog|mist|haze/.test(t)) return { text: '雾', icon: 'fog' }
+    if (/rain|drizzle|shower/.test(t)) return { text: '雨', icon: 'rain' }
+    if (/cloud|overcast/.test(t)) return { text: '多云', icon: 'cloud' }
+    if (/sun|clear/.test(t)) return { text: '晴', icon: 'sun' }
+    return { text: rawText || '未知', icon: 'unknown' }
+  }
+
+  private async fetchWttrNow(loc: string, latitude: number, longitude: number) {
+    const { data } = await axios.get<WttrResponse>(
+      `${this.wttrHost()}/${latitude},${longitude}`,
+      {
+        timeout: 10_000,
+        params: { format: 'j1' },
+        headers: {
+          'User-Agent': 'lewis-testcase-platform/1.0',
+        },
+      },
+    )
+
+    const cur = data.current_condition?.[0]
+    if (!cur) throw new ServiceUnavailableException('天气查询失败（wttr 返回缺少 current_condition）')
+
+    const rawText = cur.weatherDesc?.[0]?.value?.trim() || null
+    const wx = this.wttrCodeToText(cur.weatherCode ?? null, rawText)
+    const obsTime = cur.localObsDateTime || cur.observation_time || null
+
+    return {
+      locationId: loc,
+      updateTime: obsTime,
+      obsTime,
+      temp: this.parseOptionalNumber(cur.temp_C),
+      feelsLike: this.parseOptionalNumber(cur.FeelsLikeC),
+      text: wx.text,
+      icon: wx.icon,
+      windDir: cur.winddirDegree ?? null,
+      windScale: null,
+      humidity: this.parseOptionalNumber(cur.humidity),
+    }
+  }
+
   private unavailableNow(locationId: string) {
     return {
       locationId,
@@ -330,6 +415,16 @@ export class WeatherService {
       this.cacheSet(cacheKey, result, 10 * 60_000)
       return { ...result, stale: false }
     } catch (e) {
+      try {
+        const fallback = await this.fetchWttrNow(loc, latitude, longitude)
+        this.cacheSet(cacheKey, fallback, 10 * 60_000)
+        return { ...fallback, stale: false }
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        this.logger.warn(`天气备用源查询失败 locationId=${loc}: ${fallbackMessage}`)
+      }
+
       const last = this.cacheGet<any>(cacheKey)
       if (last) return { ...last, stale: true }
       const message = e instanceof Error ? e.message : String(e)

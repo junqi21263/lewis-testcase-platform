@@ -30,4 +30,42 @@ describe('WeatherService', () => {
       stale: true,
     })
   })
+
+  it('falls back to wttr current weather when Open-Meteo is unavailable', async () => {
+    mockedAxios.get
+      .mockRejectedValueOnce(new Error('SSL EOF'))
+      .mockResolvedValueOnce({
+        data: {
+          current_condition: [
+            {
+              localObsDateTime: '2026-06-11 18:20',
+              temp_C: '22',
+              FeelsLikeC: '24',
+              humidity: '68',
+              weatherDesc: [{ value: 'Partly cloudy' }],
+              weatherCode: '116',
+              winddirDegree: '135',
+            },
+          ],
+        },
+      })
+
+    const service = new WeatherService()
+    const result = await service.now('43.70643,-79.39864')
+
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2)
+    expect(result).toEqual({
+      locationId: '43.70643,-79.39864',
+      updateTime: '2026-06-11 18:20',
+      obsTime: '2026-06-11 18:20',
+      temp: 22,
+      feelsLike: 24,
+      text: '多云',
+      icon: 'cloud',
+      windDir: '135',
+      windScale: null,
+      humidity: 68,
+      stale: false,
+    })
+  })
 })
