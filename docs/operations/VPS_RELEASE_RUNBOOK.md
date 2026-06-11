@@ -5,29 +5,35 @@
 - `develop`：`http://139.199.69.115:8083`
 - `main`：`http://139.199.69.115`
 
-当前实际运行方式不是“CNB 构建成功后 VPS 自动更新页面”。  
-当前以 **VPS 本地目录 + `docker compose build` + `docker compose up -d --force-recreate`** 为准。
+当前推荐以 **CNB 预构建镜像 + VPS `docker compose pull/up`** 为准，避免在 VPS 上重复编译 `canvas`、字体和 Node 原生依赖。
 
 这意味着：
 
 1. 你在 Cursor 里改代码。
 2. 你推送到 `cnb/develop` 或 `cnb/main`。
 3. CNB 云构建成功。
-4. 你还需要在 VPS 上执行一次部署命令。
+4. 你执行仓库内对应环境的部署脚本。
 5. 浏览器最后需要强制刷新。
 
 ## 零、推荐替代手工流程
 
-为避免“本地代码是新的，但 VPS 上源码目录还是旧的”，优先使用仓库内脚本：
+为避免“本地代码是新的，但 VPS 上源码目录还是旧的”、以及 compose/env 文件混用，优先使用仓库内脚本：
 
 ```bash
-bash scripts/ops/vps-sync-rebuild.sh develop frontend
-bash scripts/ops/vps-sync-rebuild.sh develop all
-bash scripts/ops/vps-sync-rebuild.sh main frontend
-bash scripts/ops/vps-sync-rebuild.sh main all
+scripts/ops/deploy-develop.sh frontend
+scripts/ops/deploy-develop.sh all
+scripts/ops/deploy-main.sh frontend
+scripts/ops/deploy-main.sh all
 ```
 
-这个脚本会先把本地当前仓库 `rsync` 到 VPS 对应目录，再执行 `docker compose build` 和 `up -d --force-recreate`。
+默认 `DEPLOY_MODE=image`：脚本会先把仓库文件 `rsync` 到 VPS 对应目录，再拉取 CNB 预构建镜像并 `up -d --force-recreate`。
+
+如果必须在 VPS 上本地构建，显式加：
+
+```bash
+DEPLOY_MODE=build scripts/ops/deploy-develop.sh frontend
+DEPLOY_MODE=build scripts/ops/deploy-main.sh frontend
+```
 
 ## 一、总原则
 
@@ -63,6 +69,25 @@ git push cnb main
 CNB 构建成功只代表仓库和构建产物更新了，**不代表 VPS 页面已经更新**。
 
 ## 三、develop 发布命令
+
+推荐入口：
+
+```bash
+cd /Users/lewis/lewis_testcase_platform
+
+scripts/ops/deploy-develop.sh frontend
+scripts/ops/deploy-develop.sh backend
+scripts/ops/deploy-develop.sh all
+scripts/ops/deploy-develop.sh env
+```
+
+固定配置由脚本管理：
+
+- 目录：`/opt/lewis_testcase_platform_dev`
+- env：`.env.development`
+- compose：`docker-compose.ghcr.yml + docker-compose.dev.override.yml`
+- 镜像：`docker.cnb.cool/lewis-test/lewis-testcase-platform/*:dev`
+- 端口：frontend `8083`，backend `3000`，postgres `5433`，redis `6380`
 
 ### 1. 全量发布：前端 + 后端
 
@@ -141,6 +166,25 @@ sudo -E docker compose -f docker-compose.full.yml -f docker-compose.dev.override
 ```
 
 ## 四、main 发布命令
+
+推荐入口：
+
+```bash
+cd /Users/lewis/lewis_testcase_platform
+
+scripts/ops/deploy-main.sh frontend
+scripts/ops/deploy-main.sh backend
+scripts/ops/deploy-main.sh all
+scripts/ops/deploy-main.sh env
+```
+
+固定配置由脚本管理：
+
+- 目录：`/opt/lewis_testcase_platform`
+- env：`.env`
+- compose：`docker-compose.ghcr.yml`
+- 镜像：`docker.cnb.cool/lewis-test/lewis-testcase-platform/*:latest`
+- 端口：frontend `80`，postgres `5432`，redis `6379`
 
 ### 1. 全量发布：前端 + 后端
 
