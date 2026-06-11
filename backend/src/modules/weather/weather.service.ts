@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import axios from 'axios'
 
 type OpenMeteoGeocodingResponse = {
@@ -53,6 +53,7 @@ type NominatimSearchItem = {
 
 @Injectable()
 export class WeatherService {
+  private readonly logger = new Logger(WeatherService.name)
   private cache = new Map<string, CacheEntry<any>>()
 
   private nominatimHost(): string {
@@ -259,6 +260,22 @@ export class WeatherService {
     return { text: '未知', icon: 'unknown' }
   }
 
+  private unavailableNow(locationId: string) {
+    return {
+      locationId,
+      updateTime: null,
+      obsTime: null,
+      temp: null,
+      feelsLike: null,
+      text: '暂不可用',
+      icon: 'unknown',
+      windDir: null,
+      windScale: null,
+      humidity: null,
+      stale: true,
+    }
+  }
+
   async now(locationId: string) {
     const loc = locationId.trim()
     if (!loc) throw new BadRequestException('缺少 locationId')
@@ -315,8 +332,9 @@ export class WeatherService {
     } catch (e) {
       const last = this.cacheGet<any>(cacheKey)
       if (last) return { ...last, stale: true }
-      throw e
+      const message = e instanceof Error ? e.message : String(e)
+      this.logger.warn(`天气查询失败，返回降级数据 locationId=${loc}: ${message}`)
+      return this.unavailableNow(loc)
     }
   }
 }
-
