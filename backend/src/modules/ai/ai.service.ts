@@ -29,6 +29,7 @@ import {
   roughTokenEstimateFromChars,
 } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
+import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 
 @Injectable()
@@ -312,6 +313,10 @@ export class AiService {
       rows.length > 0 &&
       rows.every((r: any) => Array.isArray(r?.tags) && (r.tags as string[]).includes('ai-raw-output'))
     )
+  }
+
+  private buildQualityReport(dto: GenerateDto, fileContent: string | undefined, rows: any[]) {
+    return buildAiOutputQualityReport(dto.text || fileContent || dto.customPrompt || '', rows)
   }
 
   /** 落库时的团队、来源枚举、参数快照与模板全文 */
@@ -611,6 +616,7 @@ export class AiService {
               })
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
+              const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
               const warnings: string[] = [
                 '已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。',
               ]
@@ -623,6 +629,7 @@ export class AiService {
                 cases: suite.cases,
                 duration,
                 warnings,
+                qualityReport,
               }
             }
             if (text?.trim()) fileContent = text.trim()
@@ -693,6 +700,7 @@ export class AiService {
       })
 
       const duration = Date.now() - startTime
+      const qualityReport = this.buildQualityReport(dto, fileContent, rows)
       await this.prisma.generationRecord.update({
         where: { id: record.id },
         data: {
@@ -713,6 +721,7 @@ export class AiService {
         cases: suite.cases,
         tokensUsed: completion.usage?.total_tokens,
         duration,
+        qualityReport,
         ...(warnings.length ? { warnings } : {}),
       }
     } catch (err: unknown) {
@@ -830,11 +839,13 @@ export class AiService {
               })
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
+              const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
               res.write(
                 `data: ${JSON.stringify({
                   recordId: record.id,
                   suiteId: suite.id,
                   caseCount: suite.cases.length,
+                  qualityReport,
                 })}\n\n`,
               )
               res.write(`data: [DONE]\n\n`)
@@ -977,12 +988,14 @@ export class AiService {
       await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
       await this.bumpTemplateUsage(dto.templateId)
+      const qualityReport = this.buildQualityReport(dto, fileContent, rows)
 
       res.write(
         `data: ${JSON.stringify({
           recordId: record.id,
           suiteId: suite.id,
           caseCount: suite.cases.length,
+          qualityReport,
         })}\n\n`,
       )
       res.write(`data: [DONE]\n\n`)

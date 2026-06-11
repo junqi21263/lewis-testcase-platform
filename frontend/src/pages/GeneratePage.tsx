@@ -23,6 +23,9 @@ import {
   ChevronUp,
   ChevronLeft,
   MoreHorizontal,
+  Gauge,
+  AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -44,10 +47,15 @@ import {
 import { downloadTestcasesXlsx } from '@/utils/exportTestcasesXlsx'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
+import {
+  buildCoverageSummaryLabel,
+  pickTopQualityIssues,
+  summarizeQualitySuggestions,
+} from '@/utils/qualityReport'
 import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
 import { appConfirm } from '@/store/appConfirmStore'
 import toast from 'react-hot-toast'
-import type { TestCase, PromptTemplate, FileStatus, GenerationRecord } from '@/types'
+import type { TestCase, PromptTemplate, FileStatus, GenerationRecord, QualityReport } from '@/types'
 import { useNavigate } from 'react-router-dom'
 
 const INPUT_LENGTH_SOFT_WARN_CHARS = 85_000
@@ -153,6 +161,155 @@ function CasePriorityBadge({ priority }: { priority: string }) {
     <Badge className={`ring-1 ring-inset ${map[priority] ?? map.P3}`} variant="secondary">
       {priority}
     </Badge>
+  )
+}
+
+function qualityScoreTone(score: number): string {
+  if (score >= 85) return 'text-emerald-500'
+  if (score >= 70) return 'text-sky-500'
+  if (score >= 60) return 'text-amber-500'
+  return 'text-rose-500'
+}
+
+function issueTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    duplicate: '重复',
+    generic_title: '标题空泛',
+    generic_step: '步骤空泛',
+    generic_expected: '预期空泛',
+    missing_steps: '缺少步骤',
+    missing_expected: '缺少预期',
+    low_detail: '细节不足',
+    non_executable: '不可执行',
+  }
+  return map[type] ?? type
+}
+
+function distributionLabel(label: string): string {
+  const map: Record<string, string> = {
+    high: '高风险',
+    medium: '中风险',
+    low: '低风险',
+  }
+  return map[label] ?? label
+}
+
+function DistributionBars({
+  items,
+}: {
+  items: { label: string; count: number }[]
+}) {
+  const total = Math.max(1, items.reduce((sum, item) => sum + item.count, 0))
+  return (
+    <div className="space-y-1.5">
+      {items.map((item) => (
+        <div key={item.label} className="grid grid-cols-[64px_minmax(0,1fr)_32px] items-center gap-2 text-[11px]">
+          <span className="text-[hsl(var(--gcs-text-muted))]">{distributionLabel(item.label)}</span>
+          <div className="h-1.5 overflow-hidden rounded-full bg-[hsl(var(--gcs-panel-border))]">
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{ width: `${Math.round((item.count / total) * 100)}%` }}
+            />
+          </div>
+          <span className="text-right tabular-nums text-[hsl(var(--gcs-text-secondary))]">{item.count}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function QualityReportPanel({ report }: { report: QualityReport | null }) {
+  if (!report) return null
+  const missing = report.coverage.filter((item) => item.status === 'missing').slice(0, 4)
+  const issues = pickTopQualityIssues(report, 5)
+  const suggestions = summarizeQualitySuggestions(report)
+  return (
+    <div className="mt-3 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-[210px] items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Gauge className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">AI 输出质量检查</p>
+            <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">{report.summary}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className={`text-3xl font-bold leading-none ${qualityScoreTone(report.score)}`}>{report.score}</p>
+          <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">综合评分</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+              需求覆盖
+            </span>
+            <Badge variant={report.coverageRate != null && report.coverageRate >= 80 ? 'success' : 'warning'}>
+              {report.coverageRate == null ? '无法计算' : `${report.coverageRate}%`}
+            </Badge>
+          </div>
+          <p className="text-xs text-[hsl(var(--gcs-text-secondary))]">{buildCoverageSummaryLabel(report)}</p>
+          {missing.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {missing.map((item) => (
+                <p key={item.requirement} className="text-[11px] text-amber-600 dark:text-amber-300">
+                  缺失：{item.requirement}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
+          <div className="mb-2 flex items-center gap-1 text-xs font-semibold">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+            问题检测
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2 py-2">
+              <p className="font-semibold">{report.duplicateCount}</p>
+              <p className="mt-0.5 text-[11px] text-[hsl(var(--gcs-text-muted))]">重复</p>
+            </div>
+            <div className="rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2 py-2">
+              <p className="font-semibold">{report.genericCount}</p>
+              <p className="mt-0.5 text-[11px] text-[hsl(var(--gcs-text-muted))]">空泛</p>
+            </div>
+            <div className="rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2 py-2">
+              <p className="font-semibold">{report.nonExecutableCount}</p>
+              <p className="mt-0.5 text-[11px] text-[hsl(var(--gcs-text-muted))]">不可执行</p>
+            </div>
+          </div>
+          {issues.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {issues.map((issue, idx) => (
+                <p key={`${issue.caseTitle}-${issue.type}-${idx}`} className="text-[11px] text-[hsl(var(--gcs-text-muted))]">
+                  {issueTypeLabel(issue.type)}：{issue.caseTitle}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
+          <p className="mb-2 text-xs font-semibold">优先级分布</p>
+          <DistributionBars items={report.priorityDistribution} />
+        </div>
+        <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
+          <p className="mb-2 text-xs font-semibold">风险分布</p>
+          <DistributionBars items={report.riskDistribution} />
+        </div>
+        <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
+          <p className="mb-2 text-xs font-semibold">改进建议</p>
+          <p className="text-[11px] leading-5 text-[hsl(var(--gcs-text-secondary))]">{suggestions}</p>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -546,7 +703,7 @@ function RecentHistoryPanel() {
 
 function GenerateResult({ cases }: { cases: TestCase[] }) {
   const navigate = useNavigate()
-  const { reset, lastRecordId, lastSuiteId, setGeneratedCases } = useGenerateStore()
+  const { reset, lastRecordId, lastSuiteId, qualityReport, setGeneratedCases } = useGenerateStore()
   const [query, setQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'P0' | 'P1' | 'P2' | 'P3'>('ALL')
   const [typeFilter, setTypeFilter] = useState<'ALL' | string>('ALL')
@@ -815,6 +972,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           </div>
         )}
       </div>
+
+      <QualityReportPanel report={qualityReport} />
 
       <div className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -1114,6 +1273,7 @@ export default function GeneratePage() {
     setGeneratedCases,
     setLastRecordId,
     setLastSuiteId,
+    setQualityReport,
     isGenerating,
     setIsGenerating,
     streamContent,
@@ -1282,6 +1442,7 @@ export default function GeneratePage() {
 
     setIsGenerating(true)
     clearStreamContent()
+    setQualityReport(null)
     setStep('generating')
 
     try {
@@ -1301,6 +1462,7 @@ export default function GeneratePage() {
             setIsGenerating(false)
             setLastRecordId(meta?.recordId ?? null)
             setLastSuiteId(meta?.suiteId ?? null)
+            setQualityReport(meta?.qualityReport ?? null)
             let cases: TestCase[] = []
             if (meta?.suiteId) {
               try {
@@ -1359,6 +1521,7 @@ export default function GeneratePage() {
         })
         setGeneratedCases(result.cases)
         setLastRecordId(result.recordId ?? null)
+        setQualityReport(result.qualityReport ?? null)
         try {
           const rec = await recordsApi.getRecordById(result.recordId)
           setLastSuiteId(rec.suiteId ?? null)

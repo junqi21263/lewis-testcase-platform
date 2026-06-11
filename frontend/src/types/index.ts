@@ -238,6 +238,55 @@ export interface TestSuite {
   updatedAt: string
 }
 
+// ==================== AI 输出质量检查 ====================
+
+export type QualityIssueType =
+  | 'duplicate'
+  | 'generic_title'
+  | 'generic_step'
+  | 'generic_expected'
+  | 'missing_steps'
+  | 'missing_expected'
+  | 'low_detail'
+  | 'non_executable'
+
+export type CoverageStatus = 'covered' | 'partial' | 'missing'
+export type RiskLevel = 'high' | 'medium' | 'low'
+export type QualitySeverity = 'high' | 'medium' | 'low'
+
+export interface QualityIssueItem {
+  caseTitle: string
+  type: QualityIssueType
+  severity: QualitySeverity
+  message: string
+}
+
+export interface CoverageItem {
+  requirement: string
+  status: CoverageStatus
+  matchedCaseTitles: string[]
+}
+
+export interface DistributionItem {
+  label: string
+  count: number
+}
+
+export interface QualityReport {
+  score: number
+  summary: string
+  requirementPointsTotal: number
+  coverageRate: number | null
+  coverage: CoverageItem[]
+  duplicateCount: number
+  genericCount: number
+  nonExecutableCount: number
+  riskDistribution: DistributionItem[]
+  priorityDistribution: DistributionItem[]
+  suggestions: string[]
+  issues: QualityIssueItem[]
+}
+
 // ==================== 生成记录 ====================
 
 export type GenerationStatus =

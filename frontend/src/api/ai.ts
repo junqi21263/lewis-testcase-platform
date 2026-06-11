@@ -1,5 +1,5 @@
 import { request, streamRequest, type StreamDoneMeta } from '@/utils/request'
-import type { AIModel, AIGenerateParams, TestCase } from '@/types'
+import type { AIModel, AIGenerateParams, TestCase, QualityReport } from '@/types'
 
 export interface GenerateTestCasesPayload extends AIGenerateParams {
   sourceType: 'file' | 'text'
@@ -17,6 +17,7 @@ export interface GenerateResult {
   duration: number
   /** 输入压缩、输出达 Token 上限等提示 */
   warnings?: string[]
+  qualityReport?: QualityReport
 }
 
 export type TestModelPayload = {

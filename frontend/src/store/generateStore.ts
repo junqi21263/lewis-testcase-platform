@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { TestCase, AIGenerateParams, UploadedFile, GenerationOptions } from '@/types'
+import type { TestCase, AIGenerateParams, UploadedFile, GenerationOptions, QualityReport } from '@/types'
 import { loadGenPrefs } from '@/utils/genPrefs'
 
 type GenerateStep = 'upload' | 'prompt' | 'generating' | 'result'
@@ -69,6 +69,7 @@ interface GenerateState {
   generatedCases: TestCase[]
   lastRecordId: string | null
   lastSuiteId: string | null
+  qualityReport: QualityReport | null
   qualityScore: number | null
   qualitySuggestions: string | null
 
@@ -79,6 +80,7 @@ interface GenerateState {
   appendStreamContent: (chunk: string) => void
   clearStreamContent: () => void
   setQualityMeta: (score: number | null, suggestions: string | null) => void
+  setQualityReport: (report: QualityReport | null) => void
   setLastRecordId: (id: string | null) => void
   setLastSuiteId: (id: string | null) => void
 
@@ -119,6 +121,7 @@ const buildInitial = (): Omit<
   | 'appendStreamContent'
   | 'clearStreamContent'
   | 'setQualityMeta'
+  | 'setQualityReport'
   | 'setLastRecordId'
   | 'setLastSuiteId'
   | 'updateCaseLocal'
@@ -139,6 +142,7 @@ const buildInitial = (): Omit<
   generatedCases: [],
   lastRecordId: null,
   lastSuiteId: null,
+  qualityReport: null,
   qualityScore: null,
   qualitySuggestions: null,
   isGenerating: false,
@@ -179,6 +183,12 @@ export const useGenerateStore = create<GenerateState>()(
       clearStreamContent: () => set({ streamContent: '' }),
       setQualityMeta: (score, suggestions) =>
         set({ qualityScore: score, qualitySuggestions: suggestions }),
+      setQualityReport: (report) =>
+        set({
+          qualityReport: report,
+          qualityScore: report?.score ?? null,
+          qualitySuggestions: report?.suggestions?.join('；') ?? null,
+        }),
       setLastRecordId: (id) => set({ lastRecordId: id }),
       setLastSuiteId: (id) => set({ lastSuiteId: id }),
 
