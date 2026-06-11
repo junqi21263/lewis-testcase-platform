@@ -20,16 +20,23 @@ export type SafeMermaidRendererProps = {
   isStreaming?: boolean
 }
 
-export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMermaidRendererProps) {
+export function SafeMermaidRenderer({
+  rawSource,
+  isStreaming = false,
+}: SafeMermaidRendererProps) {
   const reactId = useId().replace(/:/g, '')
   const theme = useThemeStore((s) => s.theme)
   const [svg, setSvg] = useState<string | null>(null)
   const [errDetail, setErrDetail] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [debouncedSource, setDebouncedSource] = useState(rawSource)
+  const [isRendering, setIsRendering] = useState(false)
   const renderGen = useRef(0)
 
-  const normalized = useMemo(() => normalizeMermaidSource(rawSource.trim()), [rawSource])
+  const normalized = useMemo(
+    () => normalizeMermaidSource(rawSource.trim()),
+    [rawSource],
+  )
 
   useEffect(() => {
     const delay = isStreaming ? 900 : 200
@@ -39,14 +46,18 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
 
   const canAttemptRender = useMemo(() => {
     if (!debouncedSource.trim()) return false
-    if (isStreaming && !isMermaidSourceLikelyComplete(debouncedSource)) return false
+    if (isStreaming && !isMermaidSourceLikelyComplete(debouncedSource))
+      return false
     return true
   }, [debouncedSource, isStreaming])
 
   useEffect(() => {
     if (!canAttemptRender) {
-      setSvg(null)
-      setErrDetail(null)
+      setIsRendering(false)
+      if (!isStreaming || !debouncedSource.trim()) {
+        setSvg(null)
+        setErrDetail(null)
+      }
       return
     }
 
@@ -54,24 +65,34 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
     let cancelled = false
 
     ;(async () => {
-      setSvg(null)
+      setIsRendering(true)
       setErrDetail(null)
       try {
-        const out = await renderMermaidSvg(debouncedSource, theme, `mmd-${reactId}`)
+        const out = await renderMermaidSvg(
+          debouncedSource,
+          theme,
+          `mmd-${reactId}`,
+        )
         if (cancelled || gen !== renderGen.current) return
         setSvg(out)
+        setErrDetail(null)
       } catch (e) {
         if (cancelled || gen !== renderGen.current) return
+        setSvg(null)
         setErrDetail(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled && gen === renderGen.current) {
+          setIsRendering(false)
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [canAttemptRender, debouncedSource, theme, reactId])
+  }, [canAttemptRender, debouncedSource, theme, reactId, isStreaming])
 
-  const waiting = !canAttemptRender || (canAttemptRender && !svg && !errDetail)
+  const waiting = !svg && !errDetail && (!canAttemptRender || isRendering)
 
   const copySource = async () => {
     try {
@@ -110,7 +131,7 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
     return (
       <div
         role="status"
-        className="my-3 max-w-full overflow-hidden rounded-xl border border-[color:var(--ui-mermaid-error-border)] bg-[color:var(--ui-mermaid-error-bg)] px-4 py-4 sm:px-5"
+        className="my-3 min-h-[140px] max-w-full overflow-hidden rounded-xl border border-[color:var(--ui-mermaid-error-border)] bg-[color:var(--ui-mermaid-error-bg)] px-4 py-4 sm:px-5"
       >
         <p className="text-sm font-semibold text-[color:var(--ui-mermaid-error-title)]">
           流程图暂时无法渲染
@@ -144,7 +165,7 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
 
   if (waiting) {
     return (
-      <div className="my-3 max-w-full overflow-hidden rounded-xl border border-[color:var(--ui-report-border)] bg-[color:var(--ui-report-surface)] px-4 py-8 text-center text-xs text-[color:var(--ui-report-text-muted)]">
+      <div className="my-3 flex min-h-[180px] max-w-full items-center justify-center overflow-hidden rounded-xl border border-[color:var(--ui-report-border)] bg-[color:var(--ui-report-surface)] px-4 py-8 text-center text-xs text-[color:var(--ui-report-text-muted)]">
         {isStreaming ? '流程图内容生成中，完成后自动渲染…' : '流程图渲染中…'}
       </div>
     )
@@ -188,7 +209,7 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
           type="button"
           className={cn(
             'group/mmd relative block w-full max-w-full cursor-zoom-in text-left',
-            'max-h-[min(360px,45vh)] overflow-x-auto overflow-y-auto px-3 py-4',
+            'min-h-[180px] max-h-[min(360px,45vh)] overflow-x-auto overflow-y-auto px-3 py-4',
           )}
           onClick={() => setModalOpen(true)}
           title="点击放大查看流程图"
@@ -202,7 +223,11 @@ export function SafeMermaidRenderer({ rawSource, isStreaming = false }: SafeMerm
           </span>
         </button>
       </div>
-      <MermaidChartModal open={modalOpen} svg={svg} onClose={() => setModalOpen(false)} />
+      <MermaidChartModal
+        open={modalOpen}
+        svg={svg}
+        onClose={() => setModalOpen(false)}
+      />
     </>
   )
 }

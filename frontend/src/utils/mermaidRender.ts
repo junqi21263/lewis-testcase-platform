@@ -8,6 +8,7 @@ const DIAGRAM_HEAD =
   /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph|mindmap|timeline|journey|C4Context|block-beta)\b/i
 
 const FLOWCHART_HEAD = /^(flowchart|graph)\s/i
+const FLOWCHART_EDGE = /(?:-->|---|-\.-|==>)/
 
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null
 let lastTheme: MermaidThemeMode | null = null
@@ -42,11 +43,13 @@ export function stripInvalidErDiagramEnumSyntax(src: string): string {
     const t = full.trim()
     return `%% ${t} — 已跳过（请改用实体字段或 Mermaid 支持的写法）`
   })
-  out = out.replace(/^\s*enum\s+\w+\s*\[\s*\r?\n[\s\S]*?\r?\n\s*\]\s*/gim, (block) =>
-    `%% 已跳过无效 enum 块\n${block
-      .split(/\r?\n/)
-      .map((l) => `%% ${l}`)
-      .join('\n')}`,
+  out = out.replace(
+    /^\s*enum\s+\w+\s*\[\s*\r?\n[\s\S]*?\r?\n\s*\]\s*/gim,
+    (block) =>
+      `%% 已跳过无效 enum 块\n${block
+        .split(/\r?\n/)
+        .map((l) => `%% ${l}`)
+        .join('\n')}`,
   )
   return out
 }
@@ -102,10 +105,13 @@ function normalizeArrows(s: string): string {
   return s
     .replace(/[→⇒➔➜⟹]/g, '-->')
     .replace(/[－—–]/g, '-')
-    .replace(/(--|==)\s+([^-=\n][^\n]*?)\s+\1>/g, (_m, op: string, label: string) => {
-      const safeLabel = decodeHtmlEntities(label).trim().replace(/\|/g, '/')
-      return `${op}>|${safeLabel}|`
-    })
+    .replace(
+      /(--|==)\s+([^-=\n][^\n]*?)\s+\1>/g,
+      (_m, op: string, label: string) => {
+        const safeLabel = decodeHtmlEntities(label).trim().replace(/\|/g, '/')
+        return `${op}>|${safeLabel}|`
+      },
+    )
     .replace(/--\s+>/g, '-->')
     .replace(/==\s+>/g, '==>')
     .replace(/->>/g, '-->')
@@ -125,7 +131,11 @@ function cleanLabelInner(raw: string): string {
 function formatBracketLabel(inner: string): string {
   const t = cleanLabelInner(inner)
   if (!t) return '""'
-  const needsQuotes = /["'[\]#;|]/.test(t) || /[,:?()]/.test(t) || /\s/.test(t)
+  const needsQuotes =
+    /^end$/i.test(t) ||
+    /["'[\]#;|]/.test(t) ||
+    /[,:?()]/.test(t) ||
+    /\s/.test(t)
   if (!needsQuotes) return t
   const safe = t.replace(/"/g, "'")
   return `"${safe}"`
@@ -135,7 +145,9 @@ function formatBracketLabel(inner: string): string {
 function formatBraceLabel(inner: string): string {
   const t = cleanLabelInner(inner)
   if (!t) return '""'
-  if (/["'[\]#;|]/.test(t)) return `"${t.replace(/"/g, "'")}"`
+  if (/^end$/i.test(t) || /["'[\]#;|]/.test(t) || /[,:?()]/.test(t)) {
+    return `"${t.replace(/"/g, "'")}"`
+  }
   return t
 }
 
@@ -143,8 +155,54 @@ function formatBraceLabel(inner: string): string {
 function formatParenLabel(inner: string): string {
   const t = cleanLabelInner(inner)
   if (!t) return '""'
-  if (/[()"[\]#;|]/.test(t)) return `"${t.replace(/"/g, "'")}"`
+  if (/^end$/i.test(t) || /[()"[\]#;|]/.test(t) || /[,:?]/.test(t)) {
+    return `"${t.replace(/"/g, "'")}"`
+  }
   return t
+}
+
+function stripFlowchartLineNoise(src: string): string {
+  const headLine =
+    src
+      .split('\n')
+      .find((l) => l.trim() && !l.trim().startsWith('%%'))
+      ?.trim() ?? ''
+  if (!FLOWCHART_HEAD.test(headLine)) return src
+
+  return src
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('%%') || FLOWCHART_HEAD.test(trimmed))
+        return line
+
+      const withoutMarker = line.replace(
+        /^(\s*)(?:[-*+]\s+|\d+[.)、．]\s+)/,
+        '$1',
+      )
+      if (
+        withoutMarker !== line &&
+        (FLOWCHART_EDGE.test(withoutMarker) || /[\[\{(]/.test(withoutMarker))
+      ) {
+        return withoutMarker
+      }
+      return line
+    })
+    .join('\n')
+}
+
+function normalizeAmbiguousFlowchartEdges(src: string): string {
+  const headLine =
+    src
+      .split('\n')
+      .find((l) => l.trim() && !l.trim().startsWith('%%'))
+      ?.trim() ?? ''
+  if (!FLOWCHART_HEAD.test(headLine)) return src
+
+  return src.replace(
+    /(---|-->|==>|-\.-)([ox])(?=[A-Za-z0-9_\u4e00-\u9fa5])/g,
+    '$1 $2',
+  )
 }
 
 /** 逐行清洗 flowchart 节点定义 */
@@ -166,11 +224,13 @@ function sanitizeFlowchartNodeLabels(src: string): string {
 
       out = out.replace(
         /(\b[A-Za-z_][\w-]*)\s*\[\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]\]/g,
-        (_m, id: string, label: string) => `${id}[[${formatBracketLabel(label)}]]`,
+        (_m, id: string, label: string) =>
+          `${id}[[${formatBracketLabel(label)}]]`,
       )
       out = out.replace(
         /(\b[A-Za-z_][\w-]*)\s*\[\s*((?:[^\[\]"']|"[^"]*")*?)\s*\]/g,
-        (_m, id: string, label: string) => `${id}[${formatBracketLabel(label)}]`,
+        (_m, id: string, label: string) =>
+          `${id}[${formatBracketLabel(label)}]`,
       )
       out = out.replace(
         /(\b[A-Za-z_][\w-]*)\s*\{\s*((?:[^{}"']|"[^"]*")*?)\s*\}/g,
@@ -214,11 +274,15 @@ export function normalizeMermaidSource(raw: string): string {
   if (!s || /^%%\s*$/m.test(s)) return 'flowchart TD\n  A[暂无流程图]'
 
   const lines = s.split('\n')
-  const firstIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('%%'))
+  const firstIdx = lines.findIndex(
+    (l) => l.trim() && !l.trim().startsWith('%%'),
+  )
   if (firstIdx >= 0 && !DIAGRAM_HEAD.test(lines[firstIdx]!.trim())) {
     s = `flowchart TD\n${s}`
   }
 
+  s = stripFlowchartLineNoise(s)
+  s = normalizeAmbiguousFlowchartEdges(s)
   s = splitConcatenatedFlowchartLines(s)
   s = sanitizeFlowchartNodeLabels(s)
   s = dropTrailingIncompleteFlowLine(s)
@@ -236,7 +300,14 @@ export function normalizeMermaidSource(raw: string): string {
 export function isMermaidSourceLikelyComplete(src: string): boolean {
   const s = normalizeMermaidSource(src).trim()
   if (s.length < 12) return false
-  if (!DIAGRAM_HEAD.test(s.split('\n').find((l) => l.trim() && !l.trim().startsWith('%%'))?.trim() ?? '')) {
+  if (
+    !DIAGRAM_HEAD.test(
+      s
+        .split('\n')
+        .find((l) => l.trim() && !l.trim().startsWith('%%'))
+        ?.trim() ?? '',
+    )
+  ) {
     if (!FLOWCHART_HEAD.test(s) && !s.includes('-->') && !s.includes('---')) {
       return false
     }
@@ -255,9 +326,14 @@ export function isMermaidSourceLikelyComplete(src: string): boolean {
   }
   if (round !== 0 || square !== 0 || curl !== 0) return false
 
-  const last = s.split('\n').filter((l) => l.trim()).pop() ?? ''
+  const last =
+    s
+      .split('\n')
+      .filter((l) => l.trim())
+      .pop() ?? ''
   if (/(-->|---|-\.-|==>)\s*$/.test(last)) return false
-  if (/\[\s*$/.test(last) || /\{\s*$/.test(last) || /\(\s*$/.test(last)) return false
+  if (/\[\s*$/.test(last) || /\{\s*$/.test(last) || /\(\s*$/.test(last))
+    return false
 
   return true
 }
@@ -265,10 +341,8 @@ export function isMermaidSourceLikelyComplete(src: string): boolean {
 export function isMermaidErrorSvg(svg: string): boolean {
   return (
     /Syntax error in text/i.test(svg) ||
-    /error-text/i.test(svg) ||
-    /error-icon/i.test(svg) ||
     /aria-roledescription=["']error["']/i.test(svg) ||
-    /class=["'][^"']*error[^"']*["']/i.test(svg) ||
+    /<text[^>]*class=["'][^"']*\berror-text\b[^"']*["']/i.test(svg) ||
     /viewBox=["']0 0 2412 512["']/i.test(svg)
   )
 }
@@ -279,7 +353,8 @@ export function friendlyMermaidErrorMessage(err: unknown): string {
   if (/Syntax error/i.test(raw) || /错误图示/i.test(raw)) {
     return '流程图语法暂时无法解析，可展开查看原始定义。'
   }
-  if (/parse/i.test(raw)) return '流程图结构不完整或含非法符号，请查看原始源码。'
+  if (/parse/i.test(raw))
+    return '流程图结构不完整或含非法符号，请查看原始源码。'
   return '流程图暂时无法渲染，已保留原始定义供查看。'
 }
 
@@ -433,7 +508,11 @@ export function svgToPngBlob(svgMarkup: string): Promise<Blob> {
   })
 }
 
-export function downloadTextFile(content: string, filename: string, mime: string) {
+export function downloadTextFile(
+  content: string,
+  filename: string,
+  mime: string,
+) {
   const blob = new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
