@@ -221,14 +221,22 @@ if [ "\$DEPLOY_MODE" = "image" ] && [ "\$TARGET_SERVICE" != "env" ]; then
   sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES pull \$PULL_SERVICES
 fi
 
+up_extra=()
+if [ "\$TARGET_SERVICE" = "frontend" ]; then
+  # Frontend depends_on backend in compose so nginx can proxy /api, but a frontend-only
+  # release must not recreate or rebuild the backend container.
+  up_extra+=(--no-deps)
+fi
+
 if [ "\$DEPLOY_MODE" = "build" ]; then
   if [ "\$TARGET_SERVICE" = "env" ]; then
     sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES up -d --force-recreate \$SERVICES
   else
-    sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES up -d --build --force-recreate \$SERVICES
+    sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES build \$SERVICES
+    sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES up -d --no-build --force-recreate "\${up_extra[@]}" \$SERVICES
   fi
 else
-  sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES up -d --force-recreate \$SERVICES
+  sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES up -d --force-recreate "\${up_extra[@]}" \$SERVICES
 fi
 
 sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES ps
