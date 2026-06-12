@@ -704,7 +704,18 @@ function RecentHistoryPanel() {
 
 function GenerateResult({ cases }: { cases: TestCase[] }) {
   const navigate = useNavigate()
-  const { reset, lastRecordId, lastSuiteId, qualityReport, setGeneratedCases } = useGenerateStore()
+  const {
+    reset,
+    lastRecordId,
+    lastSuiteId,
+    qualityReport,
+    closedLoopStatus,
+    closedLoopSummary,
+    closedLoopError,
+    setClosedLoopStatus,
+    applyClosedLoopResult,
+    setGeneratedCases,
+  } = useGenerateStore()
   const [query, setQuery] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'P0' | 'P1' | 'P2' | 'P3'>('ALL')
   const [typeFilter, setTypeFilter] = useState<'ALL' | string>('ALL')
@@ -903,6 +914,25 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
     toast.success('已删除选中项')
   }
 
+  const handleRunClosedLoop = async () => {
+    if (!lastRecordId) {
+      toast.error('未找到生成记录，无法执行闭环优化')
+      return
+    }
+    setClosedLoopStatus('running', { summary: null, error: null })
+    try {
+      const result = await aiApi.runClosedLoop(lastRecordId)
+      applyClosedLoopResult(result)
+      setSelected(new Set())
+      setPage(1)
+      toast.success(result.summary || 'AI 闭环优化完成')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'AI 闭环优化失败'
+      setClosedLoopStatus('failed', { error: message })
+      toast.error(message)
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-4">
@@ -975,6 +1005,49 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       </div>
 
       <QualityReportPanel report={qualityReport} />
+
+      {qualityReport && cases.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-[220px]">
+              <p className="flex items-center gap-1.5 text-sm font-semibold">
+                <Sparkles className="h-4 w-4 text-primary" />
+                AI 需求-用例闭环代理
+              </p>
+              <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+                自动补齐缺失需求点，修正空泛/不可执行用例，并把原因写入评审中心。
+              </p>
+              {closedLoopSummary && (
+                <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-300">{closedLoopSummary}</p>
+              )}
+              {closedLoopError && (
+                <p className="mt-2 text-xs text-destructive">{closedLoopError}</p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {lastRecordId && lastSuiteId && closedLoopStatus === 'succeeded' && (
+                <Button variant="outline" size="sm" onClick={() => navigate(`/reviews/${lastRecordId}`)}>
+                  进入评审中心
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleRunClosedLoop}
+                disabled={!lastRecordId || closedLoopStatus === 'running'}
+              >
+                {closedLoopStatus === 'running' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {closedLoopStatus === 'running' ? '优化中' : '生成最终推荐版'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -1275,6 +1348,7 @@ export default function GeneratePage() {
     setLastRecordId,
     setLastSuiteId,
     setQualityReport,
+    setClosedLoopStatus,
     isGenerating,
     setIsGenerating,
     streamContent,
@@ -1446,6 +1520,7 @@ export default function GeneratePage() {
     setIsGenerating(true)
     clearStreamContent()
     setQualityReport(null)
+    setClosedLoopStatus('idle')
     setStep('generating')
 
     try {

@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { TestCase, AIGenerateParams, UploadedFile, GenerationOptions, QualityReport } from '@/types'
+import type {
+  TestCase,
+  AIGenerateParams,
+  UploadedFile,
+  GenerationOptions,
+  QualityReport,
+  ClosedLoopResult,
+} from '@/types'
 import { loadGenPrefs } from '@/utils/genPrefs'
 
 type GenerateStep = 'upload' | 'prompt' | 'generating' | 'result'
@@ -72,6 +79,9 @@ interface GenerateState {
   qualityReport: QualityReport | null
   qualityScore: number | null
   qualitySuggestions: string | null
+  closedLoopStatus: 'idle' | 'running' | 'succeeded' | 'failed'
+  closedLoopSummary: string | null
+  closedLoopError: string | null
 
   isGenerating: boolean
   streamContent: string
@@ -83,6 +93,11 @@ interface GenerateState {
   setQualityReport: (report: QualityReport | null) => void
   setLastRecordId: (id: string | null) => void
   setLastSuiteId: (id: string | null) => void
+  setClosedLoopStatus: (
+    status: GenerateState['closedLoopStatus'],
+    detail?: { summary?: string | null; error?: string | null },
+  ) => void
+  applyClosedLoopResult: (result: ClosedLoopResult) => void
 
   updateCaseLocal: (id: string, patch: Partial<TestCase>) => void
 
@@ -124,6 +139,8 @@ const buildInitial = (): Omit<
   | 'setQualityReport'
   | 'setLastRecordId'
   | 'setLastSuiteId'
+  | 'setClosedLoopStatus'
+  | 'applyClosedLoopResult'
   | 'updateCaseLocal'
   | 'setPendingGenerateHandoff'
   | 'reset'
@@ -145,6 +162,9 @@ const buildInitial = (): Omit<
   qualityReport: null,
   qualityScore: null,
   qualitySuggestions: null,
+  closedLoopStatus: 'idle',
+  closedLoopSummary: null,
+  closedLoopError: null,
   isGenerating: false,
   streamContent: '',
   pendingGenerateHandoff: null,
@@ -191,6 +211,25 @@ export const useGenerateStore = create<GenerateState>()(
         }),
       setLastRecordId: (id) => set({ lastRecordId: id }),
       setLastSuiteId: (id) => set({ lastSuiteId: id }),
+      setClosedLoopStatus: (status, detail) =>
+        set({
+          closedLoopStatus: status,
+          closedLoopSummary: detail?.summary ?? (status === 'idle' ? null : undefined),
+          closedLoopError: detail?.error ?? (status === 'idle' ? null : undefined),
+        }),
+      applyClosedLoopResult: (result) =>
+        set({
+          generatedCases: result.cases,
+          lastRecordId: result.recordId,
+          lastSuiteId: result.suiteId,
+          qualityReport: result.qualityReport,
+          qualityScore: result.qualityReport.score,
+          qualitySuggestions: result.qualityReport.suggestions?.join('；') ?? null,
+          closedLoopStatus: 'succeeded',
+          closedLoopSummary: result.summary,
+          closedLoopError: null,
+          currentStep: 'result',
+        }),
 
       updateCaseLocal: (id, patch) =>
         set((state) => ({
@@ -237,6 +276,9 @@ export const useGenerateStore = create<GenerateState>()(
         lastSuiteId: s.lastSuiteId,
         qualityScore: s.qualityScore,
         qualitySuggestions: s.qualitySuggestions,
+        closedLoopStatus: s.closedLoopStatus,
+        closedLoopSummary: s.closedLoopSummary,
+        closedLoopError: s.closedLoopError,
         // pendingGenerateHandoff 故意不持久化
       }),
     },

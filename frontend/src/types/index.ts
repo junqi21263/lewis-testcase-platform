@@ -287,6 +287,34 @@ export interface QualityReport {
   issues: QualityIssueItem[]
 }
 
+export type ClosedLoopActionType =
+  | 'add_missing_requirement'
+  | 'refine_generic'
+  | 'fix_non_executable'
+  | 'mark_duplicate'
+
+export interface ClosedLoopAction {
+  type: ClosedLoopActionType
+  caseId: string | null
+  caseTitle: string
+  requirement: string | null
+  reason: string
+}
+
+export interface ClosedLoopResult {
+  recordId: string
+  suiteId: string
+  beforeScore: number
+  afterScore: number
+  addedCount: number
+  updatedCount: number
+  duplicateMarkedCount: number
+  cases: TestCase[]
+  qualityReport: QualityReport
+  actions: ClosedLoopAction[]
+  summary: string
+}
+
 // ==================== 生成记录 ====================
 
 export type GenerationStatus =

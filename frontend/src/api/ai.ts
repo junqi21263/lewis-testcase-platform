@@ -1,5 +1,5 @@
 import { request, streamRequest, type StreamDoneMeta } from '@/utils/request'
-import type { AIModel, AIGenerateParams, TestCase, QualityReport } from '@/types'
+import type { AIModel, AIGenerateParams, TestCase, QualityReport, ClosedLoopResult } from '@/types'
 
 export interface GenerateTestCasesPayload extends AIGenerateParams {
   sourceType: 'file' | 'text'
@@ -41,6 +41,10 @@ export const aiApi = {
   /** 非流式生成（小量请求） */
   generateTestCases: (payload: GenerateTestCasesPayload) =>
     request.post<GenerateResult>('/ai/generate', payload),
+
+  /** AI 需求-用例闭环优化：生成最终推荐版 */
+  runClosedLoop: (recordId: string) =>
+    request.post<ClosedLoopResult>(`/ai/records/${recordId}/close-loop`, {}),
 
   /** 流式生成（SSE），大量内容时使用 */
   generateStream: (

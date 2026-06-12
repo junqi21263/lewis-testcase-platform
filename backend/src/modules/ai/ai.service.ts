@@ -14,6 +14,7 @@ import {
   Prisma,
   TestCasePriority,
   TestCaseType,
+  TestCaseVersionSource,
   UploadedFile,
 } from '@prisma/client'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
@@ -30,7 +31,13 @@ import {
 } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
+import {
+  buildClosedLoopPlan,
+  type ClosedLoopCase,
+  type ClosedLoopMutation,
+} from './closed-loop-agent.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
+import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
 @Injectable()
 export class AiService {
@@ -319,6 +326,68 @@ export class AiService {
     return buildAiOutputQualityReport(dto.text || fileContent || dto.customPrompt || '', rows)
   }
 
+  private mapDbCaseToClosedLoopInput(c: {
+    id: string
+    title: string
+    priority: TestCasePriority
+    type: TestCaseType
+    precondition: string | null
+    steps: Prisma.JsonValue
+    expectedResult: string
+    tags: string[]
+    description: string | null
+  }) {
+    return {
+      id: c.id,
+      title: c.title,
+      priority: c.priority,
+      type: c.type,
+      precondition: c.precondition ?? '',
+      steps: Array.isArray(c.steps) ? c.steps : [],
+      expectedResult: c.expectedResult,
+      tags: c.tags,
+      description: c.description ?? undefined,
+    }
+  }
+
+  private mapClosedLoopCaseToUpdateInput(c: ClosedLoopCase): Prisma.TestCaseUpdateInput {
+    const normalized = normalizeCaseRowForPersistence(c as unknown as Record<string, unknown>)
+    const priority = normalized.priority as TestCasePriority
+    const type = normalized.type as TestCaseType
+    return {
+      title: normalized.title,
+      precondition: normalized.precondition ?? null,
+      description: normalized.description ?? null,
+      steps: normalized.steps as Prisma.InputJsonValue,
+      expectedResult: normalized.expectedResult,
+      priority,
+      type,
+      tags: normalized.tags,
+    }
+  }
+
+  private mapClosedLoopCaseToCreateInput(c: ClosedLoopCase): Prisma.TestCaseCreateWithoutSuiteInput {
+    const normalized = normalizeCaseRowForPersistence(c as unknown as Record<string, unknown>)
+    return this.mapRowToCaseInput(normalized)
+  }
+
+  private closedLoopComment(action: ClosedLoopMutation, beforeScore: number, afterScore: number) {
+    const prefix =
+      action.type === 'add_missing_requirement'
+        ? 'AI 闭环补齐'
+        : action.type === 'mark_duplicate'
+          ? 'AI 闭环标记重复'
+          : 'AI 闭环优化'
+    const requirement = action.requirement ? `\n关联需求：${action.requirement}` : ''
+    return `${prefix}：${action.reason}${requirement}\n质量评分：${beforeScore} -> ${afterScore}`
+  }
+
+  private closedLoopSummary(action: ClosedLoopMutation) {
+    if (action.type === 'add_missing_requirement') return `AI 闭环补齐：${action.requirement ?? action.case.title}`
+    if (action.type === 'mark_duplicate') return `AI 闭环标记重复：${action.reason}`
+    return `AI 闭环优化：${action.reason}`
+  }
+
   /** 落库时的团队、来源枚举、参数快照与模板全文 */
   private async buildRecordPersistExtras(dto: GenerateDto, userId: string) {
     const [u, tpl] = await Promise.all([
@@ -411,6 +480,201 @@ export class AiService {
       },
     })
     return models
+  }
+
+  async runRequirementCaseClosedLoop(recordId: string, userId: string) {
+    const record = await this.prisma.generationRecord.findFirst({
+      where: { id: recordId, creatorId: userId, deletedAt: null },
+      include: {
+        file: { select: { parsedContent: true } },
+        suite: {
+          include: {
+            cases: { orderBy: { createdAt: 'asc' } },
+          },
+        },
+      },
+    })
+    if (!record) throw new BadRequestException('生成记录不存在或无权访问')
+    if (!record.suiteId || !record.suite) throw new BadRequestException('该记录没有可优化的用例集')
+    if (!record.suite.cases.length) throw new BadRequestException('该记录暂无可优化用例')
+
+    await this.bootstrapReviewsSafe(record.id, record.suiteId, userId)
+
+    const requirementText =
+      record.demandContent?.trim() ||
+      record.prompt?.trim() ||
+      record.file?.parsedContent?.trim() ||
+      record.promptTemplateSnapshot?.trim() ||
+      ''
+    const beforeRows = record.suite.cases.map((c) => this.mapDbCaseToClosedLoopInput(c))
+    const beforeReport = buildAiOutputQualityReport(requirementText, beforeRows)
+    const plan = buildClosedLoopPlan({
+      requirementText,
+      cases: beforeRows,
+      qualityReport: beforeReport,
+    })
+
+    if (plan.actions.length === 0) {
+      return {
+        recordId: record.id,
+        suiteId: record.suiteId,
+        beforeScore: beforeReport.score,
+        afterScore: beforeReport.score,
+        addedCount: 0,
+        updatedCount: 0,
+        duplicateMarkedCount: 0,
+        cases: record.suite.cases,
+        qualityReport: beforeReport,
+        actions: [],
+        summary: '当前用例质量检查未发现需要 AI 闭环修订的问题。',
+      }
+    }
+
+    const simulatedRows = [
+      ...beforeRows.map((row) => {
+        const mutation = [...plan.updates, ...plan.duplicateMarks].find((item) => item.caseId === row.id)
+        return mutation ? mutation.case : row
+      }),
+      ...plan.additions.map((item) => item.case),
+    ]
+    const afterReport = buildAiOutputQualityReport(requirementText, simulatedRows)
+
+    await this.prisma.$transaction(async (tx) => {
+      const currentCases = await tx.testCase.findMany({
+        where: { suiteId: record.suiteId! },
+        orderBy: { createdAt: 'asc' },
+      })
+      const caseMap = new Map(currentCases.map((c) => [c.id, c]))
+      const reviews = await tx.testCaseReview.findMany({ where: { recordId: record.id } })
+      const reviewMap = new Map(reviews.map((r) => [r.caseId, r]))
+
+      for (const action of [...plan.updates, ...plan.duplicateMarks]) {
+        if (!action.caseId) continue
+        const existing = caseMap.get(action.caseId)
+        const review = reviewMap.get(action.caseId)
+        if (!existing || !review) continue
+        const nextVersion = review.currentVersionNumber + 1
+        const updated = await tx.testCase.update({
+          where: { id: action.caseId },
+          data: this.mapClosedLoopCaseToUpdateInput(action.case),
+        })
+        const snapshot = buildSnapshotFromCase(updated, this.closedLoopSummary(action))
+        const version = await tx.testCaseVersion.create({
+          data: {
+            caseId: action.caseId,
+            recordId: record.id,
+            versionNumber: nextVersion,
+            snapshotJson: snapshot as unknown as Prisma.InputJsonValue,
+            sourceType: TestCaseVersionSource.manual_edit,
+            changeSummary: this.closedLoopSummary(action).slice(0, 500),
+            createdBy: userId,
+          },
+        })
+        const comment = this.closedLoopComment(action, beforeReport.score, afterReport.score)
+        await tx.testCaseReview.update({
+          where: { caseId: action.caseId },
+          data: {
+            currentVersionNumber: nextVersion,
+            latestComment: comment,
+            updatedAt: new Date(),
+          },
+        })
+        await tx.testCaseComment.create({
+          data: {
+            caseId: action.caseId,
+            recordId: record.id,
+            versionId: version.id,
+            commentType: 'note',
+            content: comment,
+            createdBy: userId,
+          },
+        })
+      }
+
+      for (const action of plan.additions) {
+        const created = await tx.testCase.create({
+          data: {
+            ...this.mapClosedLoopCaseToCreateInput(action.case),
+            suite: { connect: { id: record.suiteId! } },
+          },
+        })
+        const snapshot = buildSnapshotFromCase(created, this.closedLoopSummary(action))
+        const review = await tx.testCaseReview.create({
+          data: {
+            recordId: record.id,
+            caseId: created.id,
+            reviewStatus: 'pending_review',
+            currentVersionNumber: 1,
+            latestComment: this.closedLoopComment(action, beforeReport.score, afterReport.score),
+          },
+        })
+        const version = await tx.testCaseVersion.create({
+          data: {
+            caseId: created.id,
+            recordId: record.id,
+            versionNumber: 1,
+            snapshotJson: snapshot as unknown as Prisma.InputJsonValue,
+            sourceType: TestCaseVersionSource.manual_edit,
+            changeSummary: this.closedLoopSummary(action).slice(0, 500),
+            createdBy: userId,
+          },
+        })
+        await tx.testCaseComment.create({
+          data: {
+            caseId: created.id,
+            recordId: record.id,
+            versionId: version.id,
+            commentType: 'note',
+            content: this.closedLoopComment(action, beforeReport.score, afterReport.score),
+            createdBy: userId,
+          },
+        })
+        reviewMap.set(created.id, review)
+      }
+
+      await tx.generationRecord.update({
+        where: { id: record.id },
+        data: {
+          caseCount: currentCases.length + plan.additions.length,
+          notes: [
+            record.notes?.trim(),
+            `AI 闭环优化：新增 ${plan.additions.length} 条，修订 ${plan.updates.length} 条，标记重复 ${plan.duplicateMarks.length} 条；评分 ${beforeReport.score} -> ${afterReport.score}`,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      })
+    })
+
+    await this.reviews.recomputeRecordReviewStatus(record.id)
+
+    const finalCases = await this.prisma.testCase.findMany({
+      where: { suiteId: record.suiteId },
+      orderBy: { createdAt: 'asc' },
+    })
+    const finalRows = finalCases.map((c) => this.mapDbCaseToClosedLoopInput(c))
+    const qualityReport = buildAiOutputQualityReport(requirementText, finalRows)
+    const summary = `AI 闭环完成：新增 ${plan.additions.length} 条，修订 ${plan.updates.length} 条，标记重复 ${plan.duplicateMarks.length} 条；评分 ${beforeReport.score} -> ${qualityReport.score}`
+
+    return {
+      recordId: record.id,
+      suiteId: record.suiteId,
+      beforeScore: beforeReport.score,
+      afterScore: qualityReport.score,
+      addedCount: plan.additions.length,
+      updatedCount: plan.updates.length,
+      duplicateMarkedCount: plan.duplicateMarks.length,
+      cases: finalCases,
+      qualityReport,
+      actions: plan.actions.map((action) => ({
+        type: action.type,
+        caseId: action.caseId ?? null,
+        caseTitle: action.case.title,
+        requirement: action.requirement ?? null,
+        reason: action.reason,
+      })),
+      summary,
+    }
   }
 
   /** 管理用途：测试指定模型连通性（小请求，返回延迟与回包片段）；成功/失败均写入 DB 观测字段（若有对应配置行） */

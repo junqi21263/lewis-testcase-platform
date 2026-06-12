@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Res, Header } from '@nestjs/common'
+import { Controller, Get, Post, Body, Res, Header, Param } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger'
 import { Response } from 'express'
 import { AiService } from './ai.service'
@@ -29,6 +29,12 @@ export class AiController {
   @ApiOperation({ summary: '非流式生成测试用例' })
   generate(@Body() dto: GenerateDto, @CurrentUser('id') userId: string) {
     return this.aiService.generate(dto, userId)
+  }
+
+  @Post('records/:recordId/close-loop')
+  @ApiOperation({ summary: 'AI 需求-用例闭环优化：生成最终推荐版' })
+  closeLoop(@Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.aiService.runRequirementCaseClosedLoop(recordId, userId)
   }
 
   @Post('generate/stream')
