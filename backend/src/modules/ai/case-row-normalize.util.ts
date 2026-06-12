@@ -7,11 +7,14 @@ export type NormalizedCaseShape = {
   title: string
   priority: string
   type: string
+  module?: string
+  riskLevel?: 'high' | 'medium' | 'low'
   precondition?: string
   steps: { order: number; action: string; expected?: string }[]
   expectedResult: string
   tags: string[]
   description?: string
+  mermaid?: string | null
 }
 
 const TYPE_TAG_ZH: Record<string, string> = {
@@ -52,9 +55,7 @@ export function ensureNumberedPrecondition(pre: string): string | undefined {
     .map((l) => l.trim())
     .filter(Boolean)
   if (lines.length <= 1) return t
-  return lines
-    .map((l, i) => `${i + 1}. ${l.replace(/^\d+[\.、．]\s*/, '')}`)
-    .join('\n')
+  return lines.map((l, i) => `${i + 1}. ${l.replace(/^\d+[\.、．]\s*/, '')}`).join('\n')
 }
 
 function hasBracketEnumeration(s: string): boolean {
@@ -96,8 +97,7 @@ export function normalizeStepsShape(stepsRaw: unknown): { order: number; action:
   }
   const out = stepsRaw.map((s: any, i: number) => {
     const action = String(s?.action ?? s?.desc ?? s?.description ?? s?.步骤 ?? '').trim()
-    const expected =
-      s?.expected != null && String(s.expected).trim() ? String(s.expected).trim() : undefined
+    const expected = s?.expected != null && String(s.expected).trim() ? String(s.expected).trim() : undefined
     const order = typeof s?.order === 'number' && s.order >= 1 ? Math.floor(s.order) : i + 1
     return { order, action: action || `第 ${i + 1} 步`, expected }
   })
@@ -107,10 +107,7 @@ export function normalizeStepsShape(stepsRaw: unknown): { order: number; action:
 /**
  * 预期结果：优先保留已有 [1] 格式；否则用每步 expected 合成；再否则用整段 expectedResult 兜底到 [n]
  */
-export function ensureBracketExpectedResult(
-  steps: { order: number; action: string; expected?: string }[],
-  expectedResult: string,
-): string {
+export function ensureBracketExpectedResult(steps: { order: number; action: string; expected?: string }[], expectedResult: string): string {
   const er0 = stripNoiseFromExpectedText(expectedResult ?? '')
   if (er0 && hasBracketEnumeration(er0)) return er0
 
@@ -156,6 +153,30 @@ function ensureModuleTag(tags: string[], module: string): string[] {
   return next
 }
 
+function normalizeRiskLevel(raw: string): 'high' | 'medium' | 'low' | undefined {
+  const t = raw.trim().toLowerCase()
+  if (!t) return undefined
+  if (['high', 'p0', 'p1', '高', '高风险', '严重', 'critical'].includes(t)) return 'high'
+  if (['medium', 'mid', '中', '中风险', '一般', 'moderate'].includes(t)) return 'medium'
+  if (['low', '低', '低风险', '轻微', 'minor'].includes(t)) return 'low'
+  return undefined
+}
+
+function ensureRiskTag(tags: string[], riskLevel?: 'high' | 'medium' | 'low'): string[] {
+  if (!riskLevel) return tags.filter((t) => !/^风险[:：]\s*$/i.test(t))
+  const next = tags.filter((t) => !/^风险[:：]/i.test(t))
+  next.push(`风险:${riskLevel}`)
+  return next
+}
+
+function appendMermaidToDescription(description: string | undefined, mermaid: string): string {
+  const m = mermaid.trim()
+  if (!m) return description ?? ''
+  const base = (description ?? '').trim()
+  if (base.includes(m) || /Mermaid:/i.test(base)) return base
+  return [base, `Mermaid:\n${m}`].filter(Boolean).join('\n\n')
+}
+
 /** 标签：补全「功能」等与 type 对应的中文标签（Excel 示例为 UI、功能） */
 function enrichTagsFromType(tags: string[], type: string): string[] {
   const next = [...tags]
@@ -172,8 +193,7 @@ function enrichTagsFromType(tags: string[], type: string): string[] {
 export function normalizeCaseRowForPersistence(raw: Record<string, unknown>): NormalizedCaseShape {
   const c = { ...raw }
 
-  const title =
-    pickStr(c, 'title', '用例名称', 'caseTitle', 'name').slice(0, 500) || '未命名用例'
+  const title = pickStr(c, 'title', '用例名称', 'caseTitle', 'name').slice(0, 500) || '未命名用例'
 
   let tags = toTagArray(c.tags)
   if (tags.length === 0 && c.label != null) tags = toTagArray(c.label)
@@ -190,6 +210,13 @@ export function normalizeCaseRowForPersistence(raw: Record<string, unknown>): No
   tags = tags.filter((t) => !t.startsWith('模块:'))
   if (module) tags = ensureModuleTag(tags, module)
 
+  let riskLevel = normalizeRiskLevel(pickStr(c, 'riskLevel', 'risk', '风险等级', '风险'))
+  if (!riskLevel) {
+    const riskTag = tags.find((x) => /^风险[:：]/i.test(x))
+    if (riskTag) riskLevel = normalizeRiskLevel(riskTag.replace(/^风险[:：]/i, '').trim())
+  }
+  tags = ensureRiskTag(tags, riskLevel)
+
   const type = pickStr(c, 'type', '类型') || 'FUNCTIONAL'
   tags = enrichTagsFromType(tags, type)
 
@@ -205,18 +232,24 @@ export function normalizeCaseRowForPersistence(raw: Record<string, unknown>): No
   const p = priority.match(/^P[0-3]$/i) ? priority.toUpperCase() : 'P2'
 
   const typUpper = type.toUpperCase()
-  const typeNorm = ['FUNCTIONAL', 'PERFORMANCE', 'SECURITY', 'COMPATIBILITY', 'REGRESSION'].includes(typUpper)
-    ? typUpper
-    : 'FUNCTIONAL'
+  const typeNorm = ['FUNCTIONAL', 'PERFORMANCE', 'SECURITY', 'COMPATIBILITY', 'REGRESSION'].includes(typUpper) ? typUpper : 'FUNCTIONAL'
+
+  const mermaidRaw = pickStr(c, 'mermaid', 'flowchart', '流程图')
+  const mermaid = mermaidRaw || null
+  const descriptionBase = pickStr(c, 'description', '备注', 'notes') || undefined
+  const description = mermaid ? appendMermaidToDescription(descriptionBase, mermaid) : descriptionBase
 
   return {
     title,
     priority: p,
     type: typeNorm,
+    module: module || undefined,
+    riskLevel,
     precondition,
     steps,
     expectedResult,
     tags,
-    description: pickStr(c, 'description', '备注', 'notes') || undefined,
+    description: description || undefined,
+    mermaid,
   }
 }

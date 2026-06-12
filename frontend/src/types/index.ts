@@ -190,6 +190,7 @@ export interface TemplateVariable {
 export type TestCaseStatus = 'DRAFT' | 'REVIEWING' | 'APPROVED' | 'ARCHIVED'
 export type TestCasePriority = 'P0' | 'P1' | 'P2' | 'P3'
 export type TestCaseType = 'FUNCTIONAL' | 'PERFORMANCE' | 'SECURITY' | 'COMPATIBILITY' | 'REGRESSION'
+export type TestCaseRiskLevel = 'high' | 'medium' | 'low'
 
 /** 生成页偏好（与后端 generation options 对齐） */
 export interface GenerationOptions {
@@ -211,8 +212,10 @@ export interface TestCase {
   expectedResult: string
   actualResult?: string
   priority: TestCasePriority
+  riskLevel?: TestCaseRiskLevel
   type: TestCaseType
   tags: string[]
+  mermaid?: string | null
   status: TestCaseStatus
   suiteId: string
 }

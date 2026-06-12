@@ -1,41 +1,19 @@
-import {
-  Injectable,
-  BadRequestException,
-  ForbiddenException,
-  Logger,
-} from '@nestjs/common'
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
 import { PrismaService } from '@/prisma/prisma.service'
-import {
-  GenerationSource,
-  GenerationStatus,
-  Prisma,
-  TestCasePriority,
-  TestCaseType,
-  TestCaseVersionSource,
-  UploadedFile,
-} from '@prisma/client'
+import { GenerationSource, GenerationStatus, Prisma, TestCasePriority, TestCaseType, TestCaseVersionSource, UploadedFile } from '@prisma/client'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { isHunyuanMultimodalEnabled, resolveHunyuanVisionApiKey } from '@/utils/multimodalAnalysis'
 import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
-import {
-  clampGenerationUserContent,
-  humanizeAiProviderError,
-  INPUT_CLAMPED_NOTICE_PREFIX,
-  OUTPUT_TRUNCATED_NOTICE,
-  roughTokenEstimateFromChars,
-} from './ai-generation-limits.util'
+import { clampGenerationUserContent, humanizeAiProviderError, INPUT_CLAMPED_NOTICE_PREFIX, OUTPUT_TRUNCATED_NOTICE, roughTokenEstimateFromChars } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
-import {
-  buildClosedLoopPlan,
-  type ClosedLoopCase,
-  type ClosedLoopMutation,
-} from './closed-loop-agent.util'
+import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
+import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
@@ -106,46 +84,41 @@ export class AiService {
    * 当模型未按约定输出 JSON 时，二次请求把“原文”修复为标准 JSON（仅失败时触发，避免常态额外成本）。
    * 返回修复后的文本（应为 { cases: [...] }），失败则返回 null。
    */
-  private async tryRepairToJsonObject(
-    client: OpenAI,
-    modelId: string,
-    rawText: string,
-  ): Promise<{ repairedText: string; finishReason: string | null } | null> {
+  private async tryRepairToJsonObject(client: OpenAI, modelId: string, rawText: string, schemaErrors?: string[]): Promise<{ repairedText: string; finishReason: string | null } | null> {
     const src = (rawText || '').trim()
     if (!src) return null
     // 太长时只给首尾，避免修复请求也超上下文
-    const slice =
-      src.length > 80_000
-        ? `${src.slice(0, 50_000)}\n\n…(中间省略)…\n\n${src.slice(-30_000)}`
-        : src
+    const slice = src.length > 80_000 ? `${src.slice(0, 50_000)}\n\n…(中间省略)…\n\n${src.slice(-30_000)}` : src
 
     try {
-      const completion = await client.chat.completions.create({
+      const validationHint = schemaErrors?.length
+        ? `\n\n当前结构校验错误，请逐项修复：\n${schemaErrors
+            .slice(0, 20)
+            .map((x) => `- ${x}`)
+            .join('\n')}`
+        : ''
+      const { completion } = await this.createCaseCompletion(client, {
         model: modelId,
         messages: [
           {
             role: 'system',
-            content:
-              'You are a converter. Convert user text into ONE valid JSON object. Output ONLY JSON. The first non-whitespace character must be {.',
+            content: 'You are a converter. Convert user text into ONE valid JSON object that satisfies the required testcase schema. Output ONLY JSON. The first non-whitespace character must be {.',
           },
           {
             role: 'user',
-            content:
-              `请把下面文本严格整理为平台约定的 JSON 结构，仅输出一个 JSON 对象：\n` +
-              `- 顶层必须是 { "cases": [...] }\n` +
-              `- 每条用例对象字段：title, priority, type, precondition, steps([{order,action,expected?}]), expectedResult, tags\n` +
-              `- 禁止 Markdown/解释文字/代码围栏\n\n` +
-              `待整理文本：\n\n${slice}`,
+            content: `请把下面文本严格整理为平台约定的 JSON 结构，仅输出一个 JSON 对象：\n` + `- 顶层必须是 { "cases": [...] }\n` + `- 每条用例对象必须包含：title, module, priority, riskLevel, type, precondition, steps, expectedResult, tags, mermaid\n` + `- priority 只能是 P0/P1/P2/P3；riskLevel 只能是 high/medium/low；type 只能是 FUNCTIONAL/PERFORMANCE/SECURITY/COMPATIBILITY/REGRESSION\n` + `- steps 每一步必须包含 order, action, expected；expected 可为空字符串但字段不能缺失\n` + `- mermaid 必须是合法 Mermaid flowchart 字符串；没有流程图时用 null\n` + `- tags 必须包含短标签，建议包含 模块:<module>；禁止 Markdown/解释文字/代码围栏` + `${validationHint}\n\n` + `待整理文本：\n\n${slice}`,
           },
         ],
         temperature: 0,
         max_tokens: 16384,
-        response_format: { type: 'json_object' },
       })
       const choice = completion.choices?.[0]
       const repairedText = String(choice?.message?.content ?? '').trim()
       if (!repairedText) return null
-      return { repairedText, finishReason: (choice?.finish_reason as string | undefined) ?? null }
+      return {
+        repairedText,
+        finishReason: (choice?.finish_reason as string | undefined) ?? null,
+      }
     } catch (e) {
       this.logger.warn('修复为 JSON 失败，继续走启发式解析', e as Error)
       return null
@@ -156,15 +129,18 @@ export class AiService {
   private fallbackCasesFromRawOutput(raw: string): any[] {
     const t = (raw || '').trim()
     if (!t) return []
-    const body =
-      t.length > 200_000
-        ? `${t.slice(0, 200_000)}\n\n…(内容过长已截断，完整文本请从生成流式输出中复制)`
-        : t
+    const body = t.length > 200_000 ? `${t.slice(0, 200_000)}\n\n…(内容过长已截断，完整文本请从生成流式输出中复制)` : t
     return [
       {
         title: 'AI 生成结果（非 JSON，可人工拆分或换用要求 JSON 输出的模板）',
         precondition: '',
-        steps: [{ order: 1, action: '查看下方预期结果中的完整模型输出', expected: '' }],
+        steps: [
+          {
+            order: 1,
+            action: '查看下方预期结果中的完整模型输出',
+            expected: '',
+          },
+        ],
         expectedResult: body,
         priority: 'P2',
         type: 'FUNCTIONAL',
@@ -175,8 +151,7 @@ export class AiService {
 
   /** 模型无可用文本 / 无法解析为 JSON 用例时，统一错误说明（不再落库「占位假用例」） */
   private emptyOutputUserMessage(opts?: { outputTruncated?: boolean }): string {
-    const base =
-      '模型未返回可解析的 JSON 用例（输出为空或结构不符合约定）。请检查：系统设置中的模型 ID、API Key、Base URL；需求/文本是否为空；图片是否已解析出文字；适当提高 maxTokens；智谱等兼容接口流式是否仅返回在 delta 的其他字段。可在生成记录中查看详情。'
+    const base = '模型未返回可解析的 JSON 用例（输出为空或结构不符合约定）。请检查：系统设置中的模型 ID、API Key、Base URL；需求/文本是否为空；图片是否已解析出文字；适当提高 maxTokens；智谱等兼容接口流式是否仅返回在 delta 的其他字段。可在生成记录中查看详情。'
     if (opts?.outputTruncated) {
       return `${base} 另外：本次回复可能因达到「最大 Token」被截断，请先调高 Token 上限或缩小生成范围后重试。`
     }
@@ -199,26 +174,92 @@ export class AiService {
     res.write(`data: ${JSON.stringify({ notice: text })}\n\n`)
   }
 
+  private strictSchemaEnabled(): boolean {
+    const raw = String(this.config.get<string>('AI_STRICT_SCHEMA_OUTPUT') ?? 'true').toLowerCase()
+    return !['0', 'false', 'off', 'no'].includes(raw)
+  }
+
+  private structuredOutputFallbackNotice(): string {
+    return '当前模型网关不支持 json_schema 严格结构化输出，已回退兼容模式，并继续执行本地 schema 校验与自动修复。'
+  }
+
+  private schemaRepairNotice(errors?: string[]): string {
+    const detail = errors?.length ? `（${errors.slice(0, 4).join('；')}）` : ''
+    return `AI 输出未完全符合严格用例 schema${detail}，已自动修复/规范化后入库。`
+  }
+
+  private async createCaseCompletion(client: OpenAI, payload: Record<string, unknown>): Promise<{ completion: any; fallbackNotice?: string }> {
+    if (this.strictSchemaEnabled()) {
+      try {
+        const completion = await client.chat.completions.create({
+          ...payload,
+          response_format: buildStrictCaseResponseFormat() as any,
+        } as any)
+        return { completion }
+      } catch (err) {
+        if (!isStructuredOutputUnsupportedError(err)) throw err
+        this.logger.warn(`严格 json_schema 输出不可用，回退 json_object: ${(err as Error).message}`)
+      }
+    }
+
+    const completion = await client.chat.completions.create({
+      ...payload,
+      response_format: buildJsonObjectResponseFormat() as any,
+    } as any)
+    return {
+      completion,
+      fallbackNotice: this.structuredOutputFallbackNotice(),
+    }
+  }
+
+  private async createCaseStream(client: OpenAI, payload: Record<string, unknown>): Promise<{ stream: AsyncIterable<any>; fallbackNotice?: string }> {
+    if (this.strictSchemaEnabled()) {
+      try {
+        const stream = await client.chat.completions.create({
+          ...payload,
+          stream: true,
+          response_format: buildStrictCaseResponseFormat() as any,
+        } as any)
+        return { stream: stream as unknown as AsyncIterable<any> }
+      } catch (err) {
+        if (!isStructuredOutputUnsupportedError(err)) throw err
+        this.logger.warn(`流式严格 json_schema 输出不可用，回退普通流式: ${(err as Error).message}`)
+      }
+    }
+
+    try {
+      const stream = await client.chat.completions.create({
+        ...payload,
+        stream: true,
+        response_format: buildJsonObjectResponseFormat() as any,
+      } as any)
+      return {
+        stream: stream as unknown as AsyncIterable<any>,
+        fallbackNotice: this.structuredOutputFallbackNotice(),
+      }
+    } catch (err) {
+      if (!isStructuredOutputUnsupportedError(err)) throw err
+      this.logger.warn(`流式 json_object 输出不可用，回退无 response_format: ${(err as Error).message}`)
+      const stream = await client.chat.completions.create({
+        ...payload,
+        stream: true,
+      } as any)
+      return {
+        stream: stream as unknown as AsyncIterable<any>,
+        fallbackNotice: this.structuredOutputFallbackNotice(),
+      }
+    }
+  }
+
   private mapRowToCaseInput(c: any): Prisma.TestCaseCreateWithoutSuiteInput {
-    const rawObj =
-      c && typeof c === 'object' ? (c as Record<string, unknown>) : ({} as Record<string, unknown>)
+    const rawObj = c && typeof c === 'object' ? (c as Record<string, unknown>) : ({} as Record<string, unknown>)
     const n = normalizeCaseRowForPersistence(rawObj)
-    const preserved = Array.isArray((c as any)?.tags)
-      ? (c as any).tags
-          .map((x: unknown) => String(x))
-          .filter((t: string) => t === 'ai-raw-output' || t === 'ai-parsed-markdown')
-      : []
+    const preserved = Array.isArray((c as any)?.tags) ? (c as any).tags.map((x: unknown) => String(x)).filter((t: string) => t === 'ai-raw-output' || t === 'ai-parsed-markdown') : []
     const tags = [...new Set([...n.tags, ...preserved])]
     const pr = String(n.priority).toUpperCase()
-    const priority = (
-      ['P0', 'P1', 'P2', 'P3'].includes(pr) ? pr : 'P2'
-    ) as TestCasePriority
+    const priority = (['P0', 'P1', 'P2', 'P3'].includes(pr) ? pr : 'P2') as TestCasePriority
     const ty = String(n.type).toUpperCase()
-    const type = (
-      ['FUNCTIONAL', 'PERFORMANCE', 'SECURITY', 'COMPATIBILITY', 'REGRESSION'].includes(ty)
-        ? ty
-        : 'FUNCTIONAL'
-    ) as TestCaseType
+    const type = (['FUNCTIONAL', 'PERFORMANCE', 'SECURITY', 'COMPATIBILITY', 'REGRESSION'].includes(ty) ? ty : 'FUNCTIONAL') as TestCaseType
     return {
       title: String(n.title).slice(0, 500),
       precondition: n.precondition != null ? String(n.precondition) : undefined,
@@ -257,23 +298,93 @@ export class AiService {
     client: OpenAI,
     modelId: string,
     rawText: string,
-  ): Promise<{ rows: any[]; repaired: boolean; outputTruncated: boolean }> {
+  ): Promise<{
+    rows: any[]
+    repaired: boolean
+    outputTruncated: boolean
+    schemaRepaired: boolean
+    schemaValidationWarnings: string[]
+  }> {
     const direct = this.extractCaseRows(rawText)
-    if (direct.length > 0) return { rows: direct, repaired: false, outputTruncated: false }
+    if (direct.length > 0) {
+      const validation = validateCaseRowsAgainstSchema(direct)
+      if (validation.ok) {
+        return {
+          rows: direct,
+          repaired: false,
+          outputTruncated: false,
+          schemaRepaired: false,
+          schemaValidationWarnings: [],
+        }
+      }
+
+      const repairedDirect = await this.tryRepairToJsonObject(client, modelId, rawText, validation.errors)
+      if (repairedDirect?.repairedText) {
+        const fixed = this.extractCaseRows(repairedDirect.repairedText)
+        const fixedValidation = validateCaseRowsAgainstSchema(fixed)
+        if (fixed.length > 0 && fixedValidation.ok) {
+          return {
+            rows: fixed,
+            repaired: true,
+            outputTruncated: repairedDirect.finishReason === 'length',
+            schemaRepaired: true,
+            schemaValidationWarnings: validation.errors,
+          }
+        }
+        if (fixed.length > 0) {
+          return {
+            rows: fixed,
+            repaired: true,
+            outputTruncated: repairedDirect.finishReason === 'length',
+            schemaRepaired: true,
+            schemaValidationWarnings: fixedValidation.errors.length ? fixedValidation.errors : validation.errors,
+          }
+        }
+      }
+
+      return {
+        rows: direct,
+        repaired: false,
+        outputTruncated: false,
+        schemaRepaired: false,
+        schemaValidationWarnings: validation.errors,
+      }
+    }
 
     const repaired = await this.tryRepairToJsonObject(client, modelId, rawText)
     if (repaired?.repairedText) {
       const fixed = this.extractCaseRows(repaired.repairedText)
       if (fixed.length > 0) {
-        return { rows: fixed, repaired: true, outputTruncated: repaired.finishReason === 'length' }
+        const validation = validateCaseRowsAgainstSchema(fixed)
+        return {
+          rows: fixed,
+          repaired: true,
+          outputTruncated: repaired.finishReason === 'length',
+          schemaRepaired: true,
+          schemaValidationWarnings: validation.ok ? [] : validation.errors,
+        }
       }
     }
 
     const loose = parseLooseMarkdownToCaseRows(rawText)
-    if (this.shouldUseLooseParsedCases(loose, rawText)) return { rows: loose as any[], repaired: false, outputTruncated: false }
+    if (this.shouldUseLooseParsedCases(loose, rawText)) {
+      return {
+        rows: loose as any[],
+        repaired: false,
+        outputTruncated: false,
+        schemaRepaired: false,
+        schemaValidationWarnings: ['模型未返回 JSON schema 结构，已使用 Markdown 兼容解析。'],
+      }
+    }
 
     const fallback = this.fallbackCasesFromRawOutput(rawText)
-    return { rows: fallback, repaired: false, outputTruncated: false }
+    return {
+      rows: fallback,
+      repaired: false,
+      outputTruncated: false,
+      schemaRepaired: false,
+      schemaValidationWarnings: fallback.length ? ['模型输出无法满足用例 schema，已保存原文占位记录。'] : [],
+    }
   }
 
   /** 生成成功且指定了模板时，增加模板使用次数 */
@@ -316,27 +427,14 @@ export class AiService {
   }
 
   private isOnlyAiRawOutputRows(rows: any[]): boolean {
-    return (
-      rows.length > 0 &&
-      rows.every((r: any) => Array.isArray(r?.tags) && (r.tags as string[]).includes('ai-raw-output'))
-    )
+    return rows.length > 0 && rows.every((r: any) => Array.isArray(r?.tags) && (r.tags as string[]).includes('ai-raw-output'))
   }
 
   private buildQualityReport(dto: GenerateDto, fileContent: string | undefined, rows: any[]) {
     return buildAiOutputQualityReport(dto.text || fileContent || dto.customPrompt || '', rows)
   }
 
-  private mapDbCaseToClosedLoopInput(c: {
-    id: string
-    title: string
-    priority: TestCasePriority
-    type: TestCaseType
-    precondition: string | null
-    steps: Prisma.JsonValue
-    expectedResult: string
-    tags: string[]
-    description: string | null
-  }) {
+  private mapDbCaseToClosedLoopInput(c: { id: string; title: string; priority: TestCasePriority; type: TestCaseType; precondition: string | null; steps: Prisma.JsonValue; expectedResult: string; tags: string[]; description: string | null }) {
     return {
       id: c.id,
       title: c.title,
@@ -372,12 +470,7 @@ export class AiService {
   }
 
   private closedLoopComment(action: ClosedLoopMutation, beforeScore: number, afterScore: number) {
-    const prefix =
-      action.type === 'add_missing_requirement'
-        ? 'AI 闭环补齐'
-        : action.type === 'mark_duplicate'
-          ? 'AI 闭环标记重复'
-          : 'AI 闭环优化'
+    const prefix = action.type === 'add_missing_requirement' ? 'AI 闭环补齐' : action.type === 'mark_duplicate' ? 'AI 闭环标记重复' : 'AI 闭环优化'
     const requirement = action.requirement ? `\n关联需求：${action.requirement}` : ''
     return `${prefix}：${action.reason}${requirement}\n质量评分：${beforeScore} -> ${afterScore}`
   }
@@ -391,7 +484,10 @@ export class AiService {
   /** 落库时的团队、来源枚举、参数快照与模板全文 */
   private async buildRecordPersistExtras(dto: GenerateDto, userId: string) {
     const [u, tpl] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, select: { teamId: true } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { teamId: true },
+      }),
       dto.templateId
         ? this.prisma.promptTemplate.findUnique({
             where: { id: dto.templateId },
@@ -399,11 +495,7 @@ export class AiService {
           })
         : Promise.resolve(null),
     ])
-    const generationSource = dto.templateId
-      ? GenerationSource.TEMPLATE
-      : dto.fileId
-        ? GenerationSource.FILE_PARSE
-        : GenerationSource.MANUAL_INPUT
+    const generationSource = dto.templateId ? GenerationSource.TEMPLATE : dto.fileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT
     const demand = dto.customPrompt || ''
     const generateParams: Prisma.InputJsonValue = {
       sourceType: dto.sourceType,
@@ -420,9 +512,12 @@ export class AiService {
   }
 
   /** 根据配置获取 OpenAI 客户端（兼容多模型）。configId 为库中记录 id，纯环境变量回退时为 null。 */
-  private async getOpenAIClient(
-    modelConfigId?: string,
-  ): Promise<{ client: OpenAI; modelId: string; modelName: string; configId: string | null }> {
+  private async getOpenAIClient(modelConfigId?: string): Promise<{
+    client: OpenAI
+    modelId: string
+    modelName: string
+    configId: string | null
+  }> {
     let baseUrl = ''
     let apiKey = ''
     let modelId = ''
@@ -431,7 +526,9 @@ export class AiService {
 
     if (modelConfigId) {
       this.logger.log(`查找模型配置: modelConfigId=${modelConfigId}`)
-      const config = await this.prisma.aIModelConfig.findUnique({ where: { id: modelConfigId } })
+      const config = await this.prisma.aIModelConfig.findUnique({
+        where: { id: modelConfigId },
+      })
       if (!config || !config.isActive) {
         throw new BadRequestException('指定模型不存在或已归档，请在系统设置中选择可用模型')
       }
@@ -442,7 +539,9 @@ export class AiService {
       modelName = config.name
       this.logger.log(`找到模型配置: id=${configId}, name=${modelName}, modelId=${modelId}`)
     } else {
-      const defaultModel = await this.prisma.aIModelConfig.findFirst({ where: { isDefault: true, isActive: true } })
+      const defaultModel = await this.prisma.aIModelConfig.findFirst({
+        where: { isDefault: true, isActive: true },
+      })
       if (!defaultModel) {
         throw new BadRequestException('未配置默认分析模型，请在系统设置中先配置并启用一个默认模型')
       }
@@ -500,12 +599,7 @@ export class AiService {
 
     await this.bootstrapReviewsSafe(record.id, record.suiteId, userId)
 
-    const requirementText =
-      record.demandContent?.trim() ||
-      record.prompt?.trim() ||
-      record.file?.parsedContent?.trim() ||
-      record.promptTemplateSnapshot?.trim() ||
-      ''
+    const requirementText = record.demandContent?.trim() || record.prompt?.trim() || record.file?.parsedContent?.trim() || record.promptTemplateSnapshot?.trim() || ''
     const beforeRows = record.suite.cases.map((c) => this.mapDbCaseToClosedLoopInput(c))
     const beforeReport = buildAiOutputQualityReport(requirementText, beforeRows)
     const plan = buildClosedLoopPlan({
@@ -545,7 +639,9 @@ export class AiService {
         orderBy: { createdAt: 'asc' },
       })
       const caseMap = new Map(currentCases.map((c) => [c.id, c]))
-      const reviews = await tx.testCaseReview.findMany({ where: { recordId: record.id } })
+      const reviews = await tx.testCaseReview.findMany({
+        where: { recordId: record.id },
+      })
       const reviewMap = new Map(reviews.map((r) => [r.caseId, r]))
 
       for (const action of [...plan.updates, ...plan.duplicateMarks]) {
@@ -636,12 +732,7 @@ export class AiService {
         where: { id: record.id },
         data: {
           caseCount: currentCases.length + plan.additions.length,
-          notes: [
-            record.notes?.trim(),
-            `AI 闭环优化：新增 ${plan.additions.length} 条，修订 ${plan.updates.length} 条，标记重复 ${plan.duplicateMarks.length} 条；评分 ${beforeReport.score} -> ${afterReport.score}`,
-          ]
-            .filter(Boolean)
-            .join('\n'),
+          notes: [record.notes?.trim(), `AI 闭环优化：新增 ${plan.additions.length} 条，修订 ${plan.updates.length} 条，标记重复 ${plan.duplicateMarks.length} 条；评分 ${beforeReport.score} -> ${afterReport.score}`].filter(Boolean).join('\n'),
         },
       })
     })
@@ -680,9 +771,7 @@ export class AiService {
   /** 管理用途：测试指定模型连通性（小请求，返回延迟与回包片段）；成功/失败均写入 DB 观测字段（若有对应配置行） */
   async testModelConnectivity(opts?: { modelConfigId?: string; prompt?: string }) {
     const { client, modelId, modelName, configId } = await this.getOpenAIClient(opts?.modelConfigId)
-    const prompt =
-      (opts?.prompt || '').trim() ||
-      '请回复一个单词：ok'
+    const prompt = (opts?.prompt || '').trim() || '请回复一个单词：ok'
 
     const persistFailure = async (message: string) => {
       if (!configId) return
@@ -730,15 +819,17 @@ export class AiService {
         sample: String(content).slice(0, 200),
       }
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err)
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err)
       await persistFailure(message)
       throw err
     }
   }
 
   /** 构建 system / user 消息；过长用户内容自动首尾压缩，避免超出上下文 */
-  private buildPromptMessages(dto: GenerateDto, fileContent?: string): {
+  private buildPromptMessages(
+    dto: GenerateDto,
+    fileContent?: string,
+  ): {
     system: string
     user: string
     inputNotices: string[]
@@ -749,24 +840,29 @@ export class AiService {
 
 【与 Excel 导出六列严格对齐】每条用例对应一行，字段映射：
 - title → 用例名称（例：登录-正确邮箱密码登录成功）
-- tags → 至少含一项「模块:模块名」（例：模块:用户注册登录）；其余为标签列，用短词：UI、功能、场景、异常 等（不要用长句）
+- module → 所属模块（例：用户注册登录）；tags 也至少含一项「模块:模块名」（例：模块:用户注册登录）；其余为标签列，用短词：UI、功能、场景、异常 等（不要用长句）
 - precondition → 前置条件：多条时请用「1. …\\n2. …」编号分行
 - steps → 步骤描述：order 从 1 连续递增；每步 action 只写一个动作（对应导出单元格内 [1][2] 列表）
 - expectedResult → 预期结果：必须与步骤条数一致，格式强制为「[1] …\\n[2] …」，第 n 条对应第 n 步
-- priority / type → P0–P3；type 为枚举；平台会把 FUNCTIONAL 映射为标签「功能」若未写
+- priority / riskLevel / type → priority 为 P0–P3；riskLevel 为 high/medium/low；type 为枚举；平台会把 FUNCTIONAL 映射为标签「功能」若未写
+- mermaid → 当前用例关联流程图。若能表达流程，输出合法 Mermaid flowchart 文本，不要代码围栏；无流程图时必须为 null
 
 【输出硬性要求】
 1. 只输出一个合法 JSON 对象，不要 Markdown、代码围栏、文前文末解释；第一个非空白字符必须是 {。
 2. 顶层必须有 "cases" 数组；每条业务场景单独一个对象，禁止把多条用例塞进一条的 expectedResult 长文。
 3. 禁止输出 **加粗标题**、### 标题、或「- 优先级:」这类非 JSON 叙述；一律用字段表达。
-4. 材料过长时优先 P0/P1 与核心主流程，控制单字段篇幅。
+4. 每条用例必须包含 title, module, priority, riskLevel, type, precondition, steps, expectedResult, tags, mermaid。
+5. steps 的每一步必须包含 order, action, expected；expected 没有单步预期时填空字符串，不允许缺字段。
+6. 材料过长时优先 P0/P1 与核心主流程，控制单字段篇幅。
 
 示例（与下表一致；注意 expectedResult 与 steps 条数相同且均为 [n]）：
 {
   "cases": [
     {
       "title": "登录-正确邮箱密码登录成功",
+      "module": "用户注册登录",
       "priority": "P0",
+      "riskLevel": "high",
       "type": "FUNCTIONAL",
       "precondition": "1. 用户已有注册账号\\n2. 用户未登录",
       "steps": [
@@ -774,7 +870,8 @@ export class AiService {
         {"order": 2, "action": "点击「登录」按钮", "expected": ""}
       ],
       "expectedResult": "[1] 信息输入校验通过\\n[2] 登录成功，跳转至主页",
-      "tags": ["模块:用户注册登录", "UI", "功能"]
+      "tags": ["模块:用户注册登录", "UI", "功能"],
+      "mermaid": "flowchart TD\\nA[输入邮箱密码] --> B[点击登录]\\nB --> C[进入主页]"
     }
   ]
 }`
@@ -790,12 +887,8 @@ export class AiService {
     const { text, truncated, omittedChars, originalLength } = clampGenerationUserContent(userContent)
     const inputNotices: string[] = []
     if (truncated) {
-      this.logger.warn(
-        `生成输入已压缩: 原 ${originalLength} 字符 (≈${roughTokenEstimateFromChars(originalLength)} tokens 粗估), 省略中间 ${omittedChars} 字`,
-      )
-      inputNotices.push(
-        `${INPUT_CLAMPED_NOTICE_PREFIX}原约 ${originalLength} 字，已省略中间 ${omittedChars} 字（保留首尾）。建议拆分需求、摘要后再生成。`,
-      )
+      this.logger.warn(`生成输入已压缩: 原 ${originalLength} 字符 (≈${roughTokenEstimateFromChars(originalLength)} tokens 粗估), 省略中间 ${omittedChars} 字`)
+      inputNotices.push(`${INPUT_CLAMPED_NOTICE_PREFIX}原约 ${originalLength} 字，已省略中间 ${omittedChars} 字（保留首尾）。建议拆分需求、摘要后再生成。`)
     }
 
     return { system: systemPrompt, user: text, inputNotices }
@@ -881,11 +974,12 @@ export class AiService {
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
-              const warnings: string[] = [
-                '已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。',
-              ]
+              const warnings: string[] = ['已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。']
               if (resolvedEarly.repaired) {
                 warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
+              }
+              if (resolvedEarly.schemaRepaired || resolvedEarly.schemaValidationWarnings.length > 0) {
+                warnings.push(this.schemaRepairNotice(resolvedEarly.schemaValidationWarnings))
               }
               if (resolvedEarly.outputTruncated) warnings.push(OUTPUT_TRUNCATED_NOTICE)
               return {
@@ -909,7 +1003,7 @@ export class AiService {
 
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
-      const completion = await client.chat.completions.create({
+      const { completion, fallbackNotice } = await this.createCaseCompletion(client, {
         model: modelId,
         messages: [
           { role: 'system', content: system },
@@ -917,13 +1011,13 @@ export class AiService {
         ],
         temperature: dto.temperature ?? 0.7,
         max_tokens: maxOut,
-        response_format: { type: 'json_object' },
       })
 
       const choice = completion.choices[0]
       const content = choice?.message?.content || ''
       const finishReason = choice?.finish_reason ?? null
       const outputWarnings: string[] = []
+      if (fallbackNotice) outputWarnings.push(fallbackNotice)
       if (finishReason === 'length') {
         outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
         this.logger.warn('非流式生成：模型输出因 max_tokens 被截断')
@@ -934,11 +1028,16 @@ export class AiService {
       if (resolved.repaired) {
         outputWarnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
       }
+      if (resolved.schemaRepaired || resolved.schemaValidationWarnings.length > 0) {
+        outputWarnings.push(this.schemaRepairNotice(resolved.schemaValidationWarnings))
+      }
       if (resolved.outputTruncated) {
         outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
       }
       if (rows.length === 0) {
-        const msg = this.emptyOutputUserMessage({ outputTruncated: finishReason === 'length' })
+        const msg = this.emptyOutputUserMessage({
+          outputTruncated: finishReason === 'length',
+        })
         await this.prisma.generationRecord.update({
           where: { id: record.id },
           data: {
@@ -1081,6 +1180,9 @@ export class AiService {
               if (resolvedEarly.repaired) {
                 this.writeStreamNotice(res, '模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
               }
+              if (resolvedEarly.schemaRepaired || resolvedEarly.schemaValidationWarnings.length > 0) {
+                this.writeStreamNotice(res, this.schemaRepairNotice(resolvedEarly.schemaValidationWarnings))
+              }
               if (resolvedEarly.outputTruncated) {
                 this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
               }
@@ -1088,7 +1190,9 @@ export class AiService {
                 data: {
                   name: `AI 流式生成用例集 - ${new Date().toLocaleString('zh-CN')}`,
                   creatorId: userId,
-                  cases: { create: resolvedEarly.rows.map((c: any) => this.mapRowToCaseInput(c)) },
+                  cases: {
+                    create: resolvedEarly.rows.map((c: any) => this.mapRowToCaseInput(c)),
+                  },
                 },
                 include: { cases: true },
               })
@@ -1133,7 +1237,7 @@ export class AiService {
       }
 
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
-      const stream = await client.chat.completions.create({
+      const { stream, fallbackNotice } = await this.createCaseStream(client, {
         model: modelId,
         messages: [
           { role: 'system', content: system },
@@ -1141,8 +1245,10 @@ export class AiService {
         ],
         temperature: dto.temperature ?? 0.7,
         max_tokens: maxOut,
-        stream: true,
       })
+      if (fallbackNotice) {
+        this.writeStreamNotice(res, fallbackNotice)
+      }
 
       for await (const chunk of stream) {
         const ch0 = chunk.choices[0]
@@ -1163,10 +1269,7 @@ export class AiService {
               fullContentTruncated = true
               if (!streamTruncationNoticeSent) {
                 streamTruncationNoticeSent = true
-                this.writeStreamNotice(
-                  res,
-                  `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），仍继续实时返回流式结果。建议降低 maxTokens 或拆分需求后重试。`,
-                )
+                this.writeStreamNotice(res, `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），仍继续实时返回流式结果。建议降低 maxTokens 或拆分需求后重试。`)
               }
             }
           }
@@ -1180,15 +1283,9 @@ export class AiService {
       }
 
       if (!fullContent.trim()) {
-        this.writeStreamNotice(
-          res,
-          '未收到可用于入库的正式输出（content）。若流式区仅有思考过程，请关闭深度思考或更换模型，并确保最终输出 { "cases": [...] } JSON。',
-        )
+        this.writeStreamNotice(res, '未收到可用于入库的正式输出（content）。若流式区仅有思考过程，请关闭深度思考或更换模型，并确保最终输出 { "cases": [...] } JSON。')
       } else if (fullContentTruncated) {
-        this.writeStreamNotice(
-          res,
-          '正式 JSON 输出可能因长度上限未完整入库；流式日志中的思考过程不会写入用例集。请提高 maxTokens 或缩小范围后重试。',
-        )
+        this.writeStreamNotice(res, '正式 JSON 输出可能因长度上限未完整入库；流式日志中的思考过程不会写入用例集。请提高 maxTokens 或缩小范围后重试。')
       }
 
       const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, fullContent)
@@ -1196,14 +1293,14 @@ export class AiService {
       if (resolved.repaired) {
         this.writeStreamNotice(res, '模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
       }
+      if (resolved.schemaRepaired || resolved.schemaValidationWarnings.length > 0) {
+        this.writeStreamNotice(res, this.schemaRepairNotice(resolved.schemaValidationWarnings))
+      }
       if (resolved.outputTruncated) {
         this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
       if (fullContentTruncated && !streamTruncationNoticeSent) {
-        this.writeStreamNotice(
-          res,
-          `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），建议降低 maxTokens 或拆分需求。`,
-        )
+        this.writeStreamNotice(res, `输出过长，已停止累计完整内容（上限 ${maxFullContentChars} 字符），建议降低 maxTokens 或拆分需求。`)
       }
       if (rows.length === 0) {
         const msg = this.emptyOutputUserMessage({
@@ -1227,10 +1324,7 @@ export class AiService {
       }
 
       if (rows.length > 0 && rows[0]?.tags?.includes?.('ai-raw-output')) {
-        this.writeStreamNotice(
-          res,
-          '模型未输出可解析的 JSON 用例（常见原因：深度思考占满 Token、或仅输出编号场景清单）。已保存 1 条占位记录，请换模型/关思考/强调仅输出 JSON 后重试。',
-        )
+        this.writeStreamNotice(res, '模型未输出可解析的 JSON 用例（常见原因：深度思考占满 Token、或仅输出编号场景清单）。已保存 1 条占位记录，请换模型/关思考/强调仅输出 JSON 后重试。')
         this.logger.warn('流式输出未解析为 JSON 用例，已保存为单条原文占位用例')
       } else if (rows.length > 0 && rows.some((r: any) => r?.tags?.includes?.('ai-parsed-markdown'))) {
         this.logger.warn(`流式输出已用 Markdown 启发式拆分为 ${rows.length} 条用例（建议模板中强调仅输出 JSON）`)
@@ -1247,7 +1341,12 @@ export class AiService {
 
       await this.prisma.generationRecord.update({
         where: { id: record.id },
-        data: { status: GenerationStatus.SUCCESS, caseCount: suite.cases.length, suiteId: suite.id, duration: Date.now() - startTime },
+        data: {
+          status: GenerationStatus.SUCCESS,
+          caseCount: suite.cases.length,
+          suiteId: suite.id,
+          duration: Date.now() - startTime,
+        },
       })
       await this.bootstrapReviewsSafe(record.id, suite.id, userId)
 
@@ -1287,9 +1386,7 @@ export class AiService {
     const extra = dto.additionalFileIds ?? []
     const rawIds = [dto.fileId, ...extra].filter((x): x is string => typeof x === 'string' && x.length > 0)
     const orderedIds = [...new Set(rawIds)]
-    this.logger.log(
-      `analyzeStream: sourceType=${dto.sourceType}, fileIds=${orderedIds.join(',') || '(none)'}, modelConfigId=${dto.modelConfigId}`,
-    )
+    this.logger.log(`analyzeStream: sourceType=${dto.sourceType}, fileIds=${orderedIds.join(',') || '(none)'}, modelConfigId=${dto.modelConfigId}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
@@ -1326,21 +1423,16 @@ export class AiService {
        * 需求分析流式输出只应用后台所选模型（dto.modelConfigId）；此处默认不再对同一文件二次调用混元。
        * 应急恢复旧行为（解析后仍再在 analyze 里跑一轮混元）：ANALYZE_STREAM_HUNYUAN_WHEN_PARSED=1
        */
-      const forceAnalyzeTimeHunyuan =
-        this.config.get<string>('ANALYZE_STREAM_HUNYUAN_WHEN_PARSED')?.trim() === '1'
+      const forceAnalyzeTimeHunyuan = this.config.get<string>('ANALYZE_STREAM_HUNYUAN_WHEN_PARSED')?.trim() === '1'
       const allHaveParsed = ordered.every((f) => (f.parsedContent ?? '').trim().length > 0)
 
       if (allHaveParsed && !forceAnalyzeTimeHunyuan) {
         if (ordered.length > 1) {
-          fileContent = ordered
-            .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
-            .join('\n\n---\n\n')
+          fileContent = ordered.map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`).join('\n\n---\n\n')
         } else {
           fileContent = ordered[0].parsedContent!.trim()
         }
-        this.logger.log(
-          'analyzeStream: 使用上传解析已入库的正文作为需求输入，analyze 阶段不再二次调用混元；流式报告仍走所选 modelConfigId',
-        )
+        this.logger.log('analyzeStream: 使用上传解析已入库的正文作为需求输入，analyze 阶段不再二次调用混元；流式报告仍走所选 modelConfigId')
       } else if (ordered.length === 1 && this.hunyuanMultimodalEnvReady()) {
         const f = ordered[0]
         const mime = (f.mimeType || '').toLowerCase()
@@ -1371,9 +1463,7 @@ export class AiService {
               throw new BadRequestException(`文件尚未解析完成：${f.originalName}`)
             }
           }
-          fileContent = ordered
-            .map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`)
-            .join('\n\n---\n\n')
+          fileContent = ordered.map((f, i) => `### 图片 ${i + 1}（${f.originalName}）\n\n${f.parsedContent}`).join('\n\n---\n\n')
         } else {
           const f = ordered[0]
           if (!f.parsedContent?.trim()) {
@@ -1431,8 +1521,7 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
-              '你是资深系统架构师与高级产品经理，擅长需求分析与结构化输出。请严格按用户给出的指令与文档内容，使用 Markdown 排版，层次清晰。',
+            content: '你是资深系统架构师与高级产品经理，擅长需求分析与结构化输出。请严格按用户给出的指令与文档内容，使用 Markdown 排版，层次清晰。',
           },
           { role: 'user', content: userContent },
         ],
@@ -1446,9 +1535,7 @@ export class AiService {
         const fr = ch0?.finish_reason
         if (fr) finishReason = fr
         const d = ch0?.delta as { content?: string; reasoning_content?: string } | undefined
-        const delta =
-          (typeof d?.content === 'string' ? d.content : '') ||
-          (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
+        const delta = (typeof d?.content === 'string' ? d.content : '') || (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
         if (delta) {
           fullContent += delta
           res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
