@@ -345,6 +345,7 @@ model PromptTemplate {
   description String?          @db.Text
   category    TemplateCategory @default(CUSTOM)
   content     String           @db.Text
+  version     Int              @default(1)
   variables   Json             @default("[]") // TemplateVariable[]
   isPublic    Boolean          @default(false)
   usageCount  Int              @default(0)
@@ -450,6 +451,7 @@ model GenerationRecord {
   generateParams         Json?
   /// 所用提示词模板全文快照
   promptTemplateSnapshot String?          @db.Text
+  promptTemplateVersion  Int?
   suiteId                String?
   fileId                 String?
   templateId             String?

@@ -1,5 +1,10 @@
 import { request } from '@/utils/request'
-import type { PromptTemplate, PaginatedData, PaginationParams } from '@/types'
+import type {
+  PromptEvaluationReport,
+  PromptTemplate,
+  PaginatedData,
+  PaginationParams,
+} from '@/types'
 
 export const templatesApi = {
   getTemplates: (params?: PaginationParams & { category?: string; keyword?: string }) =>
@@ -16,4 +21,9 @@ export const templatesApi = {
 
   deleteTemplate: (id: string) =>
     request.delete<void>(`/templates/${id}`),
+
+  evaluateTemplate: (
+    id: string,
+    data?: { modelConfigId?: string; sampleLimit?: number; temperature?: number; maxTokens?: number },
+  ) => request.post<PromptEvaluationReport>(`/templates/${id}/evaluate`, data ?? {}),
 }

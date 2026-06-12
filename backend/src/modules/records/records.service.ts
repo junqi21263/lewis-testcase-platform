@@ -737,6 +737,7 @@ export class RecordsService {
         promptTemplateSnapshot: r.promptTemplateSnapshot
           ? maskSensitivePlainText(r.promptTemplateSnapshot)
           : null,
+        promptTemplateVersion: r.promptTemplateVersion,
       },
       cases: cases.map((c) => ({
         id: c.id,

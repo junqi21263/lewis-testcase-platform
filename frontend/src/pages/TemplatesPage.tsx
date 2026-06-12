@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { TemplateCard } from '@/components/templates/TemplateCard'
 import { TemplateDetailModal } from '@/components/templates/TemplateDetailModal'
+import { TemplateEvaluationModal } from '@/components/templates/TemplateEvaluationModal'
 import {
   TemplateEditorModal,
   type TemplateDraft,
@@ -17,7 +18,7 @@ import {
 import { templatesApi } from '@/api/templates'
 import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
-import type { PromptTemplate, TemplateCategory } from '@/types'
+import type { PromptEvaluationReport, PromptTemplate, TemplateCategory } from '@/types'
 import toast from 'react-hot-toast'
 import { appConfirm } from '@/store/appConfirmStore'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -67,6 +68,8 @@ export default function TemplatesPage() {
   const [saving, setSaving] = useState(false)
   const [detailTpl, setDetailTpl] = useState<PromptTemplate | null>(null)
   const [contentVisible, setContentVisible] = useState(true)
+  const [evaluatingId, setEvaluatingId] = useState<string | null>(null)
+  const [evaluationReport, setEvaluationReport] = useState<PromptEvaluationReport | null>(null)
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -190,6 +193,23 @@ export default function TemplatesPage() {
     navigate('/generate')
   }
 
+  const evaluateTemplate = async (tplItem: PromptTemplate) => {
+    setEvaluatingId(tplItem.id)
+    try {
+      const report = await templatesApi.evaluateTemplate(tplItem.id, {
+        sampleLimit: 3,
+        temperature: 0.2,
+        maxTokens: 4096,
+      })
+      setEvaluationReport(report)
+      toast.success('评测完成')
+    } catch {
+      toast.error('评测失败，请检查模型配置或稍后重试')
+    } finally {
+      setEvaluatingId(null)
+    }
+  }
+
   const canEdit = (tplItem: PromptTemplate) =>
     !!user && (tplItem.creatorId === user.id || user.role === 'SUPER_ADMIN')
 
@@ -294,6 +314,8 @@ export default function TemplatesPage() {
                   onEdit={openEdit}
                   onDelete={handleDelete}
                   onViewDetail={setDetailTpl}
+                  onEvaluate={evaluateTemplate}
+                  evaluating={evaluatingId === tplItem.id}
                 />
               ))}
             </div>
@@ -321,6 +343,11 @@ export default function TemplatesPage() {
           setDetailTpl(null)
           openEdit(t)
         }}
+      />
+
+      <TemplateEvaluationModal
+        report={evaluationReport}
+        onClose={() => setEvaluationReport(null)}
       />
     </div>
   )

@@ -4,6 +4,7 @@ import {
   ChevronUp,
   Copy,
   Eye,
+  Gauge,
   Pencil,
   Trash2,
   Wand2,
@@ -29,6 +30,8 @@ export function TemplateCard(props: {
   onEdit: (tpl: PromptTemplate) => void
   onDelete: (id: string) => void
   onViewDetail?: (tpl: PromptTemplate) => void
+  onEvaluate?: (tpl: PromptTemplate) => void
+  evaluating?: boolean
 }) {
   const { template: tplData, compact, canEdit, onCopy, onGenerate, onEdit, onDelete, onViewDetail } =
     props
@@ -109,6 +112,8 @@ export function TemplateCard(props: {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[hsl(var(--templates-text-muted))]">
             <span>使用 {tplData.usageCount} 次</span>
             <span className="text-[hsl(var(--templates-panel-border))]">·</span>
+            <span>v{tplData.version ?? 1}</span>
+            <span className="text-[hsl(var(--templates-panel-border))]">·</span>
             <span>更新 {formatDate(tplData.updatedAt, 'MM-dd HH:mm')}</span>
             {tplData.creator?.username && (
               <>
@@ -154,6 +159,19 @@ export function TemplateCard(props: {
               >
                 <Eye className="h-4 w-4" />
                 详情
+              </Button>
+            )}
+            {props.onEvaluate && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 rounded-xl border-[hsl(var(--templates-input-border))] bg-transparent px-2.5 text-xs"
+                disabled={props.evaluating}
+                onClick={() => props.onEvaluate?.(tplData)}
+              >
+                <Gauge className="h-4 w-4" />
+                {props.evaluating ? '评测中' : '评测'}
               </Button>
             )}
             <div className="ml-auto flex items-center gap-0.5">

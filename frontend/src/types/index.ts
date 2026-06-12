@@ -169,6 +169,7 @@ export interface PromptTemplate {
   description?: string
   category: TemplateCategory
   content: string
+  version: number
   variables: TemplateVariable[]
   isPublic: boolean
   creatorId: string
@@ -183,6 +184,44 @@ export interface TemplateVariable {
   description: string
   defaultValue?: string
   required: boolean
+}
+
+export interface PromptEvaluationSampleResult {
+  sampleId: string
+  title: string
+  parsed: boolean
+  caseCount: number
+  qualityScore: number
+  coverageRate: number | null
+  durationMs: number
+  warnings: string[]
+  error?: string
+}
+
+export interface PromptEvaluationFailure {
+  sampleId: string
+  title: string
+  reason: string
+  warnings: string[]
+}
+
+export interface PromptEvaluationReport {
+  templateId: string
+  templateName: string
+  templateVersion: number
+  modelId: string
+  modelName: string
+  params: {
+    temperature: number
+    maxTokens: number
+  }
+  samples: PromptEvaluationSampleResult[]
+  sampleCount: number
+  parseSuccessRate: number
+  averageQualityScore: number
+  averageCoverageRate: number | null
+  failures: PromptEvaluationFailure[]
+  evaluatedAt: string
 }
 
 // ==================== 用例集 ====================
@@ -375,6 +414,7 @@ export interface PublicSharePayload {
     demandContent: string
     generateParams?: unknown
     promptTemplateSnapshot?: string | null
+    promptTemplateVersion?: number | null
   }
   cases: PublicShareCase[]
 }
@@ -397,6 +437,7 @@ export interface GenerationRecord {
   demandContent?: string | null
   generateParams?: Record<string, unknown> | null
   promptTemplateSnapshot?: string | null
+  promptTemplateVersion?: number | null
   modelId: string
   modelName: string
   caseCount: number

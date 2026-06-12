@@ -53,7 +53,7 @@ export function TemplateDetailModal(props: {
                     {templateCategoryLabels[template.category]}
                   </span>
                   <span className="text-xs text-[hsl(var(--templates-text-muted))]">
-                    使用 {template.usageCount} 次 · 更新{' '}
+                    v{template.version ?? 1} · 使用 {template.usageCount} 次 · 更新{' '}
                     {formatDate(template.updatedAt, 'yyyy-MM-dd HH:mm')}
                   </span>
                 </div>

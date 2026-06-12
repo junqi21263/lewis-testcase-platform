@@ -14,6 +14,7 @@ import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
+import { buildPromptEvaluationSummary, PROMPT_EVAL_SAMPLE_SET, type PromptEvalSampleResult } from '@/modules/templates/prompt-template-evaluation.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
@@ -491,7 +492,7 @@ export class AiService {
       dto.templateId
         ? this.prisma.promptTemplate.findUnique({
             where: { id: dto.templateId },
-            select: { content: true },
+            select: { content: true, version: true },
           })
         : Promise.resolve(null),
     ])
@@ -508,6 +509,7 @@ export class AiService {
       demandContent: demand,
       generateParams,
       promptTemplateSnapshot: tpl?.content ?? null,
+      promptTemplateVersion: tpl?.version ?? null,
     }
   }
 
@@ -825,6 +827,97 @@ export class AiService {
     }
   }
 
+  async evaluatePromptTemplate(opts: {
+    templateId: string
+    templateName: string
+    templateVersion: number
+    content: string
+    modelConfigId?: string
+    sampleLimit?: number
+    temperature?: number
+    maxTokens?: number
+  }) {
+    const { client, modelId, modelName } = await this.getOpenAIClient(opts.modelConfigId)
+    const sampleLimit = Math.min(Math.max(Math.floor(opts.sampleLimit || 3), 1), PROMPT_EVAL_SAMPLE_SET.length)
+    const samples = PROMPT_EVAL_SAMPLE_SET.slice(0, sampleLimit)
+    const temperature = opts.temperature ?? 0.2
+    const maxTokens = this.effectiveMaxTokens(opts.maxTokens ?? 4096)
+    const results: PromptEvalSampleResult[] = []
+
+    for (const sample of samples) {
+      const startedAt = Date.now()
+      const warnings: string[] = []
+      try {
+        const dto = {
+          sourceType: 'text',
+          text: sample.requirementText,
+          customPrompt: opts.content,
+          modelConfigId: opts.modelConfigId,
+          temperature,
+          maxTokens,
+        } as GenerateDto
+        const { system, user, inputNotices } = this.buildPromptMessages(dto)
+        warnings.push(...inputNotices)
+        const { completion, fallbackNotice } = await this.createCaseCompletion(client, {
+          model: modelId,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          temperature,
+          max_tokens: maxTokens,
+        })
+        if (fallbackNotice) warnings.push(fallbackNotice)
+        const choice = completion.choices?.[0]
+        if (choice?.finish_reason === 'length') warnings.push(OUTPUT_TRUNCATED_NOTICE)
+        const content = String(choice?.message?.content ?? '').trim()
+        const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, content)
+        if (resolved.repaired) warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理。')
+        if (resolved.schemaRepaired || resolved.schemaValidationWarnings.length > 0) {
+          warnings.push(this.schemaRepairNotice(resolved.schemaValidationWarnings))
+        }
+        const parsed = resolved.rows.length > 0 && !this.isOnlyAiRawOutputRows(resolved.rows)
+        const qualityReport = parsed
+          ? this.buildQualityReport(dto, sample.requirementText, resolved.rows)
+          : null
+        results.push({
+          sampleId: sample.id,
+          title: sample.title,
+          parsed,
+          caseCount: parsed ? resolved.rows.length : 0,
+          qualityScore: qualityReport?.score ?? 0,
+          coverageRate: qualityReport?.coverageRate ?? null,
+          durationMs: Date.now() - startedAt,
+          warnings,
+          error: parsed ? undefined : this.emptyOutputUserMessage(),
+        })
+      } catch (err) {
+        const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
+        results.push({
+          sampleId: sample.id,
+          title: sample.title,
+          parsed: false,
+          caseCount: 0,
+          qualityScore: 0,
+          coverageRate: null,
+          durationMs: Date.now() - startedAt,
+          warnings,
+          error: message,
+        })
+      }
+    }
+
+    return buildPromptEvaluationSummary({
+      templateId: opts.templateId,
+      templateName: opts.templateName,
+      templateVersion: opts.templateVersion,
+      modelId,
+      modelName,
+      params: { temperature, maxTokens },
+      samples: results,
+    })
+  }
+
   /** 构建 system / user 消息；过长用户内容自动首尾压缩，避免超出上下文 */
   private buildPromptMessages(
     dto: GenerateDto,
@@ -921,6 +1014,7 @@ export class AiService {
         generationSource: extras.generationSource,
         generateParams: extras.generateParams,
         promptTemplateSnapshot: extras.promptTemplateSnapshot ?? undefined,
+        promptTemplateVersion: extras.promptTemplateVersion ?? undefined,
         teamId: extras.teamId ?? undefined,
         modelId,
         modelName,
@@ -1124,6 +1218,7 @@ export class AiService {
         generationSource: extras.generationSource,
         generateParams: extras.generateParams,
         promptTemplateSnapshot: extras.promptTemplateSnapshot ?? undefined,
+        promptTemplateVersion: extras.promptTemplateVersion ?? undefined,
         teamId: extras.teamId ?? undefined,
         modelId,
         modelName,

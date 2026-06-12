@@ -170,6 +170,7 @@ model PromptTemplate {
   description String?
   category    String
   content     String
+  version     Int      @default(1)
   variables   Json?
   isPublic    Boolean  @default(false)
   creatorId   String
@@ -193,6 +194,7 @@ model GenerationRecord {
   caseCount Int?
   duration  Int?
   suiteId   String?
+  promptTemplateVersion Int?
   creatorId String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

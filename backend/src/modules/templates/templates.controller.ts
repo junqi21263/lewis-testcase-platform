@@ -4,6 +4,7 @@ import { TemplatesService } from './templates.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { CreateTemplateDto } from './dto/create-template.dto'
 import { UpdateTemplateDto } from './dto/update-template.dto'
+import { EvaluateTemplateDto } from './dto/evaluate-template.dto'
 
 @ApiTags('提示词模板')
 @ApiBearerAuth()
@@ -44,6 +45,16 @@ export class TemplatesController {
     @Body() data: UpdateTemplateDto,
   ) {
     return this.service.update(id, userId, data, role)
+  }
+
+  @Post(':id/evaluate')
+  @ApiOperation({ summary: '一键评测当前提示词模板' })
+  evaluate(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: EvaluateTemplateDto,
+  ) {
+    return this.service.evaluate(id, userId, dto)
   }
 
   @Delete(':id')

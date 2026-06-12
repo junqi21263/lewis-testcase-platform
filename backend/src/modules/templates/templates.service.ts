@@ -3,8 +3,11 @@ import { createHash } from 'crypto'
 import { PrismaService } from '@/prisma/prisma.service'
 import { RedisService } from '@/redis/redis.service'
 import { Prisma, type TemplateCategory } from '@prisma/client'
+import { AiService } from '@/modules/ai/ai.service'
 import type { CreateTemplateDto } from './dto/create-template.dto'
 import type { UpdateTemplateDto } from './dto/update-template.dto'
+import type { EvaluateTemplateDto } from './dto/evaluate-template.dto'
+import { nextPromptTemplateVersion } from './prompt-template-evaluation.util'
 
 type ListParams = { page?: number; pageSize?: number; category?: string; keyword?: string }
 
@@ -17,6 +20,7 @@ export class TemplatesService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private ai: AiService,
   ) {}
 
   private static resolveListCacheTtlMs(): number {
@@ -122,6 +126,7 @@ export class TemplatesService {
     const createData: Prisma.PromptTemplateUncheckedCreateInput = {
       ...data,
       creatorId: userId,
+      version: 1,
       variables: JSON.parse(JSON.stringify(data.variables ?? [])) as Prisma.InputJsonValue,
     }
     const created = await this.prisma.promptTemplate.create({
@@ -141,7 +146,11 @@ export class TemplatesService {
     if (data.name !== undefined) updateData.name = data.name
     if (data.description !== undefined) updateData.description = data.description
     if (data.category !== undefined) updateData.category = data.category
-    if (data.content !== undefined) updateData.content = data.content
+    if (data.content !== undefined) {
+      updateData.content = data.content
+      const nextVersion = nextPromptTemplateVersion(tpl.version, tpl.content, data.content)
+      if (nextVersion !== tpl.version) updateData.version = nextVersion
+    }
     if (data.isPublic !== undefined) updateData.isPublic = data.isPublic
     if (data.variables !== undefined) {
       updateData.variables = JSON.parse(JSON.stringify(data.variables)) as Prisma.InputJsonValue
@@ -159,5 +168,19 @@ export class TemplatesService {
     if (!isOwner && !isSuper) throw new ForbiddenException('无权删除该模板')
     await this.prisma.promptTemplate.delete({ where: { id } })
     await this.invalidateAllListCache()
+  }
+
+  async evaluate(id: string, userId: string, dto: EvaluateTemplateDto) {
+    const tpl = await this.getById(id, userId)
+    return this.ai.evaluatePromptTemplate({
+      templateId: tpl.id,
+      templateName: tpl.name,
+      templateVersion: tpl.version,
+      content: tpl.content,
+      modelConfigId: dto.modelConfigId,
+      sampleLimit: dto.sampleLimit,
+      temperature: dto.temperature,
+      maxTokens: dto.maxTokens,
+    })
   }
 }
