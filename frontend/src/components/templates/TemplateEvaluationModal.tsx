@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { PromptEvaluationReport } from '@/types'
 import { tpl } from '@/utils/templatesUi'
@@ -7,6 +7,18 @@ import { tpl } from '@/utils/templatesUi'
 function metricText(value: number | null, suffix = '') {
   if (value == null) return '-'
   return `${value}${suffix}`
+}
+
+function deltaText(value: number | null, suffix = '') {
+  if (value == null) return '-'
+  if (value === 0) return `持平`
+  return `${value > 0 ? '+' : ''}${value}${suffix}`
+}
+
+function checkTone(status: 'pass' | 'warn' | 'fail') {
+  if (status === 'pass') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+  if (status === 'warn') return 'border-amber-400/25 bg-amber-500/10 text-amber-100'
+  return 'border-red-400/25 bg-red-500/10 text-red-100'
 }
 
 export function TemplateEvaluationModal(props: {
@@ -65,6 +77,107 @@ export function TemplateEvaluationModal(props: {
                 <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100">
                   {report.skippedReason}
                 </div>
+              )}
+
+              {report.promptAnalysis && (
+                <section className="mt-5 rounded-xl border border-[hsl(var(--templates-panel-border))] bg-[hsl(var(--templates-card-bg))] px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-cyan-300" />
+                      <p className="text-sm font-semibold text-[hsl(var(--templates-text-primary))]">Prompt 格式体检</p>
+                    </div>
+                    <p className="text-xs tabular-nums text-[hsl(var(--templates-text-muted))]">
+                      健康度 {report.promptAnalysis.healthScore}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                    {report.promptAnalysis.summary}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {report.promptAnalysis.checks.map((item) => (
+                      <div key={item.id} className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${checkTone(item.status)}`}>
+                        <p className="font-semibold">{item.label}</p>
+                        <p className="mt-1 opacity-90">{item.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {(report.promptAnalysis.risks.length > 0 || report.promptAnalysis.suggestions.length > 0) && (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {report.promptAnalysis.risks.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-amber-100">风险</p>
+                          <ul className="mt-1 space-y-1 text-xs leading-relaxed text-amber-100/90">
+                            {report.promptAnalysis.risks.map((item) => (
+                              <li key={item}>· {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {report.promptAnalysis.suggestions.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-cyan-100">建议</p>
+                          <ul className="mt-1 space-y-1 text-xs leading-relaxed text-cyan-100/90">
+                            {report.promptAnalysis.suggestions.map((item) => (
+                              <li key={item}>· {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {report.promptOptimization && (
+                <section className="mt-5 rounded-xl border border-[hsl(var(--templates-panel-border))] bg-[hsl(var(--templates-card-bg))] px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[hsl(var(--templates-text-primary))]">AI 优化建议</p>
+                    <p className="text-xs text-[hsl(var(--templates-text-muted))]">
+                      {report.promptOptimization.status === 'completed' ? '已生成优化版草稿' : '优化未完成'}
+                    </p>
+                  </div>
+                  {report.promptOptimization.error && (
+                    <div className="mt-2 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+                      {report.promptOptimization.error}
+                    </div>
+                  )}
+                  {report.promptOptimization.reasons.length > 0 && (
+                    <ul className="mt-3 space-y-1 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                      {report.promptOptimization.reasons.map((item) => (
+                        <li key={item}>· {item}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {report.promptOptimization.guardrails.length > 0 && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {report.promptOptimization.guardrails.map((item) => (
+                        <div key={item.id} className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${checkTone(item.status)}`}>
+                          <p className="font-semibold">{item.label}</p>
+                          <p className="mt-1 opacity-90">{item.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {report.comparison && report.optimizedEvaluation && (
+                    <div className="mt-4 rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-3 py-2">
+                      <p className="text-xs font-semibold text-cyan-100">原版 / AI 优化版评测对比</p>
+                      <div className="mt-2 grid gap-2 text-xs text-cyan-100/90 sm:grid-cols-4">
+                        <p>解析率 {metricText(report.parseSuccessRate, '%')} → {metricText(report.optimizedEvaluation.parseSuccessRate, '%')}（{deltaText(report.comparison.parseSuccessRateDelta, '%')}）</p>
+                        <p>质量 {metricText(report.averageQualityScore)} → {metricText(report.optimizedEvaluation.averageQualityScore)}（{deltaText(report.comparison.averageQualityScoreDelta)}）</p>
+                        <p>覆盖 {metricText(report.averageCoverageRate, '%')} → {metricText(report.optimizedEvaluation.averageCoverageRate, '%')}（{deltaText(report.comparison.averageCoverageRateDelta, '%')}）</p>
+                        <p>耗时差 {deltaText(report.comparison.totalDurationMsDelta, 'ms')}</p>
+                      </div>
+                    </div>
+                  )}
+                  {report.promptOptimization.optimizedContent && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-xs font-semibold text-cyan-100">查看完整优化版 Prompt 草稿</summary>
+                      <pre className="templates-scrollbar mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-black/25 p-3 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                        {report.promptOptimization.optimizedContent}
+                      </pre>
+                    </details>
+                  )}
+                </section>
               )}
 
               <div className="mt-5 space-y-3">

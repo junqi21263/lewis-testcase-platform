@@ -41,6 +41,39 @@ export type PromptEvaluationCompatibility = {
   reason?: string
 }
 
+export type PromptFormatCheckStatus = 'pass' | 'warn' | 'fail'
+
+export type PromptFormatCheck = {
+  id: string
+  label: string
+  status: PromptFormatCheckStatus
+  message: string
+  evidence?: string[]
+}
+
+export type PromptTemplateFormatAnalysis = {
+  healthScore: number
+  summary: string
+  checks: PromptFormatCheck[]
+  risks: string[]
+  suggestions: string[]
+}
+
+export type PromptOptimizationDraft = {
+  status: 'completed' | 'failed' | 'skipped'
+  optimizedContent?: string
+  reasons: string[]
+  guardrails: PromptFormatCheck[]
+  error?: string
+}
+
+export type PromptEvaluationComparison = {
+  parseSuccessRateDelta: number | null
+  averageQualityScoreDelta: number | null
+  averageCoverageRateDelta: number | null
+  totalDurationMsDelta: number | null
+}
+
 export type PromptEvaluationReport = PromptEvaluationSummaryInput & {
   sampleCount: number
   parseSuccessRate: number
@@ -49,6 +82,10 @@ export type PromptEvaluationReport = PromptEvaluationSummaryInput & {
   failures: PromptEvaluationFailure[]
   warningSamples: PromptEvaluationFailure[]
   skippedReason?: string
+  promptAnalysis?: PromptTemplateFormatAnalysis
+  promptOptimization?: PromptOptimizationDraft
+  optimizedEvaluation?: PromptEvaluationReport
+  comparison?: PromptEvaluationComparison
   evaluatedAt: string
 }
 
@@ -92,6 +129,210 @@ function roundRate(value: number): number {
 function average(values: number[]): number | null {
   if (values.length === 0) return null
   return roundRate(values.reduce((sum, n) => sum + n, 0) / values.length)
+}
+
+function matchEvidence(text: string, patterns: RegExp[]): string[] {
+  const evidence = new Set<string>()
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const value = (match[0] || '').trim()
+      if (value) evidence.add(value.slice(0, 80))
+    }
+  }
+  return [...evidence].slice(0, 6)
+}
+
+function includesAll(text: string, terms: string[]): string[] {
+  return terms.filter((term) => text.includes(term))
+}
+
+function check(
+  id: string,
+  label: string,
+  status: PromptFormatCheckStatus,
+  message: string,
+  evidence?: string[],
+): PromptFormatCheck {
+  return { id, label, status, message, ...(evidence?.length ? { evidence } : {}) }
+}
+
+function quantityEvidence(content: string): string[] {
+  return matchEvidence(content, [
+    /[≥>=]\s*\d+\s*个?唯一?测试?用例/g,
+    /生成\s*[≥>=]\s*\d+\s*个?唯一?测试?用例/g,
+    /必须生成\s*[≥>=]\s*\d+/g,
+  ])
+}
+
+export function analyzePromptTemplateFormat(content: string): PromptTemplateFormatAnalysis {
+  const text = String(content ?? '')
+  const compact = text.replace(/\s+/g, '')
+  const checks: PromptFormatCheck[] = []
+
+  const hasJsonContract = /仅输出\s*纯?\s*json|只输出\s*纯?\s*json|无任何markdown|代码围栏|顶层必须为?["“]?cases/i.test(text)
+  const hasCasesContract = /顶层.*cases|["“]cases["”]\s*数组|cases\s*[:：]/i.test(text)
+  checks.push(
+    check(
+      'json_contract',
+      'JSON 输出契约',
+      hasJsonContract && hasCasesContract ? 'pass' : hasJsonContract || hasCasesContract ? 'warn' : 'fail',
+      hasJsonContract && hasCasesContract
+        ? '已明确纯 JSON 与顶层 cases 约束。'
+        : '建议明确要求仅输出纯 JSON，且顶层必须为 {"cases": [...]}。',
+      matchEvidence(text, [/仅输出[^\n。]*/g, /顶层[^\n。]*/g]),
+    ),
+  )
+
+  const requiredFields = ['title', 'tags', 'precondition', 'steps', 'expectedResult', 'priority', 'type']
+  const presentFields = includesAll(compact, requiredFields)
+  checks.push(
+    check(
+      'required_fields',
+      '平台字段完整性',
+      presentFields.length === requiredFields.length ? 'pass' : presentFields.length >= 5 ? 'warn' : 'fail',
+      presentFields.length === requiredFields.length
+        ? '已覆盖平台用例核心字段。'
+        : `缺少字段约束：${requiredFields.filter((f) => !presentFields.includes(f)).join('、')}`,
+      presentFields,
+    ),
+  )
+
+  const enumEvidence = matchEvidence(text, [/P0\/P1\/P2\/P3/g, /FUNCTIONAL/g, /type[：:].*FUNCTIONAL/gi])
+  checks.push(
+    check(
+      'enum_constraints',
+      '枚举约束',
+      enumEvidence.length >= 2 ? 'pass' : enumEvidence.length === 1 ? 'warn' : 'fail',
+      enumEvidence.length >= 2
+        ? '已明确优先级与类型枚举。'
+        : '建议明确 priority 只能为 P0/P1/P2/P3，type 使用平台支持枚举。',
+      enumEvidence,
+    ),
+  )
+
+  const variables = matchEvidence(text, [/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g])
+  checks.push(
+    check(
+      'variables',
+      '变量占位符',
+      variables.includes('{{content}}') || /\{\{\s*content\s*\}\}/.test(text) ? 'pass' : 'fail',
+      /\{\{\s*content\s*\}\}/.test(text)
+        ? `检测到 ${variables.length} 个模板变量，包含需求内容占位符。`
+        : '缺少 {{content}}，应用到生成页后可能无法注入需求内容。',
+      variables,
+    ),
+  )
+
+  const bulkRules = quantityEvidence(text)
+  const hasEvalMode = /PROMPT_EVAL|评测模式|评测样例|小样本|代表性用例|暂不执行.*数量|6\s*-\s*10\s*条/.test(text)
+  checks.push(
+    check(
+      'bulk_quantity_rules',
+      '批量数量规则',
+      bulkRules.length > 0 && !hasEvalMode ? 'warn' : 'pass',
+      bulkRules.length > 0
+        ? hasEvalMode
+          ? '存在正式生成数量底线，同时已区分评测模式。'
+          : '存在正式生成数量底线，但未区分评测模式，评测时容易输出过长。'
+        : '未检测到高数量生成底线。',
+      bulkRules,
+    ),
+  )
+  checks.push(
+    check(
+      'evaluation_mode',
+      'Prompt 评测模式',
+      hasEvalMode ? 'pass' : 'warn',
+      hasEvalMode
+        ? '已包含评测模式或小样本输出约束。'
+        : '建议增加评测模式：评测时生成 6-10 条代表性用例，正式生成仍执行原数量底线。',
+    ),
+  )
+
+  const hasSelfCheck = /自检|schema|字段缺失|自动修复|输出前.*检查|格式校验|JSON.*校验/i.test(text)
+  checks.push(
+    check(
+      'self_check',
+      '输出前自检',
+      hasSelfCheck ? 'pass' : 'warn',
+      hasSelfCheck
+        ? '已包含输出前自检或 schema 校验约束。'
+        : '建议要求 AI 输出前自检字段完整性、steps/expectedResult 对齐、JSON 可解析性。',
+    ),
+  )
+
+  const risks: string[] = []
+  if (bulkRules.length > 0 && !hasEvalMode) {
+    risks.push('正式生成数量底线会在 Prompt 评测中同样生效，容易达到最大 Token 上限并造成 JSON 截断。')
+  }
+  if (!hasSelfCheck) {
+    risks.push('缺少输出前自检时，字段缺失或 steps 与 expectedResult 不一致会更多依赖平台修复。')
+  }
+  if (!/\{\{\s*content\s*\}\}/.test(text)) {
+    risks.push('缺少 {{content}} 会导致需求内容无法稳定注入。')
+  }
+
+  const suggestions: string[] = []
+  if (!hasEvalMode) {
+    suggestions.push('补充 Prompt 评测模式：评测样例只生成 6-10 条代表性用例，不执行正式 20/35/45 条数量底线。')
+  }
+  if (!hasSelfCheck) {
+    suggestions.push('补充输出前自检清单：纯 JSON、顶层 cases、必填字段、枚举、steps 与 expectedResult 条数一致。')
+  }
+  if (!hasJsonContract || !hasCasesContract) {
+    suggestions.push('强化 JSON 契约：首个非空字符必须是 {，最后一个非空字符必须是 }，禁止 Markdown。')
+  }
+  if (suggestions.length === 0) suggestions.push('当前 Prompt 结构较完整，可继续通过样例集做模型实测。')
+
+  const penalty = checks.reduce((sum, item) => sum + (item.status === 'fail' ? 22 : item.status === 'warn' ? 10 : 0), 0)
+  const healthScore = Math.max(0, Math.min(100, 100 - penalty))
+  return {
+    healthScore,
+    summary: `检测 ${checks.length} 个格式维度，${checks.filter((c) => c.status === 'pass').length} 项通过，${checks.filter((c) => c.status === 'warn').length} 项警告，${checks.filter((c) => c.status === 'fail').length} 项失败。`,
+    checks,
+    risks,
+    suggestions,
+  }
+}
+
+export function validateOptimizedPromptDraft(original: string, optimized: string): PromptFormatCheck[] {
+  const source = String(original ?? '')
+  const next = String(optimized ?? '')
+  const sourceBulk = quantityEvidence(source)
+  const nextBulk = quantityEvidence(next)
+  return [
+    check(
+      'preserve_content_placeholder',
+      '保留需求内容占位符',
+      /\{\{\s*content\s*\}\}/.test(next) ? 'pass' : 'fail',
+      /\{\{\s*content\s*\}\}/.test(next) ? '已保留 {{content}}。' : '优化版缺少 {{content}}，不能保存为模板。',
+    ),
+    check(
+      'preserve_json_contract',
+      '保留 JSON cases 契约',
+      /仅输出\s*纯?\s*json|只输出\s*纯?\s*json/i.test(next) && /顶层.*cases|["“]cases["”]\s*数组/i.test(next)
+        ? 'pass'
+        : 'fail',
+      '优化版必须继续要求纯 JSON 且顶层为 cases。',
+    ),
+    check(
+      'preserve_bulk_quantity_rules',
+      '保留正式生成数量规则',
+      sourceBulk.length === 0 || nextBulk.length >= Math.min(sourceBulk.length, 2) ? 'pass' : 'fail',
+      sourceBulk.length === 0
+        ? '原模板未包含批量数量底线。'
+        : '优化版必须保留原模板的正式生成数量底线，只能额外增加评测模式例外。',
+      nextBulk,
+    ),
+    check(
+      'add_evaluation_mode',
+      '增加评测模式',
+      /PROMPT_EVAL|评测模式|评测样例|小样本|代表性用例|暂不执行.*数量|6\s*-\s*10\s*条/.test(next)
+        ? 'pass'
+        : 'warn',
+      '建议优化版包含评测模式，避免评测时执行正式大批量生成规则。',
+    ),
+  ]
 }
 
 export function detectPromptEvaluationCompatibility(content: string): PromptEvaluationCompatibility {
@@ -157,5 +398,26 @@ export function buildPromptEvaluationSummary(
     failures,
     warningSamples,
     evaluatedAt: new Date().toISOString(),
+  }
+}
+
+function sumDuration(report: PromptEvaluationReport): number {
+  return report.samples.reduce((sum, sample) => sum + sample.durationMs, 0)
+}
+
+function metricDelta(next: number | null, prev: number | null): number | null {
+  if (next == null || prev == null) return null
+  return roundRate(next - prev)
+}
+
+export function buildPromptEvaluationComparison(
+  original: PromptEvaluationReport,
+  optimized: PromptEvaluationReport,
+): PromptEvaluationComparison {
+  return {
+    parseSuccessRateDelta: metricDelta(optimized.parseSuccessRate, original.parseSuccessRate),
+    averageQualityScoreDelta: metricDelta(optimized.averageQualityScore, original.averageQualityScore),
+    averageCoverageRateDelta: metricDelta(optimized.averageCoverageRate, original.averageCoverageRate),
+    totalDurationMsDelta: metricDelta(sumDuration(optimized), sumDuration(original)),
   }
 }

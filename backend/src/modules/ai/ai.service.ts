@@ -14,7 +14,17 @@ import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
-import { buildPromptEvaluationSummary, detectPromptEvaluationCompatibility, PROMPT_EVAL_SAMPLE_SET, type PromptEvalSampleResult } from '@/modules/templates/prompt-template-evaluation.util'
+import {
+  analyzePromptTemplateFormat,
+  buildPromptEvaluationComparison,
+  buildPromptEvaluationSummary,
+  detectPromptEvaluationCompatibility,
+  PROMPT_EVAL_SAMPLE_SET,
+  validateOptimizedPromptDraft,
+  type PromptEvaluationReport,
+  type PromptOptimizationDraft,
+  type PromptEvalSampleResult,
+} from '@/modules/templates/prompt-template-evaluation.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
@@ -839,9 +849,64 @@ export class AiService {
   }) {
     const { client, modelId, modelName } = await this.getOpenAIClient(opts.modelConfigId)
     const sampleLimit = Math.min(Math.max(Math.floor(opts.sampleLimit || 3), 1), PROMPT_EVAL_SAMPLE_SET.length)
-    const samples = PROMPT_EVAL_SAMPLE_SET.slice(0, sampleLimit)
     const temperature = opts.temperature ?? 0.2
     const maxTokens = this.effectiveMaxTokens(opts.maxTokens ?? 4096)
+    const promptAnalysis = analyzePromptTemplateFormat(opts.content)
+    const report = await this.evaluatePromptTemplateContent({
+      client,
+      modelId,
+      modelName,
+      templateId: opts.templateId,
+      templateName: opts.templateName,
+      templateVersion: opts.templateVersion,
+      content: opts.content,
+      sampleLimit,
+      temperature,
+      maxTokens,
+    })
+
+    report.promptAnalysis = promptAnalysis
+
+    if (!report.skippedReason) {
+      const optimization = await this.optimizePromptTemplateWithAi(client, modelId, opts.content, promptAnalysis.summary)
+      report.promptOptimization = optimization
+      const hasFailedGuardrail = optimization.guardrails.some((item) => item.status === 'fail')
+      if (optimization.status === 'completed' && optimization.optimizedContent && !hasFailedGuardrail) {
+        const optimizedEvaluation = await this.evaluatePromptTemplateContent({
+          client,
+          modelId,
+          modelName,
+          templateId: opts.templateId,
+          templateName: `${opts.templateName}（AI 优化版草稿）`,
+          templateVersion: opts.templateVersion,
+          content: optimization.optimizedContent,
+          sampleLimit,
+          temperature,
+          maxTokens,
+        })
+        report.optimizedEvaluation = optimizedEvaluation
+        report.comparison = buildPromptEvaluationComparison(report, optimizedEvaluation)
+      }
+    }
+
+    return report
+  }
+
+  private async evaluatePromptTemplateContent(opts: {
+    client: OpenAI
+    modelId: string
+    modelName: string
+    templateId: string
+    templateName: string
+    templateVersion: number
+    content: string
+    sampleLimit: number
+    temperature: number
+    maxTokens: number
+  }): Promise<PromptEvaluationReport> {
+    const samples = PROMPT_EVAL_SAMPLE_SET.slice(0, opts.sampleLimit)
+    const temperature = opts.temperature
+    const maxTokens = opts.maxTokens
     const results: PromptEvalSampleResult[] = []
     const compatibility = detectPromptEvaluationCompatibility(opts.content)
 
@@ -851,8 +916,8 @@ export class AiService {
           templateId: opts.templateId,
           templateName: opts.templateName,
           templateVersion: opts.templateVersion,
-          modelId,
-          modelName,
+          modelId: opts.modelId,
+          modelName: opts.modelName,
           params: { temperature, maxTokens },
           samples: [],
         }),
@@ -868,14 +933,13 @@ export class AiService {
           sourceType: 'text',
           text: sample.requirementText,
           customPrompt: opts.content,
-          modelConfigId: opts.modelConfigId,
           temperature,
           maxTokens,
         } as GenerateDto
         const { system, user, inputNotices } = this.buildPromptMessages(dto)
         warnings.push(...inputNotices)
-        const { completion, fallbackNotice } = await this.createCaseCompletion(client, {
-          model: modelId,
+        const { completion, fallbackNotice } = await this.createCaseCompletion(opts.client, {
+          model: opts.modelId,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user },
@@ -887,7 +951,7 @@ export class AiService {
         const choice = completion.choices?.[0]
         if (choice?.finish_reason === 'length') warnings.push(OUTPUT_TRUNCATED_NOTICE)
         const content = String(choice?.message?.content ?? '').trim()
-        const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, content)
+        const resolved = await this.resolveCasesForPersistenceWithRepair(opts.client, opts.modelId, content)
         if (resolved.repaired) warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理。')
         if (resolved.schemaRepaired || resolved.schemaValidationWarnings.length > 0) {
           warnings.push(this.schemaRepairNotice(resolved.schemaValidationWarnings))
@@ -927,11 +991,132 @@ export class AiService {
       templateId: opts.templateId,
       templateName: opts.templateName,
       templateVersion: opts.templateVersion,
-      modelId,
-      modelName,
+      modelId: opts.modelId,
+      modelName: opts.modelName,
       params: { temperature, maxTokens },
       samples: results,
     })
+  }
+
+  private extractPromptOptimizationPayload(raw: string): { optimizedContent?: string; reasons: string[] } {
+    const text = String(raw ?? '').trim()
+    if (!text) return { reasons: [] }
+    const parse = (value: string) => {
+      try {
+        return JSON.parse(value) as Record<string, unknown>
+      } catch {
+        return null
+      }
+    }
+    let parsed = parse(text)
+    if (!parsed) {
+      const start = text.indexOf('{')
+      const end = text.lastIndexOf('}')
+      if (start >= 0 && end > start) parsed = parse(text.slice(start, end + 1))
+    }
+    if (!parsed) return { reasons: [] }
+    const optimizedContent =
+      typeof parsed.optimizedContent === 'string'
+        ? parsed.optimizedContent.trim()
+        : typeof parsed.optimized_prompt === 'string'
+          ? parsed.optimized_prompt.trim()
+          : typeof parsed.prompt === 'string'
+            ? parsed.prompt.trim()
+            : undefined
+    const reasonsRaw = parsed.reasons ?? parsed.changes ?? parsed.suggestions
+    const reasons = Array.isArray(reasonsRaw)
+      ? reasonsRaw.map((item) => String(item).trim()).filter(Boolean)
+      : typeof reasonsRaw === 'string'
+        ? reasonsRaw
+            .split(/\n+|[；;]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : []
+    return { optimizedContent, reasons: reasons.slice(0, 12) }
+  }
+
+  private async optimizePromptTemplateWithAi(
+    client: OpenAI,
+    modelId: string,
+    originalPrompt: string,
+    localAnalysisSummary: string,
+  ): Promise<PromptOptimizationDraft> {
+    try {
+      const completion = await client.chat.completions.create({
+        model: modelId,
+        temperature: 0.2,
+        max_tokens: this.effectiveMaxTokens(12000),
+        response_format: buildJsonObjectResponseFormat() as any,
+        messages: [
+          {
+            role: 'system',
+            content:
+              '你是资深测试架构师与 Prompt 工程评审专家。你必须只输出 JSON 对象，不要输出 Markdown。你要在不破坏原 Prompt 结构、语气、变量和正式生成规则的前提下，生成完整优化版 Prompt。',
+          },
+          {
+            role: 'user',
+            content: `
+请分析并优化下面的测试用例生成 Prompt。
+
+必须遵守：
+1. 不要覆盖原模板，返回一个完整的 optimizedContent 字符串。
+2. 必须保留原 Prompt 的章节结构和核心业务约束。
+3. 必须保留 {{content}}、原有可配置变量、正式生成数量底线和上传专项覆盖要求。
+4. 只能新增或增强：Prompt 评测模式、输出前自检、JSON schema 强约束、字段缺失自修复、steps 与 expectedResult 对齐校验。
+5. 正式生成时仍执行原 Prompt 的 20/30/35/45 等数量要求；仅在 Prompt 评测模式下降低为 6-10 条代表性用例。
+6. 输出 JSON 对象格式：
+{
+  "reasons": ["修改原因1", "修改原因2"],
+  "optimizedContent": "完整优化版 Prompt，必须包含原 Prompt 主要内容"
+}
+
+本地格式分析摘要：
+${localAnalysisSummary}
+
+原 Prompt：
+${originalPrompt}
+`.trim(),
+          },
+        ],
+      } as any)
+
+      const choice = completion.choices?.[0]
+      if (choice?.finish_reason === 'length') {
+        return {
+          status: 'failed',
+          reasons: [],
+          guardrails: [],
+          error: 'AI 优化 Prompt 输出达到最大 Token 上限，未生成完整优化版。请提高模型 maxTokens 或缩短模板后重试。',
+        }
+      }
+      const parsed = this.extractPromptOptimizationPayload(String(choice?.message?.content ?? '').trim())
+      if (!parsed.optimizedContent) {
+        return {
+          status: 'failed',
+          reasons: parsed.reasons,
+          guardrails: [],
+          error: 'AI 未返回 optimizedContent，无法生成完整优化版 Prompt。',
+        }
+      }
+      const guardrails = validateOptimizedPromptDraft(originalPrompt, parsed.optimizedContent)
+      const failed = guardrails.filter((item) => item.status === 'fail')
+      return {
+        status: failed.length > 0 ? 'failed' : 'completed',
+        optimizedContent: parsed.optimizedContent,
+        reasons: parsed.reasons.length > 0 ? parsed.reasons : ['基于原 Prompt 增加评测模式、输出前自检和结构化约束。'],
+        guardrails,
+        ...(failed.length > 0
+          ? { error: `AI 优化版未通过守护校验：${failed.map((item) => item.label).join('、')}` }
+          : {}),
+      }
+    } catch (err) {
+      return {
+        status: 'failed',
+        reasons: [],
+        guardrails: [],
+        error: humanizeAiProviderError(err instanceof Error ? err.message : String(err)),
+      }
+    }
   }
 
   /** 构建 system / user 消息；过长用户内容自动首尾压缩，避免超出上下文 */

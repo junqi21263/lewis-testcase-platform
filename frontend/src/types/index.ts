@@ -205,6 +205,39 @@ export interface PromptEvaluationFailure {
   warnings: string[]
 }
 
+export type PromptFormatCheckStatus = 'pass' | 'warn' | 'fail'
+
+export interface PromptFormatCheck {
+  id: string
+  label: string
+  status: PromptFormatCheckStatus
+  message: string
+  evidence?: string[]
+}
+
+export interface PromptTemplateFormatAnalysis {
+  healthScore: number
+  summary: string
+  checks: PromptFormatCheck[]
+  risks: string[]
+  suggestions: string[]
+}
+
+export interface PromptOptimizationDraft {
+  status: 'completed' | 'failed' | 'skipped'
+  optimizedContent?: string
+  reasons: string[]
+  guardrails: PromptFormatCheck[]
+  error?: string
+}
+
+export interface PromptEvaluationComparison {
+  parseSuccessRateDelta: number | null
+  averageQualityScoreDelta: number | null
+  averageCoverageRateDelta: number | null
+  totalDurationMsDelta: number | null
+}
+
 export interface PromptEvaluationReport {
   templateId: string
   templateName: string
@@ -223,6 +256,10 @@ export interface PromptEvaluationReport {
   failures: PromptEvaluationFailure[]
   warningSamples: PromptEvaluationFailure[]
   skippedReason?: string
+  promptAnalysis?: PromptTemplateFormatAnalysis
+  promptOptimization?: PromptOptimizationDraft
+  optimizedEvaluation?: PromptEvaluationReport
+  comparison?: PromptEvaluationComparison
   evaluatedAt: string
 }
 
