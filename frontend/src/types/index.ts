@@ -221,6 +221,8 @@ export interface PromptEvaluationReport {
   averageQualityScore: number
   averageCoverageRate: number | null
   failures: PromptEvaluationFailure[]
+  warningSamples: PromptEvaluationFailure[]
+  skippedReason?: string
   evaluatedAt: string
 }
 

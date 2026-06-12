@@ -14,7 +14,7 @@ import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
-import { buildPromptEvaluationSummary, PROMPT_EVAL_SAMPLE_SET, type PromptEvalSampleResult } from '@/modules/templates/prompt-template-evaluation.util'
+import { buildPromptEvaluationSummary, detectPromptEvaluationCompatibility, PROMPT_EVAL_SAMPLE_SET, type PromptEvalSampleResult } from '@/modules/templates/prompt-template-evaluation.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
@@ -843,6 +843,22 @@ export class AiService {
     const temperature = opts.temperature ?? 0.2
     const maxTokens = this.effectiveMaxTokens(opts.maxTokens ?? 4096)
     const results: PromptEvalSampleResult[] = []
+    const compatibility = detectPromptEvaluationCompatibility(opts.content)
+
+    if (!compatibility.compatible) {
+      return {
+        ...buildPromptEvaluationSummary({
+          templateId: opts.templateId,
+          templateName: opts.templateName,
+          templateVersion: opts.templateVersion,
+          modelId,
+          modelName,
+          params: { temperature, maxTokens },
+          samples: [],
+        }),
+        skippedReason: compatibility.reason,
+      }
+    }
 
     for (const sample of samples) {
       const startedAt = Date.now()

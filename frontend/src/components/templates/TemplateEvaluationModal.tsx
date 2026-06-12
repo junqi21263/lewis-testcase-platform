@@ -61,6 +61,12 @@ export function TemplateEvaluationModal(props: {
                 ))}
               </div>
 
+              {report.skippedReason && (
+                <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100">
+                  {report.skippedReason}
+                </div>
+              )}
+
               <div className="mt-5 space-y-3">
                 {report.samples.map((sample) => (
                   <div
@@ -102,6 +108,19 @@ export function TemplateEvaluationModal(props: {
                     {report.failures.map((f) => (
                       <li key={f.sampleId}>
                         {f.title}：{f.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {report.warningSamples.length > 0 && (
+                <div className="mt-5 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-3">
+                  <p className="text-sm font-semibold text-cyan-100">警告样例</p>
+                  <ul className="mt-2 space-y-1 text-xs text-cyan-100/90">
+                    {report.warningSamples.map((f) => (
+                      <li key={f.sampleId}>
+                        {f.title}：{f.warnings.slice(0, 2).join('；')}
                       </li>
                     ))}
                   </ul>

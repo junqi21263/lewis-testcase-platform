@@ -1,5 +1,6 @@
 import {
   buildPromptEvaluationSummary,
+  detectPromptEvaluationCompatibility,
   nextPromptTemplateVersion,
   PROMPT_EVAL_SAMPLE_SET,
 } from '@/modules/templates/prompt-template-evaluation.util'
@@ -33,6 +34,16 @@ describe('prompt template evaluation helpers', () => {
         {
           sampleId: 'order-export',
           title: '订单导出',
+          parsed: true,
+          caseCount: 2,
+          qualityScore: 60,
+          coverageRate: 50,
+          durationMs: 900,
+          warnings: ['当前模型网关不支持 json_schema 严格结构化输出'],
+        },
+        {
+          sampleId: 'upload-boundary',
+          title: '订单导出',
           parsed: false,
           caseCount: 0,
           qualityScore: 0,
@@ -44,16 +55,32 @@ describe('prompt template evaluation helpers', () => {
       ],
     })
 
-    expect(summary.sampleCount).toBe(2)
-    expect(summary.parseSuccessRate).toBe(50)
-    expect(summary.averageQualityScore).toBe(41)
-    expect(summary.averageCoverageRate).toBe(75)
+    expect(summary.sampleCount).toBe(3)
+    expect(summary.parseSuccessRate).toBe(66.67)
+    expect(summary.averageQualityScore).toBe(47.33)
+    expect(summary.averageCoverageRate).toBe(62.5)
     expect(summary.failures).toEqual([
       expect.objectContaining({
-        sampleId: 'order-export',
+        sampleId: 'upload-boundary',
         reason: '解析失败',
       }),
     ])
+    expect(summary.warningSamples).toEqual([
+      expect.objectContaining({
+        sampleId: 'order-export',
+        warnings: ['当前模型网关不支持 json_schema 严格结构化输出'],
+      }),
+    ])
+  })
+
+  it('detects templates that are intentionally not JSON testcase prompts', () => {
+    const result = detectPromptEvaluationCompatibility(`
+本模板用于生成自动化脚本与工程结构，不是平台的 JSON 测试用例格式。
+输出可运行 Python Pytest 代码。
+`)
+
+    expect(result.compatible).toBe(false)
+    expect(result.reason).toContain('非 JSON')
   })
 
   it('ships a fixed sample set for prompt comparison', () => {

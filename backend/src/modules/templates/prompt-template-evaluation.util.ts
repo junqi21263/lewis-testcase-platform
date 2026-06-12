@@ -36,12 +36,19 @@ export type PromptEvaluationFailure = {
   warnings: string[]
 }
 
+export type PromptEvaluationCompatibility = {
+  compatible: boolean
+  reason?: string
+}
+
 export type PromptEvaluationReport = PromptEvaluationSummaryInput & {
   sampleCount: number
   parseSuccessRate: number
   averageQualityScore: number
   averageCoverageRate: number | null
   failures: PromptEvaluationFailure[]
+  warningSamples: PromptEvaluationFailure[]
+  skippedReason?: string
   evaluatedAt: string
 }
 
@@ -87,6 +94,25 @@ function average(values: number[]): number | null {
   return roundRate(values.reduce((sum, n) => sum + n, 0) / values.length)
 }
 
+export function detectPromptEvaluationCompatibility(content: string): PromptEvaluationCompatibility {
+  const text = String(content ?? '').toLowerCase()
+  const hasNonJsonIntent =
+    /非\s*json|不是平台的\s*json|not\s+json|代码围栏|自动化脚本|可运行.*脚本|pytest|jmeter|locust|gatling|pageobject|allure/.test(
+      text,
+    )
+  const hasJsonContract = /仅输出\s*json|只输出.*json|顶层.*cases|\"cases\"|json\s*schema/.test(text)
+
+  if (hasNonJsonIntent && !hasJsonContract) {
+    return {
+      compatible: false,
+      reason:
+        '该模板明确要求输出非 JSON 自动化脚本，不适合使用平台 JSON 用例 schema 评测。请改用功能/API/安全等 JSON 用例模板，或先把模板输出约束改为顶层 {"cases": [...]}。',
+    }
+  }
+
+  return { compatible: true }
+}
+
 export function nextPromptTemplateVersion(
   currentVersion: number | null | undefined,
   oldContent: string,
@@ -106,11 +132,19 @@ export function buildPromptEvaluationSummary(
     .map((s) => s.coverageRate)
     .filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
   const failures = input.samples
-    .filter((s) => !s.parsed || s.error || s.warnings.length > 0)
+    .filter((s) => !s.parsed || s.error)
     .map((s) => ({
       sampleId: s.sampleId,
       title: s.title,
       reason: s.error || (s.parsed ? '存在评测警告' : '解析失败'),
+      warnings: s.warnings,
+    }))
+  const warningSamples = input.samples
+    .filter((s) => s.parsed && !s.error && s.warnings.length > 0)
+    .map((s) => ({
+      sampleId: s.sampleId,
+      title: s.title,
+      reason: '存在评测警告',
       warnings: s.warnings,
     }))
 
@@ -121,6 +155,7 @@ export function buildPromptEvaluationSummary(
     averageQualityScore: average(input.samples.map((s) => s.qualityScore)) ?? 0,
     averageCoverageRate: average(coverageRates),
     failures,
+    warningSamples,
     evaluatedAt: new Date().toISOString(),
   }
 }
