@@ -64,7 +64,11 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, ApiResponse<T>
 
         if (rawData && typeof rawData === 'object') {
           const explicitPayload = rawData as ExplicitResponsePayload<T>
-          if (typeof explicitPayload.message === 'string' && explicitPayload.message.trim()) {
+          if (
+            Object.prototype.hasOwnProperty.call(explicitPayload, 'data') &&
+            typeof explicitPayload.message === 'string' &&
+            explicitPayload.message.trim()
+          ) {
             message = explicitPayload.message
             data = ('data' in explicitPayload ? explicitPayload.data : null) as T
           }
