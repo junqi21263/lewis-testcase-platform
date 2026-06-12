@@ -25,5 +25,9 @@ export const templatesApi = {
   evaluateTemplate: (
     id: string,
     data?: { modelConfigId?: string; sampleLimit?: number; temperature?: number; maxTokens?: number },
-  ) => request.post<PromptEvaluationReport>(`/templates/${id}/evaluate`, data ?? {}),
+  ) =>
+    request.post<PromptEvaluationReport>(`/templates/${id}/evaluate`, data ?? {}, {
+      timeout: 300000,
+      suppressToast: true,
+    }),
 }

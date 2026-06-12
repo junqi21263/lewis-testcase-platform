@@ -26,6 +26,7 @@ import { pushRecentTemplateId } from '@/utils/recentTemplates'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { templateCategoryLabels, tpl } from '@/utils/templatesUi'
 import { cn } from '@/utils/cn'
+import { getApiErrorMessage } from '@/utils/apiErrorMessage'
 
 type EditorState =
   | { mode: 'closed' }
@@ -203,8 +204,13 @@ export default function TemplatesPage() {
       })
       setEvaluationReport(report)
       toast.success('评测完成')
-    } catch {
-      toast.error('评测失败，请检查模型配置或稍后重试')
+    } catch (error) {
+      const message = getApiErrorMessage(error, '评测失败，请检查模型配置或稍后重试')
+      if (/timeout|exceeded|ECONNABORTED/i.test(message)) {
+        toast.error('评测耗时过长，请减少样例数或稍后重试')
+      } else {
+        toast.error(message)
+      }
     } finally {
       setEvaluatingId(null)
     }
