@@ -41,6 +41,24 @@ const emptyDraft = (): TemplateDraft => ({
   isPublic: true,
 })
 
+function createPendingEvaluationJob(tplItem: PromptTemplate): TemplateEvaluationJob {
+  const now = new Date().toISOString()
+  return {
+    jobId: `pending-${tplItem.id}-${Date.now()}`,
+    templateId: tplItem.id,
+    templateName: tplItem.name,
+    templateVersion: tplItem.version,
+    userId: tplItem.creatorId,
+    status: 'queued',
+    stage: 'queued',
+    progress: 0,
+    message: '正在创建 Prompt 评测任务',
+    logs: ['正在创建 Prompt 评测任务'],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 function sortTemplates(list: PromptTemplate[], sort: TemplateSortKey): PromptTemplate[] {
   const copy = [...list]
   if (sort === 'usage') {
@@ -197,17 +215,35 @@ export default function TemplatesPage() {
 
   const evaluateTemplate = async (tplItem: PromptTemplate) => {
     setEvaluatingId(tplItem.id)
+    setEvaluationReport(null)
+    setEvaluationJob(createPendingEvaluationJob(tplItem))
     try {
       const job = await templatesApi.startEvaluation(tplItem.id, {
         sampleLimit: 3,
         temperature: 0.2,
         maxTokens: 4096,
       })
-      setEvaluationReport(null)
+      if (!job?.jobId) {
+        throw new Error('后端未返回有效的评测任务 ID')
+      }
       setEvaluationJob(job)
       toast.success('评测任务已创建')
     } catch (error) {
       const message = getApiErrorMessage(error, '评测失败，请检查模型配置或稍后重试')
+      setEvaluationJob((current) => {
+        if (!current || current.templateId !== tplItem.id) return current
+        return {
+          ...current,
+          status: 'failed',
+          stage: 'failed',
+          progress: Math.max(current.progress, 1),
+          message: '评测任务创建失败',
+          error: message,
+          updatedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          logs: [...current.logs, message],
+        }
+      })
       if (/timeout|exceeded|ECONNABORTED/i.test(message)) {
         toast.error('评测耗时过长，请减少样例数或稍后重试')
       } else {
@@ -220,6 +256,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     if (!evaluationJob || ['completed', 'failed', 'cancelled'].includes(evaluationJob.status)) return
+    if (evaluationJob.jobId.startsWith('pending-')) return
     const ac = new AbortController()
     subscribeTemplateEvaluationEvents(
       evaluationJob.jobId,
@@ -242,6 +279,18 @@ export default function TemplatesPage() {
 
   const cancelEvaluation = async () => {
     if (!evaluationJob) return
+    if (evaluationJob.jobId.startsWith('pending-')) {
+      setEvaluationJob({
+        ...evaluationJob,
+        status: 'cancelled',
+        stage: 'cancelled',
+        message: '评测任务已取消',
+        updatedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        logs: [...evaluationJob.logs, '评测任务已取消'],
+      })
+      return
+    }
     try {
       const next = await templatesApi.cancelEvaluationJob(evaluationJob.jobId)
       setEvaluationJob(next)
