@@ -26,4 +26,17 @@ describe('templatesApi', () => {
     const config = vi.mocked(request.post).mock.calls[0][2]
     expect(config?.timeout).toBeGreaterThan(60_000)
   })
+
+  it('starts prompt evaluation as a short background job request', async () => {
+    await templatesApi.startEvaluation('tpl_1', { sampleLimit: 3 })
+
+    expect(request.post).toHaveBeenCalledWith(
+      '/templates/tpl_1/evaluations',
+      { sampleLimit: 3 },
+      expect.objectContaining({
+        timeout: 60_000,
+        suppressToast: true,
+      }),
+    )
+  })
 })

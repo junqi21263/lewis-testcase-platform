@@ -15,10 +15,10 @@ import {
   type TemplateSortKey,
   type TemplateViewMode,
 } from '@/components/templates/TemplatesToolbar'
-import { templatesApi } from '@/api/templates'
+import { subscribeTemplateEvaluationEvents, templatesApi } from '@/api/templates'
 import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
-import type { PromptEvaluationReport, PromptTemplate, TemplateCategory } from '@/types'
+import type { PromptEvaluationReport, PromptTemplate, TemplateCategory, TemplateEvaluationJob } from '@/types'
 import toast from 'react-hot-toast'
 import { appConfirm } from '@/store/appConfirmStore'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -71,6 +71,7 @@ export default function TemplatesPage() {
   const [contentVisible, setContentVisible] = useState(true)
   const [evaluatingId, setEvaluatingId] = useState<string | null>(null)
   const [evaluationReport, setEvaluationReport] = useState<PromptEvaluationReport | null>(null)
+  const [evaluationJob, setEvaluationJob] = useState<TemplateEvaluationJob | null>(null)
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -197,13 +198,14 @@ export default function TemplatesPage() {
   const evaluateTemplate = async (tplItem: PromptTemplate) => {
     setEvaluatingId(tplItem.id)
     try {
-      const report = await templatesApi.evaluateTemplate(tplItem.id, {
+      const job = await templatesApi.startEvaluation(tplItem.id, {
         sampleLimit: 3,
         temperature: 0.2,
         maxTokens: 4096,
       })
-      setEvaluationReport(report)
-      toast.success('评测完成')
+      setEvaluationReport(null)
+      setEvaluationJob(job)
+      toast.success('评测任务已创建')
     } catch (error) {
       const message = getApiErrorMessage(error, '评测失败，请检查模型配置或稍后重试')
       if (/timeout|exceeded|ECONNABORTED/i.test(message)) {
@@ -213,6 +215,39 @@ export default function TemplatesPage() {
       }
     } finally {
       setEvaluatingId(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!evaluationJob || ['completed', 'failed', 'cancelled'].includes(evaluationJob.status)) return
+    const ac = new AbortController()
+    subscribeTemplateEvaluationEvents(
+      evaluationJob.jobId,
+      (payload) => {
+        setEvaluationJob(payload)
+        if (payload.report) setEvaluationReport(payload.report)
+        if (payload.status === 'completed') toast.success('评测完成')
+        if (payload.status === 'failed') toast.error(payload.error || '评测失败')
+        if (payload.status === 'cancelled') toast('评测已取消')
+      },
+      {
+        signal: ac.signal,
+        onError: (error) => {
+          toast.error(error.message || '评测进度连接失败')
+        },
+      },
+    )
+    return () => ac.abort()
+  }, [evaluationJob?.jobId, evaluationJob?.status])
+
+  const cancelEvaluation = async () => {
+    if (!evaluationJob) return
+    try {
+      const next = await templatesApi.cancelEvaluationJob(evaluationJob.jobId)
+      setEvaluationJob(next)
+      toast('已请求取消评测')
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, '取消评测失败'))
     }
   }
 
@@ -353,7 +388,12 @@ export default function TemplatesPage() {
 
       <TemplateEvaluationModal
         report={evaluationReport}
-        onClose={() => setEvaluationReport(null)}
+        job={evaluationJob}
+        onClose={() => {
+          setEvaluationReport(null)
+          setEvaluationJob(null)
+        }}
+        onCancel={() => void cancelEvaluation()}
       />
     </div>
   )

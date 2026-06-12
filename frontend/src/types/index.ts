@@ -263,6 +263,39 @@ export interface PromptEvaluationReport {
   evaluatedAt: string
 }
 
+export type TemplateEvaluationJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export type TemplateEvaluationJobStage =
+  | 'queued'
+  | 'format_check'
+  | 'original_evaluation'
+  | 'ai_optimization'
+  | 'guardrail_check'
+  | 'optimized_evaluation'
+  | 'comparison'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface TemplateEvaluationJob {
+  jobId: string
+  templateId: string
+  templateName: string
+  templateVersion: number
+  userId: string
+  status: TemplateEvaluationJobStatus
+  stage: TemplateEvaluationJobStage
+  progress: number
+  message: string
+  logs: string[]
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+  error?: string
+  report?: PromptEvaluationReport
+}
+
 // ==================== 用例集 ====================
 
 export type TestCaseStatus = 'DRAFT' | 'REVIEWING' | 'APPROVED' | 'ARCHIVED'

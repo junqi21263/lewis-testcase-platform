@@ -8,6 +8,8 @@ import type { CreateTemplateDto } from './dto/create-template.dto'
 import type { UpdateTemplateDto } from './dto/update-template.dto'
 import type { EvaluateTemplateDto } from './dto/evaluate-template.dto'
 import { nextPromptTemplateVersion } from './prompt-template-evaluation.util'
+import { TemplateEvaluationJobsService } from './template-evaluation-jobs.service'
+import type { Request, Response } from 'express'
 
 type ListParams = { page?: number; pageSize?: number; category?: string; keyword?: string }
 
@@ -21,6 +23,7 @@ export class TemplatesService {
     private prisma: PrismaService,
     private redis: RedisService,
     private ai: AiService,
+    private evaluationJobs: TemplateEvaluationJobsService,
   ) {}
 
   private static resolveListCacheTtlMs(): number {
@@ -182,5 +185,27 @@ export class TemplatesService {
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
     })
+  }
+
+  async createEvaluationJob(id: string, userId: string, dto: EvaluateTemplateDto) {
+    const tpl = await this.getById(id, userId)
+    return this.evaluationJobs.create(userId, {
+      id: tpl.id,
+      name: tpl.name,
+      version: tpl.version,
+      content: tpl.content,
+    }, dto)
+  }
+
+  getEvaluationJob(jobId: string, userId: string) {
+    return this.evaluationJobs.get(userId, jobId)
+  }
+
+  cancelEvaluationJob(jobId: string, userId: string) {
+    return this.evaluationJobs.cancel(userId, jobId)
+  }
+
+  streamEvaluationJob(jobId: string, userId: string, res: Response, req: Request) {
+    return this.evaluationJobs.streamEvents(userId, jobId, res, req)
   }
 }

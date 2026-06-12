@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { AlertTriangle, CheckCircle2, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { PromptEvaluationReport } from '@/types'
+import type { PromptEvaluationReport, TemplateEvaluationJob, TemplateEvaluationJobStage } from '@/types'
 import { tpl } from '@/utils/templatesUi'
 
 function metricText(value: number | null, suffix = '') {
@@ -21,15 +21,49 @@ function checkTone(status: 'pass' | 'warn' | 'fail') {
   return 'border-red-400/25 bg-red-500/10 text-red-100'
 }
 
+const stageLabels: Record<TemplateEvaluationJobStage, string> = {
+  queued: '排队中',
+  format_check: '格式体检',
+  original_evaluation: '原版样例评测',
+  ai_optimization: 'AI 优化 Prompt',
+  guardrail_check: '守护校验',
+  optimized_evaluation: '优化版样例评测',
+  comparison: '指标对比',
+  completed: '完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
+
+const orderedStages: TemplateEvaluationJobStage[] = [
+  'queued',
+  'format_check',
+  'original_evaluation',
+  'ai_optimization',
+  'guardrail_check',
+  'optimized_evaluation',
+  'comparison',
+  'completed',
+]
+
+function stageIndex(stage: TemplateEvaluationJobStage) {
+  const idx = orderedStages.indexOf(stage)
+  return idx < 0 ? 0 : idx
+}
+
 export function TemplateEvaluationModal(props: {
   report: PromptEvaluationReport | null
+  job?: TemplateEvaluationJob | null
   onClose: () => void
+  onCancel?: () => void
 }) {
-  const { report, onClose } = props
-  if (!report) return null
+  const { job, onClose, onCancel } = props
+  const report = props.report ?? job?.report ?? null
+  if (!report && !job) return null
+  const running = job?.status === 'queued' || job?.status === 'running'
+  const activeStageIndex = job ? stageIndex(job.stage) : orderedStages.length - 1
 
   return (
-    <Dialog.Root open={!!report} onOpenChange={(next) => !next && onClose()}>
+    <Dialog.Root open={!!report || !!job} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-confirm-dialog-overlay fixed inset-0 z-[140] motion-reduce:!animate-none" />
         <Dialog.Content
@@ -42,10 +76,12 @@ export function TemplateEvaluationModal(props: {
             <header className="ui-template-form-panel__header flex shrink-0 items-start justify-between gap-3 border-b border-[hsl(var(--templates-panel-border))] px-6 py-4">
               <div className="min-w-0">
                 <Dialog.Title className="text-lg font-bold tracking-tight text-[hsl(var(--templates-text-primary))]">
-                  Prompt 评测结果
+                  Prompt 评测工作台
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-sm text-[hsl(var(--templates-text-secondary))]">
-                  {report.templateName} · v{report.templateVersion} · {report.modelName}
+                  {report
+                    ? `${report.templateName} · v${report.templateVersion} · ${report.modelName}`
+                    : `${job?.templateName ?? '模板评测'} · v${job?.templateVersion ?? '-'}`}
                 </Dialog.Description>
               </div>
               <button type="button" className={tpl.iconBtn} onClick={onClose} aria-label="关闭">
@@ -54,6 +90,82 @@ export function TemplateEvaluationModal(props: {
             </header>
 
             <div className="ui-template-form-panel__body templates-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {job && (
+                <section className="mb-5 rounded-xl border border-[hsl(var(--templates-panel-border))] bg-[hsl(var(--templates-card-bg))] px-4 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {running ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-cyan-300 motion-reduce:animate-none" />
+                        ) : job.status === 'completed' ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-amber-400" />
+                        )}
+                        <p className="text-sm font-semibold text-[hsl(var(--templates-text-primary))]">
+                          {stageLabels[job.stage] ?? job.stage}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs text-[hsl(var(--templates-text-secondary))]">{job.message}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-semibold tabular-nums text-[hsl(var(--templates-text-primary))]">
+                        {job.progress}%
+                      </p>
+                      <p className="text-xs text-[hsl(var(--templates-text-muted))]">{job.status}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-cyan-400 transition-[width] duration-500"
+                      style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-4">
+                    {orderedStages.map((stage, index) => {
+                      const done = index < activeStageIndex || job.status === 'completed'
+                      const active = stage === job.stage && running
+                      return (
+                        <div
+                          key={stage}
+                          className={[
+                            'rounded-lg border px-3 py-2 text-xs',
+                            done
+                              ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                              : active
+                                ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100'
+                                : 'border-[hsl(var(--templates-panel-border))] bg-black/10 text-[hsl(var(--templates-text-muted))]',
+                          ].join(' ')}
+                        >
+                          {stageLabels[stage]}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {job.error && (
+                    <div className="mt-3 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-100">
+                      {job.error}
+                    </div>
+                  )}
+
+                  {job.logs.length > 0 && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-xs font-semibold text-cyan-100">查看实时日志</summary>
+                      <div className="templates-scrollbar mt-2 max-h-40 overflow-auto rounded-lg bg-black/25 p-3 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                        {job.logs.slice(-20).map((line, idx) => (
+                          <p key={`${idx}-${line}`}>{line}</p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </section>
+              )}
+
+              {report && (
+                <>
               <div className="grid gap-3 sm:grid-cols-4">
                 {[
                   ['样例数', String(report.sampleCount)],
@@ -239,9 +351,16 @@ export function TemplateEvaluationModal(props: {
                   </ul>
                 </div>
               )}
+                </>
+              )}
             </div>
 
-            <footer className="ui-template-form-panel__footer flex shrink-0 justify-end border-t border-[hsl(var(--templates-panel-border))] px-6 py-4">
+            <footer className="ui-template-form-panel__footer flex shrink-0 justify-end gap-2 border-t border-[hsl(var(--templates-panel-border))] px-6 py-4">
+              {running && onCancel && (
+                <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={onCancel}>
+                  取消评测
+                </Button>
+              )}
               <Button type="button" className="h-10 rounded-xl" onClick={onClose}>
                 关闭
               </Button>

@@ -101,6 +101,24 @@ http {
             gzip off;
         }
 
+        # Prompt 模板评测进度 SSE（GET /api/templates/evaluations/:jobId/events）
+        location ~ ^/api/templates/evaluations/[^/]+/events$ {
+            proxy_pass http://$backend_host:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Connection '';
+            proxy_buffering off;
+            proxy_request_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            send_timeout 3600s;
+            gzip off;
+        }
+
         location /api {
             proxy_pass http://$backend_host:3000;
             proxy_http_version 1.1;

@@ -47,6 +47,12 @@ export default defineConfig({
         timeout: 3_600_000,
         proxyTimeout: 3_600_000,
       },
+      '/api/templates/evaluations': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        timeout: 3_600_000,
+        proxyTimeout: 3_600_000,
+      },
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,

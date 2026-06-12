@@ -28,6 +28,18 @@ import {
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 
+type PromptEvaluationProgressEvent = {
+  stage?:
+    | 'format_check'
+    | 'original_evaluation'
+    | 'ai_optimization'
+    | 'guardrail_check'
+    | 'optimized_evaluation'
+    | 'comparison'
+  progress?: number
+  message?: string
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name)
@@ -846,12 +858,15 @@ export class AiService {
     sampleLimit?: number
     temperature?: number
     maxTokens?: number
+    onProgress?: (event: PromptEvaluationProgressEvent) => void
   }) {
     const { client, modelId, modelName } = await this.getOpenAIClient(opts.modelConfigId)
     const sampleLimit = Math.min(Math.max(Math.floor(opts.sampleLimit || 3), 1), PROMPT_EVAL_SAMPLE_SET.length)
     const temperature = opts.temperature ?? 0.2
     const maxTokens = this.effectiveMaxTokens(opts.maxTokens ?? 4096)
+    opts.onProgress?.({ stage: 'format_check', progress: 5, message: '开始 Prompt 格式体检' })
     const promptAnalysis = analyzePromptTemplateFormat(opts.content)
+    opts.onProgress?.({ stage: 'original_evaluation', progress: 10, message: '开始原版 Prompt 样例评测' })
     const report = await this.evaluatePromptTemplateContent({
       client,
       modelId,
@@ -863,15 +878,22 @@ export class AiService {
       sampleLimit,
       temperature,
       maxTokens,
+      progressStage: 'original_evaluation',
+      progressBase: 10,
+      progressSpan: 35,
+      onProgress: opts.onProgress,
     })
 
     report.promptAnalysis = promptAnalysis
 
     if (!report.skippedReason) {
+      opts.onProgress?.({ stage: 'ai_optimization', progress: 50, message: '调用 AI 生成完整优化版 Prompt 草稿' })
       const optimization = await this.optimizePromptTemplateWithAi(client, modelId, opts.content, promptAnalysis.summary)
       report.promptOptimization = optimization
+      opts.onProgress?.({ stage: 'guardrail_check', progress: 62, message: '执行优化版 Prompt 守护校验' })
       const hasFailedGuardrail = optimization.guardrails.some((item) => item.status === 'fail')
       if (optimization.status === 'completed' && optimization.optimizedContent && !hasFailedGuardrail) {
+        opts.onProgress?.({ stage: 'optimized_evaluation', progress: 65, message: '开始 AI 优化版 Prompt 样例评测' })
         const optimizedEvaluation = await this.evaluatePromptTemplateContent({
           client,
           modelId,
@@ -883,8 +905,13 @@ export class AiService {
           sampleLimit,
           temperature,
           maxTokens,
+          progressStage: 'optimized_evaluation',
+          progressBase: 65,
+          progressSpan: 30,
+          onProgress: opts.onProgress,
         })
         report.optimizedEvaluation = optimizedEvaluation
+        opts.onProgress?.({ stage: 'comparison', progress: 98, message: '生成原版与优化版指标对比' })
         report.comparison = buildPromptEvaluationComparison(report, optimizedEvaluation)
       }
     }
@@ -903,6 +930,10 @@ export class AiService {
     sampleLimit: number
     temperature: number
     maxTokens: number
+    progressStage?: 'original_evaluation' | 'optimized_evaluation'
+    progressBase?: number
+    progressSpan?: number
+    onProgress?: (event: PromptEvaluationProgressEvent) => void
   }): Promise<PromptEvaluationReport> {
     const samples = PROMPT_EVAL_SAMPLE_SET.slice(0, opts.sampleLimit)
     const temperature = opts.temperature
@@ -926,6 +957,15 @@ export class AiService {
     }
 
     for (const sample of samples) {
+      const index = results.length
+      const base = opts.progressBase ?? 0
+      const span = opts.progressSpan ?? 0
+      const startProgress = base + Math.round((index / Math.max(samples.length, 1)) * span)
+      opts.onProgress?.({
+        stage: opts.progressStage,
+        progress: startProgress,
+        message: `${sample.title} 评测中（${index + 1}/${samples.length}）`,
+      })
       const startedAt = Date.now()
       const warnings: string[] = []
       try {
@@ -971,6 +1011,12 @@ export class AiService {
           warnings,
           error: parsed ? undefined : this.emptyOutputUserMessage(),
         })
+        const doneProgress = base + Math.round(((index + 1) / Math.max(samples.length, 1)) * span)
+        opts.onProgress?.({
+          stage: opts.progressStage,
+          progress: doneProgress,
+          message: `${sample.title} 评测完成（${index + 1}/${samples.length}）`,
+        })
       } catch (err) {
         const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
         results.push({
@@ -983,6 +1029,12 @@ export class AiService {
           durationMs: Date.now() - startedAt,
           warnings,
           error: message,
+        })
+        const doneProgress = base + Math.round(((index + 1) / Math.max(samples.length, 1)) * span)
+        opts.onProgress?.({
+          stage: opts.progressStage,
+          progress: doneProgress,
+          message: `${sample.title} 评测失败（${index + 1}/${samples.length}）`,
         })
       }
     }
