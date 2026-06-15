@@ -74,6 +74,34 @@ export type PromptEvaluationComparison = {
   totalDurationMsDelta: number | null
 }
 
+export type PromptEvaluationDiagnosticSeverity = 'low' | 'medium' | 'high'
+
+export type PromptEvaluationConfidence = 'high' | 'medium' | 'low'
+
+export type PromptEvaluationWarningGroup = {
+  id: string
+  label: string
+  count: number
+  sampleTitles: string[]
+  message: string
+}
+
+export type PromptEvaluationRisk = {
+  id: string
+  label: string
+  severity: PromptEvaluationDiagnosticSeverity
+  message: string
+  sampleTitles: string[]
+}
+
+export type PromptEvaluationDiagnostics = {
+  confidence: PromptEvaluationConfidence
+  verdict: string
+  risks: PromptEvaluationRisk[]
+  warningGroups: PromptEvaluationWarningGroup[]
+  actions: string[]
+}
+
 export type PromptEvaluationReport = PromptEvaluationSummaryInput & {
   sampleCount: number
   parseSuccessRate: number
@@ -81,6 +109,7 @@ export type PromptEvaluationReport = PromptEvaluationSummaryInput & {
   averageCoverageRate: number | null
   failures: PromptEvaluationFailure[]
   warningSamples: PromptEvaluationFailure[]
+  diagnostics: PromptEvaluationDiagnostics
   skippedReason?: string
   promptAnalysis?: PromptTemplateFormatAnalysis
   promptOptimization?: PromptOptimizationDraft
@@ -136,6 +165,43 @@ export function buildPromptEvaluationRuntimePrompt(content: string): string {
 `.trim()
 
   return source ? `${source}\n\n${runtimeConstraint}` : runtimeConstraint
+}
+
+function classifyPromptEvaluationWarning(warning: string): { id: string; label: string; message: string } | null {
+  const text = String(warning ?? '')
+  if (/最大\s*Token|max_tokens|finish_reason|截断|truncated|token 上限/i.test(text)) {
+    return {
+      id: 'token_truncation',
+      label: '最大 Token / JSON 截断',
+      message: '模型输出触达最大 Token 上限，JSON 可能被截断，评测可信度下降。',
+    }
+  }
+  if (/json_schema|严格结构化|structured output|schema/i.test(text)) {
+    return {
+      id: 'schema_fallback',
+      label: '结构化输出降级',
+      message: '当前模型或网关不支持严格 json_schema，平台已回退兼容解析和本地校验。',
+    }
+  }
+  if (/未按\s*JSON|二次整理|自动.*修复|schema.*修复|字段缺失|JSON.*不完整/i.test(text)) {
+    return {
+      id: 'json_repair',
+      label: 'JSON 修复',
+      message: '模型原始输出需要平台二次整理或 schema 修复，说明 Prompt 输出约束仍不够稳定。',
+    }
+  }
+  if (/输入已压缩|省略中间|需求.*过长|clamp/i.test(text)) {
+    return {
+      id: 'input_clamped',
+      label: '输入内容压缩',
+      message: '评测输入过长并被压缩，可能影响需求覆盖判断。',
+    }
+  }
+  return null
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))]
 }
 
 function roundRate(value: number): number {
@@ -404,16 +470,190 @@ export function buildPromptEvaluationSummary(
       reason: '存在评测警告',
       warnings: s.warnings,
     }))
+  const parseSuccessRate = sampleCount ? roundRate((parsedCount / sampleCount) * 100) : 0
+  const averageQualityScore = average(input.samples.map((s) => s.qualityScore)) ?? 0
+  const averageCoverageRate = average(coverageRates)
+  const diagnostics = buildPromptEvaluationDiagnostics({
+    samples: input.samples,
+    sampleCount,
+    parseSuccessRate,
+    averageQualityScore,
+    averageCoverageRate,
+  })
 
   return {
     ...input,
     sampleCount,
-    parseSuccessRate: sampleCount ? roundRate((parsedCount / sampleCount) * 100) : 0,
-    averageQualityScore: average(input.samples.map((s) => s.qualityScore)) ?? 0,
-    averageCoverageRate: average(coverageRates),
+    parseSuccessRate,
+    averageQualityScore,
+    averageCoverageRate,
     failures,
     warningSamples,
+    diagnostics,
     evaluatedAt: new Date().toISOString(),
+  }
+}
+
+export function buildPromptEvaluationDiagnostics(input: {
+  samples: PromptEvalSampleResult[]
+  sampleCount: number
+  parseSuccessRate: number
+  averageQualityScore: number
+  averageCoverageRate: number | null
+}): PromptEvaluationDiagnostics {
+  const warningMap = new Map<string, PromptEvaluationWarningGroup>()
+  for (const sample of input.samples) {
+    for (const warning of sample.warnings) {
+      const classified = classifyPromptEvaluationWarning(warning)
+      if (!classified) continue
+      const current =
+        warningMap.get(classified.id) ??
+        {
+          id: classified.id,
+          label: classified.label,
+          count: 0,
+          sampleTitles: [],
+          message: classified.message,
+        }
+      current.count += 1
+      current.sampleTitles = uniqueStrings([...current.sampleTitles, sample.title])
+      warningMap.set(classified.id, current)
+    }
+  }
+
+  const warningGroups = [...warningMap.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'zh'))
+  const risks: PromptEvaluationRisk[] = []
+  const pushRisk = (
+    id: string,
+    label: string,
+    severity: PromptEvaluationDiagnosticSeverity,
+    message: string,
+    sampleTitles: string[],
+  ) => {
+    if (risks.some((risk) => risk.id === id)) return
+    risks.push({
+      id,
+      label,
+      severity,
+      message,
+      sampleTitles: uniqueStrings(sampleTitles),
+    })
+  }
+
+  const tokenGroup = warningMap.get('token_truncation')
+  if (tokenGroup) {
+    pushRisk(
+      'token_truncation',
+      '最大 Token / JSON 截断',
+      'high',
+      '模型输出已达到最大 Token 上限，JSON 可能被截断；当前评测结果只能作为参考。',
+      tokenGroup.sampleTitles,
+    )
+  }
+
+  const underGenerated = input.samples.filter((sample) => sample.parsed && sample.caseCount > 0 && sample.caseCount < 6)
+  if (underGenerated.length > 0) {
+    pushRisk(
+      'sample_under_generation',
+      '样例输出数量不足',
+      tokenGroup ? 'medium' : 'high',
+      '部分样例没有达到评测模式 6-10 条代表性用例目标，通常与输出预算、Prompt 数量冲突或模型遵循度有关。',
+      underGenerated.map((sample) => sample.title),
+    )
+  }
+
+  const schemaGroup = warningMap.get('schema_fallback')
+  if (schemaGroup) {
+    pushRisk(
+      'schema_fallback',
+      '结构化输出降级',
+      'medium',
+      '当前模型网关不支持 json_schema 严格结构化输出，平台已降级到兼容模式并继续本地校验。',
+      schemaGroup.sampleTitles,
+    )
+  }
+
+  const repairGroup = warningMap.get('json_repair')
+  if (repairGroup) {
+    pushRisk(
+      'json_repair',
+      'JSON 修复依赖',
+      'medium',
+      '模型原始输出需要二次整理或 schema 修复，建议增强模板中的输出前自检和 JSON 边界约束。',
+      repairGroup.sampleTitles,
+    )
+  }
+
+  const inputGroup = warningMap.get('input_clamped')
+  if (inputGroup) {
+    pushRisk(
+      'input_clamped',
+      '评测输入被压缩',
+      'medium',
+      '评测输入过长被压缩，可能导致覆盖率和质量分偏低。',
+      inputGroup.sampleTitles,
+    )
+  }
+
+  if (input.parseSuccessRate < 100) {
+    pushRisk(
+      'parse_failures',
+      '解析失败',
+      'high',
+      '存在样例无法解析为平台用例结构，需要优先修复 JSON 输出契约。',
+      input.samples.filter((sample) => !sample.parsed || sample.error).map((sample) => sample.title),
+    )
+  }
+
+  if (input.averageCoverageRate != null && input.averageCoverageRate < 60) {
+    pushRisk(
+      'low_coverage',
+      '覆盖率偏低',
+      'medium',
+      '平均覆盖率低于 60%，建议补充需求点枚举、正向/异常/边界比例和模块标签约束。',
+      input.samples.filter((sample) => (sample.coverageRate ?? 100) < 60).map((sample) => sample.title),
+    )
+  }
+
+  const actions: string[] = []
+  if (tokenGroup) {
+    actions.push('优先把评测 maxTokens 提高到 8192 或 12000；如果模型本身上限较低，改用支持更大输出窗口的模型。')
+    actions.push('保留评测模式 6-10 条代表性用例约束，避免在评测中触发正式 20/35/45 条全量生成规则。')
+    actions.push('让模板要求先规划 cases 数量再输出 JSON，单条用例步骤和预期保持短句，降低 JSON 过长导致截断的概率。')
+  }
+  if (underGenerated.length > 0 && !tokenGroup) {
+    actions.push('检查模板是否仍有正式数量底线压过评测约束；评测分支应明确“暂不执行正式数量底线，只输出 6-10 条”。')
+  }
+  if (schemaGroup) {
+    actions.push('若需要更稳定的严格结构化输出，优先选择支持 response_format json_schema 的模型或网关；否则保持兼容模式加本地 schema 校验。')
+  }
+  if (repairGroup) {
+    actions.push('在模板中补充输出前自检：首尾必须是 JSON 对象、顶层 cases、必填字段齐全、steps 与 expectedResult 编号一致。')
+  }
+  if (input.averageCoverageRate != null && input.averageCoverageRate < 60) {
+    actions.push('补充覆盖约束：每个需求点至少对应 1 条用例，并显式覆盖正向、异常、边界、权限、网络场景。')
+  }
+  if (actions.length === 0) {
+    actions.push('当前评测未发现关键结构风险，可继续关注业务覆盖率和样例质量分。')
+  }
+
+  const hasHighRisk = risks.some((risk) => risk.severity === 'high')
+  const hasMediumRisk = risks.some((risk) => risk.severity === 'medium')
+  const confidence: PromptEvaluationConfidence =
+    hasHighRisk || input.parseSuccessRate < 80 ? 'low' : hasMediumRisk || input.averageQualityScore < 70 ? 'medium' : 'high'
+  const verdict =
+    confidence === 'low'
+      ? '评测可信度偏低：存在 Token 截断、JSON 修复或解析风险，建议先处理输出预算和结构化约束后再比较模板质量。'
+      : confidence === 'medium'
+        ? '评测可信度中等：结果可参考，但仍存在结构化输出降级、覆盖不足或样例数量不足。'
+        : '评测可信度较高：未发现关键截断或结构化风险，可重点查看覆盖率与质量分。'
+
+  return {
+    confidence,
+    verdict,
+    risks,
+    warningGroups,
+    actions: uniqueStrings(actions).slice(0, 6),
   }
 }
 

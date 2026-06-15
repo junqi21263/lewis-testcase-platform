@@ -238,6 +238,34 @@ export interface PromptEvaluationComparison {
   totalDurationMsDelta: number | null
 }
 
+export type PromptEvaluationDiagnosticSeverity = 'low' | 'medium' | 'high'
+
+export type PromptEvaluationConfidence = 'high' | 'medium' | 'low'
+
+export interface PromptEvaluationWarningGroup {
+  id: string
+  label: string
+  count: number
+  sampleTitles: string[]
+  message: string
+}
+
+export interface PromptEvaluationRisk {
+  id: string
+  label: string
+  severity: PromptEvaluationDiagnosticSeverity
+  message: string
+  sampleTitles: string[]
+}
+
+export interface PromptEvaluationDiagnostics {
+  confidence: PromptEvaluationConfidence
+  verdict: string
+  risks: PromptEvaluationRisk[]
+  warningGroups: PromptEvaluationWarningGroup[]
+  actions: string[]
+}
+
 export interface PromptEvaluationReport {
   templateId: string
   templateName: string
@@ -255,6 +283,7 @@ export interface PromptEvaluationReport {
   averageCoverageRate: number | null
   failures: PromptEvaluationFailure[]
   warningSamples: PromptEvaluationFailure[]
+  diagnostics?: PromptEvaluationDiagnostics
   skippedReason?: string
   promptAnalysis?: PromptTemplateFormatAnalysis
   promptOptimization?: PromptOptimizationDraft

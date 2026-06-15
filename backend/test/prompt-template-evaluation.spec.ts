@@ -77,6 +77,68 @@ describe('prompt template evaluation helpers', () => {
     ])
   })
 
+  it('diagnoses token truncation, schema fallback, repaired JSON and under-generated samples', () => {
+    const summary = buildPromptEvaluationSummary({
+      templateId: 'tpl_1',
+      templateName: '结构化用例模板',
+      templateVersion: 3,
+      modelId: 'deepseek-test',
+      modelName: 'DeepSeek Test',
+      params: { temperature: 0.2, maxTokens: 4096 },
+      samples: [
+        {
+          sampleId: 'login-core',
+          title: '登录核心流程',
+          parsed: true,
+          caseCount: 2,
+          qualityScore: 100,
+          coverageRate: 100,
+          durationMs: 1200,
+          warnings: [
+            '当前模型网关不支持 json_schema 严格结构化输出，已回退兼容模式。',
+            '模型输出已达到本次「最大 Token」上限，回复可能被截断，JSON 可能不完整。请调高「最大 Token」、缩短单次生成范围，或分批生成。',
+            '模型原始输出未按 JSON 返回，已自动进行二次整理。',
+          ],
+        },
+        {
+          sampleId: 'upload-boundary',
+          title: '文件上传边界',
+          parsed: true,
+          caseCount: 5,
+          qualityScore: 70,
+          coverageRate: 25,
+          durationMs: 1800,
+          warnings: [
+            '模型输出已达到本次「最大 Token」上限，回复可能被截断，JSON 可能不完整。请调高「最大 Token」、缩短单次生成范围，或分批生成。',
+          ],
+        },
+      ],
+    })
+
+    expect(summary.diagnostics).toEqual(
+      expect.objectContaining({
+        confidence: 'low',
+        verdict: expect.stringContaining('Token'),
+      }),
+    )
+    expect(summary.diagnostics.risks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'token_truncation', severity: 'high' }),
+        expect.objectContaining({ id: 'sample_under_generation', severity: 'medium' }),
+        expect.objectContaining({ id: 'schema_fallback', severity: 'medium' }),
+        expect.objectContaining({ id: 'json_repair', severity: 'medium' }),
+      ]),
+    )
+    expect(summary.diagnostics.warningGroups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'token_truncation', count: 2 }),
+        expect.objectContaining({ id: 'schema_fallback', count: 1 }),
+      ]),
+    )
+    expect(summary.diagnostics.actions.join('\n')).toContain('maxTokens')
+    expect(summary.diagnostics.actions.join('\n')).toContain('6-10')
+  })
+
   it('detects templates that are intentionally not JSON testcase prompts', () => {
     const result = detectPromptEvaluationCompatibility(`
 本模板用于生成自动化脚本与工程结构，不是平台的 JSON 测试用例格式。

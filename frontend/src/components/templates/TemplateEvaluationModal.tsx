@@ -1,7 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { AlertTriangle, CheckCircle2, Loader2, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Gauge, Loader2, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { PromptEvaluationReport, TemplateEvaluationJob, TemplateEvaluationJobStage } from '@/types'
+import type {
+  PromptEvaluationConfidence,
+  PromptEvaluationDiagnosticSeverity,
+  PromptEvaluationReport,
+  TemplateEvaluationJob,
+  TemplateEvaluationJobStage,
+} from '@/types'
 import { tpl } from '@/utils/templatesUi'
 
 function metricText(value: number | null, suffix = '') {
@@ -19,6 +25,30 @@ function checkTone(status: 'pass' | 'warn' | 'fail') {
   if (status === 'pass') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
   if (status === 'warn') return 'border-amber-400/25 bg-amber-500/10 text-amber-100'
   return 'border-red-400/25 bg-red-500/10 text-red-100'
+}
+
+function confidenceTone(confidence: PromptEvaluationConfidence) {
+  if (confidence === 'high') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+  if (confidence === 'medium') return 'border-amber-400/25 bg-amber-500/10 text-amber-100'
+  return 'border-red-400/25 bg-red-500/10 text-red-100'
+}
+
+function confidenceLabel(confidence: PromptEvaluationConfidence) {
+  if (confidence === 'high') return '高'
+  if (confidence === 'medium') return '中'
+  return '低'
+}
+
+function riskTone(severity: PromptEvaluationDiagnosticSeverity) {
+  if (severity === 'high') return 'border-red-400/25 bg-red-500/10 text-red-100'
+  if (severity === 'medium') return 'border-amber-400/25 bg-amber-500/10 text-amber-100'
+  return 'border-cyan-400/25 bg-cyan-500/10 text-cyan-100'
+}
+
+function severityLabel(severity: PromptEvaluationDiagnosticSeverity) {
+  if (severity === 'high') return '高'
+  if (severity === 'medium') return '中'
+  return '低'
 }
 
 const stageLabels: Record<TemplateEvaluationJobStage, string> = {
@@ -184,6 +214,72 @@ export function TemplateEvaluationModal(props: {
                   </div>
                 ))}
               </div>
+
+              {report.diagnostics && (
+                <section className="mt-5 rounded-xl border border-[hsl(var(--templates-panel-border))] bg-[hsl(var(--templates-card-bg))] px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Gauge className="h-4 w-4 text-cyan-300" />
+                        <p className="text-sm font-semibold text-[hsl(var(--templates-text-primary))]">评测结论</p>
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                        {report.diagnostics.verdict}
+                      </p>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-2 text-xs leading-tight ${confidenceTone(report.diagnostics.confidence)}`}>
+                      <p className="opacity-80">可信度</p>
+                      <p className="mt-1 text-lg font-semibold">{confidenceLabel(report.diagnostics.confidence)}</p>
+                    </div>
+                  </div>
+
+                  {report.diagnostics.risks.length > 0 && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {report.diagnostics.risks.slice(0, 4).map((risk) => (
+                        <div key={risk.id} className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${riskTone(risk.severity)}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold">{risk.label}</p>
+                            <span className="shrink-0 rounded-full bg-black/20 px-2 py-0.5 text-[10px]">
+                              风险 {severityLabel(risk.severity)}
+                            </span>
+                          </div>
+                          <p className="mt-1 opacity-90">{risk.message}</p>
+                          {risk.sampleTitles.length > 0 && (
+                            <p className="mt-1 truncate opacity-70">影响：{risk.sampleTitles.slice(0, 3).join('、')}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {report.diagnostics.warningGroups.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-3 py-2">
+                      <p className="text-xs font-semibold text-cyan-100">警告聚合</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {report.diagnostics.warningGroups.slice(0, 4).map((group) => (
+                          <div key={group.id} className="text-xs leading-relaxed text-cyan-100/90">
+                            <p className="font-medium">
+                              {group.label} · {group.count} 次
+                            </p>
+                            <p className="mt-0.5 text-cyan-100/70">{group.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {report.diagnostics.actions.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-[hsl(var(--templates-text-primary))]">建议动作</p>
+                      <ul className="mt-1 space-y-1 text-xs leading-relaxed text-[hsl(var(--templates-text-secondary))]">
+                        {report.diagnostics.actions.slice(0, 5).map((action) => (
+                          <li key={action}>· {action}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              )}
 
               {report.skippedReason && (
                 <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100">
