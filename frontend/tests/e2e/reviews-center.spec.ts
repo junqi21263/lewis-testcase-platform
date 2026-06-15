@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { getLiveLoginCredentials } from './support/liveCredentials'
 
 const RECORD_ID = 'rec-review-1'
 const CASE_ID = 'case-review-1'
@@ -336,13 +337,27 @@ test.describe('用例评审中心', () => {
 test.describe('用例评审中心 @live', () => {
   test.skip(!process.env.E2E_LIVE, '设置 E2E_LIVE=1 且后端已启动时运行')
 
+  test('真实 API 联调：数据库测试账号可登录并进入工作台', async ({ page }) => {
+    const credentials = getLiveLoginCredentials()
+
+    await page.goto('/login')
+    await page.locator('#login-username').fill(credentials.login)
+    await page.locator('#login-password').fill(credentials.password)
+    await page.getByRole('button', { name: /登录/ }).click()
+    await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+    await expect(page.getByText(new RegExp(`欢迎回来，${credentials.username}`))).toBeVisible({
+      timeout: 15_000,
+    })
+  })
+
   test('真实 API 联调：评审工作区可加载', async ({ page }) => {
     const recordId = process.env.E2E_REVIEW_RECORD_ID
     test.skip(!recordId, '需要 E2E_REVIEW_RECORD_ID')
+    const credentials = getLiveLoginCredentials()
 
     await page.goto('/login')
-    await page.getByPlaceholder(/用户名|邮箱/i).fill('admin@example.com')
-    await page.getByPlaceholder(/密码/).fill('Admin@123456')
+    await page.locator('#login-username').fill(credentials.login)
+    await page.locator('#login-password').fill(credentials.password)
     await page.getByRole('button', { name: /登录/ }).click()
     await page.waitForURL(/\/(dashboard|records|generate)/, { timeout: 15_000 })
 

@@ -11,6 +11,8 @@ out/
 
 # Environment files
 .env
+backend/.env*
+!backend/.env.example
 backend/.env.production
 .env.local
 .env.development

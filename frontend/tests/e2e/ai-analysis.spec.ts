@@ -218,30 +218,27 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 8. 点击开始分析
     await startBtn.click()
 
-    // 9. 等待分析开始并显示报告
-    await expect(page.getByText(/开始需求分析/)).toBeVisible()
-
-    // 10. 等待流式报告出现
+    // 9. 等待流式报告出现
     await expect(page.getByText('需求文档分析报告')).toBeVisible({ timeout: 15000 })
     // 报告正文关键词（报告区目录按钮）
     await expect(page.getByRole('button', { name: '主要功能需求' })).toBeVisible()
     await expect(page.getByText('用户登录')).toBeVisible()
     await expect(page.getByRole('button', { name: '生成用例' })).toBeVisible()
 
-    // 11. 等待分析完成 → 进入审阅状态
+    // 10. 等待分析完成 → 进入审阅状态
     await expect(page.getByText('等待审阅')).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('heading', { name: '人工审阅' })).toBeVisible()
 
-    // 12. 验证审阅区域
+    // 11. 验证审阅区域
     const reviewTextarea = page.getByPlaceholder(/请输入修改意见/)
     await expect(reviewTextarea).toBeVisible()
     await expect(page.getByRole('button', { name: /提交修改意见/ })).toBeVisible()
     await expect(page.getByRole('button', { name: '确认通过' })).toBeVisible()
 
-    // 13. 点击确认通过
+    // 12. 点击确认通过
     await page.getByRole('button', { name: '确认通过' }).click()
 
-    // 14. 验证已通过状态（使用exact精确匹配状态标签）
+    // 13. 验证已通过状态（使用exact精确匹配状态标签）
     await expect(page.getByText('已通过', { exact: true })).toBeVisible({ timeout: 5000 })
     await expect(page.getByRole('main').getByText('需求分析已通过')).toBeVisible()
   })

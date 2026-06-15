@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller'
 import { JwtStrategy } from './strategies/jwt.strategy'
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { MailModule } from '@/modules/mail/mail.module'
+import { getJwtExpiresIn, getJwtSecret } from './jwt-config.util'
 
 @Module({
   imports: [
@@ -16,8 +17,8 @@ import { MailModule } from '@/modules/mail/mail.module'
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '7d') },
+        secret: getJwtSecret(config),
+        signOptions: { expiresIn: getJwtExpiresIn(config) },
       }),
     }),
   ],

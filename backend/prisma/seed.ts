@@ -6,7 +6,10 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('🌱 开始初始化种子数据...')
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com'
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456'
+  const adminPassword = process.env.ADMIN_PASSWORD?.trim()
+  if (!adminPassword) {
+    throw new Error('ADMIN_PASSWORD is required for prisma seed')
+  }
 
   // 创建超级管理员
   const hashedPwd = await bcrypt.hash(adminPassword, 10)
@@ -272,7 +275,7 @@ API 文档：
 
   console.log('\n🎉 种子数据初始化完成！')
   console.log(`📧 管理员账号: ${adminEmail}`)
-  console.log(`🔑 管理员密码: ${adminPassword}`)
+  console.log('🔑 管理员密码: 已通过 ADMIN_PASSWORD 注入（不在日志中输出）')
 }
 
 main()

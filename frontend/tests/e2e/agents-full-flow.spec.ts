@@ -141,7 +141,7 @@ test.describe('E2E: login -> generate -> export/share', () => {
 
     await page.getByRole('button', { name: '开始生成' }).click()
     await expect(page.getByRole('heading', { name: '生成完成' })).toBeVisible()
-    await expect(page.getByText(/共 1 条/)).toBeVisible()
+    await expect(page.getByText('共 1 条 · 功能 1 · 异常 0 · 边界')).toBeVisible()
 
     await expect(page.getByRole('button', { name: '导出 Excel' })).toBeVisible()
     await page.getByRole('button', { name: '更多' }).click()
