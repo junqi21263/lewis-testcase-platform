@@ -97,10 +97,10 @@ Run: `pnpm -C frontend test:unit`, `pnpm -C frontend test:ct`, and Playwright E2
 
 Run backend build/tests, frontend unit/CT/E2E/build, integration script, and Playwright Test Agent list check.
 
-- [ ] **Step 2: Merge to develop**
+- [x] **Step 2: Merge to develop**
 
 After verification, fast-forward or no-ff merge the feature branch into `develop`.
 
-- [ ] **Step 3: Push develop**
+- [x] **Step 3: Push develop**
 
 Push `develop` to configured remotes and report exact verification evidence.
