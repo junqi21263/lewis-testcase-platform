@@ -21,6 +21,7 @@ import {
   buildPromptEvaluationSummary,
   detectPromptEvaluationCompatibility,
   PROMPT_EVAL_SAMPLE_SET,
+  resolvePromptEvaluationMaxTokens,
   validateOptimizedPromptDraft,
   type PromptEvaluationReport,
   type PromptOptimizationDraft,
@@ -864,7 +865,7 @@ export class AiService {
     const { client, modelId, modelName } = await this.getOpenAIClient(opts.modelConfigId)
     const sampleLimit = Math.min(Math.max(Math.floor(opts.sampleLimit || 3), 1), PROMPT_EVAL_SAMPLE_SET.length)
     const temperature = opts.temperature ?? 0.2
-    const maxTokens = this.effectiveMaxTokens(opts.maxTokens ?? 4096)
+    const maxTokens = this.effectiveMaxTokens(resolvePromptEvaluationMaxTokens(opts.maxTokens))
     opts.onProgress?.({ stage: 'format_check', progress: 5, message: '开始 Prompt 格式体检' })
     const promptAnalysis = analyzePromptTemplateFormat(opts.content)
     opts.onProgress?.({ stage: 'original_evaluation', progress: 10, message: '开始原版 Prompt 样例评测' })

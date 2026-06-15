@@ -151,6 +151,14 @@ export const PROMPT_EVAL_SAMPLE_SET: PromptEvalSample[] = [
   },
 ]
 
+export const PROMPT_EVALUATION_DEFAULT_MAX_TOKENS = 12000
+export const PROMPT_EVALUATION_MIN_MAX_TOKENS = 12000
+
+export function resolvePromptEvaluationMaxTokens(requested?: number): number {
+  const raw = Number.isFinite(requested) ? Number(requested) : PROMPT_EVALUATION_DEFAULT_MAX_TOKENS
+  return Math.min(Math.max(Math.floor(raw), PROMPT_EVALUATION_MIN_MAX_TOKENS), 128_000)
+}
+
 export function buildPromptEvaluationRuntimePrompt(content: string): string {
   const source = String(content ?? '').trim()
   const runtimeConstraint = `
@@ -161,7 +169,9 @@ export function buildPromptEvaluationRuntimePrompt(content: string): string {
 2. 必须沿用原 Prompt 的 JSON 格式、字段、枚举、steps/expectedResult 对齐和可执行性要求。
 3. 若原 Prompt 要求生成 ≥20、≥30、≥35、≥45 等正式数量底线，本次暂不执行正式数量底线。
 4. 每个评测样例只生成 6-10 条代表性用例，优先覆盖主流程、异常、边界和权限/网络等高风险点。
-5. 只输出一个合法 JSON 对象，顶层为 {"cases": [...]}，不要 Markdown、解释或代码围栏。
+5. 必须输出紧凑 JSON：每条用例最多 3 个步骤；每个 action 和 expectedResult 编号项保持短句；precondition 最多 2 条。
+6. 评测阶段优先控制 JSON 体积：mermaid 字段默认填 null，除非该用例必须用流程图表达。
+7. 只输出一个合法 JSON 对象，顶层为 {"cases": [...]}，不要 Markdown、解释或代码围栏。
 `.trim()
 
   return source ? `${source}\n\n${runtimeConstraint}` : runtimeConstraint

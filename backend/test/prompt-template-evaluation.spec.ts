@@ -7,6 +7,7 @@ import {
   validateOptimizedPromptDraft,
   nextPromptTemplateVersion,
   PROMPT_EVAL_SAMPLE_SET,
+  resolvePromptEvaluationMaxTokens,
 } from '@/modules/templates/prompt-template-evaluation.util'
 
 describe('prompt template evaluation helpers', () => {
@@ -137,6 +138,13 @@ describe('prompt template evaluation helpers', () => {
     )
     expect(summary.diagnostics.actions.join('\n')).toContain('maxTokens')
     expect(summary.diagnostics.actions.join('\n')).toContain('6-10')
+  })
+
+  it('uses a larger output budget floor for prompt evaluation runs', () => {
+    expect(resolvePromptEvaluationMaxTokens()).toBe(12000)
+    expect(resolvePromptEvaluationMaxTokens(4096)).toBe(12000)
+    expect(resolvePromptEvaluationMaxTokens(8192)).toBe(12000)
+    expect(resolvePromptEvaluationMaxTokens(20000)).toBe(20000)
   })
 
   it('detects templates that are intentionally not JSON testcase prompts', () => {
@@ -281,5 +289,9 @@ describe('prompt template evaluation helpers', () => {
     expect(runtimePrompt).toContain('6-10 条')
     expect(runtimePrompt).toContain('暂不执行')
     expect(runtimePrompt).toContain('正式数量底线')
+    expect(runtimePrompt).toContain('每条用例最多 3 个步骤')
+    expect(runtimePrompt).toContain('expectedResult')
+    expect(runtimePrompt).toContain('mermaid')
+    expect(runtimePrompt).toContain('null')
   })
 })
