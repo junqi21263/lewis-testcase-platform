@@ -122,6 +122,22 @@ export const PROMPT_EVAL_SAMPLE_SET: PromptEvalSample[] = [
   },
 ]
 
+export function buildPromptEvaluationRuntimePrompt(content: string): string {
+  const source = String(content ?? '').trim()
+  const runtimeConstraint = `
+
+【平台 Prompt 评测运行约束】
+以下约束仅本次 Prompt 评测生效，不会保存到模板正文，也不改变正式生成规则：
+1. 本次是小样本质量评测，不是正式全量生成。
+2. 必须沿用原 Prompt 的 JSON 格式、字段、枚举、steps/expectedResult 对齐和可执行性要求。
+3. 若原 Prompt 要求生成 ≥20、≥30、≥35、≥45 等正式数量底线，本次暂不执行正式数量底线。
+4. 每个评测样例只生成 6-10 条代表性用例，优先覆盖主流程、异常、边界和权限/网络等高风险点。
+5. 只输出一个合法 JSON 对象，顶层为 {"cases": [...]}，不要 Markdown、解释或代码围栏。
+`.trim()
+
+  return source ? `${source}\n\n${runtimeConstraint}` : runtimeConstraint
+}
+
 function roundRate(value: number): number {
   return Math.round(value * 100) / 100
 }

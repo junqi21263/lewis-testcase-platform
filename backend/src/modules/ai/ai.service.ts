@@ -17,6 +17,7 @@ import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } fro
 import {
   analyzePromptTemplateFormat,
   buildPromptEvaluationComparison,
+  buildPromptEvaluationRuntimePrompt,
   buildPromptEvaluationSummary,
   detectPromptEvaluationCompatibility,
   PROMPT_EVAL_SAMPLE_SET,
@@ -972,7 +973,7 @@ export class AiService {
         const dto = {
           sourceType: 'text',
           text: sample.requirementText,
-          customPrompt: opts.content,
+          customPrompt: buildPromptEvaluationRuntimePrompt(opts.content),
           temperature,
           maxTokens,
         } as GenerateDto

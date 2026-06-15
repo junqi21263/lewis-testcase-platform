@@ -2,6 +2,7 @@ import {
   analyzePromptTemplateFormat,
   buildPromptEvaluationComparison,
   buildPromptEvaluationSummary,
+  buildPromptEvaluationRuntimePrompt,
   detectPromptEvaluationCompatibility,
   validateOptimizedPromptDraft,
   nextPromptTemplateVersion,
@@ -200,5 +201,23 @@ describe('prompt template evaluation helpers', () => {
         requirementText: expect.stringContaining('用户'),
       }),
     )
+  })
+
+  it('wraps bulk prompts with a runtime-only lightweight evaluation constraint', () => {
+    const original = `
+仅输出纯JSON格式，顶层必须为"cases"数组。
+若需求包含【文档/PDF/文本上传】功能，必须生成≥45个唯一测试用例。
+# 需求内容
+{{content}}
+`
+
+    const runtimePrompt = buildPromptEvaluationRuntimePrompt(original)
+
+    expect(runtimePrompt).toContain(original.trim())
+    expect(runtimePrompt).toContain('{{content}}')
+    expect(runtimePrompt).toContain('仅本次 Prompt 评测生效')
+    expect(runtimePrompt).toContain('6-10 条')
+    expect(runtimePrompt).toContain('暂不执行')
+    expect(runtimePrompt).toContain('正式数量底线')
   })
 })
