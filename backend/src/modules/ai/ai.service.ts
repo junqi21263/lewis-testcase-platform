@@ -45,6 +45,7 @@ type PromptEvaluationProgressEvent = {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name)
+  private readonly jsonSchemaUnsupportedModels = new Set<string>()
 
   /** 从模型输出中尽量提取 cases 数组（兼容 Markdown 代码块、前后缀说明文字） */
   private extractCaseRows(raw: string): any[] {
@@ -213,8 +214,17 @@ export class AiService {
     return `AI 输出未完全符合严格用例 schema${detail}，已自动修复/规范化后入库。`
   }
 
+  private structuredOutputCacheKey(payload: Record<string, unknown>): string {
+    const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : 'unknown-model'
+    return model
+  }
+
   private async createCaseCompletion(client: OpenAI, payload: Record<string, unknown>): Promise<{ completion: any; fallbackNotice?: string }> {
-    if (this.strictSchemaEnabled()) {
+    const cacheKey = this.structuredOutputCacheKey(payload)
+    const shouldTryStrictSchema = this.strictSchemaEnabled() && !this.jsonSchemaUnsupportedModels.has(cacheKey)
+    let discoveredUnsupported = false
+
+    if (shouldTryStrictSchema) {
       try {
         const completion = await client.chat.completions.create({
           ...payload,
@@ -223,6 +233,8 @@ export class AiService {
         return { completion }
       } catch (err) {
         if (!isStructuredOutputUnsupportedError(err)) throw err
+        this.jsonSchemaUnsupportedModels.add(cacheKey)
+        discoveredUnsupported = true
         this.logger.warn(`严格 json_schema 输出不可用，回退 json_object: ${(err as Error).message}`)
       }
     }
@@ -233,7 +245,7 @@ export class AiService {
     } as any)
     return {
       completion,
-      fallbackNotice: this.structuredOutputFallbackNotice(),
+      fallbackNotice: discoveredUnsupported ? this.structuredOutputFallbackNotice() : undefined,
     }
   }
 
