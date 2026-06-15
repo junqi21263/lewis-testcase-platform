@@ -91,6 +91,48 @@ const FILE_POLL_MAX_ROUNDS = 900
 const FILE_POLL_MAX_TRANSIENT_ERRORS = 90
 const FILE_TRANSIENT_HTTP_STATUS = new Set([502, 503, 504, 520, 522, 524])
 
+type FlowchartSummary = {
+  raw: string
+  confidence?: string
+  mainPath?: string
+  branches: string[]
+  nodes: string[]
+}
+
+function extractFlowchartSummary(content?: string | null): FlowchartSummary | null {
+  const text = content?.trim()
+  if (!text?.includes('## 流程图结构化摘要')) return null
+  const [, rest = ''] = text.split('## 流程图结构化摘要', 2)
+  const raw = `## 流程图结构化摘要${rest}`.trim()
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const pickValue = (label: string) => {
+    const line = lines.find((item) => item.startsWith(`- ${label}：`))
+    return line?.replace(`- ${label}：`, '').trim()
+  }
+  const collectAfter = (label: string) => {
+    const index = lines.findIndex((item) => item.startsWith(`- ${label}：`))
+    if (index < 0) return []
+    const result: string[] = []
+    for (let i = index + 1; i < lines.length; i++) {
+      const line = lines[i]
+      if (/^- [\u4e00-\u9fa5A-Za-z/]+：/.test(line)) break
+      result.push(line.replace(/^- /, '').trim())
+    }
+    return result.slice(0, 6)
+  }
+
+  return {
+    raw,
+    confidence: pickValue('置信度'),
+    mainPath: pickValue('主流程'),
+    branches: collectAfter('异常/分支'),
+    nodes: collectAfter('流程节点'),
+  }
+}
+
 function pollStatus(error: unknown): number | undefined {
   const status = (error as { response?: { status?: unknown } })?.response?.status
   return typeof status === 'number' ? status : undefined
@@ -385,6 +427,10 @@ function FileUploadZone() {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [dragging, setDragging] = useState(false)
+  const flowchartSummary = useMemo(
+    () => extractFlowchartSummary(uploadedFile?.parsedContent),
+    [uploadedFile?.parsedContent],
+  )
 
   const handleDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
@@ -456,6 +502,39 @@ function FileUploadZone() {
             <Loader2 className="h-3 w-3 animate-spin" />
             正在解析文档，完成后再开始生成
           </p>
+        )}
+        {flowchartSummary && (
+          <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-700 dark:text-sky-200">
+                <ListFilter className="h-3.5 w-3.5" />
+                流程图摘要
+              </p>
+              {flowchartSummary.confidence && (
+                <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] text-sky-700 dark:text-sky-200">
+                  {flowchartSummary.confidence}
+                </span>
+              )}
+            </div>
+            {flowchartSummary.mainPath && (
+              <p className="mt-2 line-clamp-2 text-xs text-[hsl(var(--gcs-text-secondary))]">
+                {flowchartSummary.mainPath}
+              </p>
+            )}
+            {flowchartSummary.branches.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {flowchartSummary.branches.slice(0, 3).map((branch) => (
+                  <span
+                    key={branch}
+                    className="max-w-full truncate rounded-full bg-[hsl(var(--gcs-card-bg))] px-2 py-1 text-[11px] text-[hsl(var(--gcs-text-secondary))] ring-1 ring-inset ring-sky-500/15"
+                    title={branch}
+                  >
+                    {branch}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     )
@@ -1484,6 +1563,7 @@ export default function GeneratePage() {
 
   const handleGenerate = async () => {
     let generationInputText = buildGenerateRequestText(inputText, requirementDescription, userNotes)
+    let fileForGeneration = uploadedFile
     if (sourceType === 'file' && !uploadedFile) {
       toast.error('请先上传文件')
       return
@@ -1501,6 +1581,7 @@ export default function GeneratePage() {
       let file = uploadedFile
       try {
         file = await filesApi.getFileById(uploadedFile.id)
+        fileForGeneration = file
         useGenerateStore.getState().setUploadedFile(file)
       } catch {
         toast.error('无法获取文件状态，请重试')
@@ -1516,6 +1597,9 @@ export default function GeneratePage() {
       }
       if (!generationInputText.trim()) generationInputText = file.parsedContent
     }
+    const flowchartContext = sourceType === 'file'
+      ? extractFlowchartSummary(fileForGeneration?.parsedContent)?.raw
+      : extractFlowchartSummary(generationInputText)?.raw
 
     setIsGenerating(true)
     clearStreamContent()
@@ -1528,11 +1612,12 @@ export default function GeneratePage() {
         await aiApi.generateStream(
           {
             sourceType,
-            fileId: uploadedFile?.id,
+            fileId: fileForGeneration?.id,
             text: generationInputText,
             customPrompt,
             templateId: selectedTemplateId ?? undefined,
             ...aiParams,
+            flowchartContext,
           },
           (chunk) => appendStreamContent(chunk),
           async (meta) => {
@@ -1593,11 +1678,12 @@ export default function GeneratePage() {
       } else {
         const result = await aiApi.generateTestCases({
           sourceType,
-          fileId: uploadedFile?.id,
+          fileId: fileForGeneration?.id,
           text: generationInputText,
           customPrompt,
           templateId: selectedTemplateId ?? undefined,
           ...aiParams,
+          flowchartContext,
         })
         setGeneratedCases(result.cases)
         setLastRecordId(result.recordId ?? null)

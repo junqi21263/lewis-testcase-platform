@@ -468,7 +468,11 @@ export class AiService {
   }
 
   private buildQualityReport(dto: GenerateDto, fileContent: string | undefined, rows: any[]) {
-    return buildAiOutputQualityReport(dto.text || fileContent || dto.customPrompt || '', rows)
+    const sourceText = [dto.text, fileContent, dto.flowchartContext, dto.customPrompt]
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .join('\n\n')
+    return buildAiOutputQualityReport(sourceText, rows)
   }
 
   private mapDbCaseToClosedLoopInput(c: { id: string; title: string; priority: TestCasePriority; type: TestCaseType; precondition: string | null; steps: Prisma.JsonValue; expectedResult: string; tags: string[]; description: string | null }) {
@@ -1244,6 +1248,11 @@ ${originalPrompt}
       userContent += `\n\n需求描述：\n${dto.text}`
     }
 
+    const flowchartContext = this.resolveFlowchartPromptContext(dto, fileContent)
+    if (flowchartContext) {
+      userContent += `\n\n流程图上下文：\n${flowchartContext}\n\n流程图生成约束：\n1. 按主流程顺序生成 P0/P1 核心用例，步骤必须覆盖关键流程节点。\n2. 针对每条判断分支生成至少 1 条用例，尤其覆盖「否/失败/异常/驳回/无权限/超时」路径。\n3. 预期结果必须与流程节点逐步对应，expectedResult 使用 [1][2] 编号并与 steps 一一匹配。\n4. 若流程图存在回退、重试、重新编辑路径，必须生成对应的异常或回归用例。`
+    }
+
     const { text, truncated, omittedChars, originalLength } = clampGenerationUserContent(userContent)
     const inputNotices: string[] = []
     if (truncated) {
@@ -1252,6 +1261,31 @@ ${originalPrompt}
     }
 
     return { system: systemPrompt, user: text, inputNotices }
+  }
+
+  private resolveFlowchartPromptContext(dto: GenerateDto, fileContent?: string): string {
+    const parts: string[] = []
+    if (dto.flowchartContext?.trim()) {
+      parts.push(dto.flowchartContext.trim())
+    }
+
+    const embedded = this.extractEmbeddedFlowchartSummary(fileContent || dto.text || '')
+    if (embedded && !parts.some((part) => part.includes(embedded.slice(0, 120)))) {
+      parts.push(embedded)
+    }
+
+    return parts
+      .join('\n\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .slice(0, 8000)
+      .trim()
+  }
+
+  private extractEmbeddedFlowchartSummary(text: string): string {
+    const source = (text || '').trim()
+    if (!source.includes('## 流程图结构化摘要')) return ''
+    const [, summary = ''] = source.split('## 流程图结构化摘要', 2)
+    return `## 流程图结构化摘要${summary}`.trim().slice(0, 6000)
   }
 
   /** 非流式生成 */

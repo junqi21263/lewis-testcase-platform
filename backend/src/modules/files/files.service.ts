@@ -25,6 +25,7 @@ import { ImageOcrPipelineService } from '@/modules/ocr/image-ocr-pipeline.servic
 import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
+import { PdfFlowchartParseService } from './pdf-flowchart-parse.service'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 import {
@@ -63,6 +64,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private readonly tencentOcr: TencentOcrClientService,
     private readonly pdfDocumentParse: PdfDocumentParseService,
     private readonly multimodal: MultimodalService,
+    private readonly pdfFlowchartParse: PdfFlowchartParseService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -655,12 +657,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         cleanedText && cleanedText.trim().length > 0
           ? this.sanitizeParsedText(cleanedText).trim()
           : masked
+      const enriched = this.enrichParsedContentWithFlowchart(parsedBody, structured)
 
       await this.prisma.uploadedFile.update({
         where: { id: fileId },
         data: {
-          parsedContent: parsedBody,
-          structuredRequirements: structured as Prisma.InputJsonValue,
+          parsedContent: enriched.parsedContent,
+          structuredRequirements: enriched.structuredRequirements as Prisma.InputJsonValue,
           status: FileStatus.PARSED,
           parseError: null,
           parseStage: 'DONE',
@@ -816,6 +819,33 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   private sanitizeParsedText(text: string): string {
     return text.replace(/\u0000/g, '')
+  }
+
+  private enrichParsedContentWithFlowchart(
+    parsedContent: string,
+    structuredRequirements: string[],
+  ): { parsedContent: string; structuredRequirements: string[] } {
+    const context = this.pdfFlowchartParse.parseFromText(parsedContent)
+    const summary = this.pdfFlowchartParse.toPromptContext(context)
+    if (!summary) {
+      return { parsedContent, structuredRequirements }
+    }
+
+    const bodyWithoutOldSummary = parsedContent
+      .replace(/\n{0,2}## 流程图结构化摘要[\s\S]*$/u, '')
+      .trim()
+    const mergedRequirements = [
+      ...structuredRequirements,
+      ...(context!.mainPath.length ? [`流程图主流程需覆盖：${context!.mainPath.join(' -> ')}`] : []),
+      ...context!.branches.slice(0, 12).map((branch) => `流程图分支需覆盖：${branch.from} -- ${branch.condition} --> ${branch.to}`),
+    ]
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    return {
+      parsedContent: `${bodyWithoutOldSummary}\n\n${summary}`.trim(),
+      structuredRequirements: Array.from(new Set(mergedRequirements)).slice(0, 120),
+    }
   }
 
   /**
@@ -1978,12 +2008,13 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       await this.requirementStructure.structureRequirements(masked)
     const parsedBody =
       cleanedText && cleanedText.trim().length > 0 ? cleanedText.trim() : masked
+    const enriched = this.enrichParsedContentWithFlowchart(parsedBody, structured)
 
     await this.prisma.uploadedFile.update({
       where: { id },
       data: {
-        parsedContent: parsedBody,
-        structuredRequirements: structured as Prisma.InputJsonValue,
+        parsedContent: enriched.parsedContent,
+        structuredRequirements: enriched.structuredRequirements as Prisma.InputJsonValue,
         status: FileStatus.PARSED,
         parseError: null,
       },

@@ -19,6 +19,10 @@ function createFilesService(prismaMock: any) {
     {} as any,
     {} as any,
     {} as any,
+    {
+      parseFromText: jest.fn(() => null),
+      toPromptContext: jest.fn(() => ''),
+    } as any,
   )
 }
 

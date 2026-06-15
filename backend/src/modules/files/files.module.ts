@@ -6,6 +6,7 @@ import { RequirementStructureService } from './requirement-structure.service'
 import { LightweightCloudCleanupService } from './lightweight-cloud-cleanup.service'
 import { CosStorageService } from './cos-storage.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
+import { PdfFlowchartParseService } from './pdf-flowchart-parse.service'
 import { TencentOcrSdkPdfService } from './tencent-ocr-sdk-pdf.service'
 import { OcrModule } from '@/modules/ocr/ocr.module'
 import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
@@ -15,6 +16,7 @@ import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
   providers: [
     FilesService,
     PdfDocumentParseService,
+    PdfFlowchartParseService,
     TencentOcrSdkPdfService,
     DocumentVisionService,
     RequirementStructureService,
@@ -22,6 +24,6 @@ import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
     CosStorageService,
   ],
   controllers: [FilesController],
-  exports: [FilesService, CosStorageService],
+  exports: [FilesService, CosStorageService, PdfFlowchartParseService],
 })
 export class FilesModule {}

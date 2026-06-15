@@ -28,6 +28,11 @@ export class GenerateDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20_000)
+  flowchartContext?: string
+
+  @IsOptional()
+  @IsString()
   @MaxLength(128)
   modelConfigId?: string
 

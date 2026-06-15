@@ -155,6 +155,8 @@ export interface AIGenerateParams {
   temperature?: number
   maxTokens?: number
   stream?: boolean
+  /** 流程图/PDF 结构化摘要，用于提升分支路径用例覆盖 */
+  flowchartContext?: string
   /** true 时跳过 hunyuan 直出分支，强制走后台所选模型 */
   forceConfiguredModel?: boolean
 }
