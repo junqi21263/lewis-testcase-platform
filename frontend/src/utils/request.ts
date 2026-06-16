@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
-import type { ApiResponse, QualityReport } from '@/types'
+import type { ApiResponse, ClosedLoopResult, QualityReport } from '@/types'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 type ErrorResponseData = Partial<{
@@ -181,6 +181,7 @@ export type StreamDoneMeta = {
   suiteId?: string
   caseCount?: number
   qualityReport?: QualityReport
+  autoRepair?: ClosedLoopResult
 }
 
 /** 流式请求（SSE），用于 AI 生成流式响应 */
@@ -295,6 +296,9 @@ export async function streamRequest(
           }
           if (rec.qualityReport && typeof rec.qualityReport === 'object') {
             doneMeta = { ...doneMeta, qualityReport: rec.qualityReport as QualityReport }
+          }
+          if (rec.autoRepair && typeof rec.autoRepair === 'object') {
+            doneMeta = { ...doneMeta, autoRepair: rec.autoRepair as ClosedLoopResult }
           }
         }
       }

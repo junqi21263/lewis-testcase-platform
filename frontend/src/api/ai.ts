@@ -18,6 +18,7 @@ export interface GenerateResult {
   /** 输入压缩、输出达 Token 上限等提示 */
   warnings?: string[]
   qualityReport?: QualityReport
+  autoRepair?: ClosedLoopResult
 }
 
 export type TestModelPayload = {

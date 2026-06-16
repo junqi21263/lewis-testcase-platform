@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   GitCompare,
   History,
@@ -43,6 +44,12 @@ import {
   rev,
   caseReviewStatusLabel,
 } from '@/utils/reviewsUi'
+import {
+  getReviewQueueBadges,
+  matchesReviewQueueFilter,
+  REVIEW_QUEUE_OPTIONS,
+  type ReviewQueueFilter,
+} from '@/utils/reviewQueue'
 import { cn } from '@/utils/cn'
 import { formatDate } from '@/utils/format'
 
@@ -110,6 +117,7 @@ export default function ReviewCenterPage() {
   const [statusFilter, setStatusFilter] = useState<CaseReviewStatus | 'all'>('all')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [queueFilter, setQueueFilter] = useState<ReviewQueueFilter>('all')
   const [onlyFailed, setOnlyFailed] = useState(false)
   const [onlyComments, setOnlyComments] = useState(false)
   const [onlyDirty, setOnlyDirty] = useState(false)
@@ -224,6 +232,7 @@ export default function ReviewCenterPage() {
     if (statusFilter !== 'all') list = list.filter((c) => c.reviewStatus === statusFilter)
     if (priorityFilter !== 'all') list = list.filter((c) => c.priority === priorityFilter)
     if (typeFilter !== 'all') list = list.filter((c) => c.type === typeFilter)
+    if (queueFilter !== 'all') list = list.filter((c) => matchesReviewQueueFilter(c, queueFilter))
     if (onlyFailed) {
       list = list.filter(
         (c) => c.reviewStatus === 'changes_requested' || c.reviewStatus === 'rejected',
@@ -243,6 +252,7 @@ export default function ReviewCenterPage() {
     statusFilter,
     priorityFilter,
     typeFilter,
+    queueFilter,
     onlyFailed,
     onlyComments,
     onlyDirty,
@@ -434,6 +444,13 @@ export default function ReviewCenterPage() {
       }
       return n
     })
+  }
+
+  const selectNextFilteredCase = async () => {
+    if (filteredCases.length === 0) return
+    const currentIndex = filteredCases.findIndex((c) => c.id === selectedId)
+    const next = filteredCases[currentIndex >= 0 ? (currentIndex + 1) % filteredCases.length : 0]
+    if (next) await selectCase(next.id)
   }
 
   if (!recordId) {
@@ -628,6 +645,35 @@ export default function ReviewCenterPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+              <div className={rev.listToolbarSection}>
+                <div className="flex flex-wrap items-center gap-2">
+                  {REVIEW_QUEUE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={
+                        queueFilter === option.value
+                          ? rev.chipActive + ' ' + rev.chip
+                          : rev.chipGhost + ' ' + rev.chip
+                      }
+                      onClick={() => setQueueFilter(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn(rev.btnSecondary, 'h-8 gap-1 px-2 text-xs')}
+                    disabled={filteredCases.length === 0}
+                    onClick={() => void selectNextFilteredCase()}
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    下一条
+                  </Button>
                 </div>
               </div>
               <div className={rev.listToolbarSection}>
@@ -930,6 +976,11 @@ function CaseListItem(props: {
             <span className={rev.caseMetaPill}>{item.priority}</span>
             <span className={rev.caseMetaPill}>{CASE_TYPE_LABELS[item.type] ?? item.type}</span>
             <span className={rev.caseMetaPill}>v{item.currentVersionNumber}</span>
+            {getReviewQueueBadges(item).map((badge) => (
+              <span key={badge} className={rev.caseMetaPill}>
+                {badge}
+              </span>
+            ))}
             {dirty ? (
               <span className="font-medium text-[hsl(var(--review-badge-warning-text))]">未保存</span>
             ) : null}

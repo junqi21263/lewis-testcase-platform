@@ -12,6 +12,7 @@ import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
 import { clampGenerationUserContent, humanizeAiProviderError, INPUT_CLAMPED_NOTICE_PREFIX, OUTPUT_TRUNCATED_NOTICE, roughTokenEstimateFromChars } from './ai-generation-limits.util'
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
+import { buildAutoRepairNotice, shouldAutoRepairQuality } from './auto-repair-quality.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
 import {
@@ -473,6 +474,29 @@ export class AiService {
       .filter(Boolean)
       .join('\n\n')
     return buildAiOutputQualityReport(sourceText, rows)
+  }
+
+  private autoRepairScoreThreshold(): number {
+    const raw = Number(this.config.get<string>('AI_AUTO_REPAIR_SCORE_THRESHOLD') ?? '80')
+    if (!Number.isFinite(raw)) return 80
+    return Math.min(100, Math.max(0, Math.floor(raw)))
+  }
+
+  private async maybeAutoRepairGeneratedRecord(
+    recordId: string,
+    userId: string,
+    qualityReport: ReturnType<typeof buildAiOutputQualityReport>,
+  ) {
+    if (!shouldAutoRepairQuality(qualityReport, this.autoRepairScoreThreshold())) return null
+
+    try {
+      const result = await this.runRequirementCaseClosedLoop(recordId, userId)
+      if (result.actions.length === 0) return null
+      return result
+    } catch (e) {
+      this.logger.warn(`自动质量修复跳过: ${(e as Error).message}`)
+      return null
+    }
   }
 
   private mapDbCaseToClosedLoopInput(c: { id: string; title: string; priority: TestCasePriority; type: TestCaseType; precondition: string | null; steps: Prisma.JsonValue; expectedResult: string; tags: string[]; description: string | null }) {
@@ -1369,6 +1393,9 @@ ${originalPrompt}
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
+              const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
+              const finalCases = autoRepair?.cases ?? suite.cases
+              const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
               const warnings: string[] = ['已使用腾讯云混元 hunyuan-vision（OpenAI 兼容多模态）直接生成用例。']
               if (resolvedEarly.repaired) {
                 warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理后入库。')
@@ -1377,12 +1404,14 @@ ${originalPrompt}
                 warnings.push(this.schemaRepairNotice(resolvedEarly.schemaValidationWarnings))
               }
               if (resolvedEarly.outputTruncated) warnings.push(OUTPUT_TRUNCATED_NOTICE)
+              if (autoRepair) warnings.push(buildAutoRepairNotice(autoRepair))
               return {
                 recordId: record.id,
-                cases: suite.cases,
+                cases: finalCases,
                 duration,
                 warnings,
-                qualityReport,
+                qualityReport: finalQualityReport,
+                ...(autoRepair ? { autoRepair } : {}),
               }
             }
             if (text?.trim()) fileContent = text.trim()
@@ -1473,13 +1502,18 @@ ${originalPrompt}
 
       await this.bumpTemplateUsage(dto.templateId)
 
+      const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
+      const finalCases = autoRepair?.cases ?? suite.cases
+      const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
       const warnings = [...inputNotices, ...outputWarnings].filter(Boolean)
+      if (autoRepair) warnings.push(buildAutoRepairNotice(autoRepair))
       return {
         recordId: record.id,
-        cases: suite.cases,
+        cases: finalCases,
         tokensUsed: completion.usage?.total_tokens,
         duration,
-        qualityReport,
+        qualityReport: finalQualityReport,
+        ...(autoRepair ? { autoRepair } : {}),
         ...(warnings.length ? { warnings } : {}),
       }
     } catch (err: unknown) {
@@ -1604,12 +1638,19 @@ ${originalPrompt}
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
               await this.bumpTemplateUsage(dto.templateId)
               const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
+              const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
+              if (autoRepair) {
+                this.writeStreamNotice(res, buildAutoRepairNotice(autoRepair))
+              }
+              const finalCases = autoRepair?.cases ?? suite.cases
+              const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
               res.write(
                 `data: ${JSON.stringify({
                   recordId: record.id,
                   suiteId: suite.id,
-                  caseCount: suite.cases.length,
-                  qualityReport,
+                  caseCount: finalCases.length,
+                  qualityReport: finalQualityReport,
+                  ...(autoRepair ? { autoRepair } : {}),
                 })}\n\n`,
               )
               res.write(`data: [DONE]\n\n`)
@@ -1748,13 +1789,20 @@ ${originalPrompt}
 
       await this.bumpTemplateUsage(dto.templateId)
       const qualityReport = this.buildQualityReport(dto, fileContent, rows)
+      const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
+      if (autoRepair) {
+        this.writeStreamNotice(res, buildAutoRepairNotice(autoRepair))
+      }
+      const finalCases = autoRepair?.cases ?? suite.cases
+      const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
 
       res.write(
         `data: ${JSON.stringify({
           recordId: record.id,
           suiteId: suite.id,
-          caseCount: suite.cases.length,
-          qualityReport,
+          caseCount: finalCases.length,
+          qualityReport: finalQualityReport,
+          ...(autoRepair ? { autoRepair } : {}),
         })}\n\n`,
       )
       res.write(`data: [DONE]\n\n`)

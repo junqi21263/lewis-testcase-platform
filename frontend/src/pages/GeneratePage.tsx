@@ -1645,6 +1645,9 @@ export default function GeneratePage() {
             setQualityReport(
               meta?.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, cases),
             )
+            if (meta?.autoRepair) {
+              setClosedLoopStatus('succeeded', { summary: meta.autoRepair.summary, error: null })
+            }
             setGeneratedCases(cases)
             setStep('result')
             if (cases.length === 0) toast.error('未生成任何用例，请检查模型或输入内容')
@@ -1692,6 +1695,9 @@ export default function GeneratePage() {
         setQualityReport(
           result.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, result.cases),
         )
+        if (result.autoRepair) {
+          setClosedLoopStatus('succeeded', { summary: result.autoRepair.summary, error: null })
+        }
         try {
           const rec = await recordsApi.getRecordById(result.recordId)
           setLastSuiteId(rec.suiteId ?? null)
