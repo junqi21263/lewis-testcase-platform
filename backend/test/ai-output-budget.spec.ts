@@ -27,7 +27,7 @@ describe('AI output budget', () => {
   })
 
   it('guards continuation attempts', () => {
-    expect(resolveContinuationAttempts(undefined)).toBe(1)
+    expect(resolveContinuationAttempts(undefined)).toBe(3)
     expect(resolveContinuationAttempts('3')).toBe(3)
     expect(resolveContinuationAttempts('99')).toBe(5)
     expect(shouldAttemptContinuation('length', 0, 1)).toBe(true)

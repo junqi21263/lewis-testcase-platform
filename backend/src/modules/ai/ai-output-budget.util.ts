@@ -3,7 +3,7 @@ export const MIN_OUTPUT_TOKENS = 256
 export const MAX_OUTPUT_TOKENS = 128_000
 export const DEFAULT_STREAM_CONTENT_MAX_CHARS = 2_000_000
 export const MAX_STREAM_CONTENT_MAX_CHARS = 8_000_000
-export const DEFAULT_CONTINUATION_ATTEMPTS = 1
+export const DEFAULT_CONTINUATION_ATTEMPTS = 3
 export const MAX_CONTINUATION_ATTEMPTS = 5
 
 function finiteInt(value: unknown): number | null {
