@@ -423,17 +423,17 @@ export default function SettingsPage() {
     }
   }
 
-  const archive = async (id: string) => {
+  const deleteModel = async (id: string) => {
     const ok = await appConfirm({
-      title: '归档该模型？',
-      description: '归档后不会在生成页可选。',
-      confirmText: '确认归档',
+      title: '删除该模型配置？',
+      description: '删除后将从模型列表移除；如果该模型已被历史数据引用，系统会阻止删除。',
+      confirmText: '确认删除',
       confirmVariant: 'destructive',
     })
     if (!ok) return
     try {
-      await settingsApi.archiveModel(id)
-      toast.success('已归档')
+      await settingsApi.deleteModel(id)
+      toast.success('已删除模型配置')
       refreshModels()
     } catch {
       /* */
@@ -1080,8 +1080,9 @@ export default function SettingsPage() {
                     {admin && (
                       <Button
                         className={set.btnDanger}
-                        onClick={() => archive(model.id)}
-                        disabled={!model.isActive}
+                        onClick={() => deleteModel(model.id)}
+                        title="删除模型配置"
+                        aria-label={`删除模型配置：${model.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

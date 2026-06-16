@@ -46,6 +46,7 @@ import {
 } from '@/utils/testcaseExportFormat'
 import { downloadTestcasesXlsx } from '@/utils/exportTestcasesXlsx'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { getCaseUiId } from '@/utils/generateCaseUi'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 import {
   buildLocalQualityReport,
@@ -866,7 +867,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
     })
   }
 
-  const selectedCases = filteredCases.filter((c) => selected.has(c.id))
+  const caseUiId = useCallback((c: TestCase) => getCaseUiId(c, cases.indexOf(c)), [cases])
+  const selectedCases = filteredCases.filter((c) => selected.has(caseUiId(c)))
 
   const downloadTextFile = (filename: string, content: string, mime = 'text/plain;charset=utf-8') => {
     const blob = new Blob([content], { type: mime })
@@ -988,7 +990,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       confirmVariant: 'destructive',
     })
     if (!ok) return
-    setGeneratedCases(cases.filter((c) => !selected.has(c.id)))
+    setGeneratedCases(cases.filter((c) => !selected.has(caseUiId(c))))
     setSelected(new Set())
     toast.success('已删除选中项')
   }
@@ -1171,7 +1173,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             variant="ghost"
             size="sm"
             className="h-9"
-            onClick={() => setExpanded(new Set(paginatedCases.map((c) => c.id)))}
+            onClick={() => setExpanded(new Set(paginatedCases.map((c) => caseUiId(c))))}
           >
             <ChevronDown className="h-4 w-4" />
             展开本页
@@ -1188,7 +1190,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             variant="outline"
             size="sm"
             className="h-8"
-            onClick={() => setSelected(new Set(paginatedCases.map((c) => c.id)))}
+            onClick={() => setSelected(new Set(paginatedCases.map((c) => caseUiId(c))))}
           >
             全选本页
           </Button>
@@ -1197,7 +1199,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
             variant="outline"
             size="sm"
             className="h-8"
-            onClick={() => setSelected(new Set(filteredCases.map((c) => c.id)))}
+            onClick={() => setSelected(new Set(filteredCases.map((c) => caseUiId(c))))}
             disabled={totalFiltered === 0}
           >
             全选筛选结果
@@ -1263,8 +1265,8 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
           </div>
         )}
 
-        {paginatedCases.map((c, i) => {
-          const caseId = c.id || `idx-${safePage}-${i}`
+        {paginatedCases.map((c) => {
+          const caseId = caseUiId(c)
           const isExpanded = expanded.has(caseId)
           const caseModule = extractModuleFromTags(c.tags)
           const caseTags = (c.tags ?? []).filter((t) => t && !t.startsWith('模块:'))

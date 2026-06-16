@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { UserRole } from '@prisma/client'
 import { SettingsService } from './settings.service'
@@ -56,6 +56,13 @@ export class SettingsController {
   @ApiOperation({ summary: '管理员：归档模型（停用，不参与生成）' })
   archiveModel(@Param('id') id: string) {
     return this.settingsService.archiveAiModel(id)
+  }
+
+  @Delete('models/:id')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: '管理员：删除 AI 模型配置' })
+  deleteModel(@Param('id') id: string) {
+    return this.settingsService.deleteAiModel(id)
   }
 
   @Post('models/:id/set-default')

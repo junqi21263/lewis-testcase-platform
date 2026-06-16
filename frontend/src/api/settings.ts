@@ -84,5 +84,7 @@ export const settingsApi = {
 
   archiveModel: (id: string) => request.post<{ ok: boolean }>(`/settings/models/${id}/archive`),
 
+  deleteModel: (id: string) => request.delete<{ ok: boolean }>(`/settings/models/${id}`),
+
   setDefaultModel: (id: string) => request.post<{ ok: boolean }>(`/settings/models/${id}/set-default`),
 }

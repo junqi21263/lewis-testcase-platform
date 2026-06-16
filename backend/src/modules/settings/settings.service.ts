@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
-import { AIModelConfig } from '@prisma/client'
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common'
+import { AIModelConfig, Prisma } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-model-settings.dto'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
@@ -213,6 +213,36 @@ export class SettingsService {
           data: { isDefault: true },
         })
       }
+    }
+    return { ok: true }
+  }
+
+  async deleteAiModel(id: string) {
+    const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
+    if (!existing) throw new NotFoundException('模型配置不存在')
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (existing.isDefault) {
+          const next = await tx.aIModelConfig.findFirst({
+            where: { isActive: true, id: { not: id } },
+            orderBy: { updatedAt: 'desc' },
+          })
+          if (!next) {
+            throw new BadRequestException('不能删除最后一个启用中的默认模型')
+          }
+          await tx.aIModelConfig.update({
+            where: { id: next.id },
+            data: { isDefault: true },
+          })
+        }
+        await tx.aIModelConfig.delete({ where: { id } })
+      })
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException('该模型已被历史数据引用，无法删除；可先停用该模型')
+      }
+      throw error
     }
     return { ok: true }
   }
