@@ -221,7 +221,7 @@ export default function TemplatesPage() {
       const job = await templatesApi.startEvaluation(tplItem.id, {
         sampleLimit: 3,
         temperature: 0.2,
-        maxTokens: 12000,
+        maxTokens: 32768,
       })
       if (!job?.jobId) {
         throw new Error('后端未返回有效的评测任务 ID')

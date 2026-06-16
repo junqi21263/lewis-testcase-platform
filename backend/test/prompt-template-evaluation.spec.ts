@@ -11,6 +11,12 @@ import {
 } from '@/modules/templates/prompt-template-evaluation.util'
 
 describe('prompt template evaluation helpers', () => {
+  it('uses long-output defaults for prompt evaluation max tokens', () => {
+    expect(resolvePromptEvaluationMaxTokens()).toBe(32768)
+    expect(resolvePromptEvaluationMaxTokens(4096)).toBe(12000)
+    expect(resolvePromptEvaluationMaxTokens(128000)).toBe(128000)
+  })
+
   it('increments prompt version only when prompt content changes', () => {
     expect(nextPromptTemplateVersion(1, '生成登录用例', '生成登录用例')).toBe(1)
     expect(nextPromptTemplateVersion(1, '生成登录用例', '生成登录和权限用例')).toBe(2)
@@ -141,7 +147,7 @@ describe('prompt template evaluation helpers', () => {
   })
 
   it('uses a larger output budget floor for prompt evaluation runs', () => {
-    expect(resolvePromptEvaluationMaxTokens()).toBe(12000)
+    expect(resolvePromptEvaluationMaxTokens()).toBe(32768)
     expect(resolvePromptEvaluationMaxTokens(4096)).toBe(12000)
     expect(resolvePromptEvaluationMaxTokens(8192)).toBe(12000)
     expect(resolvePromptEvaluationMaxTokens(20000)).toBe(20000)

@@ -151,7 +151,7 @@ export const PROMPT_EVAL_SAMPLE_SET: PromptEvalSample[] = [
   },
 ]
 
-export const PROMPT_EVALUATION_DEFAULT_MAX_TOKENS = 12000
+export const PROMPT_EVALUATION_DEFAULT_MAX_TOKENS = 32768
 export const PROMPT_EVALUATION_MIN_MAX_TOKENS = 12000
 
 export function resolvePromptEvaluationMaxTokens(requested?: number): number {
@@ -627,7 +627,7 @@ export function buildPromptEvaluationDiagnostics(input: {
 
   const actions: string[] = []
   if (tokenGroup) {
-    actions.push('优先把评测 maxTokens 提高到 8192 或 12000；如果模型本身上限较低，改用支持更大输出窗口的模型。')
+    actions.push('优先把评测 maxTokens 提高到 32768 或更高；如果模型本身上限较低，改用支持更大输出窗口的模型。')
     actions.push('保留评测模式 6-10 条代表性用例约束，避免在评测中触发正式 20/35/45 条全量生成规则。')
     actions.push('让模板要求先规划 cases 数量再输出 JSON，单条用例步骤和预期保持短句，降低 JSON 过长导致截断的概率。')
   }
