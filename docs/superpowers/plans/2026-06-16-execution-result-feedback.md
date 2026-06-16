@@ -66,10 +66,10 @@ Run: `pnpm -C frontend exec playwright test tests/e2e/reviews-center.spec.ts -c 
 
 Run backend build/tests, frontend unit/CT/E2E/build, integration script, Playwright Test Agent list, and MCP CLI help.
 
-- [ ] **Step 2: Merge to develop**
+- [x] **Step 2: Merge to develop**
 
 Fast-forward merge the feature branch into `develop`.
 
-- [ ] **Step 3: Push develop**
+- [x] **Step 3: Push develop**
 
 Push `develop` to `cnb` and `origin`, then report verification evidence.
