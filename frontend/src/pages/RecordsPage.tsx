@@ -25,6 +25,7 @@ import { RecordsEmptyState } from '@/components/records/RecordsEmptyState'
 import { RecordsSegmentedTabs } from '@/components/records/RecordsSegmentedTabs'
 import { RecordsTableToolbar } from '@/components/records/RecordsTableToolbar'
 import { RecordsRowActions } from '@/components/records/RecordsRowActions'
+import { RecordWorkflowRail } from '@/components/records/RecordWorkflowRail'
 import type { GenerationRecord, GenerationStatus, RecordReviewStatus } from '@/types'
 import { RecordReviewStatusBadge } from '@/components/reviews/ReviewStatusBadge'
 import { recordReviewStatusLabel } from '@/utils/reviewsUi'
@@ -1046,6 +1047,7 @@ export default function RecordsPage() {
                     </div>
                     {expanded && (
                       <div className="space-y-2 bg-muted/25 px-4 py-3 text-xs shadow-[inset_0_1px_0_0_hsl(var(--border)_/_0.12)] backdrop-blur-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
+                        <RecordWorkflowRail record={r} compact />
                         <p className="text-muted-foreground font-medium">需求摘要</p>
                         <p className="text-foreground/90 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                           <HighlightText text={r.prompt || '（无）'} query={debouncedKeyword} />

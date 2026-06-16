@@ -41,6 +41,7 @@ import { useGenerateStore, defaultGenerationOptions } from '@/store/generateStor
 import { useAuthStore } from '@/store/authStore'
 import { appConfirm } from '@/store/appConfirmStore'
 import { casesDataSnapshot, normalizeSteps, stepsToLines } from '@/components/record-detail/caseUtils'
+import { RecordWorkflowRail } from '@/components/records/RecordWorkflowRail'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/cn'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -602,6 +603,8 @@ export default function RecordDetailPage() {
           </div>
         </div>
       )}
+
+      <RecordWorkflowRail record={record} />
 
       {/* 基础信息 */}
       <Card>

@@ -331,6 +331,13 @@ test.describe('用例评审中心', () => {
     await page.goto('/records', { waitUntil: 'domcontentloaded' })
     await expect(page.getByText('E2E 评审记录')).toBeVisible({ timeout: 15_000 })
 
+    await page.getByText('E2E 评审记录').click()
+    await expect(page.getByLabel('工作流状态')).toBeVisible()
+    await expect(page.getByText('已解析')).toBeVisible()
+    await expect(page.getByText('已分析')).toBeVisible()
+    await expect(page.getByText('已生成')).toBeVisible()
+    await expect(page.getByText('当前：待评审')).toBeVisible()
+
     await page.getByTitle('进入评审').click()
     await expect(page).toHaveURL(new RegExp(`/reviews/${RECORD_ID}`))
     await expect(page.getByRole('heading', { name: 'E2E 评审记录' })).toBeVisible()

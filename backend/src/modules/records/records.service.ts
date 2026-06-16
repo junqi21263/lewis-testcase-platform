@@ -354,7 +354,11 @@ export class RecordsService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { [sortBy]: sortOrder },
-        include: { creator: { select: { id: true, username: true, email: true } } },
+        include: {
+          creator: { select: { id: true, username: true, email: true } },
+          file: { select: { id: true, originalName: true, status: true } },
+          documentParseRecord: { select: { id: true, title: true, createdAt: true } },
+        },
       }),
       this.prisma.generationRecord.count({ where }),
     ])
