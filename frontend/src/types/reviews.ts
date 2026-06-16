@@ -96,3 +96,41 @@ export type VersionDiffField = {
   after: string
   changed: boolean
 }
+
+export type ExecutionResultStatus = 'passed' | 'failed' | 'skipped'
+
+export type ExecutionResultInput = {
+  caseId?: string
+  title?: string
+  status: ExecutionResultStatus
+  durationMs?: number
+  errorMessage?: string
+  reportUrl?: string
+  traceUrl?: string
+}
+
+export type ExecutionResultsPayload = {
+  source?: string
+  summary?: string
+  results: ExecutionResultInput[]
+}
+
+export type ExecutionResultsImportResponse = {
+  matched: number
+  unmatched: number
+  passed: number
+  failed: number
+  skipped: number
+  items: Array<{
+    caseId: string
+    title: string
+    status: ExecutionResultStatus
+    matchedBy: 'caseId' | 'exactTitle' | 'normalizedTitle'
+  }>
+  unmatchedItems: Array<{
+    title: string
+    caseId?: string
+    status: ExecutionResultStatus
+    reason: string
+  }>
+}

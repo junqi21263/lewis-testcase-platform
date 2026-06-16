@@ -17,19 +17,19 @@
 - Modify: `backend/src/modules/reviews/reviews.service.ts`
 - Test: `backend/test/reviews-execution-results.spec.ts`
 
-- [ ] **Step 1: Write failing backend tests**
+- [x] **Step 1: Write failing backend tests**
 
 Cover caseId match, normalized title match, ambiguous title unmatched, failed result status update, and viewer denial.
 
-- [ ] **Step 2: Run focused backend test and verify RED**
+- [x] **Step 2: Run focused backend test and verify RED**
 
 Run: `pnpm -C backend test -- reviews-execution-results`
 
-- [ ] **Step 3: Implement service and controller endpoint**
+- [x] **Step 3: Implement service and controller endpoint**
 
 Add request normalization, bounded payload validation, matching helpers, transaction writes, and response summary.
 
-- [ ] **Step 4: Run focused backend test and verify GREEN**
+- [x] **Step 4: Run focused backend test and verify GREEN**
 
 Run: `pnpm -C backend test -- reviews-execution-results`
 
@@ -41,19 +41,19 @@ Run: `pnpm -C backend test -- reviews-execution-results`
 - Modify: `frontend/src/pages/ReviewCenterPage.tsx`
 - Test: `frontend/tests/e2e/reviews-center.spec.ts`
 
-- [ ] **Step 1: Add API/types and E2E expectation**
+- [x] **Step 1: Add API/types and E2E expectation**
 
 Mock execution-result import and verify the review center reloads comments/status.
 
-- [ ] **Step 2: Run focused E2E and verify RED**
+- [x] **Step 2: Run focused E2E and verify RED**
 
 Run: `pnpm -C frontend exec playwright test tests/e2e/reviews-center.spec.ts -c playwright.config.ts`
 
-- [ ] **Step 3: Implement import dialog**
+- [x] **Step 3: Implement import dialog**
 
 Add `导入执行结果` header action, JSON textarea, validation, submit state, summary display, and reload behavior.
 
-- [ ] **Step 4: Run focused E2E and verify GREEN**
+- [x] **Step 4: Run focused E2E and verify GREEN**
 
 Run: `pnpm -C frontend exec playwright test tests/e2e/reviews-center.spec.ts -c playwright.config.ts`
 
@@ -62,7 +62,7 @@ Run: `pnpm -C frontend exec playwright test tests/e2e/reviews-center.spec.ts -c 
 **Files:**
 - Commit all changed files.
 
-- [ ] **Step 1: Run verification suite**
+- [x] **Step 1: Run verification suite**
 
 Run backend build/tests, frontend unit/CT/E2E/build, integration script, Playwright Test Agent list, and MCP CLI help.
 

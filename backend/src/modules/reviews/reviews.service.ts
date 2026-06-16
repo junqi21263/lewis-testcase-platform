@@ -22,6 +22,34 @@ import {
 } from './case-snapshot.util'
 
 type SessionUser = { id: string; role: UserRole; teamId?: string | null }
+type ExecutionResultStatus = 'passed' | 'failed' | 'skipped'
+type ExecutionResultInput = {
+  caseId?: unknown
+  title?: unknown
+  status?: unknown
+  durationMs?: unknown
+  errorMessage?: unknown
+  reportUrl?: unknown
+  traceUrl?: unknown
+}
+type ExecutionResultsPayload = {
+  source?: unknown
+  summary?: unknown
+  results?: unknown
+}
+type ExecutionResultMatchedBy = 'caseId' | 'exactTitle' | 'normalizedTitle'
+type ExecutionResultImportItem = {
+  caseId: string
+  title: string
+  status: ExecutionResultStatus
+  matchedBy: ExecutionResultMatchedBy
+}
+type ExecutionResultUnmatchedItem = {
+  title: string
+  caseId?: string
+  status: ExecutionResultStatus
+  reason: string
+}
 
 @Injectable()
 export class ReviewsService {
@@ -234,6 +262,247 @@ export class ReviewsService {
         authorName: cm.author.username,
         createdAt: cm.createdAt.toISOString(),
       })),
+    }
+  }
+
+  private normalizeExecutionTitle(title: string): string {
+    return title
+      .trim()
+      .toLowerCase()
+      .replace(/[\s\-_:：,，.。/\\|()[\]{}<>《》【】"'“”‘’]+/g, '')
+  }
+
+  private normalizeExecutionStatus(value: unknown): ExecutionResultStatus | null {
+    const status = String(value ?? '').trim().toLowerCase()
+    if (status === 'passed' || status === 'failed' || status === 'skipped') return status
+    return null
+  }
+
+  private normalizeExecutionResultsPayload(payload: ExecutionResultsPayload): {
+    source: string
+    summary: string
+    results: Array<{
+      caseId?: string
+      title: string
+      status: ExecutionResultStatus
+      durationMs?: number
+      errorMessage?: string
+      reportUrl?: string
+      traceUrl?: string
+    }>
+  } {
+    const rawResults = Array.isArray(payload?.results) ? payload.results : []
+    if (!rawResults.length) throw new BadRequestException('执行结果不能为空')
+    if (rawResults.length > 500) throw new BadRequestException('单次最多导入 500 条执行结果')
+
+    const results = rawResults.map((item, index) => {
+      const row = (item && typeof item === 'object' ? item : {}) as ExecutionResultInput
+      const status = this.normalizeExecutionStatus(row.status)
+      if (!status) throw new BadRequestException(`第 ${index + 1} 条执行结果 status 无效`)
+      const caseId = typeof row.caseId === 'string' ? row.caseId.trim().slice(0, 128) : undefined
+      const title = typeof row.title === 'string' ? row.title.trim().slice(0, 500) : ''
+      if (!caseId && !title) throw new BadRequestException(`第 ${index + 1} 条执行结果缺少 caseId 或 title`)
+      const durationMsRaw = Number(row.durationMs)
+      return {
+        caseId: caseId || undefined,
+        title,
+        status,
+        durationMs: Number.isFinite(durationMsRaw) && durationMsRaw >= 0 ? Math.round(durationMsRaw) : undefined,
+        errorMessage: typeof row.errorMessage === 'string' ? row.errorMessage.trim().slice(0, 2000) : undefined,
+        reportUrl: typeof row.reportUrl === 'string' ? row.reportUrl.trim().slice(0, 1000) : undefined,
+        traceUrl: typeof row.traceUrl === 'string' ? row.traceUrl.trim().slice(0, 1000) : undefined,
+      }
+    })
+
+    return {
+      source: typeof payload?.source === 'string' && payload.source.trim() ? payload.source.trim().slice(0, 80) : 'manual',
+      summary: typeof payload?.summary === 'string' ? payload.summary.trim().slice(0, 1000) : '',
+      results,
+    }
+  }
+
+  private buildExecutionActualResult(input: {
+    source: string
+    status: ExecutionResultStatus
+    durationMs?: number
+    errorMessage?: string
+    reportUrl?: string
+    traceUrl?: string
+  }) {
+    const statusLabel = input.status === 'passed' ? '通过' : input.status === 'failed' ? '失败' : '跳过'
+    const lines = [
+      `自动化执行${statusLabel}`,
+      `来源：${input.source}`,
+      input.durationMs != null ? `耗时：${input.durationMs}ms` : '',
+      input.errorMessage ? `错误信息：${input.errorMessage}` : '',
+      input.reportUrl ? `报告：${input.reportUrl}` : '',
+      input.traceUrl ? `Trace：${input.traceUrl}` : '',
+    ].filter(Boolean)
+    return lines.join('\n').slice(0, 8000)
+  }
+
+  private buildExecutionComment(input: {
+    source: string
+    status: ExecutionResultStatus
+    durationMs?: number
+    errorMessage?: string
+    reportUrl?: string
+    traceUrl?: string
+    summary?: string
+  }) {
+    const statusLabel = input.status === 'passed' ? '通过' : input.status === 'failed' ? '失败' : '跳过'
+    const lines = [
+      `自动化执行${statusLabel}（${input.source}）`,
+      input.summary ? `批次说明：${input.summary}` : '',
+      input.durationMs != null ? `耗时：${input.durationMs}ms` : '',
+      input.errorMessage ? `错误信息：${input.errorMessage}` : '',
+      input.reportUrl ? `报告：${input.reportUrl}` : '',
+      input.traceUrl ? `Trace：${input.traceUrl}` : '',
+    ].filter(Boolean)
+    return lines.join('\n').slice(0, 8000)
+  }
+
+  async importExecutionResults(
+    recordId: string,
+    user: SessionUser,
+    payload: ExecutionResultsPayload,
+  ) {
+    if (user.role === UserRole.VIEWER) throw new ForbiddenException('只读用户不可导入执行结果')
+    const record = await this.getOwnedRecord(recordId, user)
+    if (!record.suiteId) throw new BadRequestException('该记录没有用例集，无法回写执行结果')
+    const normalizedPayload = this.normalizeExecutionResultsPayload(payload)
+
+    const [cases, reviews] = await Promise.all([
+      this.prisma.testCase.findMany({ where: { suiteId: record.suiteId } }),
+      this.prisma.testCaseReview.findMany({ where: { recordId } }),
+    ])
+    const reviewMap = new Map(reviews.map((review) => [review.caseId, review]))
+    const byId = new Map(cases.map((c) => [c.id, c]))
+    const exactTitle = new Map<string, typeof cases>()
+    const normalizedTitle = new Map<string, typeof cases>()
+    for (const c of cases) {
+      exactTitle.set(c.title, [...(exactTitle.get(c.title) ?? []), c])
+      const n = this.normalizeExecutionTitle(c.title)
+      normalizedTitle.set(n, [...(normalizedTitle.get(n) ?? []), c])
+    }
+
+    const items: ExecutionResultImportItem[] = []
+    const unmatchedItems: ExecutionResultUnmatchedItem[] = []
+
+    for (const input of normalizedPayload.results) {
+      let matchedCase: (typeof cases)[number] | undefined
+      let matchedBy: ExecutionResultMatchedBy | undefined
+      let reason = ''
+
+      if (input.caseId) {
+        matchedCase = byId.get(input.caseId)
+        if (matchedCase) matchedBy = 'caseId'
+        else reason = 'caseId 不属于当前记录'
+      }
+      if (!matchedCase && input.title) {
+        const exact = exactTitle.get(input.title) ?? []
+        if (exact.length === 1) {
+          matchedCase = exact[0]
+          matchedBy = 'exactTitle'
+        } else if (exact.length > 1) {
+          reason = '标题精确匹配到多条用例'
+        }
+      }
+      if (!matchedCase && input.title && !reason.includes('精确匹配到多条')) {
+        const norm = normalizedTitle.get(this.normalizeExecutionTitle(input.title)) ?? []
+        if (norm.length === 1) {
+          matchedCase = norm[0]
+          matchedBy = 'normalizedTitle'
+        } else if (norm.length > 1) {
+          reason = '归一化标题匹配到多条用例'
+        }
+      }
+
+      if (!matchedCase || !matchedBy) {
+        unmatchedItems.push({
+          title: input.title,
+          caseId: input.caseId,
+          status: input.status,
+          reason: reason || '未匹配到当前记录中的用例',
+        })
+        continue
+      }
+
+      const review = reviewMap.get(matchedCase.id)
+      if (!review) {
+        unmatchedItems.push({
+          title: input.title || matchedCase.title,
+          caseId: matchedCase.id,
+          status: input.status,
+          reason: '匹配用例尚未初始化评审记录',
+        })
+        continue
+      }
+
+      const actualResult = this.buildExecutionActualResult({
+        source: normalizedPayload.source,
+        status: input.status,
+        durationMs: input.durationMs,
+        errorMessage: input.errorMessage,
+        reportUrl: input.reportUrl,
+        traceUrl: input.traceUrl,
+      })
+      const comment = this.buildExecutionComment({
+        source: normalizedPayload.source,
+        summary: normalizedPayload.summary,
+        status: input.status,
+        durationMs: input.durationMs,
+        errorMessage: input.errorMessage,
+        reportUrl: input.reportUrl,
+        traceUrl: input.traceUrl,
+      })
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.testCase.update({
+          where: { id: matchedCase.id },
+          data: { actualResult },
+        })
+        await tx.testCaseReview.update({
+          where: { caseId: matchedCase.id },
+          data: {
+            ...(input.status === 'failed'
+              ? { reviewStatus: CaseReviewStatus.changes_requested }
+              : {}),
+            reviewerId: user.id,
+            reviewedAt: new Date(),
+            latestComment: comment,
+          },
+        })
+        await tx.testCaseComment.create({
+          data: {
+            caseId: matchedCase.id,
+            recordId,
+            commentType: input.status === 'failed' ? 'change_request' : 'note',
+            content: comment,
+            createdBy: user.id,
+          },
+        })
+      })
+
+      items.push({
+        caseId: matchedCase.id,
+        title: matchedCase.title,
+        status: input.status,
+        matchedBy,
+      })
+    }
+
+    await this.recomputeRecordReviewStatus(recordId)
+
+    const countStatus = (status: ExecutionResultStatus) => items.filter((item) => item.status === status).length
+    return {
+      matched: items.length,
+      unmatched: unmatchedItems.length,
+      passed: countStatus('passed'),
+      failed: countStatus('failed'),
+      skipped: countStatus('skipped'),
+      items,
+      unmatchedItems,
     }
   }
 

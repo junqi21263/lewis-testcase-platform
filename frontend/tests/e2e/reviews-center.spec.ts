@@ -54,6 +54,8 @@ test.describe('用例评审中心', () => {
       authorName: string
       createdAt: string
     }[] = []
+    let reviewStatus = 'pending_review'
+    let latestComment: string | null = null
 
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url())
@@ -116,7 +118,7 @@ test.describe('用例评审中心', () => {
                 creator: { id: 'u-1', username: 'tester' },
                 suite: { id: SUITE_ID, name: '评审套件' },
               },
-              summary: { status: 'pending_review', counts: { pending_review: 1 } },
+              summary: { status: reviewStatus, counts: { [reviewStatus]: 1 } },
               cases: [
                 {
                   id: CASE_ID,
@@ -124,9 +126,9 @@ test.describe('用例评审中心', () => {
                   priority: 'P1',
                   type: 'FUNCTIONAL',
                   tags: ['auth'],
-                  reviewStatus: 'pending_review',
+                  reviewStatus,
                   currentVersionNumber: versionNum,
-                  latestComment: null,
+                  latestComment,
                   reviewedAt: null,
                   reviewId: 'rev-1',
                   updatedAt: '2026-05-21T10:00:00.000Z',
@@ -145,7 +147,7 @@ test.describe('用例评审中心', () => {
           body: JSON.stringify(
             apiOk({
               case: { id: CASE_ID, title: mockSnapshot.title },
-              review: { caseId: CASE_ID, reviewStatus: 'pending_review' },
+              review: { caseId: CASE_ID, reviewStatus },
               snapshot: mockSnapshot,
               comments: [...comments],
             }),
@@ -173,6 +175,35 @@ test.describe('用例评审中心', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(apiOk({ ok: true })),
+        })
+        return
+      }
+
+      if (p === `/api/reviews/records/${RECORD_ID}/execution-results` && method === 'POST') {
+        const comment = '自动化执行失败（playwright）\n错误信息：页面未展示错误提示'
+        reviewStatus = 'changes_requested'
+        latestComment = comment
+        comments.unshift({
+          id: 'cm-auto-1',
+          commentType: 'change_request',
+          content: comment,
+          authorName: 'tester',
+          createdAt: '2026-05-21T10:07:00.000Z',
+        })
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            apiOk({
+              matched: 1,
+              unmatched: 0,
+              passed: 0,
+              failed: 1,
+              skipped: 0,
+              items: [{ caseId: CASE_ID, title: mockSnapshot.title, status: 'failed', matchedBy: 'caseId' }],
+              unmatchedItems: [],
+            }),
+          ),
         })
         return
       }
@@ -331,6 +362,32 @@ test.describe('用例评审中心', () => {
     await page.getByPlaceholder('填写评论或修改建议…').fill('需要补充边界用例')
     await page.getByRole('button', { name: '提交评论' }).click()
     await expect(page.getByText('需要补充边界用例')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('导入自动化执行结果并回写评论', async ({ page }) => {
+    await page.goto(`/reviews/${RECORD_ID}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByLabel('标题 *')).toBeVisible({ timeout: 15_000 })
+
+    await page.getByRole('button', { name: '导入执行结果' }).click()
+    await page.getByLabel('执行结果 JSON').fill(
+      JSON.stringify({
+        source: 'playwright',
+        results: [
+          {
+            caseId: CASE_ID,
+            title: '登录用例',
+            status: 'failed',
+            durationMs: 900,
+            errorMessage: '页面未展示错误提示',
+          },
+        ],
+      }),
+    )
+    await page.getByRole('button', { name: '确认导入' }).click()
+
+    await expect(page.getByText('执行结果导入完成：匹配 1 条，未匹配 0 条')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('自动化执行失败（playwright）')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('review-detail-toolbar').getByText('待修改').first()).toBeVisible()
   })
 })
 

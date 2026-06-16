@@ -65,6 +65,16 @@ export class ReviewsController {
     return this.service.batchUpdateReviewStatus(recordId, user as any, body.caseIds, body.status, body.comment)
   }
 
+  @Post('records/:recordId/execution-results')
+  @ApiOperation({ summary: '导入自动化执行结果并回写评审中心' })
+  importExecutionResults(
+    @Param('recordId') recordId: string,
+    @Body() body: { source?: string; summary?: string; results?: unknown[] },
+    @CurrentUser() user: { id: string; role: string; teamId?: string },
+  ) {
+    return this.service.importExecutionResults(recordId, user as any, body)
+  }
+
   @Get('cases/:caseId/versions')
   @ApiOperation({ summary: '用例版本列表' })
   listVersions(@Param('caseId') caseId: string, @CurrentUser() user: { id: string; role: string; teamId?: string }) {

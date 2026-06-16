@@ -3,6 +3,8 @@ import type {
   CaseReviewStatus,
   CaseSnapshot,
   CaseVersionItem,
+  ExecutionResultsImportResponse,
+  ExecutionResultsPayload,
   ReviewComment,
   ReviewWorkspace,
   VersionDiffField,
@@ -42,6 +44,12 @@ export const reviewsApi = {
   ) =>
     request.post<{ ok: boolean; count: number }>(
       `/reviews/records/${recordId}/batch-status`,
+      body,
+    ),
+
+  importExecutionResults: (recordId: string, body: ExecutionResultsPayload) =>
+    request.post<ExecutionResultsImportResponse>(
+      `/reviews/records/${recordId}/execution-results`,
       body,
     ),
 

@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Save,
   Search,
+  Upload,
   XCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -29,6 +30,7 @@ import type {
   CaseReviewStatus,
   CaseSnapshot,
   CaseVersionItem,
+  ExecutionResultsImportResponse,
   ReviewComment,
   ReviewWorkspace,
   ReviewWorkspaceCase,
@@ -71,6 +73,24 @@ function snapshotKey(s: CaseSnapshot): string {
   return JSON.stringify(s)
 }
 
+const executionResultExample = JSON.stringify(
+  {
+    source: 'playwright',
+    summary: '本地自动化回归',
+    results: [
+      {
+        caseId: 'case-id',
+        title: '登录用例',
+        status: 'failed',
+        durationMs: 900,
+        errorMessage: '页面未展示错误提示',
+      },
+    ],
+  },
+  null,
+  2,
+)
+
 export default function ReviewCenterPage() {
   const { recordId } = useParams<{ recordId: string }>()
   const navigate = useNavigate()
@@ -100,6 +120,10 @@ export default function ReviewCenterPage() {
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [diffFields, setDiffFields] = useState<VersionDiffField[]>([])
   const [diffLoading, setDiffLoading] = useState(false)
+  const [executionDialogOpen, setExecutionDialogOpen] = useState(false)
+  const [executionJson, setExecutionJson] = useState(executionResultExample)
+  const [executionImporting, setExecutionImporting] = useState(false)
+  const [executionSummary, setExecutionSummary] = useState<ExecutionResultsImportResponse | null>(null)
 
   const dirtyIdsRef = useRef<Set<string>>(new Set())
   const draftRef = useRef<CaseSnapshot | null>(null)
@@ -322,6 +346,24 @@ export default function ReviewCenterPage() {
     }
   }
 
+  const importExecutionResults = async () => {
+    if (!recordId) return
+    setExecutionImporting(true)
+    try {
+      const parsed = JSON.parse(executionJson)
+      const res = await reviewsApi.importExecutionResults(recordId, parsed)
+      setExecutionSummary(res)
+      toast.success(`执行结果导入完成：匹配 ${res.matched} 条，未匹配 ${res.unmatched} 条`)
+      await loadWorkspace()
+      if (selectedId) await loadCaseDetail(selectedId)
+    } catch (e) {
+      const message = e instanceof SyntaxError ? 'JSON 格式不正确' : (e as Error).message || '导入执行结果失败'
+      toast.error(message)
+    } finally {
+      setExecutionImporting(false)
+    }
+  }
+
   const openVersions = async () => {
     if (!selectedId) return
     setSidePanel('versions')
@@ -445,7 +487,88 @@ export default function ReviewCenterPage() {
               {record.modelName} · {formatDate(record.createdAt)} · {record.caseCount} 条用例
             </p>
           </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={rev.btnSecondary}
+              onClick={() => {
+                setExecutionSummary(null)
+                setExecutionDialogOpen(true)
+              }}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              导入执行结果
+            </Button>
+          </div>
         </header>
+
+        {executionDialogOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
+            <div className="w-full max-w-2xl rounded-2xl border border-[hsl(var(--review-panel-border))] bg-[hsl(var(--review-panel-bg))] p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-[hsl(var(--review-text-primary))]">
+                    导入执行结果
+                  </h2>
+                  <p className="mt-1 text-xs text-[hsl(var(--review-text-muted))]">
+                    支持 Playwright 或 Test Agent 输出整理后的 JSON，优先按 caseId 匹配。
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={rev.btnGhost}
+                  onClick={() => setExecutionDialogOpen(false)}
+                >
+                  关闭
+                </Button>
+              </div>
+              <label className="mt-4 block text-xs font-medium text-[hsl(var(--review-text-secondary))]">
+                执行结果 JSON
+                <textarea
+                  className={cn(rev.input, 'mt-2 min-h-[260px] w-full resize-y p-3 font-mono text-xs leading-5')}
+                  value={executionJson}
+                  onChange={(e) => setExecutionJson(e.target.value)}
+                />
+              </label>
+              {executionSummary && (
+                <div className="mt-3 rounded-xl border border-[hsl(var(--review-panel-border))] bg-[hsl(var(--review-chip-bg))] p-3 text-xs text-[hsl(var(--review-text-secondary))]">
+                  <p>
+                    匹配 {executionSummary.matched} 条，未匹配 {executionSummary.unmatched} 条，通过 {executionSummary.passed} 条，失败 {executionSummary.failed} 条，跳过 {executionSummary.skipped} 条
+                  </p>
+                  {executionSummary.unmatchedItems.length > 0 && (
+                    <p className="mt-1 text-[hsl(var(--review-badge-warning-text))]">
+                      未匹配：{executionSummary.unmatchedItems.map((item) => item.title || item.caseId || item.reason).join('、')}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={rev.btnSecondary}
+                  onClick={() => setExecutionJson(executionResultExample)}
+                  disabled={executionImporting}
+                >
+                  恢复示例
+                </Button>
+                <Button
+                  type="button"
+                  className={rev.btnPrimary}
+                  onClick={() => void importExecutionResults()}
+                  disabled={executionImporting}
+                >
+                  {executionImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  确认导入
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className={rev.workspace}>
           <aside className={rev.listPanel}>
