@@ -1,4 +1,5 @@
 import {
+  buildPlainTextContinuationMessages,
   resolveContinuationAttempts,
   resolveMaxTokens,
   resolveStreamContentMaxChars,
@@ -33,5 +34,24 @@ describe('AI output budget', () => {
     expect(shouldAttemptContinuation('length', 0, 1)).toBe(true)
     expect(shouldAttemptContinuation('stop', 0, 1)).toBe(false)
     expect(shouldAttemptContinuation('length', 1, 1)).toBe(false)
+  })
+
+  it('builds continuation messages without resending full long input', () => {
+    const originalUser = `需求开始\n${'A'.repeat(120_000)}\n需求结束`
+    const partialText = `报告开始\n${'B'.repeat(90_000)}\n报告截断处`
+
+    const messages = buildPlainTextContinuationMessages({
+      originalSystem: 'system',
+      originalUser,
+      partialText,
+    })
+
+    const joined = messages.map((item) => item.content).join('\n')
+    expect(joined.length).toBeLessThan(60_000)
+    expect(joined).toContain('需求开始')
+    expect(joined).toContain('需求结束')
+    expect(joined).toContain('报告截断处')
+    expect(joined).not.toContain('A'.repeat(60_000))
+    expect(joined).not.toContain('B'.repeat(60_000))
   })
 })

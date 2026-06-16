@@ -18,6 +18,7 @@ import {
   resolveMaxTokens,
   resolveStreamContentMaxChars,
   shouldAttemptContinuation,
+  buildPlainTextContinuationMessages,
 } from './ai-output-budget.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
@@ -362,44 +363,44 @@ export class AiService {
     partialText: string,
     maxTokens: number,
     onDelta?: (text: string) => void,
-  ): Promise<{ content: string; attempts: number; finishReason: string | null }> {
+  ): Promise<{ content: string; attempts: number; finishReason: string | null; failureReason?: string }> {
     let content = partialText
     let attempts = 0
     let finishReason: string | null = 'length'
     const maxAttempts = this.continuationMaxAttempts()
+    let failureReason: string | undefined
 
     while (shouldAttemptContinuation(finishReason, attempts, maxAttempts)) {
       attempts += 1
-      const tail = content.length > 24_000 ? content.slice(-24_000) : content
       try {
+        const messages = buildPlainTextContinuationMessages({
+          originalSystem,
+          originalUser,
+          partialText: content,
+        })
         const completion = await client.chat.completions.create({
           model: modelId,
-          messages: [
-            { role: 'system', content: originalSystem },
-            { role: 'user', content: originalUser },
-            { role: 'assistant', content: tail },
-            {
-              role: 'user',
-              content:
-                '上一条回复因为达到 max_tokens 被截断。请从最后一句之后继续输出，不要重复已经输出的内容，不要重新开始。',
-            },
-          ],
+          messages,
           temperature: 0.4,
           max_tokens: maxTokens,
         })
         const choice = completion.choices?.[0]
         const delta = String(choice?.message?.content ?? '')
         finishReason = (choice?.finish_reason as string | undefined) ?? null
-        if (!delta.trim()) break
+        if (!delta.trim()) {
+          failureReason = '模型续写返回空内容'
+          break
+        }
         content += delta
         onDelta?.(delta)
       } catch (e) {
-        this.logger.warn(`长文本自动续写失败: ${(e as Error).message}`)
+        failureReason = humanizeAiProviderError((e as Error).message || String(e))
+        this.logger.warn(`长文本自动续写失败: ${failureReason}`)
         break
       }
     }
 
-    return { content, attempts, finishReason }
+    return { content, attempts, finishReason, failureReason }
   }
 
   private mapRowToCaseInput(c: any): Prisma.TestCaseCreateWithoutSuiteInput {
@@ -2139,6 +2140,9 @@ ${originalPrompt}
         finishReason = continued.finishReason
         if (continued.attempts > 0) {
           this.writeStreamNotice(res, `模型输出触达最大 Token 后已自动续写 ${continued.attempts} 次。`)
+        }
+        if (continued.failureReason) {
+          this.writeStreamNotice(res, `自动续写中断：${continued.failureReason}`)
         }
         if (finishReason === 'length') this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
