@@ -69,7 +69,7 @@ async function main() {
       baseUrl: 'https://api.openai.com/v1',
       apiKey: 'placeholder',
       isDefault: true,
-      maxTokens: 4096,
+      maxTokens: 32768,
       temperature: 0.7,
       supportsVision: true,
       useForDocumentVisionParse: true,

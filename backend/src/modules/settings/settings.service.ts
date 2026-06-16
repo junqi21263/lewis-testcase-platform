@@ -3,6 +3,7 @@ import { AIModelConfig, Prisma } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-model-settings.dto'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
+import { DEFAULT_OUTPUT_TOKENS } from '@/modules/ai/ai-output-budget.util'
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '')
@@ -118,7 +119,7 @@ export class SettingsService {
         modelId: dto.modelId.trim(),
         baseUrl,
         apiKey: dto.apiKey.trim(),
-        maxTokens: dto.maxTokens ?? 4096,
+        maxTokens: dto.maxTokens ?? DEFAULT_OUTPUT_TOKENS,
         temperature: dto.temperature ?? 0.7,
         isDefault,
         isActive: nextActive,

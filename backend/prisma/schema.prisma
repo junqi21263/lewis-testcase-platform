@@ -152,7 +152,7 @@ model AIModelConfig {
   baseUrl   String
   apiKey    String
   isDefault Boolean   @default(false)
-  maxTokens Int       @default(4096)
+  maxTokens Int       @default(32768)
   temperature Float   @default(0.7)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

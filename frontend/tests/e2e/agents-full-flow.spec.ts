@@ -5,7 +5,10 @@ function apiOk<T>(data: T) {
 }
 
 test.describe('E2E: login -> generate -> export/share', () => {
+  let generatePayload: Record<string, unknown> | null = null
+
   test.beforeEach(async ({ page }) => {
+    generatePayload = null
     await page.addInitScript(() => {
       localStorage.clear()
       sessionStorage.clear()
@@ -95,6 +98,7 @@ test.describe('E2E: login -> generate -> export/share', () => {
         return
       }
       if (p === '/api/ai/generate') {
+        generatePayload = route.request().postDataJSON() as Record<string, unknown>
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -138,9 +142,11 @@ test.describe('E2E: login -> generate -> export/share', () => {
       .first()
       .fill('请输出标准测试用例')
     await page.getByLabel('流式输出').uncheck()
+    await page.getByLabel('最大 Token').selectOption('128000')
 
     await page.getByRole('button', { name: '开始生成' }).click()
     await expect(page.getByRole('heading', { name: '生成完成' })).toBeVisible()
+    expect(generatePayload?.maxTokens).toBe(128000)
     await expect(page.getByText('共 1 条 · 功能 1 · 异常 0 · 边界')).toBeVisible()
 
     await expect(page.getByRole('button', { name: '导出 Excel' })).toBeVisible()

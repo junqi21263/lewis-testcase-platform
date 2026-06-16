@@ -90,7 +90,7 @@ const emptyCreateForm = {
   modelId: 'gpt-4o',
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
-  maxTokens: 4096,
+  maxTokens: 32768,
   temperature: 0.7,
   isDefault: false,
   supportsVision: false,

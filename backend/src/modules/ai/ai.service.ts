@@ -13,6 +13,12 @@ import { clampGenerationUserContent, humanizeAiProviderError, INPUT_CLAMPED_NOTI
 import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { buildAutoRepairNotice, shouldAutoRepairQuality } from './auto-repair-quality.util'
+import {
+  resolveContinuationAttempts,
+  resolveMaxTokens,
+  resolveStreamContentMaxChars,
+  shouldAttemptContinuation,
+} from './ai-output-budget.util'
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
 import {
@@ -137,7 +143,7 @@ export class AiService {
           },
         ],
         temperature: 0,
-        max_tokens: 16384,
+          max_tokens: this.effectiveMaxTokens(),
       })
       const choice = completion.choices?.[0]
       const repairedText = String(choice?.message?.content ?? '').trim()
@@ -186,14 +192,18 @@ export class AiService {
   }
 
   private effectiveMaxTokens(requested?: number): number {
-    const r = requested ?? 4096
-    return Math.min(Math.max(Math.floor(r), 256), 128_000)
+    return resolveMaxTokens(requested, {
+      defaultTokens: Number(this.config.get<string>('AI_DEFAULT_MAX_TOKENS') ?? ''),
+      maxTokens: Number(this.config.get<string>('AI_MAX_OUTPUT_TOKENS') ?? ''),
+    })
   }
 
   private streamFullContentMaxChars(): number {
-    const raw = parseInt(this.config.get<string>('STREAM_FULL_CONTENT_MAX_CHARS') || '500000', 10)
-    if (!Number.isFinite(raw) || raw < 10_000) return 500_000
-    return Math.min(raw, 2_000_000)
+    return resolveStreamContentMaxChars(this.config.get<string>('STREAM_FULL_CONTENT_MAX_CHARS'))
+  }
+
+  private continuationMaxAttempts(): number {
+    return resolveContinuationAttempts(this.config.get<string>('AI_CONTINUATION_MAX_ATTEMPTS'))
   }
 
   private writeStreamNotice(res: Response, text: string) {
@@ -287,6 +297,109 @@ export class AiService {
         fallbackNotice: this.structuredOutputFallbackNotice(),
       }
     }
+  }
+
+  private async rebuildTruncatedCaseJson(
+    client: OpenAI,
+    modelId: string,
+    originalSystem: string,
+    originalUser: string,
+    partialText: string,
+    maxTokens: number,
+  ): Promise<{ content: string; attempts: number; finishReason: string | null; fallbackNotice?: string } | null> {
+    let attempts = 0
+    let lastFinishReason: string | null = 'length'
+    let fallbackNotice: string | undefined
+    const maxAttempts = this.continuationMaxAttempts()
+    const partialSlice =
+      partialText.length > 80_000
+        ? `${partialText.slice(0, 45_000)}\n\n...(middle omitted)...\n\n${partialText.slice(-35_000)}`
+        : partialText
+
+    while (shouldAttemptContinuation(lastFinishReason, attempts, maxAttempts)) {
+      attempts += 1
+      try {
+        const result = await this.createCaseCompletion(client, {
+          model: modelId,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You rebuild truncated testcase JSON. Return ONE complete valid JSON object only. The top-level object must be { "cases": [...] }. Preserve all valid cases from the partial output and complete the missing tail from the original request.',
+            },
+            {
+              role: 'user',
+              content:
+                `原始 system 指令：\n${originalSystem}\n\n` +
+                `原始 user 输入：\n${originalUser}\n\n` +
+                `已被 max_tokens 截断的部分输出：\n${partialSlice}\n\n` +
+                '请基于原始输入重新输出完整 JSON。不要 Markdown，不要解释，不要省略。',
+            },
+          ],
+          temperature: 0,
+          max_tokens: maxTokens,
+        })
+        fallbackNotice = fallbackNotice ?? result.fallbackNotice
+        const choice = result.completion.choices?.[0]
+        const content = String(choice?.message?.content ?? '').trim()
+        lastFinishReason = (choice?.finish_reason as string | undefined) ?? null
+        if (content && this.extractCaseRows(content).length > 0) {
+          return { content, attempts, finishReason: lastFinishReason, fallbackNotice }
+        }
+      } catch (e) {
+        this.logger.warn(`截断 JSON 自动重建失败: ${(e as Error).message}`)
+        return null
+      }
+    }
+    return null
+  }
+
+  private async continuePlainTextOutput(
+    client: OpenAI,
+    modelId: string,
+    originalSystem: string,
+    originalUser: string,
+    partialText: string,
+    maxTokens: number,
+    onDelta?: (text: string) => void,
+  ): Promise<{ content: string; attempts: number; finishReason: string | null }> {
+    let content = partialText
+    let attempts = 0
+    let finishReason: string | null = 'length'
+    const maxAttempts = this.continuationMaxAttempts()
+
+    while (shouldAttemptContinuation(finishReason, attempts, maxAttempts)) {
+      attempts += 1
+      const tail = content.length > 24_000 ? content.slice(-24_000) : content
+      try {
+        const completion = await client.chat.completions.create({
+          model: modelId,
+          messages: [
+            { role: 'system', content: originalSystem },
+            { role: 'user', content: originalUser },
+            { role: 'assistant', content: tail },
+            {
+              role: 'user',
+              content:
+                '上一条回复因为达到 max_tokens 被截断。请从最后一句之后继续输出，不要重复已经输出的内容，不要重新开始。',
+            },
+          ],
+          temperature: 0.4,
+          max_tokens: maxTokens,
+        })
+        const choice = completion.choices?.[0]
+        const delta = String(choice?.message?.content ?? '')
+        finishReason = (choice?.finish_reason as string | undefined) ?? null
+        if (!delta.trim()) break
+        content += delta
+        onDelta?.(delta)
+      } catch (e) {
+        this.logger.warn(`长文本自动续写失败: ${(e as Error).message}`)
+        break
+      }
+    }
+
+    return { content, attempts, finishReason }
   }
 
   private mapRowToCaseInput(c: any): Prisma.TestCaseCreateWithoutSuiteInput {
@@ -1031,8 +1144,18 @@ export class AiService {
         })
         if (fallbackNotice) warnings.push(fallbackNotice)
         const choice = completion.choices?.[0]
-        if (choice?.finish_reason === 'length') warnings.push(OUTPUT_TRUNCATED_NOTICE)
-        const content = String(choice?.message?.content ?? '').trim()
+        let finishReason = (choice?.finish_reason as string | undefined) ?? null
+        let content = String(choice?.message?.content ?? '').trim()
+        if (finishReason === 'length') {
+          const rebuilt = await this.rebuildTruncatedCaseJson(opts.client, opts.modelId, system, user, content, maxTokens)
+          if (rebuilt) {
+            content = rebuilt.content
+            finishReason = rebuilt.finishReason
+            warnings.push(`模型输出触达最大 Token 后已自动重建完整 JSON（续写 ${rebuilt.attempts} 次）。`)
+            if (rebuilt.fallbackNotice) warnings.push(rebuilt.fallbackNotice)
+          }
+          if (finishReason === 'length') warnings.push(OUTPUT_TRUNCATED_NOTICE)
+        }
         const resolved = await this.resolveCasesForPersistenceWithRepair(opts.client, opts.modelId, content)
         if (resolved.repaired) warnings.push('模型原始输出未按 JSON 返回，已自动进行二次整理。')
         if (resolved.schemaRepaired || resolved.schemaValidationWarnings.length > 0) {
@@ -1139,7 +1262,7 @@ export class AiService {
       const completion = await client.chat.completions.create({
         model: modelId,
         temperature: 0.2,
-        max_tokens: this.effectiveMaxTokens(12000),
+        max_tokens: this.effectiveMaxTokens(),
         response_format: buildJsonObjectResponseFormat() as any,
         messages: [
           {
@@ -1438,13 +1561,20 @@ ${originalPrompt}
       })
 
       const choice = completion.choices[0]
-      const content = choice?.message?.content || ''
-      const finishReason = choice?.finish_reason ?? null
+      let content = choice?.message?.content || ''
+      let finishReason = choice?.finish_reason ?? null
       const outputWarnings: string[] = []
       if (fallbackNotice) outputWarnings.push(fallbackNotice)
       if (finishReason === 'length') {
-        outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
         this.logger.warn('非流式生成：模型输出因 max_tokens 被截断')
+        const rebuilt = await this.rebuildTruncatedCaseJson(client, modelId, system, user, content, maxOut)
+        if (rebuilt) {
+          content = rebuilt.content
+          finishReason = rebuilt.finishReason
+          outputWarnings.push(`模型输出触达最大 Token 后已自动重建完整 JSON（续写 ${rebuilt.attempts} 次）。`)
+          if (rebuilt.fallbackNotice) outputWarnings.push(rebuilt.fallbackNotice)
+        }
+        if (finishReason === 'length') outputWarnings.push(OUTPUT_TRUNCATED_NOTICE)
       }
 
       const resolved = await this.resolveCasesForPersistenceWithRepair(client, modelId, content)
@@ -1715,8 +1845,15 @@ ${originalPrompt}
       }
 
       if (finishReason === 'length') {
-        this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
         this.logger.warn('流式生成：模型输出因 max_tokens 被截断')
+        const rebuilt = await this.rebuildTruncatedCaseJson(client, modelId, system, user, fullContent, maxOut)
+        if (rebuilt) {
+          fullContent = rebuilt.content
+          finishReason = rebuilt.finishReason
+          this.writeStreamNotice(res, `模型输出触达最大 Token 后已自动重建完整 JSON（续写 ${rebuilt.attempts} 次）。`)
+          if (rebuilt.fallbackNotice) this.writeStreamNotice(res, rebuilt.fallbackNotice)
+        }
+        if (finishReason === 'length') this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
 
       if (!fullContent.trim()) {
@@ -1960,12 +2097,13 @@ ${originalPrompt}
       }
 
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
+      const systemContent = '你是资深系统架构师与高级产品经理，擅长需求分析与结构化输出。请严格按用户给出的指令与文档内容，使用 Markdown 排版，层次清晰。'
       const stream = await client.chat.completions.create({
         model: modelId,
         messages: [
           {
             role: 'system',
-            content: '你是资深系统架构师与高级产品经理，擅长需求分析与结构化输出。请严格按用户给出的指令与文档内容，使用 Markdown 排版，层次清晰。',
+            content: systemContent,
           },
           { role: 'user', content: userContent },
         ],
@@ -1987,8 +2125,22 @@ ${originalPrompt}
       }
 
       if (finishReason === 'length') {
-        this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
         this.logger.warn('analyzeStream: 模型输出因 max_tokens 被截断')
+        const continued = await this.continuePlainTextOutput(
+          client,
+          modelId,
+          systemContent,
+          userContent,
+          fullContent,
+          maxOut,
+          (delta) => res.write(`data: ${JSON.stringify({ content: delta })}\n\n`),
+        )
+        fullContent = continued.content
+        finishReason = continued.finishReason
+        if (continued.attempts > 0) {
+          this.writeStreamNotice(res, `模型输出触达最大 Token 后已自动续写 ${continued.attempts} 次。`)
+        }
+        if (finishReason === 'length') this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
 
       // 更新记录
@@ -1997,7 +2149,10 @@ ${originalPrompt}
         where: { id: record.id },
         data: {
           status: GenerationStatus.SUCCESS,
-          demandContent: fullContent.slice(0, 100_000),
+          demandContent: fullContent.slice(
+            0,
+            resolveStreamContentMaxChars(this.config.get<string>('ANALYSIS_RECORD_MAX_CHARS')),
+          ),
           duration,
           tokensUsed: undefined,
         },

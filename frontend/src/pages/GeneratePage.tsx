@@ -1993,11 +1993,12 @@ export default function GeneratePage() {
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-[hsl(var(--gcs-text-muted))]">最大 Token</span>
                     <select
+                      aria-label="最大 Token"
                       value={aiParams.maxTokens}
                       onChange={(e) => setAiParams({ maxTokens: Number(e.target.value) })}
                       className="h-9 rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-2 text-xs"
                     >
-                      {[2048, 4096, 8192, 16384, 32768].map((v) => (
+                      {[2048, 4096, 8192, 16384, 32768, 65536, 128000].map((v) => (
                         <option key={v} value={v}>
                           {v}
                         </option>

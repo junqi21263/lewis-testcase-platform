@@ -4,6 +4,7 @@ import OpenAI from 'openai'
 import * as fs from 'fs'
 import type { AIModelConfig } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
+import { resolveMaxTokens } from '@/modules/ai/ai-output-budget.util'
 
 /** 多模态图文理解：与文档结构化链路衔接，输出严格 JSON，再由本服务转为正文供脱敏与二次结构化 */
 const VISION_STRUCTURE_SYSTEM = `# 角色
@@ -195,7 +196,10 @@ export class DocumentVisionService {
     if (buffers.length === 1) return this.transcribeImageBuffer(cfg, buffers[0], 'image/png')
 
     const client = this.openaiFor(cfg, 'default')
-    const maxTokens = Math.min(Math.max(cfg.maxTokens || 8192, 4096), 16384)
+    const maxTokens = resolveMaxTokens(cfg.maxTokens, {
+      defaultTokens: Number(this.config.get<string>('AI_DEFAULT_MAX_TOKENS') ?? ''),
+      maxTokens: Number(this.config.get<string>('AI_MAX_OUTPUT_TOKENS') ?? ''),
+    })
     const parts: OpenAI.Chat.ChatCompletionContentPart[] = [
       {
         type: 'text',
@@ -255,7 +259,10 @@ export class DocumentVisionService {
     const base64 = buffer.toString('base64')
     const dataUrl = `data:${mimeType};base64,${base64}`
     const client = this.openaiFor(cfg, 'image')
-    const maxTokens = Math.min(cfg.maxTokens || 4096, 8192)
+    const maxTokens = resolveMaxTokens(cfg.maxTokens, {
+      defaultTokens: Number(this.config.get<string>('AI_DEFAULT_MAX_TOKENS') ?? ''),
+      maxTokens: Number(this.config.get<string>('AI_MAX_OUTPUT_TOKENS') ?? ''),
+    })
     const detail = this.imageDetail()
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: VISION_STRUCTURE_SYSTEM },

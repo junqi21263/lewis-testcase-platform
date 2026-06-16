@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { PrismaService } from '@/prisma/prisma.service'
+import { resolveMaxTokens } from '@/modules/ai/ai-output-budget.util'
 
 /** 文档类全文 → 结构化需求（与下游测试用例生成衔接）；输入可能含 OCR/多模态解析噪声 */
 const STRUCTURE_SYSTEM = `# 角色
@@ -86,7 +87,10 @@ export class RequirementStructureService {
           { role: 'user', content: `待结构化内容如下：\n\n${slice}` },
         ],
         temperature: Math.min(cfg.temperature ?? 0.3, 0.45),
-        max_tokens: Math.min(cfg.maxTokens ?? 4096, 8192),
+        max_tokens: resolveMaxTokens(cfg.maxTokens, {
+          defaultTokens: Number(this.config.get<string>('AI_DEFAULT_MAX_TOKENS') ?? ''),
+          maxTokens: Number(this.config.get<string>('AI_MAX_OUTPUT_TOKENS') ?? ''),
+        }),
         response_format: { type: 'json_object' },
       })
       const raw = completion.choices[0]?.message?.content?.trim() ?? ''
