@@ -1,4 +1,4 @@
-import { buildQualityReport } from '@/modules/ai/quality-check.util'
+import { buildQualityReport, extractRequirementPoints } from '@/modules/ai/quality-check.util'
 
 describe('buildQualityReport', () => {
   it('detects uncovered requirements, duplicates, generic cases and risk distribution', () => {
@@ -115,5 +115,19 @@ describe('buildQualityReport', () => {
     )
     expect(report.score).toBeGreaterThanOrEqual(0)
     expect(report.score).toBeLessThanOrEqual(100)
+  })
+
+  it('ignores generation count instructions when extracting requirement points', () => {
+    const points = extractRequirementPoints([
+      '文件处理-需求表包含【文档/PDF/文本上传】功能，必须生成≥45验证',
+      '核心流程-普通单一功能模块生成≥20个唯一测试用例验证',
+      '用户上传 PDF 后系统需要解析文本并展示结果。',
+      '解析失败时需要提示用户重新上传或补充说明。',
+    ].join('\n'))
+
+    expect(points).toEqual([
+      '用户上传 PDF 后系统需要解析文本并展示结果',
+      '解析失败时需要提示用户重新上传或补充说明',
+    ])
   })
 })

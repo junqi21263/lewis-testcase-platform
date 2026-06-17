@@ -102,6 +102,8 @@ const MEDIUM_RISK_KEYWORDS = ['异常', '边界', '校验', '兼容', '失败', 
 const GENERIC_TITLE_RE = /^(验证)?(功能|流程|场景|模块)?(测试|验证)(是否)?(正常|正确)?$|功能正常|验证功能正常|场景验证/
 const GENERIC_STEP_RE = /^(验证|检查|测试)?功能(是否)?(正常|正确)?$|执行操作|查看结果|进行验证|验证功能/
 const GENERIC_EXPECTED_RE = /^(成功|正常|符合预期|显示正确|通过|操作成功|结果正确)$/
+const GENERATION_COUNT_INSTRUCTION_RE =
+  /(?:必须|需要|应|请)?(?:生成|输出|补齐|覆盖).{0,18}(?:≥|>=|不少于|不低于|至少|\d+\s*(?:个|条)).{0,18}(?:测试用例|用例|case|验证)|(?:测试用例|用例|case|验证).{0,18}(?:生成|输出|补齐|覆盖).{0,18}(?:≥|>=|不少于|不低于|至少|\d+\s*(?:个|条))/
 
 function normalizeText(s: unknown): string {
   return String(s ?? '')
@@ -121,6 +123,10 @@ function visibleText(c: NormalizedCaseShape): string {
     .join(' ')
 }
 
+function isGenerationCountInstruction(line: string): boolean {
+  return GENERATION_COUNT_INSTRUCTION_RE.test(line.replace(/\s+/g, ''))
+}
+
 export function extractRequirementPoints(raw: string): string[] {
   const text = String(raw ?? '').trim()
   if (!text) return []
@@ -135,6 +141,7 @@ export function extractRequirementPoints(raw: string): string[] {
     )
     .filter((line) => line.length >= 6 && line.length <= 80)
     .filter((line) => !/^(需求|背景|说明|补充|如下|以上)/.test(line))
+    .filter((line) => !isGenerationCountInstruction(line))
 
   return [...new Set(candidates)].slice(0, 80)
 }

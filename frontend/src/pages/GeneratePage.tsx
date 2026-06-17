@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useDeferredValue } from 'react'
+import { useState, useCallback, useEffect, useMemo, useDeferredValue, useRef } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   Upload,
@@ -47,6 +47,12 @@ import {
 import { downloadTestcasesXlsx } from '@/utils/exportTestcasesXlsx'
 import { copyTextToClipboard } from '@/utils/clipboard'
 import { getCaseUiId } from '@/utils/generateCaseUi'
+import {
+  CASE_PAGE_SIZES,
+  DEFAULT_CASE_PAGE_SIZE,
+  getGenerateCasePage,
+  normalizeCasePageSize,
+} from '@/utils/generateCasePagination'
 import { extractModuleFromTags } from '@/utils/parseLooseAiOutput'
 import {
   buildLocalQualityReport,
@@ -62,8 +68,6 @@ import { useNavigate } from 'react-router-dom'
 
 const INPUT_LENGTH_SOFT_WARN_CHARS = 85_000
 const STREAM_LOG_DISPLAY_MAX_CHARS = 48_000
-const CASE_PAGE_SIZES = [10, 20, 30, 50] as const
-const DEFAULT_CASE_PAGE_SIZE = 10
 
 function tailStreamLogForDisplay(content: string): string {
   if (content.length <= STREAM_LOG_DISPLAY_MAX_CHARS) return content
@@ -804,6 +808,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
   const [showMoreActions, setShowMoreActions] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_CASE_PAGE_SIZE)
+  const resultScrollRef = useRef<HTMLDivElement>(null)
 
   const canExport = Boolean(lastSuiteId) || cases.length > 0
   const availableTypes = useMemo(() => Array.from(new Set(cases.map((c) => c.type))), [cases])
@@ -823,17 +828,22 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
   }, [query, priorityFilter, typeFilter])
 
   const totalFiltered = filteredCases.length
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
-  const safePage = Math.min(page, totalPages)
+  const pageData = useMemo(
+    () => getGenerateCasePage(filteredCases, { page, pageSize }),
+    [filteredCases, page, pageSize],
+  )
+  const totalPages = pageData.totalPages
+  const safePage = pageData.safePage
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
-  const paginatedCases = useMemo(() => {
-    const start = (safePage - 1) * pageSize
-    return filteredCases.slice(start, start + pageSize)
-  }, [filteredCases, safePage, pageSize])
+  useEffect(() => {
+    resultScrollRef.current?.scrollTo({ top: 0 })
+  }, [safePage, pageSize, query, priorityFilter, typeFilter, cases.length])
+
+  const paginatedCases = pageData.visibleRows
 
   const stats = useMemo(() => {
     const typeMap = filteredCases.reduce<Record<string, number>>((acc, c) => {
@@ -1256,7 +1266,10 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
         </div>
       </div>
 
-      <div className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4">
+      <div
+        ref={resultScrollRef}
+        className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4"
+      >
         {filteredCases.length === 0 && (
           <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-8 text-center">
             <ListFilter className="mx-auto mb-2 h-5 w-5 text-[hsl(var(--gcs-text-muted))]" />
@@ -1365,7 +1378,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
               className="h-7 rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-2 text-xs"
               value={pageSize}
               onChange={(e) => {
-                setPageSize(Number(e.target.value))
+                setPageSize(normalizeCasePageSize(e.target.value))
                 setPage(1)
               }}
             >
