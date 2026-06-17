@@ -275,6 +275,7 @@ model GenerationRecord {
   caseCount   Int?
   tokensUsed  Int?
   duration    Int?
+  analysisStructuredResult Json?
   suiteId     String?
   fileId      String?
   templateId  String?

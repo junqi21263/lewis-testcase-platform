@@ -2486,6 +2486,7 @@ ${state.reportText}
                           .slice(0, 5)
                     ).map((r) => {
                       const rb = analysisRecordStatusBadge(r.status)
+                      const analysisQuality = r.analysisStructuredResult?.quality
                       return (
                         <div
                           key={r.id}
@@ -2506,6 +2507,18 @@ ${state.reportText}
                               <Badge variant="outline" className={`text-[10px] shrink-0 border-0 ${rb.cls}`}>
                                 {rb.label}
                               </Badge>
+                              {analysisQuality ? (
+                                <Badge
+                                  variant="outline"
+                                  className={`shrink-0 border-0 text-[10px] ${
+                                    analysisQuality.isPass
+                                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                  }`}
+                                >
+                                  结构 {analysisQuality.score}%
+                                </Badge>
+                              ) : null}
                             </div>
                           </button>
                           <button

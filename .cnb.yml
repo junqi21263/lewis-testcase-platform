@@ -67,6 +67,12 @@ develop:
               set -eu
               DEPLOY_FLAVOR=backend-dev sh ./scripts/ci/cnb-vps-remote-deploy.sh
 
+        - name: 部署解析 Worker 到开发服务器
+          script:
+            - |
+              set -eu
+              DEPLOY_FLAVOR=parse-worker-dev sh ./scripts/ci/cnb-vps-remote-deploy.sh
+
         - name: 部署前端到开发服务器
           script:
             - |
@@ -126,6 +132,12 @@ main:
             - |
               set -eu
               DEPLOY_FLAVOR=backend-prod sh ./scripts/ci/cnb-vps-remote-deploy.sh
+
+        - name: 部署解析 Worker 到生产服务器
+          script:
+            - |
+              set -eu
+              DEPLOY_FLAVOR=parse-worker-prod sh ./scripts/ci/cnb-vps-remote-deploy.sh
 
         - name: 部署前端到生产服务器
           script:

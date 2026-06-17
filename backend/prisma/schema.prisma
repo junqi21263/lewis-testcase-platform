@@ -193,6 +193,7 @@ model GenerationRecord {
   modelName String
   caseCount Int?
   duration  Int?
+  analysisStructuredResult Json?
   suiteId   String?
   promptTemplateVersion Int?
   creatorId String

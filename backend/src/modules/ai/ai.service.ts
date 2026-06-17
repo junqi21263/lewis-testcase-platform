@@ -23,6 +23,11 @@ import {
 import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
 import {
+  buildAnalysisRepairPrompt,
+  buildAnalysisStructuredResult,
+  type AnalysisStructuredResult,
+} from './analysis-structured-report.util'
+import {
   analyzePromptTemplateFormat,
   buildPromptEvaluationComparison,
   buildPromptEvaluationRuntimePrompt,
@@ -224,6 +229,42 @@ export class AiService {
   private schemaRepairNotice(errors?: string[]): string {
     const detail = errors?.length ? `（${errors.slice(0, 4).join('；')}）` : ''
     return `AI 输出未完全符合严格用例 schema${detail}，已自动修复/规范化后入库。`
+  }
+
+  private async tryRepairAnalysisReport(
+    client: OpenAI,
+    modelId: string,
+    markdown: string,
+    structured: AnalysisStructuredResult,
+    maxTokens: number,
+  ): Promise<{ markdown: string; structured: AnalysisStructuredResult } | null> {
+    if (structured.quality.isPass || structured.quality.missingSections.length === 0) return null
+    try {
+      const completion = await client.chat.completions.create({
+        model: modelId,
+        messages: [
+          {
+            role: 'system',
+            content:
+              '你是严谨的需求分析报告修复器。只基于原报告内容补齐结构，不编造事实。输出完整 Markdown 报告，不要解释修复过程。',
+          },
+          {
+            role: 'user',
+            content: buildAnalysisRepairPrompt(markdown, structured.quality),
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: Math.max(4096, Math.min(maxTokens, this.effectiveMaxTokens())),
+      })
+      const repaired = String(completion.choices?.[0]?.message?.content ?? '').trim()
+      if (!repaired) return null
+      const repairedStructured = buildAnalysisStructuredResult(repaired)
+      if (repairedStructured.quality.score < structured.quality.score) return null
+      return { markdown: repaired, structured: repairedStructured }
+    } catch (e) {
+      this.logger.warn(`需求分析报告自动质量修复失败: ${(e as Error).message}`)
+      return null
+    }
   }
 
   private structuredOutputCacheKey(payload: Record<string, unknown>): string {
@@ -2147,6 +2188,30 @@ ${originalPrompt}
         if (finishReason === 'length') this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
       }
 
+      let analysisStructuredResult = buildAnalysisStructuredResult(fullContent)
+      if (!analysisStructuredResult.quality.isPass) {
+        this.writeStreamNotice(
+          res,
+          `需求分析报告结构完整度 ${analysisStructuredResult.quality.score}%，正在自动修复缺失章节。`,
+        )
+        const repaired = await this.tryRepairAnalysisReport(
+          client,
+          modelId,
+          fullContent,
+          analysisStructuredResult,
+          maxOut,
+        )
+        if (repaired) {
+          const appendix = `\n\n---\n\n## 自动质量修复版\n\n${repaired.markdown}`
+          fullContent += appendix
+          analysisStructuredResult = buildAnalysisStructuredResult(repaired.markdown)
+          res.write(`data: ${JSON.stringify({ content: appendix })}\n\n`)
+          this.writeStreamNotice(res, '需求分析报告已自动补齐结构化章节。')
+        } else {
+          this.writeStreamNotice(res, '需求分析报告自动修复未产出更优结果，已保留原报告并记录质量问题。')
+        }
+      }
+
       // 更新记录
       const duration = Date.now() - startTime
       await this.prisma.generationRecord.update({
@@ -2157,12 +2222,13 @@ ${originalPrompt}
             0,
             resolveStreamContentMaxChars(this.config.get<string>('ANALYSIS_RECORD_MAX_CHARS')),
           ),
+          analysisStructuredResult: analysisStructuredResult as unknown as Prisma.InputJsonValue,
           duration,
           tokensUsed: undefined,
         },
       })
 
-      res.write(`data: ${JSON.stringify({ recordId: record.id, done: true })}\n\n`)
+      res.write(`data: ${JSON.stringify({ recordId: record.id, analysisQuality: analysisStructuredResult.quality, done: true })}\n\n`)
       res.write(`data: [DONE]\n\n`)
       res.end()
     } catch (err: unknown) {

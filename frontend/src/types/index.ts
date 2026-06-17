@@ -529,6 +529,34 @@ export type RecordReviewStatus =
   | 'changes_requested'
   | 'rejected'
 
+export interface AnalysisStructuredQuality {
+  isPass: boolean
+  score: number
+  missingSections: string[]
+  repairHints: string[]
+}
+
+export interface AnalysisStructuredResult {
+  summary?: string
+  functionalRequirements?: string[]
+  nonFunctionalRequirements?: string[]
+  requirementDescription?: string
+  supplementaryNotes?: string
+  interfaces?: Array<{
+    module: string
+    name: string
+    method: string
+    path: string
+    description: string
+  }>
+  dataModels?: string[]
+  flows?: Array<{ type: 'mermaid'; diagram: string }>
+  risks?: Array<{ level: string; description: string; mitigation?: string }>
+  testFocus?: string[]
+  openQuestions?: string[]
+  quality?: AnalysisStructuredQuality
+}
+
 export interface GenerationRecord {
   id: string
   title: string
@@ -539,6 +567,7 @@ export interface GenerationRecord {
   prompt: string
   demandContent?: string | null
   generateParams?: Record<string, unknown> | null
+  analysisStructuredResult?: AnalysisStructuredResult | null
   promptTemplateSnapshot?: string | null
   promptTemplateVersion?: number | null
   modelId: string

@@ -26,6 +26,7 @@ import { ImagePreprocessService } from '@/modules/ocr/image-preprocess.service'
 import { TencentOcrClientService } from '@/modules/ocr/tencent-ocr.client.service'
 import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { PdfFlowchartParseService } from './pdf-flowchart-parse.service'
+import { decidePdfParseStrategy } from './pdf-fast-parse-strategy.util'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 import {
@@ -42,6 +43,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FilesService.name)
   private readonly uploadDir: string
   private parseWorkerTimer?: NodeJS.Timeout
+  private parseWorkerEnabled = true
   /** 当前正在执行的 parseFileAsync 数量（与 FILE_PARSE_WORKER_MAX_CONCURRENT 配合） */
   private activeParseWorkerJobs = 0
   /** 解析 worker 最大并发（默认 3，上限 16）；多图上传时可并行混元/OCR */
@@ -75,8 +77,8 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     // 后台解析 worker：扫描 PENDING 文件并解析（避免进程重启导致 parseFileAsync 丢失）
-    const enabled = this.config.get<string>('FILE_PARSE_WORKER_ENABLED') !== '0'
-    if (!enabled) {
+    this.parseWorkerEnabled = this.config.get<string>('FILE_PARSE_WORKER_ENABLED') !== '0'
+    if (!this.parseWorkerEnabled) {
       this.logger.warn('FILE_PARSE_WORKER_ENABLED=0，后台解析 worker 已关闭')
       return
     }
@@ -270,6 +272,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     mimeType: string
   }): Promise<void> {
     if (!claimed.path?.trim()) return
+    if (!this.parseWorkerEnabled) return
     if (this.activeParseWorkerJobs >= this.parseWorkerMaxConcurrent) {
       this.enqueueParseWorkerFill()
       return
@@ -997,6 +1000,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   private async tryPdfHunyuanPagedVisionBatches(
     filePath: string,
     heartbeat: (stage: string, progress?: Record<string, unknown>) => Promise<void>,
+    options?: { maxPages?: number },
   ): Promise<{ text: string } | null> {
     if (!this.documentVision.isPdfPageRenderAvailable()) return null
     if (!isHunyuanMultimodalEnabled(this.config) || !resolveHunyuanVisionApiKey(this.config)) {
@@ -1012,7 +1016,11 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     )
     const renderScale = Math.min(Math.max(scaleRaw || 0.6, 0.5), 3)
     const maxRaw = parseInt(this.config.get<string>('HUNYUAN_PDF_MAX_PAGES') || '60', 10)
-    const maxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
+    const configuredMaxPages = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.min(Math.max(maxRaw, 1), 200) : 60
+    const maxPages =
+      options?.maxPages != null
+        ? Math.min(Math.max(options.maxPages, 1), configuredMaxPages)
+        : configuredMaxPages
 
     const sections: string[] = []
     let pageTotal = 0
@@ -1187,6 +1195,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       parseRetryHint: string | null
       originalStoredPath?: string
       uploaderId?: string | null
+      skipLocalOcr?: boolean
     },
     embeddedText: string,
     numpages: number,
@@ -1236,6 +1245,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (
+      !ctx.skipLocalOcr &&
       this.isFileParseLocalOcrFallbackAllowed() &&
       this.documentVision.isPdfPageRenderAvailable()
     ) {
@@ -1302,6 +1312,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       parseRetryHint: string | null
       originalStoredPath?: string
       uploaderId?: string | null
+      skipLocalOcr?: boolean
     },
   ): Promise<string> {
     let embeddedText = ''
@@ -1325,29 +1336,56 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     const sizeMb = ctx.fileBytes / (1024 * 1024)
+    const fastStrategy = decidePdfParseStrategy({
+      fileBytes: ctx.fileBytes,
+      numpages,
+      embeddedTextChars: embeddedText.trim().length,
+      embeddedSufficient,
+      parseRetryHint: ctx.parseRetryHint,
+      env: {
+        FILE_PARSE_PDF_FAST_MODE: this.config.get<string>('FILE_PARSE_PDF_FAST_MODE'),
+        FILE_PARSE_PDF_FAST_MAX_MB: this.config.get<string>('FILE_PARSE_PDF_FAST_MAX_MB'),
+        FILE_PARSE_PDF_FAST_MAX_PAGES: this.config.get<string>('FILE_PARSE_PDF_FAST_MAX_PAGES'),
+        FILE_PARSE_PDF_FAST_VISION_PAGES: this.config.get<string>('FILE_PARSE_PDF_FAST_VISION_PAGES'),
+        FILE_PARSE_PDF_HUNYUAN_FIRST: this.config.get<string>('FILE_PARSE_PDF_HUNYUAN_FIRST'),
+      },
+    })
     await heartbeat('PDF', {
       phase: 'PDF',
       fileBytes: ctx.fileBytes,
+      strategy: fastStrategy.mode,
+      reason: fastStrategy.reason,
       message: 'hunyuan_primary',
       ...(sizeMb > 5
         ? { etaMinutes: Math.max(1, Math.ceil(sizeMb * 0.6)), largePdf: true }
         : {}),
     })
 
-    if (!this.fileParsePdfHunyuanFirst() && embeddedSufficient) {
-      this.logger.log('PDF：按配置优先使用质量足够的内置文本层，跳过混元优先链路')
+    if (fastStrategy.mode === 'text_only') {
       await heartbeat('PDF_EMBEDDED_PRIMARY', {
         phase: 'PDF',
-        message: 'embedded_text_primary',
+        message: 'embedded_text_only_retry',
         chars: embeddedText.trim().length,
         numpages,
       })
       return `【PDF 内置文本层】\n${embeddedText.trim()}`
     }
 
+    if (fastStrategy.mode === 'embedded_text_fast' || (!this.fileParsePdfHunyuanFirst() && embeddedSufficient)) {
+      this.logger.log(`PDF：使用内置文本层快速路径，跳过混元优先链路（strategy=${fastStrategy.mode}）`)
+      await heartbeat('PDF_EMBEDDED_PRIMARY', {
+        phase: 'PDF',
+        message: fastStrategy.mode === 'embedded_text_fast' ? 'embedded_text_fast' : 'embedded_text_primary',
+        chars: embeddedText.trim().length,
+        numpages,
+      })
+      return `【PDF 内置文本层｜快速解析】\n${embeddedText.trim()}`
+    }
+
+    const fastCtx = { ...ctx, skipLocalOcr: ctx.skipLocalOcr || fastStrategy.skipLocalOcr }
     const shouldDenseTileSinglePage = numpages <= 1 && !embeddedSufficient
 
-    if (numpages <= 1 && this.shouldPreferPdfPagedHunyuan(ctx.fileBytes)) {
+    if (numpages <= 1 && (this.shouldPreferPdfPagedHunyuan(ctx.fileBytes) || fastStrategy.mode === 'flowchart_vision_fast')) {
       const tiled = await this.tryPdfSinglePageTiledVisionBatches(filePath, heartbeat, {
         dense: shouldDenseTileSinglePage,
       })
@@ -1363,17 +1401,19 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       }
       if (!embeddedSufficient) {
         this.logger.warn('PDF：单页交互稿未获得有效分块正文，跳过整页分页概述，转 OCR/文本兜底')
-        return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
+        return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, fastCtx, embeddedText, numpages)
       }
     }
 
-    if (this.shouldPreferPdfPagedHunyuan(ctx.fileBytes)) {
+    if (this.shouldPreferPdfPagedHunyuan(ctx.fileBytes) || fastStrategy.mode === 'flowchart_vision_fast') {
       if (!this.documentVision.isPdfPageRenderAvailable()) {
         this.logger.warn(
           'PDF 需分页混元解析，但 canvas 不可用；将尝试整本直传（大文件可能失败）。请重建含 canvas 的 backend 镜像或配置 FILE_PARSE_TENCENT_OCR_FALLBACK=1',
         )
       } else {
-        const hunyuanPaged = await this.tryPdfHunyuanPagedVisionBatches(filePath, heartbeat)
+        const hunyuanPaged = await this.tryPdfHunyuanPagedVisionBatches(filePath, heartbeat, {
+          maxPages: fastStrategy.maxVisionPages,
+        })
         if (hunyuanPaged?.text?.trim()) {
           const minChars = parseInt(
             this.config.get<string>('HUNYUAN_COS_MULTIMODAL_MIN_OUTPUT_CHARS_PDF') || '40',
@@ -1431,7 +1471,12 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (isPdfTooLargeForHunyuanWholeFileBase64(this.config, ctx.fileBytes)) {
-      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
+      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, fastCtx, embeddedText, numpages)
+    }
+
+    if (fastStrategy.mode === 'flowchart_vision_fast') {
+      this.logger.warn('PDF：快速流程图视觉未产出有效正文，跳过整本混元直传，进入轻量兜底')
+      return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, fastCtx, embeddedText, numpages)
     }
 
     const hunyuanBody = await this.tryPdfHunyuanCosMultimodalBody(
@@ -1447,7 +1492,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       return `【PDF 内置文本层】\n${embeddedText.trim()}`
     }
 
-    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, ctx, embeddedText, numpages)
+    return this.finishPdfAfterHunyuanMiss(filePath, heartbeat, fastCtx, embeddedText, numpages)
   }
 
   private mergePdfVisionWithEmbeddedLayer(visionText: string, embeddedText: string): string {
