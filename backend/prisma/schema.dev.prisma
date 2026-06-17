@@ -230,6 +230,9 @@ model TestCase {
   type           TestCaseType     @default(FUNCTIONAL)
   status         TestCaseStatus   @default(DRAFT)
   tags           String           @default("[]")
+  requirementIds String           @default("[]")
+  testPathIds    String           @default("[]")
+  automationReadiness String?
   estimatedTime  Int?
   suiteId        String
   creatorId      String
@@ -276,6 +279,7 @@ model GenerationRecord {
   tokensUsed  Int?
   duration    Int?
   analysisStructuredResult Json?
+  analysisLatestVersion Int @default(0)
   suiteId     String?
   fileId      String?
   templateId  String?
@@ -288,6 +292,47 @@ model GenerationRecord {
   file      UploadedFile? @relation(fields: [fileId], references: [id])
   template  TestTemplate? @relation(fields: [templateId], references: [id])
   creator   User       @relation(fields: [creatorId], references: [id])
+  analysisReportVersions AnalysisReportVersion[]
+  requirementCoverageItems RequirementCoverageItem[]
   
   @@map("generation_records")
+}
+
+model AnalysisReportVersion {
+  id             String   @id @default(cuid())
+  recordId       String
+  versionNumber  Int
+  markdown       String
+  structured     String?
+  modelId        String
+  modelName      String
+  sourceType     String   @default("analysis")
+  revisionNote   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  record GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, versionNumber])
+  @@map("analysis_report_versions")
+}
+
+model RequirementCoverageItem {
+  id                     String   @id @default(cuid())
+  recordId               String
+  reqId                  String
+  requirementText         String
+  requirementType         String?
+  coveredCaseIds          String   @default("[]")
+  latestExecutionStatus   String?
+  latestExecutionSummary  String?
+  riskNotes               String?
+  gapReason               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  record GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, reqId])
+  @@map("requirement_coverage_items")
 }

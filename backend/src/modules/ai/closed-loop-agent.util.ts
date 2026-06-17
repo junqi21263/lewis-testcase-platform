@@ -104,6 +104,12 @@ function buildMissingRequirementCase(requirement: string): ClosedLoopCase {
       '页面展示、数据状态和后续操作入口均符合预期',
     ]),
     tags: uniqueTags(['ai-closed-loop', `需求补齐:${fp}`, `模块:${module}`, '功能']),
+    requirementIds: [],
+    testPathIds: [],
+    automationReadiness: {
+      status: 'manual',
+      reason: '闭环补齐用例未绑定明确 REQ-ID/TP-ID，需评审后确认自动化可行性。',
+    },
   }
 }
 

@@ -13,24 +13,39 @@ function createPrismaMock() {
     reviewStatus: 'pending_review',
     creator: { id: 'user-1', username: 'tester' },
     suite: { id: 'suite-1', name: '登录用例集' },
+    status: 'SUCCESS',
+    caseCount: 3,
+    modelName: 'test-model',
+    sourceType: 'text',
+    createdAt: new Date('2026-06-17T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-17T00:00:00.000Z'),
   }
   const cases = [
     {
       id: 'case-1',
       suiteId: 'suite-1',
       title: '登录-正确账号密码登录成功',
+      requirementIds: ['REQ-001'],
+      testPathIds: ['TP-001'],
+      automationReadiness: { status: 'automatable' },
       actualResult: null,
     },
     {
       id: 'case-2',
       suiteId: 'suite-1',
       title: '登录-密码错误提示',
+      requirementIds: ['REQ-002'],
+      testPathIds: ['TP-002'],
+      automationReadiness: { status: 'automatable' },
       actualResult: null,
     },
     {
       id: 'case-3',
       suiteId: 'suite-1',
       title: '订单导出 Excel',
+      requirementIds: ['REQ-003'],
+      testPathIds: ['TP-003'],
+      automationReadiness: { status: 'manual' },
       actualResult: null,
     },
   ]
@@ -58,12 +73,37 @@ function createPrismaMock() {
     testCaseComment: {
       create: jest.fn().mockResolvedValue({}),
     },
+    requirementCoverageItem: {
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'cov-1', recordId: 'record-1', reqId: 'REQ-001', coveredCaseIds: ['case-1'] },
+        { id: 'cov-2', recordId: 'record-1', reqId: 'REQ-002', coveredCaseIds: ['case-2'] },
+      ]),
+      update: jest.fn().mockResolvedValue({}),
+    },
     $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) => fn(prisma)),
   }
   return prisma
 }
 
 describe('ReviewsService execution result feedback', () => {
+  it('includes requirement coverage matrix in review workspace', async () => {
+    const prisma = createPrismaMock()
+    const service = new ReviewsService(prisma)
+
+    const workspace = await service.getWorkspace('record-1', owner)
+
+    expect(workspace.coverageMatrix).toEqual([
+      expect.objectContaining({
+        reqId: 'REQ-001',
+        coveredCaseIds: ['case-1'],
+      }),
+      expect.objectContaining({
+        reqId: 'REQ-002',
+        coveredCaseIds: ['case-2'],
+      }),
+    ])
+  })
+
   it('matches by caseId and normalized title, then writes execution comments', async () => {
     const prisma = createPrismaMock()
     const service = new ReviewsService(prisma)
@@ -117,6 +157,49 @@ describe('ReviewsService execution result feedback', () => {
         }),
       }),
     )
+  })
+
+  it('matches execution results by unique TP-ID and updates requirement coverage state', async () => {
+    const prisma = createPrismaMock()
+    const service = new ReviewsService(prisma)
+
+    const result = await service.importExecutionResults('record-1', owner, {
+      source: 'playwright',
+      results: [
+        { tpId: 'TP-002', status: 'failed', errorMessage: '错误提示未展示' },
+      ],
+    } as any)
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ caseId: 'case-2', matchedBy: 'tpId', status: 'failed' }),
+    ])
+    expect(prisma.requirementCoverageItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'cov-2' },
+        data: expect.objectContaining({
+          latestExecutionStatus: 'failed',
+          latestExecutionSummary: expect.stringContaining('错误提示未展示'),
+        }),
+      }),
+    )
+  })
+
+  it('keeps ambiguous TP-ID matches unmatched to avoid wrong write-back', async () => {
+    const prisma = createPrismaMock()
+    prisma.testCase.findMany.mockResolvedValueOnce([
+      { id: 'case-a', suiteId: 'suite-1', title: '路径 A', testPathIds: ['TP-001'], requirementIds: ['REQ-001'] },
+      { id: 'case-b', suiteId: 'suite-1', title: '路径 B', testPathIds: ['TP-001'], requirementIds: ['REQ-001'] },
+    ])
+    const service = new ReviewsService(prisma)
+
+    const result = await service.importExecutionResults('record-1', owner, {
+      results: [{ tpId: 'TP-001', status: 'passed' }],
+    } as any)
+
+    expect(result.matched).toBe(0)
+    expect(result.unmatched).toBe(1)
+    expect(result.unmatchedItems[0].reason).toContain('TP-ID 匹配到多条')
+    expect(prisma.testCase.update).not.toHaveBeenCalled()
   })
 
   it('keeps ambiguous title matches unmatched to avoid wrong write-back', async () => {

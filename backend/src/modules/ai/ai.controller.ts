@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Res, Header, Param } from '@nestjs/common'
+import { Controller, Get, Post, Body, Res, Header, Param, Query } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger'
 import { Response } from 'express'
 import { AiService } from './ai.service'
@@ -55,6 +55,29 @@ export class AiController {
     @Res() res: Response,
   ) {
     return this.aiService.analyzeStream(dto, userId, res)
+  }
+
+  @Get('analysis/records/:recordId/versions')
+  @ApiOperation({ summary: 'AI 需求分析报告版本列表' })
+  listAnalysisVersions(@Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.aiService.listAnalysisVersions(recordId, userId)
+  }
+
+  @Get('analysis/records/:recordId/diff')
+  @ApiOperation({ summary: 'AI 需求分析报告版本 diff' })
+  diffAnalysisVersions(
+    @Param('recordId') recordId: string,
+    @Query('leftVersionId') leftVersionId: string | undefined,
+    @Query('rightVersionId') rightVersionId: string | undefined,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.aiService.diffAnalysisVersions(recordId, userId, { leftVersionId, rightVersionId })
+  }
+
+  @Post('analysis/records/:recordId/cross-review')
+  @ApiOperation({ summary: '异步触发 AI 需求分析多模型交叉评审' })
+  triggerAnalysisCrossReview(@Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.aiService.triggerAnalysisCrossReview(recordId, userId)
   }
 
   @Post('analyze/export-pdf')

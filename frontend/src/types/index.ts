@@ -360,6 +360,12 @@ export interface TestCase {
   mermaid?: string | null
   status: TestCaseStatus
   suiteId: string
+  requirementIds?: string[]
+  testPathIds?: string[]
+  automationReadiness?: {
+    status: 'automatable' | 'manual' | 'blocked'
+    reason: string
+  } | null
 }
 
 export interface TestStep {
@@ -536,8 +542,61 @@ export interface AnalysisStructuredQuality {
   repairHints: string[]
 }
 
+export interface AnalysisRequirement {
+  id: string
+  text: string
+  type: 'functional' | 'nonFunctional' | 'risk'
+}
+
+export interface AnalysisFlowchartSummary {
+  nodes: Array<{ id: string; label: string; type: 'start' | 'process' | 'decision' | 'end' }>
+  branches: Array<{ from: string; to: string; condition: string; type: 'success' | 'exception' | 'neutral' }>
+  paths: Array<{ id: string; type: 'main' | 'exception'; nodes: string[] }>
+}
+
+export interface AnalysisOpenQuestion {
+  category: 'role' | 'boundary' | 'exception' | 'permission' | 'data' | 'interface' | 'unknown'
+  text: string
+}
+
+export interface AnalysisInputWarning {
+  type: 'ocr_garbled' | 'text_too_short' | 'flow_nodes_too_few' | 'flow_branches_too_few' | 'interface_missing' | 'risk_missing'
+  message: string
+}
+
+export interface AnalysisQualityScores {
+  completeness: number
+  testability: number
+  interfaceClarity: number
+  riskCoverage: number
+  flowCompleteness: number
+  reasons: string[]
+}
+
+export interface AnalysisTestStrategy {
+  scope: string[]
+  types: string[]
+  entryCriteria: string[]
+  exitCriteria: string[]
+}
+
+export interface AnalysisAutomationReadiness {
+  automatable: string[]
+  manual: string[]
+  blocked: string[]
+}
+
+export interface AnalysisCrossReview {
+  status: 'pending' | 'running' | 'success' | 'skipped' | 'failed'
+  modelName?: string
+  differences?: string[]
+  mergedSuggestions?: string[]
+  error?: string
+}
+
 export interface AnalysisStructuredResult {
   summary?: string
+  requirements?: AnalysisRequirement[]
   functionalRequirements?: string[]
   nonFunctionalRequirements?: string[]
   requirementDescription?: string
@@ -551,9 +610,15 @@ export interface AnalysisStructuredResult {
   }>
   dataModels?: string[]
   flows?: Array<{ type: 'mermaid'; diagram: string }>
+  flowchart?: AnalysisFlowchartSummary
   risks?: Array<{ level: string; description: string; mitigation?: string }>
   testFocus?: string[]
-  openQuestions?: string[]
+  openQuestions?: Array<string | AnalysisOpenQuestion>
+  inputWarnings?: AnalysisInputWarning[]
+  qualityScores?: AnalysisQualityScores
+  testStrategy?: AnalysisTestStrategy
+  automationReadiness?: AnalysisAutomationReadiness
+  crossReview?: AnalysisCrossReview
   quality?: AnalysisStructuredQuality
 }
 
@@ -568,6 +633,7 @@ export interface GenerationRecord {
   demandContent?: string | null
   generateParams?: Record<string, unknown> | null
   analysisStructuredResult?: AnalysisStructuredResult | null
+  analysisLatestVersion?: number
   promptTemplateSnapshot?: string | null
   promptTemplateVersion?: number | null
   modelId: string

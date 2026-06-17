@@ -50,4 +50,22 @@ E --> B
     expect(summary).toContain('异常/分支')
     expect(summary.length).toBeLessThanOrEqual(4000)
   })
+
+  it('assigns stable TP IDs to main and exception paths', () => {
+    const context = service.parseFromText(`
+A[开始] --> B[提交申请]
+B --> C{审批是否通过}
+C -- 是 --> D[审批完成]
+C -- 否 --> E[驳回修改]
+E --> B
+`.trim())
+
+    expect(context?.paths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'TP-001', type: 'main', nodes: ['开始', '提交申请', '审批是否通过', '审批完成'] }),
+        expect.objectContaining({ id: 'TP-002', type: 'exception', nodes: ['审批是否通过', '驳回修改'] }),
+      ]),
+    )
+    expect(service.toPromptContext(context)).toContain('TP-001')
+  })
 })

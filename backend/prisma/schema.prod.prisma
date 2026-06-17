@@ -417,6 +417,9 @@ model TestCase {
   priority       TestCasePriority @default(P2)
   type           TestCaseType     @default(FUNCTIONAL)
   tags           String[]         @default([])
+  requirementIds String[]         @default([])
+  testPathIds    String[]         @default([])
+  automationReadiness Json?
   status         TestCaseStatus   @default(DRAFT)
   suiteId        String
 
@@ -451,6 +454,8 @@ model GenerationRecord {
   generateParams         Json?
   /// AI 需求分析结构化结果（需求点、接口、流程、风险、质量校验等）
   analysisStructuredResult Json?
+  /// 当前最新 AI 需求分析报告版本号
+  analysisLatestVersion    Int              @default(0)
   /// 所用提示词模板全文快照
   promptTemplateSnapshot String?          @db.Text
   promptTemplateVersion  Int?
@@ -481,6 +486,8 @@ model GenerationRecord {
   caseReviews            TestCaseReview[]
   caseVersions           TestCaseVersion[]
   caseComments           TestCaseComment[]
+  analysisReportVersions AnalysisReportVersion[]
+  requirementCoverageItems RequirementCoverageItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -489,6 +496,52 @@ model GenerationRecord {
   @@index([teamId, createdAt])
   @@index([reviewStatus])
   @@map("generation_records")
+}
+
+/// AI 需求分析报告版本
+model AnalysisReportVersion {
+  id                String   @id @default(cuid())
+  recordId          String
+  versionNumber     Int
+  markdown          String   @db.Text
+  structuredJson    Json
+  modelId           String?  @db.VarChar(100)
+  modelName         String?  @db.VarChar(100)
+  sourceType        String   @default("analysis") @db.VarChar(32)
+  revisionNote      String?  @db.Text
+  crossReviewStatus String   @default("pending") @db.VarChar(32)
+  crossReviewJson   Json?
+
+  record GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([recordId, versionNumber])
+  @@index([recordId, createdAt])
+  @@map("analysis_report_versions")
+}
+
+/// 需求覆盖矩阵条目
+model RequirementCoverageItem {
+  id                     String   @id @default(cuid())
+  recordId               String
+  reqId                  String   @db.VarChar(32)
+  requirementText        String   @db.Text
+  coveredCaseIds         String[] @default([])
+  testPathIds            String[] @default([])
+  latestExecutionStatus  String?  @db.VarChar(32)
+  latestExecutionSummary String?  @db.Text
+  riskLevel              String?  @db.VarChar(32)
+  issues                 Json?
+
+  record GenerationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([recordId, reqId])
+  @@index([recordId])
+  @@map("requirement_coverage_items")
 }
 
 /// 用例评审状态（每条用例一条）

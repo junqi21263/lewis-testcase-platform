@@ -10,6 +10,9 @@ export type CaseSnapshot = {
   expectedResults: string[]
   expectedResult: string
   remarks?: string
+  requirementIds?: string[]
+  testPathIds?: string[]
+  automationReadiness?: unknown
 }
 
 export function splitExpectedResults(expectedResult: string): string[] {
@@ -56,6 +59,9 @@ export function buildSnapshotFromCase(c: TestCase, remarks = ''): CaseSnapshot {
     expectedResults: splitExpectedResults(c.expectedResult),
     expectedResult: c.expectedResult,
     remarks,
+    requirementIds: Array.isArray((c as any).requirementIds) ? (c as any).requirementIds.map(String) : [],
+    testPathIds: Array.isArray((c as any).testPathIds) ? (c as any).testPathIds.map(String) : [],
+    automationReadiness: (c as any).automationReadiness ?? null,
   }
 }
 
@@ -75,5 +81,8 @@ export function snapshotToCaseUpdate(snapshot: CaseSnapshot) {
     steps,
     expectedResult,
     description: snapshot.remarks?.trim() || null,
+    requirementIds: snapshot.requirementIds ?? [],
+    testPathIds: snapshot.testPathIds ?? [],
+    automationReadiness: (snapshot.automationReadiness ?? null) as any,
   }
 }

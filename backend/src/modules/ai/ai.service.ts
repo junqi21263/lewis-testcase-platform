@@ -28,6 +28,11 @@ import {
   type AnalysisStructuredResult,
 } from './analysis-structured-report.util'
 import {
+  buildAnalysisVersionDiff,
+  nextAnalysisVersionNumber,
+  normalizeCrossReviewStatus,
+} from './analysis-report-version.util'
+import {
   analyzePromptTemplateFormat,
   buildPromptEvaluationComparison,
   buildPromptEvaluationRuntimePrompt,
@@ -462,6 +467,9 @@ export class AiService {
       priority,
       type,
       tags,
+      requirementIds: n.requirementIds,
+      testPathIds: n.testPathIds,
+      automationReadiness: n.automationReadiness as Prisma.InputJsonValue,
     }
   }
 
@@ -681,6 +689,9 @@ export class AiService {
       priority,
       type,
       tags: normalized.tags,
+      requirementIds: normalized.requirementIds,
+      testPathIds: normalized.testPathIds,
+      automationReadiness: normalized.automationReadiness as Prisma.InputJsonValue,
     }
   }
 
@@ -800,6 +811,211 @@ export class AiService {
       },
     })
     return models
+  }
+
+  private async getOwnedAnalysisRecord(recordId: string, userId: string) {
+    const record = await this.prisma.generationRecord.findFirst({
+      where: { id: recordId, creatorId: userId, deletedAt: null },
+    })
+    if (!record) throw new BadRequestException('分析记录不存在或无权访问')
+    return record
+  }
+
+  private async createAnalysisReportVersion(input: {
+    recordId: string
+    markdown: string
+    structured: AnalysisStructuredResult
+    modelId?: string
+    modelName?: string
+    sourceType?: string
+    revisionNote?: string
+  }) {
+    const versions = await this.prisma.analysisReportVersion.findMany({
+      where: { recordId: input.recordId },
+      select: { versionNumber: true },
+    })
+    const versionNumber = nextAnalysisVersionNumber(versions)
+    const version = await this.prisma.analysisReportVersion.create({
+      data: {
+        recordId: input.recordId,
+        versionNumber,
+        markdown: input.markdown,
+        structuredJson: input.structured as unknown as Prisma.InputJsonValue,
+        modelId: input.modelId,
+        modelName: input.modelName,
+        sourceType: input.sourceType ?? 'analysis',
+        revisionNote: input.revisionNote,
+        crossReviewStatus: 'pending',
+      },
+    })
+    await this.prisma.generationRecord.update({
+      where: { id: input.recordId },
+      data: { analysisLatestVersion: versionNumber },
+    })
+    return version
+  }
+
+  private async rebuildRequirementCoverageMatrix(recordId: string, structured: AnalysisStructuredResult, cases?: Array<{ id: string; requirementIds?: string[]; testPathIds?: string[] }>) {
+    const caseRows = cases ?? []
+    for (const req of structured.requirements ?? []) {
+      const coveredCaseIds = caseRows
+        .filter((c) => Array.isArray(c.requirementIds) && c.requirementIds.includes(req.id))
+        .map((c) => c.id)
+      const testPathIds = [
+        ...new Set(
+          caseRows
+            .filter((c) => Array.isArray(c.requirementIds) && c.requirementIds.includes(req.id))
+            .flatMap((c) => Array.isArray(c.testPathIds) ? c.testPathIds : []),
+        ),
+      ]
+      await this.prisma.requirementCoverageItem.upsert({
+        where: { recordId_reqId: { recordId, reqId: req.id } },
+        create: {
+          recordId,
+          reqId: req.id,
+          requirementText: req.text,
+          coveredCaseIds,
+          testPathIds,
+          riskLevel: req.type === 'risk' ? 'high' : null,
+          issues: [] as unknown as Prisma.InputJsonValue,
+        },
+        update: {
+          requirementText: req.text,
+          coveredCaseIds,
+          testPathIds,
+          riskLevel: req.type === 'risk' ? 'high' : null,
+        },
+      })
+    }
+  }
+
+  private async rebuildCoverageMatrixFromGeneratedCases(recordId: string, requirementText: string, cases: Array<{ id: string; requirementIds?: string[]; testPathIds?: string[] }>) {
+    const structured = buildAnalysisStructuredResult(requirementText)
+    const allReqIds = [...new Set(cases.flatMap((c) => Array.isArray(c.requirementIds) ? c.requirementIds : []))]
+    if (structured.requirements.length === 0 && allReqIds.length > 0) {
+      structured.requirements = allReqIds.map((id, index) => ({
+        id,
+        text: `模型输出关联需求 ${id}`,
+        type: index === 0 ? 'functional' : 'unknown',
+      }))
+    }
+    await this.rebuildRequirementCoverageMatrix(recordId, structured, cases)
+  }
+
+  async listAnalysisVersions(recordId: string, userId: string) {
+    await this.getOwnedAnalysisRecord(recordId, userId)
+    return this.prisma.analysisReportVersion.findMany({
+      where: { recordId },
+      orderBy: { versionNumber: 'desc' },
+      select: {
+        id: true,
+        recordId: true,
+        versionNumber: true,
+        modelId: true,
+        modelName: true,
+        sourceType: true,
+        revisionNote: true,
+        crossReviewStatus: true,
+        crossReviewJson: true,
+        createdAt: true,
+      },
+    })
+  }
+
+  async diffAnalysisVersions(recordId: string, userId: string, opts: { leftVersionId?: string; rightVersionId?: string }) {
+    await this.getOwnedAnalysisRecord(recordId, userId)
+    const versions = await this.prisma.analysisReportVersion.findMany({
+      where: { recordId },
+      orderBy: { versionNumber: 'desc' },
+    })
+    if (!versions.length) return []
+    const right = opts.rightVersionId ? versions.find((v) => v.id === opts.rightVersionId) : versions[0]
+    const left = opts.leftVersionId
+      ? versions.find((v) => v.id === opts.leftVersionId)
+      : versions.find((v) => v.versionNumber === Math.max(1, (right?.versionNumber ?? 1) - 1)) ?? right
+    if (!left || !right) throw new BadRequestException('分析版本不存在')
+    return buildAnalysisVersionDiff(
+      { markdown: left.markdown, structured: left.structuredJson },
+      { markdown: right.markdown, structured: right.structuredJson },
+    )
+  }
+
+  async triggerAnalysisCrossReview(recordId: string, userId: string) {
+    const record = await this.getOwnedAnalysisRecord(recordId, userId)
+    const latest = await this.prisma.analysisReportVersion.findFirst({
+      where: { recordId },
+      orderBy: { versionNumber: 'desc' },
+    })
+    if (!latest) throw new BadRequestException('该分析记录暂无报告版本')
+
+    const models = await this.prisma.aIModelConfig.findMany({
+      where: { isActive: true },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+    })
+    const secondary = models.find((m) => m.modelId !== record.modelId) ?? models[1]
+    if (!secondary) {
+      const crossReviewJson = {
+        status: 'skipped',
+        differences: [],
+        mergedSuggestions: [],
+        error: '缺少第二个可用模型',
+      }
+      await this.prisma.analysisReportVersion.update({
+        where: { id: latest.id },
+        data: { crossReviewStatus: 'skipped', crossReviewJson },
+      })
+      return crossReviewJson
+    }
+
+    await this.prisma.analysisReportVersion.update({
+      where: { id: latest.id },
+      data: { crossReviewStatus: 'running' },
+    })
+
+    setImmediate(() => {
+      void this.runAnalysisCrossReviewInBackground(latest.id, secondary, latest.markdown)
+    })
+    return { status: 'running', modelName: secondary.name }
+  }
+
+  private async runAnalysisCrossReviewInBackground(versionId: string, model: { apiKey: string; baseUrl: string; modelId: string; name: string }, markdown: string) {
+    try {
+      if (!model.apiKey || model.apiKey === 'placeholder') throw new Error('第二模型 API Key 未配置')
+      const client = new OpenAI({ apiKey: model.apiKey, baseURL: model.baseUrl })
+      const completion = await client.chat.completions.create({
+        model: model.modelId,
+        messages: [
+          { role: 'system', content: '你是需求分析交叉评审专家。只输出 JSON：{"differences":[],"mergedSuggestions":[]}' },
+          { role: 'user', content: `请交叉评审以下需求分析报告，找出遗漏、冲突和补充建议：\n${markdown.slice(0, 50000)}` },
+        ],
+        temperature: 0.2,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' },
+      })
+      const text = completion.choices[0]?.message?.content || '{}'
+      const parsed = JSON.parse(text)
+      const result = {
+        status: normalizeCrossReviewStatus('success'),
+        modelName: model.name,
+        differences: Array.isArray(parsed.differences) ? parsed.differences.map(String).slice(0, 20) : [],
+        mergedSuggestions: Array.isArray(parsed.mergedSuggestions) ? parsed.mergedSuggestions.map(String).slice(0, 20) : [],
+      }
+      await this.prisma.analysisReportVersion.update({
+        where: { id: versionId },
+        data: { crossReviewStatus: 'success', crossReviewJson: result as unknown as Prisma.InputJsonValue },
+      })
+    } catch (e) {
+      const result = {
+        status: normalizeCrossReviewStatus('failed'),
+        differences: [],
+        mergedSuggestions: [],
+        error: humanizeAiProviderError((e as Error).message || String(e)),
+      }
+      await this.prisma.analysisReportVersion.update({
+        where: { id: versionId },
+        data: { crossReviewStatus: 'failed', crossReviewJson: result as unknown as Prisma.InputJsonValue },
+      })
+    }
   }
 
   async runRequirementCaseClosedLoop(recordId: string, userId: string) {
@@ -1399,12 +1615,15 @@ ${originalPrompt}
 - expectedResult → 预期结果：必须与步骤条数一致，格式强制为「[1] …\\n[2] …」，第 n 条对应第 n 步
 - priority / riskLevel / type → priority 为 P0–P3；riskLevel 为 high/medium/low；type 为枚举；平台会把 FUNCTIONAL 映射为标签「功能」若未写
 - mermaid → 当前用例关联流程图。若能表达流程，输出合法 Mermaid flowchart 文本，不要代码围栏；无流程图时必须为 null
+- requirementIds → 关联需求 ID 数组，格式为 REQ-001；无法判断时输出空数组
+- testPathIds → 关联测试路径 ID 数组，格式为 TP-001；无法判断时输出空数组
+- automationReadiness → Agent 执行准备状态：status 为 automatable/manual/blocked，reason 说明原因
 
 【输出硬性要求】
 1. 只输出一个合法 JSON 对象，不要 Markdown、代码围栏、文前文末解释；第一个非空白字符必须是 {。
 2. 顶层必须有 "cases" 数组；每条业务场景单独一个对象，禁止把多条用例塞进一条的 expectedResult 长文。
 3. 禁止输出 **加粗标题**、### 标题、或「- 优先级:」这类非 JSON 叙述；一律用字段表达。
-4. 每条用例必须包含 title, module, priority, riskLevel, type, precondition, steps, expectedResult, tags, mermaid。
+4. 每条用例必须包含 title, module, priority, riskLevel, type, precondition, steps, expectedResult, tags, mermaid, requirementIds, testPathIds, automationReadiness。
 5. steps 的每一步必须包含 order, action, expected；expected 没有单步预期时填空字符串，不允许缺字段。
 6. 材料过长时优先 P0/P1 与核心主流程，控制单字段篇幅。
 
@@ -1424,7 +1643,10 @@ ${originalPrompt}
       ],
       "expectedResult": "[1] 信息输入校验通过\\n[2] 登录成功，跳转至主页",
       "tags": ["模块:用户注册登录", "UI", "功能"],
-      "mermaid": "flowchart TD\\nA[输入邮箱密码] --> B[点击登录]\\nB --> C[进入主页]"
+      "mermaid": "flowchart TD\\nA[输入邮箱密码] --> B[点击登录]\\nB --> C[进入主页]",
+      "requirementIds": ["REQ-001"],
+      "testPathIds": ["TP-001"],
+      "automationReadiness": {"status": "automatable", "reason": "可通过页面输入和断言完成自动化"}
     }
   ]
 }`
@@ -1556,6 +1778,11 @@ ${originalPrompt}
                 },
               })
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
+              await this.rebuildCoverageMatrixFromGeneratedCases(
+                record.id,
+                [dto.text, fileContent, dto.flowchartContext, dto.customPrompt].filter(Boolean).join('\n\n'),
+                suite.cases as any,
+              )
               await this.bumpTemplateUsage(dto.templateId)
               const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
               const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
@@ -1671,6 +1898,11 @@ ${originalPrompt}
         },
       })
       await this.bootstrapReviewsSafe(record.id, suite.id, userId)
+      await this.rebuildCoverageMatrixFromGeneratedCases(
+        record.id,
+        [dto.text, fileContent, dto.flowchartContext, dto.customPrompt].filter(Boolean).join('\n\n'),
+        suite.cases as any,
+      )
 
       await this.bumpTemplateUsage(dto.templateId)
 
@@ -1808,6 +2040,11 @@ ${originalPrompt}
                 },
               })
               await this.bootstrapReviewsSafe(record.id, suite.id, userId)
+              await this.rebuildCoverageMatrixFromGeneratedCases(
+                record.id,
+                [dto.text, fileContent, dto.flowchartContext, dto.customPrompt].filter(Boolean).join('\n\n'),
+                suite.cases as any,
+              )
               await this.bumpTemplateUsage(dto.templateId)
               const qualityReport = this.buildQualityReport(dto, fileContent, resolvedEarly.rows)
               const autoRepair = await this.maybeAutoRepairGeneratedRecord(record.id, userId, qualityReport)
@@ -1965,6 +2202,11 @@ ${originalPrompt}
         },
       })
       await this.bootstrapReviewsSafe(record.id, suite.id, userId)
+      await this.rebuildCoverageMatrixFromGeneratedCases(
+        record.id,
+        [dto.text, fileContent, dto.flowchartContext, dto.customPrompt].filter(Boolean).join('\n\n'),
+        suite.cases as any,
+      )
 
       await this.bumpTemplateUsage(dto.templateId)
       const qualityReport = this.buildQualityReport(dto, fileContent, rows)
@@ -2099,21 +2341,32 @@ ${originalPrompt}
 
     const primaryFileId = dto.fileId
 
-    // 构建轻量记录
-    const record = await this.prisma.generationRecord.create({
-      data: {
-        title: `需求分析 ${new Date().toLocaleString('zh-CN')}`,
-        status: GenerationStatus.PROCESSING,
-        sourceType: dto.sourceType,
-        prompt: dto.customPrompt || '',
-        demandContent: fileContent || dto.text || '',
-        generationSource: primaryFileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT,
-        modelId,
-        modelName,
-        creatorId: userId,
-        fileId: primaryFileId,
-      },
-    })
+    // 构建轻量记录；修订模式复用原记录并追加版本
+    const record = dto.baseRecordId
+      ? await this.prisma.generationRecord.update({
+          where: { id: (await this.getOwnedAnalysisRecord(dto.baseRecordId, userId)).id },
+          data: {
+            status: GenerationStatus.PROCESSING,
+            prompt: dto.customPrompt || '',
+            demandContent: fileContent || dto.text || '',
+            modelId,
+            modelName,
+          },
+        })
+      : await this.prisma.generationRecord.create({
+          data: {
+            title: `需求分析 ${new Date().toLocaleString('zh-CN')}`,
+            status: GenerationStatus.PROCESSING,
+            sourceType: dto.sourceType,
+            prompt: dto.customPrompt || '',
+            demandContent: fileContent || dto.text || '',
+            generationSource: primaryFileId ? GenerationSource.FILE_PARSE : GenerationSource.MANUAL_INPUT,
+            modelId,
+            modelName,
+            creatorId: userId,
+            fileId: primaryFileId,
+          },
+        })
 
     // SSE 头
     res.setHeader('Content-Type', 'text/event-stream')
@@ -2227,8 +2480,24 @@ ${originalPrompt}
           tokensUsed: undefined,
         },
       })
+      const analysisVersion = await this.createAnalysisReportVersion({
+        recordId: record.id,
+        markdown: fullContent,
+        structured: analysisStructuredResult,
+        modelId,
+        modelName,
+        sourceType: dto.baseRecordId ? 'revision' : 'analysis',
+        revisionNote: dto.revisionNote,
+      })
+      await this.rebuildRequirementCoverageMatrix(record.id, analysisStructuredResult)
 
-      res.write(`data: ${JSON.stringify({ recordId: record.id, analysisQuality: analysisStructuredResult.quality, done: true })}\n\n`)
+      res.write(`data: ${JSON.stringify({
+        recordId: record.id,
+        analysisQuality: analysisStructuredResult.quality,
+        analysisStructuredResult,
+        analysisVersionNumber: analysisVersion.versionNumber,
+        done: true,
+      })}\n\n`)
       res.write(`data: [DONE]\n\n`)
       res.end()
     } catch (err: unknown) {

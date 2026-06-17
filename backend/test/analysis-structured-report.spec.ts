@@ -84,4 +84,53 @@ describe('analysis structured report', () => {
     )
     expect(quality.repairHints.join('\n')).toContain('补齐')
   })
+
+  it('assigns REQ IDs, TP IDs, quality scores, input warnings and strategy data', () => {
+    const report = `${COMPLETE_REPORT}
+
+## 9. 待确认问题
+- 角色权限边界不明确：管理员和普通用户是否都可以提交订单？
+
+## 10. 测试策略
+- 范围：登录、下单、异常提示
+- 类型：功能、接口、权限、回归
+- 准入：需求已确认，测试账号和订单数据准备完成
+- 准出：P0/P1 用例全部通过，无阻塞缺陷
+
+## 11. Agent 执行准备清单
+- 可自动化：登录成功主流程
+- 需要人工：视觉样式确认
+- 缺环境：第三方支付沙箱
+`
+
+    const result = buildAnalysisStructuredResult(report)
+
+    expect(result.requirements.slice(0, 2).map((r) => r.id)).toEqual(['REQ-001', 'REQ-002'])
+    expect(result.requirements[0]).toEqual(
+      expect.objectContaining({
+        text: expect.stringContaining('用户登录'),
+        type: 'functional',
+      }),
+    )
+    expect(result.flowchart.paths[0]).toEqual(
+      expect.objectContaining({
+        id: 'TP-001',
+        type: 'main',
+        nodes: expect.arrayContaining(['进入登录页', '输入账号密码']),
+      }),
+    )
+    expect(result.flowchart.paths.some((p) => p.type === 'exception')).toBe(true)
+    expect(result.openQuestions[0].text).toContain('角色权限边界')
+    expect(result.qualityScores).toEqual(
+      expect.objectContaining({
+        completeness: expect.any(Number),
+        testability: expect.any(Number),
+        interfaceClarity: expect.any(Number),
+        riskCoverage: expect.any(Number),
+        flowCompleteness: expect.any(Number),
+      }),
+    )
+    expect(result.testStrategy.scope).toEqual(expect.arrayContaining(['登录', '下单', '异常提示']))
+    expect(result.automationReadiness.automatable).toEqual(expect.arrayContaining(['登录成功主流程']))
+  })
 })

@@ -42,6 +42,18 @@ export class CreateAnalysisDto {
   @MaxLength(128)
   modelConfigId?: string
 
+  @ApiProperty({ required: false, description: '基于已有分析记录进行修订时的记录 ID' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  baseRecordId?: string
+
+  @ApiProperty({ required: false, description: '报告修订说明' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  revisionNote?: string
+
   @ApiProperty({ required: false, description: '最大输出 Token 数', default: 4096 })
   @IsOptional()
   @IsNumber()

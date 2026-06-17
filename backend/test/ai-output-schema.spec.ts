@@ -16,6 +16,12 @@ describe('strict testcase output schema', () => {
     expectedResult: '[1] 展示订单金额\n[2] 订单提交成功',
     tags: ['模块:订单', '功能'],
     mermaid: 'flowchart TD\nA[确认页] --> B[提交订单]',
+    requirementIds: ['REQ-001'],
+    testPathIds: ['TP-001'],
+    automationReadiness: {
+      status: 'automatable',
+      reason: '页面和数据均可通过 Playwright 准备',
+    },
   }
 
   it('builds strict json_schema response format for model calls', () => {
@@ -27,7 +33,7 @@ describe('strict testcase output schema', () => {
         strict: true,
       },
     })
-    expect(format.json_schema.schema.properties.cases.items.required).toEqual(expect.arrayContaining(['module', 'riskLevel', 'mermaid']))
+    expect(format.json_schema.schema.properties.cases.items.required).toEqual(expect.arrayContaining(['module', 'riskLevel', 'mermaid', 'requirementIds', 'testPathIds', 'automationReadiness']))
   })
 
   it('passes rows that contain module, risk level, mermaid and step expectations', () => {
@@ -36,7 +42,15 @@ describe('strict testcase output schema', () => {
   })
 
   it('rejects missing schema fields before persistence repair', () => {
-    const { module: _module, riskLevel: _riskLevel, mermaid: _mermaid, ...missingTopFields } = validCase
+    const {
+      module: _module,
+      riskLevel: _riskLevel,
+      mermaid: _mermaid,
+      requirementIds: _requirementIds,
+      testPathIds: _testPathIds,
+      automationReadiness: _automationReadiness,
+      ...missingTopFields
+    } = validCase
     const rows = [
       {
         ...missingTopFields,
@@ -47,7 +61,7 @@ describe('strict testcase output schema', () => {
     const result = validateCaseRowsAgainstSchema(rows)
 
     expect(result.ok).toBe(false)
-    expect(result.missingFields).toEqual(expect.arrayContaining(['module', 'riskLevel', 'mermaid', 'steps.expected']))
+    expect(result.missingFields).toEqual(expect.arrayContaining(['module', 'riskLevel', 'mermaid', 'requirementIds', 'testPathIds', 'automationReadiness', 'steps.expected']))
   })
 
   it('normalizes schema fields into persistent tags and description', () => {
@@ -56,5 +70,24 @@ describe('strict testcase output schema', () => {
     expect(normalized.tags).toEqual(expect.arrayContaining(['模块:订单', '风险:high', '功能']))
     expect(normalized.description).toContain('Mermaid:')
     expect(normalized.description).toContain('flowchart TD')
+    expect(normalized.requirementIds).toEqual(['REQ-001'])
+    expect(normalized.testPathIds).toEqual(['TP-001'])
+    expect(normalized.automationReadiness).toEqual(
+      expect.objectContaining({ status: 'automatable' }),
+    )
+  })
+
+  it('repairs legacy rows without REQ or TP fields before persistence', () => {
+    const normalized = normalizeCaseRowForPersistence({
+      ...validCase,
+      requirementIds: undefined,
+      testPathIds: undefined,
+      automationReadiness: undefined,
+      tags: ['模块:订单', 'REQ-009', 'TP-003'],
+    })
+
+    expect(normalized.requirementIds).toEqual(['REQ-009'])
+    expect(normalized.testPathIds).toEqual(['TP-003'])
+    expect(normalized.automationReadiness?.status).toBe('manual')
   })
 })

@@ -15,6 +15,12 @@ export type NormalizedCaseShape = {
   tags: string[]
   description?: string
   mermaid?: string | null
+  requirementIds: string[]
+  testPathIds: string[]
+  automationReadiness: {
+    status: 'automatable' | 'manual' | 'blocked'
+    reason: string
+  }
 }
 
 const TYPE_TAG_ZH: Record<string, string> = {
@@ -43,6 +49,40 @@ function toTagArray(raw: unknown): string[] {
       .filter(Boolean)
   }
   return []
+}
+
+function toIdArray(raw: unknown, prefix: 'REQ' | 'TP'): string[] {
+  const fromRaw = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? raw.split(/[,，;；\s]+/)
+      : []
+  return [...new Set(
+    fromRaw
+      .map((x) => String(x).trim().toUpperCase())
+      .filter((x) => new RegExp(`^${prefix}-\\d{3}$`).test(x)),
+  )]
+}
+
+function idsFromTags(tags: string[], prefix: 'REQ' | 'TP'): string[] {
+  return toIdArray(tags.flatMap((tag) => tag.match(new RegExp(`${prefix}-\\d{3}`, 'gi')) ?? []), prefix)
+}
+
+function normalizeAutomationReadiness(raw: unknown): NormalizedCaseShape['automationReadiness'] {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const r = raw as Record<string, unknown>
+    const status = String(r.status ?? '').trim()
+    if (status === 'automatable' || status === 'manual' || status === 'blocked') {
+      return {
+        status,
+        reason: String(r.reason ?? '').trim() || '模型未提供具体原因',
+      }
+    }
+  }
+  return {
+    status: 'manual',
+    reason: '旧模型输出未声明自动化准备状态，默认需要人工确认。',
+  }
 }
 
 /** 前置条件：多行时保证「1. 2.」编号（与 Excel 习惯一致） */
@@ -251,5 +291,12 @@ export function normalizeCaseRowForPersistence(raw: Record<string, unknown>): No
     tags,
     description: description || undefined,
     mermaid,
+    requirementIds: toIdArray(c.requirementIds ?? c.reqIds ?? c['需求ID'], 'REQ').length
+      ? toIdArray(c.requirementIds ?? c.reqIds ?? c['需求ID'], 'REQ')
+      : idsFromTags(tags, 'REQ'),
+    testPathIds: toIdArray(c.testPathIds ?? c.tpIds ?? c['路径ID'], 'TP').length
+      ? toIdArray(c.testPathIds ?? c.tpIds ?? c['路径ID'], 'TP')
+      : idsFromTags(tags, 'TP'),
+    automationReadiness: normalizeAutomationReadiness(c.automationReadiness ?? c['自动化准备']),
   }
 }

@@ -1,5 +1,5 @@
 import { request, streamRequest, type StreamDoneMeta } from '@/utils/request'
-import type { AIModel, AIGenerateParams, TestCase, QualityReport, ClosedLoopResult } from '@/types'
+import type { AIModel, AIGenerateParams, AnalysisCrossReview, AnalysisStructuredResult, TestCase, QualityReport, ClosedLoopResult } from '@/types'
 
 export interface GenerateTestCasesPayload extends AIGenerateParams {
   sourceType: 'file' | 'text'
@@ -34,6 +34,31 @@ export type TestModelResult = {
   sample: string
 }
 
+export type AnalysisReportVersion = {
+  id: string
+  recordId: string
+  versionNumber: number
+  sourceType: 'analysis' | 'revision' | 'cross_review'
+  markdown: string
+  structured: AnalysisStructuredResult
+  modelId: string
+  modelName: string
+  revisionNote?: string | null
+  createdAt: string
+}
+
+export type AnalysisReportVersionDiffField = {
+  field: string
+  label: string
+  before: string
+  after: string
+  changed: boolean
+}
+
+export type CrossReviewResult = AnalysisCrossReview & {
+  versionNumber?: number
+}
+
 export const aiApi = {
   /** 获取可用模型列表 */
   getModels: () =>
@@ -64,6 +89,8 @@ export const aiApi = {
       sourceType: 'file' | 'text'
       /** 与 fileId 合计 ≤5；多文件时需均为图片 */
       additionalFileIds?: string[]
+      baseRecordId?: string
+      revisionNote?: string
     },
     onChunk: (chunk: string) => void,
     onDone?: (meta?: StreamDoneMeta) => void,
@@ -76,4 +103,18 @@ export const aiApi = {
   /** 管理用途：测试模型连通性（需要管理员权限） */
   testModel: (payload: TestModelPayload) =>
     request.post<TestModelResult>('/ai/test', payload),
+
+  listAnalysisVersions: (recordId: string) =>
+    request.get<AnalysisReportVersion[]>(`/ai/analysis/records/${recordId}/versions`),
+
+  diffAnalysisVersions: (
+    recordId: string,
+    params: { leftVersionId?: string; rightVersionId?: string } = {},
+  ) =>
+    request.get<AnalysisReportVersionDiffField[]>(`/ai/analysis/records/${recordId}/diff`, {
+      params,
+    }),
+
+  crossReviewAnalysis: (recordId: string) =>
+    request.post<CrossReviewResult>(`/ai/analysis/records/${recordId}/cross-review`, {}),
 }

@@ -23,6 +23,11 @@ export type FlowchartContext = {
   branches: FlowchartBranch[]
   mainPath: string[]
   exceptionPaths: string[][]
+  paths: Array<{
+    id: string
+    type: 'main' | 'exception'
+    nodes: string[]
+  }>
 }
 
 type Edge = {
@@ -47,6 +52,7 @@ export class PdfFlowchartParseService {
 
     const mainPath = this.buildMainPath(edges)
     const exceptionPaths = this.buildExceptionPaths(edges, mainPath)
+    const paths = this.buildPaths(mainPath, exceptionPaths)
 
     return {
       kind: 'flowchart',
@@ -62,6 +68,7 @@ export class PdfFlowchartParseService {
         })),
       mainPath,
       exceptionPaths,
+      paths,
     }
   }
 
@@ -75,9 +82,9 @@ export class PdfFlowchartParseService {
       .slice(0, 30)
       .map((branch) => `- ${branch.from} -- ${branch.condition} --> ${branch.to}${branch.type === 'exception' ? '（异常）' : ''}`)
       .join('\n')
-    const exceptionLines = context.exceptionPaths
-      .slice(0, 12)
-      .map((path) => `- ${path.join(' -> ')}`)
+    const pathLines = context.paths
+      .slice(0, 16)
+      .map((path) => `- ${path.id}（${path.type === 'main' ? '主路径' : '异常路径'}）：${path.nodes.join(' -> ')}`)
       .join('\n')
 
     return [
@@ -85,12 +92,28 @@ export class PdfFlowchartParseService {
       `- 置信度：${Math.round(context.confidence * 100)}%`,
       `- 主流程：${context.mainPath.join(' -> ')}`,
       branchLines ? `- 异常/分支：\n${branchLines}` : '- 异常/分支：未识别到显式分支',
-      exceptionLines ? `- 异常路径：\n${exceptionLines}` : '',
+      pathLines ? `- 测试路径：\n${pathLines}` : '',
       nodeLines ? `- 流程节点：\n${nodeLines}` : '',
     ]
       .filter(Boolean)
       .join('\n')
       .slice(0, 4000)
+  }
+
+  private buildPaths(mainPath: string[], exceptionPaths: string[][]): FlowchartContext['paths'] {
+    const paths: FlowchartContext['paths'] = []
+    if (mainPath.length) {
+      paths.push({ id: this.pathId(paths.length), type: 'main', nodes: mainPath })
+    }
+    for (const nodes of exceptionPaths) {
+      if (!nodes.length) continue
+      paths.push({ id: this.pathId(paths.length), type: 'exception', nodes })
+    }
+    return paths
+  }
+
+  private pathId(index: number): string {
+    return `TP-${String(index + 1).padStart(3, '0')}`
   }
 
   private normalizeText(text: string): string {

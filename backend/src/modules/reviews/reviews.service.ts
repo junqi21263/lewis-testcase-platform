@@ -25,6 +25,8 @@ type SessionUser = { id: string; role: UserRole; teamId?: string | null }
 type ExecutionResultStatus = 'passed' | 'failed' | 'skipped'
 type ExecutionResultInput = {
   caseId?: unknown
+  reqId?: unknown
+  tpId?: unknown
   title?: unknown
   status?: unknown
   durationMs?: unknown
@@ -37,7 +39,7 @@ type ExecutionResultsPayload = {
   summary?: unknown
   results?: unknown
 }
-type ExecutionResultMatchedBy = 'caseId' | 'exactTitle' | 'normalizedTitle'
+type ExecutionResultMatchedBy = 'caseId' | 'tpId' | 'reqId' | 'exactTitle' | 'normalizedTitle'
 type ExecutionResultImportItem = {
   caseId: string
   title: string
@@ -176,7 +178,7 @@ export class ReviewsService {
       }
     }
 
-    const [cases, reviews, reviewGroups] = await Promise.all([
+    const [cases, reviews, reviewGroups, coverageMatrix] = await Promise.all([
       this.prisma.testCase.findMany({
         where: { suiteId: record.suiteId },
         orderBy: { updatedAt: 'desc' },
@@ -186,6 +188,10 @@ export class ReviewsService {
         by: ['reviewStatus'],
         where: { recordId },
         _count: { id: true },
+      }),
+      this.prisma.requirementCoverageItem.findMany({
+        where: { recordId },
+        orderBy: { reqId: 'asc' },
       }),
     ])
 
@@ -231,6 +237,7 @@ export class ReviewsService {
         counts,
       },
       cases: items,
+      coverageMatrix,
     }
   }
 
@@ -283,6 +290,8 @@ export class ReviewsService {
     summary: string
     results: Array<{
       caseId?: string
+      reqId?: string
+      tpId?: string
       title: string
       status: ExecutionResultStatus
       durationMs?: number
@@ -300,11 +309,15 @@ export class ReviewsService {
       const status = this.normalizeExecutionStatus(row.status)
       if (!status) throw new BadRequestException(`第 ${index + 1} 条执行结果 status 无效`)
       const caseId = typeof row.caseId === 'string' ? row.caseId.trim().slice(0, 128) : undefined
+      const reqId = typeof row.reqId === 'string' ? row.reqId.trim().toUpperCase().slice(0, 32) : undefined
+      const tpId = typeof row.tpId === 'string' ? row.tpId.trim().toUpperCase().slice(0, 32) : undefined
       const title = typeof row.title === 'string' ? row.title.trim().slice(0, 500) : ''
-      if (!caseId && !title) throw new BadRequestException(`第 ${index + 1} 条执行结果缺少 caseId 或 title`)
+      if (!caseId && !reqId && !tpId && !title) throw new BadRequestException(`第 ${index + 1} 条执行结果缺少 caseId、tpId、reqId 或 title`)
       const durationMsRaw = Number(row.durationMs)
       return {
         caseId: caseId || undefined,
+        reqId: reqId || undefined,
+        tpId: tpId || undefined,
         title,
         status,
         durationMs: Number.isFinite(durationMsRaw) && durationMsRaw >= 0 ? Math.round(durationMsRaw) : undefined,
@@ -378,13 +391,25 @@ export class ReviewsService {
     ])
     const reviewMap = new Map(reviews.map((review) => [review.caseId, review]))
     const byId = new Map(cases.map((c) => [c.id, c]))
+    const byTpId = new Map<string, typeof cases>()
+    const byReqId = new Map<string, typeof cases>()
     const exactTitle = new Map<string, typeof cases>()
     const normalizedTitle = new Map<string, typeof cases>()
     for (const c of cases) {
+      for (const id of Array.isArray((c as any).testPathIds) ? (c as any).testPathIds : []) {
+        const key = String(id).toUpperCase()
+        byTpId.set(key, [...(byTpId.get(key) ?? []), c])
+      }
+      for (const id of Array.isArray((c as any).requirementIds) ? (c as any).requirementIds : []) {
+        const key = String(id).toUpperCase()
+        byReqId.set(key, [...(byReqId.get(key) ?? []), c])
+      }
       exactTitle.set(c.title, [...(exactTitle.get(c.title) ?? []), c])
       const n = this.normalizeExecutionTitle(c.title)
       normalizedTitle.set(n, [...(normalizedTitle.get(n) ?? []), c])
     }
+    const coverageRows = await this.prisma.requirementCoverageItem.findMany({ where: { recordId } })
+    const coverageByReq = new Map(coverageRows.map((row) => [row.reqId, row]))
 
     const items: ExecutionResultImportItem[] = []
     const unmatchedItems: ExecutionResultUnmatchedItem[] = []
@@ -398,6 +423,28 @@ export class ReviewsService {
         matchedCase = byId.get(input.caseId)
         if (matchedCase) matchedBy = 'caseId'
         else reason = 'caseId 不属于当前记录'
+      }
+      if (!matchedCase && input.tpId) {
+        const matches = byTpId.get(input.tpId) ?? []
+        if (matches.length === 1) {
+          matchedCase = matches[0]
+          matchedBy = 'tpId'
+        } else if (matches.length > 1) {
+          reason = 'TP-ID 匹配到多条用例'
+        } else {
+          reason = 'TP-ID 未匹配到当前记录中的用例'
+        }
+      }
+      if (!matchedCase && input.reqId && !reason.includes('TP-ID 匹配到多条')) {
+        const matches = byReqId.get(input.reqId) ?? []
+        if (matches.length === 1) {
+          matchedCase = matches[0]
+          matchedBy = 'reqId'
+        } else if (matches.length > 1) {
+          reason = 'REQ-ID 匹配到多条用例'
+        } else if (!reason) {
+          reason = 'REQ-ID 未匹配到当前记录中的用例'
+        }
       }
       if (!matchedCase && input.title) {
         const exact = exactTitle.get(input.title) ?? []
@@ -482,6 +529,21 @@ export class ReviewsService {
             createdBy: user.id,
           },
         })
+        const reqIds = [
+          ...(Array.isArray((matchedCase as any).requirementIds) ? (matchedCase as any).requirementIds.map(String) : []),
+          ...(input.reqId ? [input.reqId] : []),
+        ].filter((id, index, arr) => id && arr.indexOf(id) === index)
+        for (const reqId of reqIds) {
+          const coverage = coverageByReq.get(reqId)
+          if (!coverage) continue
+          await tx.requirementCoverageItem.update({
+            where: { id: coverage.id },
+            data: {
+              latestExecutionStatus: input.status,
+              latestExecutionSummary: actualResult,
+            },
+          })
+        }
       })
 
       items.push({

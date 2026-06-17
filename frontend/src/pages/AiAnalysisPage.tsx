@@ -40,6 +40,7 @@ import {
   Maximize2,
   Info,
   Circle,
+  GitCompare,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -50,7 +51,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { filesApi } from '@/api/files'
 import { subscribeFileParseEvents } from '@/api/fileParseSse'
 import { aiApi } from '@/api/ai'
-import type { AIModel, UploadedFile, GenerationRecord, GenerationStatus } from '@/types'
+import type { AIModel, UploadedFile, GenerationRecord, GenerationStatus, AnalysisStructuredResult } from '@/types'
 import { safeRandomUUID } from '@/utils/uuid'
 import { displayUploadedFilename, normalizeUploadedFilename } from '@/utils/filenameDisplay'
 import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
@@ -699,6 +700,14 @@ function AiAnalysisPageInner() {
   /** 与 uploadedFile 同属一批多图分析时的其余图片（最多再 4 张，合计 ≤5） */
   const [additionalAnalysisFiles, setAdditionalAnalysisFiles] = useState<UploadedFile[]>([])
   const [analysisRecords, setAnalysisRecords] = useState<GenerationRecord[]>([])
+  const [currentAnalysisRecordId, setCurrentAnalysisRecordId] = useState<string | null>(null)
+  const [currentAnalysisStructured, setCurrentAnalysisStructured] = useState<AnalysisStructuredResult | null>(null)
+  const [currentAnalysisVersion, setCurrentAnalysisVersion] = useState<number | null>(null)
+  const [analysisVersionsOpen, setAnalysisVersionsOpen] = useState(false)
+  const [analysisVersions, setAnalysisVersions] = useState<Array<{ id: string; versionNumber: number; sourceType: string; modelName: string; createdAt: string }>>([])
+  const [analysisDiff, setAnalysisDiff] = useState<Array<{ field: string; label: string; before: string; after: string; changed: boolean }>>([])
+  const [analysisVersionLoading, setAnalysisVersionLoading] = useState(false)
+  const [crossReviewBusy, setCrossReviewBusy] = useState(false)
   const [requirementDescription, setRequirementDescription] = useState('')
   const [requirementSupplement, setRequirementSupplement] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
@@ -1086,6 +1095,20 @@ function AiAnalysisPageInner() {
         `【解析原文摘录】\n${pc.length > cap ? `${pc.slice(0, cap)}\n…（共 ${pc.length} 字，已截断）` : pc}`,
       )
     }
+    if (currentAnalysisStructured?.requirements?.length) {
+      parts.push(
+        `【需求追踪 REQ-ID】\n${currentAnalysisStructured.requirements
+          .map((r) => `${r.id} ${r.text}`)
+          .join('\n')}`,
+      )
+    }
+    if (currentAnalysisStructured?.flowchart?.paths?.length) {
+      parts.push(
+        `【测试路径 TP-ID】\n${currentAnalysisStructured.flowchart.paths
+          .map((p) => `${p.id} ${p.type === 'exception' ? '异常路径' : '主路径'}：${p.nodes.join(' -> ')}`)
+          .join('\n')}`,
+      )
+    }
     const ctx = parts.filter(Boolean).join('\n\n')
     const filledPrompt = `请根据以下材料生成完整、可执行的测试用例（遵守平台模板与输出格式要求）。\n\n${ctx ? `${ctx}\n\n` : ''}【AI 需求分析报告】\n${report}`
     const handoffFields = extractAnalysisReportHandoffFields(report)
@@ -1102,6 +1125,7 @@ function AiAnalysisPageInner() {
     })
     navigate('/generate')
   }, [
+    currentAnalysisStructured,
     editedParsedText,
     navigate,
     parsePreviewDirty,
@@ -1111,6 +1135,56 @@ function AiAnalysisPageInner() {
     state.reportText,
     uploadedFile,
   ])
+
+  const handleLoadAnalysisVersions = useCallback(async () => {
+    if (!currentAnalysisRecordId) {
+      toast.error('请先完成或载入一条分析记录')
+      return
+    }
+    setAnalysisVersionLoading(true)
+    try {
+      const list = await aiApi.listAnalysisVersions(currentAnalysisRecordId)
+      setAnalysisVersions(list.map((v) => ({
+        id: v.id,
+        versionNumber: v.versionNumber,
+        sourceType: v.sourceType,
+        modelName: v.modelName,
+        createdAt: v.createdAt,
+      })))
+      if (list.length >= 2) {
+        const fields = await aiApi.diffAnalysisVersions(currentAnalysisRecordId, {
+          leftVersionId: list[list.length - 2].id,
+          rightVersionId: list[list.length - 1].id,
+        })
+        setAnalysisDiff(fields)
+      } else {
+        setAnalysisDiff([])
+      }
+      setAnalysisVersionsOpen(true)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '加载分析版本失败')
+    } finally {
+      setAnalysisVersionLoading(false)
+    }
+  }, [currentAnalysisRecordId])
+
+  const handleCrossReviewAnalysis = useCallback(async () => {
+    if (!currentAnalysisRecordId) {
+      toast.error('请先完成或载入一条分析记录')
+      return
+    }
+    setCrossReviewBusy(true)
+    try {
+      const res = await aiApi.crossReviewAnalysis(currentAnalysisRecordId)
+      setCurrentAnalysisStructured((prev) => prev ? { ...prev, crossReview: res } : prev)
+      if (res.status === 'skipped') toast('多模型交叉评审已跳过：缺少第二个可用模型')
+      else toast.success('多模型交叉评审已进入后台处理')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '触发交叉评审失败')
+    } finally {
+      setCrossReviewBusy(false)
+    }
+  }, [currentAnalysisRecordId])
 
   /** 多图并行轮询时同步更新主文件或附加列表中的同一条记录 */
   const updateFileInPlace = useCallback((f: UploadedFile) => {
@@ -1252,6 +1326,12 @@ function AiAnalysisPageInner() {
         toast.error('该记录无可展示内容')
         return
       }
+      setCurrentAnalysisRecordId(r.id)
+      setCurrentAnalysisStructured(r.analysisStructuredResult ?? null)
+      setCurrentAnalysisVersion(r.analysisLatestVersion ?? null)
+      setAnalysisVersions([])
+      setAnalysisDiff([])
+      setAnalysisVersionsOpen(false)
       dispatch({ type: 'LOAD_SAVED_REPORT', text })
       toast.success('已载入分析结果')
     } catch {
@@ -1570,6 +1650,14 @@ function AiAnalysisPageInner() {
 
       dispatch({ type: isRevision ? 'REVIEW' : 'START_ANALYSIS' })
       if (!isRevision) {
+        setCurrentAnalysisRecordId(null)
+        setCurrentAnalysisStructured(null)
+        setCurrentAnalysisVersion(null)
+        setAnalysisVersions([])
+        setAnalysisDiff([])
+        setAnalysisVersionsOpen(false)
+      }
+      if (!isRevision) {
         addLog('🚀 开始需求分析...')
         addLog('🤖 正在调用 AI 模型（需求分析通道）...')
       } else {
@@ -1591,6 +1679,9 @@ function AiAnalysisPageInner() {
               customPrompt,
               stream: true as const,
               modelConfigId: selectedModelId,
+              ...(isRevision && currentAnalysisRecordId
+                ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }
+                : {}),
             }
           : uploadedFile
             ? {
@@ -1602,6 +1693,9 @@ function AiAnalysisPageInner() {
                 customPrompt,
                 stream: true as const,
                 modelConfigId: selectedModelId,
+                ...(isRevision && currentAnalysisRecordId
+                  ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }
+                  : {}),
               }
             : null
 
@@ -1617,7 +1711,10 @@ function AiAnalysisPageInner() {
             (chunk: string) => {
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
-            () => {
+            (meta) => {
+              if (meta?.recordId) setCurrentAnalysisRecordId(meta.recordId)
+              if (meta?.analysisStructuredResult) setCurrentAnalysisStructured(meta.analysisStructuredResult)
+              if (typeof meta?.analysisVersionNumber === 'number') setCurrentAnalysisVersion(meta.analysisVersionNumber)
               void loadAnalysisRecords()
               if (humanReview) {
                 addLog(
@@ -1654,6 +1751,8 @@ function AiAnalysisPageInner() {
       selectedModelId,
       makeLog,
       loadAnalysisRecords,
+      currentAnalysisRecordId,
+      state.reviewText,
     ],
   )
 
@@ -2874,6 +2973,135 @@ ${state.reportText}
                           需求文档分析报告
                         </h3>
                       </div>
+                      {currentAnalysisStructured && (
+                        <div className="mb-4 space-y-3 rounded-lg border border-workspace-panel-border/70 bg-workspace-panel-muted/45 p-3 text-xs text-workspace-text-secondary dark:border-white/10 dark:bg-slate-950/35">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-workspace-text-primary">需求覆盖闭环</p>
+                              <p className="mt-0.5 text-[11px] text-workspace-text-muted">
+                                {currentAnalysisVersion ? `当前报告 v${currentAnalysisVersion} · ` : ''}
+                                REQ {currentAnalysisStructured.requirements?.length ?? 0} 个 · TP {currentAnalysisStructured.flowchart?.paths?.length ?? 0} 条
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 border-workspace-panel-border/70 px-2 text-[11px]"
+                                disabled={analysisVersionLoading || !currentAnalysisRecordId}
+                                onClick={() => void handleLoadAnalysisVersions()}
+                              >
+                                {analysisVersionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitCompare className="h-3 w-3" />}
+                                版本/Diff
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 border-workspace-panel-border/70 px-2 text-[11px]"
+                                disabled={crossReviewBusy || !currentAnalysisRecordId}
+                                onClick={() => void handleCrossReviewAnalysis()}
+                              >
+                                {crossReviewBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                交叉评审
+                              </Button>
+                            </div>
+                          </div>
+
+                          {currentAnalysisStructured.qualityScores && (
+                            <div className="grid gap-2 sm:grid-cols-5">
+                              {[
+                                ['完整性', currentAnalysisStructured.qualityScores.completeness],
+                                ['可测试性', currentAnalysisStructured.qualityScores.testability],
+                                ['接口明确', currentAnalysisStructured.qualityScores.interfaceClarity],
+                                ['风险覆盖', currentAnalysisStructured.qualityScores.riskCoverage],
+                                ['流程完整', currentAnalysisStructured.qualityScores.flowCompleteness],
+                              ].map(([label, value]) => (
+                                <div key={label} className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
+                                  <p className="text-[11px] text-workspace-text-muted">{label}</p>
+                                  <p className="mt-1 text-base font-semibold text-workspace-text-primary">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {(currentAnalysisStructured.inputWarnings?.length || currentAnalysisStructured.openQuestions?.length) ? (
+                            <div className="grid gap-2 lg:grid-cols-2">
+                              <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-2">
+                                <p className="font-medium text-amber-800 dark:text-amber-200">输入质量提醒</p>
+                                <ul className="mt-1 list-disc space-y-1 pl-4">
+                                  {(currentAnalysisStructured.inputWarnings ?? []).slice(0, 5).map((w, idx) => (
+                                    <li key={`${w.type}-${idx}`}>{w.message}</li>
+                                  ))}
+                                  {!currentAnalysisStructured.inputWarnings?.length && <li>暂无明显低质量输入提醒</li>}
+                                </ul>
+                              </div>
+                              <div className="rounded-md border border-cyan-500/25 bg-cyan-500/10 p-2">
+                                <p className="font-medium text-cyan-800 dark:text-cyan-200">待确认问题</p>
+                                <ul className="mt-1 list-disc space-y-1 pl-4">
+                                  {(currentAnalysisStructured.openQuestions ?? []).slice(0, 5).map((q, idx) => {
+                                    const text = typeof q === 'string' ? q : q.text
+                                    return <li key={`${text}-${idx}`}>{text}</li>
+                                  })}
+                                  {!currentAnalysisStructured.openQuestions?.length && <li>暂无待确认问题</li>}
+                                </ul>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {(currentAnalysisStructured.testStrategy || currentAnalysisStructured.automationReadiness) && (
+                            <div className="grid gap-2 lg:grid-cols-2">
+                              <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
+                                <p className="font-medium text-workspace-text-primary">一键测试策略</p>
+                                <p className="mt-1">范围：{currentAnalysisStructured.testStrategy?.scope?.join('、') || '待补充'}</p>
+                                <p className="mt-1">类型：{currentAnalysisStructured.testStrategy?.types?.join('、') || '待补充'}</p>
+                              </div>
+                              <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
+                                <p className="font-medium text-workspace-text-primary">Agent 执行准备</p>
+                                <p className="mt-1">可自动化：{currentAnalysisStructured.automationReadiness?.automatable?.join('、') || '待识别'}</p>
+                                <p className="mt-1">需人工：{currentAnalysisStructured.automationReadiness?.manual?.join('、') || '待识别'}</p>
+                                <p className="mt-1">缺环境：{currentAnalysisStructured.automationReadiness?.blocked?.join('、') || '无'}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {analysisVersionsOpen && (
+                            <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
+                              <div className="flex flex-wrap gap-1.5">
+                                {analysisVersions.map((v) => (
+                                  <Badge key={v.id} variant="outline" className="border-workspace-panel-border/70 text-[10px]">
+                                    v{v.versionNumber} · {v.sourceType} · {v.modelName}
+                                  </Badge>
+                                ))}
+                                {analysisVersions.length === 0 && <span className="text-workspace-text-muted">暂无版本记录</span>}
+                              </div>
+                              {analysisDiff.some((f) => f.changed) && (
+                                <div className="mt-2 space-y-1">
+                                  {analysisDiff.filter((f) => f.changed).slice(0, 4).map((f) => (
+                                    <p key={f.field} className="text-[11px]">
+                                      <span className="font-medium text-workspace-text-primary">{f.label}</span>
+                                      ：{f.before || '空'} → {f.after || '空'}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {currentAnalysisStructured.crossReview && (
+                            <div className="rounded-md border border-violet-500/25 bg-violet-500/10 p-2">
+                              <p className="font-medium text-violet-800 dark:text-violet-200">
+                                多模型交叉评审：{currentAnalysisStructured.crossReview.status}
+                                {currentAnalysisStructured.crossReview.modelName ? ` · ${currentAnalysisStructured.crossReview.modelName}` : ''}
+                              </p>
+                              {currentAnalysisStructured.crossReview.differences?.length ? (
+                                <p className="mt-1">{currentAnalysisStructured.crossReview.differences.slice(0, 3).join('；')}</p>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div
                         ref={reportMarkdownRef}
                         data-testid="ai-analysis-report-markdown"

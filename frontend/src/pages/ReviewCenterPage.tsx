@@ -73,6 +73,9 @@ function normalizeSnapshot(raw: CaseSnapshot): CaseSnapshot {
           : [''],
     expectedResult: raw.expectedResult ?? '',
     remarks: raw.remarks ?? '',
+    requirementIds: Array.isArray(raw.requirementIds) ? raw.requirementIds.map(String) : [],
+    testPathIds: Array.isArray(raw.testPathIds) ? raw.testPathIds.map(String) : [],
+    automationReadiness: raw.automationReadiness ?? null,
   }
 }
 
@@ -86,7 +89,8 @@ const executionResultExample = JSON.stringify(
     summary: '本地自动化回归',
     results: [
       {
-        caseId: 'case-id',
+        tpId: 'TP-001',
+        reqId: 'REQ-001',
         title: '登录用例',
         status: 'failed',
         durationMs: 900,
@@ -521,6 +525,50 @@ export default function ReviewCenterPage() {
           </div>
         </header>
 
+        {workspace.coverageMatrix && workspace.coverageMatrix.length > 0 && (
+          <section
+            className="rounded-xl border border-[hsl(var(--review-panel-border))] bg-[hsl(var(--review-panel-bg))] p-3"
+            data-testid="review-coverage-matrix"
+          >
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-[hsl(var(--review-text-primary))]">
+                  需求覆盖矩阵
+                </h2>
+                <p className="text-xs text-[hsl(var(--review-text-muted))]">
+                  按 REQ-ID 追踪关联用例与最新执行结果
+                </p>
+              </div>
+              <span className="rounded-full border border-[hsl(var(--review-panel-border))] px-2 py-1 text-xs text-[hsl(var(--review-text-secondary))]">
+                {workspace.coverageMatrix.filter((item) => item.coveredCaseIds.length > 0).length}/{workspace.coverageMatrix.length} 已覆盖
+              </span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {workspace.coverageMatrix.slice(0, 6).map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-[hsl(var(--review-panel-border))] bg-[hsl(var(--review-chip-bg))] p-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-[hsl(var(--review-text-primary))]">
+                      {item.reqId}
+                    </span>
+                    <span className="rounded-full bg-[hsl(var(--review-row-accent))]/15 px-2 py-0.5 text-[10px] text-[hsl(var(--review-row-accent))]">
+                      {item.coveredCaseIds.length} 用例
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs text-[hsl(var(--review-text-secondary))]">
+                    {item.requirementText}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[hsl(var(--review-text-muted))]">
+                    执行：{item.latestExecutionStatus || item.gapReason || '未回写'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {executionDialogOpen && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
             <div className="w-full max-w-2xl rounded-2xl border border-[hsl(var(--review-panel-border))] bg-[hsl(var(--review-panel-bg))] p-4 shadow-2xl">
@@ -778,6 +826,23 @@ export default function ReviewCenterPage() {
                     <p className="mt-2 line-clamp-2 text-base font-semibold leading-snug text-[hsl(var(--review-text-primary))]">
                       {selectedCase.title}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {(draft.requirementIds ?? []).map((id) => (
+                        <span key={id} className="rounded-full border border-[hsl(var(--review-panel-border))] px-2 py-0.5 font-mono text-[10px] text-[hsl(var(--review-text-secondary))]">
+                          {id}
+                        </span>
+                      ))}
+                      {(draft.testPathIds ?? []).map((id) => (
+                        <span key={id} className="rounded-full border border-[hsl(var(--review-row-accent))]/40 px-2 py-0.5 font-mono text-[10px] text-[hsl(var(--review-row-accent))]">
+                          {id}
+                        </span>
+                      ))}
+                      {draft.automationReadiness?.status ? (
+                        <span className="rounded-full border border-[hsl(var(--review-panel-border))] px-2 py-0.5 text-[10px] text-[hsl(var(--review-text-muted))]">
+                          {draft.automationReadiness.status}：{draft.automationReadiness.reason}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className={rev.actionGroup}>
@@ -976,6 +1041,12 @@ function CaseListItem(props: {
             <span className={rev.caseMetaPill}>{item.priority}</span>
             <span className={rev.caseMetaPill}>{CASE_TYPE_LABELS[item.type] ?? item.type}</span>
             <span className={rev.caseMetaPill}>v{item.currentVersionNumber}</span>
+            {(item.requirementIds ?? []).slice(0, 2).map((id) => (
+              <span key={id} className={rev.caseMetaPill}>{id}</span>
+            ))}
+            {(item.testPathIds ?? []).slice(0, 2).map((id) => (
+              <span key={id} className={rev.caseMetaPill}>{id}</span>
+            ))}
             {getReviewQueueBadges(item).map((badge) => (
               <span key={badge} className={rev.caseMetaPill}>
                 {badge}

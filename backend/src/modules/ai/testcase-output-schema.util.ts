@@ -1,4 +1,18 @@
-export const CASE_OUTPUT_REQUIRED_FIELDS = ['title', 'module', 'priority', 'riskLevel', 'type', 'precondition', 'steps', 'expectedResult', 'tags', 'mermaid'] as const
+export const CASE_OUTPUT_REQUIRED_FIELDS = [
+  'title',
+  'module',
+  'priority',
+  'riskLevel',
+  'type',
+  'precondition',
+  'steps',
+  'expectedResult',
+  'tags',
+  'mermaid',
+  'requirementIds',
+  'testPathIds',
+  'automationReadiness',
+] as const
 
 export type CaseOutputRequiredField = (typeof CASE_OUTPUT_REQUIRED_FIELDS)[number]
 
@@ -52,6 +66,23 @@ export const TESTCASE_OUTPUT_JSON_SCHEMA = {
             },
             mermaid: {
               anyOf: [{ type: 'string' }, { type: 'null' }],
+            },
+            requirementIds: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            testPathIds: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            automationReadiness: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['status', 'reason'],
+              properties: {
+                status: { type: 'string', enum: ['automatable', 'manual', 'blocked'] },
+                reason: { type: 'string' },
+              },
             },
           },
         },
@@ -132,6 +163,25 @@ export function validateCaseRowsAgainstSchema(rows: unknown[]): SchemaValidation
     if ('tags' in row && !Array.isArray(row.tags)) errors.push(`${prefix}.tags must be an array`)
     if ('mermaid' in row && row.mermaid !== null && typeof row.mermaid !== 'string') {
       errors.push(`${prefix}.mermaid must be a string or null`)
+    }
+    if ('requirementIds' in row && !Array.isArray(row.requirementIds)) {
+      errors.push(`${prefix}.requirementIds must be an array`)
+    }
+    if ('testPathIds' in row && !Array.isArray(row.testPathIds)) {
+      errors.push(`${prefix}.testPathIds must be an array`)
+    }
+    if ('automationReadiness' in row) {
+      if (!isPlainObject(row.automationReadiness)) {
+        errors.push(`${prefix}.automationReadiness must be an object`)
+      } else {
+        const readiness = row.automationReadiness
+        if (!['automatable', 'manual', 'blocked'].includes(String(readiness.status))) {
+          errors.push(`${prefix}.automationReadiness.status must be one of automatable, manual, blocked`)
+        }
+        if (typeof readiness.reason !== 'string') {
+          errors.push(`${prefix}.automationReadiness.reason must be a string`)
+        }
+      }
     }
 
     if ('steps' in row) {

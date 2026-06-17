@@ -26,6 +26,12 @@ export type CaseSnapshot = {
   expectedResults: string[]
   expectedResult: string
   remarks?: string
+  requirementIds?: string[]
+  testPathIds?: string[]
+  automationReadiness?: {
+    status: 'automatable' | 'manual' | 'blocked'
+    reason: string
+  } | null
 }
 
 export type ReviewWorkspaceCase = {
@@ -40,6 +46,12 @@ export type ReviewWorkspaceCase = {
   reviewedAt: string | null
   reviewId: string | null
   updatedAt: string
+  requirementIds?: string[]
+  testPathIds?: string[]
+  automationReadiness?: {
+    status: 'automatable' | 'manual' | 'blocked'
+    reason: string
+  } | null
 }
 
 export type ReviewWorkspaceRecord = {
@@ -62,10 +74,26 @@ export type ReviewWorkspaceSummary = {
   counts: Partial<Record<CaseReviewStatus, number>>
 }
 
+export type RequirementCoverageItem = {
+  id: string
+  recordId: string
+  reqId: string
+  requirementText: string
+  requirementType?: string | null
+  coveredCaseIds: string[]
+  latestExecutionStatus?: string | null
+  latestExecutionSummary?: string | null
+  riskNotes?: string | null
+  gapReason?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export type ReviewWorkspace = {
   record: ReviewWorkspaceRecord
   summary: ReviewWorkspaceSummary
   cases: ReviewWorkspaceCase[]
+  coverageMatrix?: RequirementCoverageItem[]
 }
 
 export type ReviewComment = {
@@ -101,6 +129,8 @@ export type ExecutionResultStatus = 'passed' | 'failed' | 'skipped'
 
 export type ExecutionResultInput = {
   caseId?: string
+  reqId?: string
+  tpId?: string
   title?: string
   status: ExecutionResultStatus
   durationMs?: number
@@ -125,11 +155,13 @@ export type ExecutionResultsImportResponse = {
     caseId: string
     title: string
     status: ExecutionResultStatus
-    matchedBy: 'caseId' | 'exactTitle' | 'normalizedTitle'
+    matchedBy: 'caseId' | 'tpId' | 'reqId' | 'exactTitle' | 'normalizedTitle'
   }>
   unmatchedItems: Array<{
     title: string
     caseId?: string
+    reqId?: string
+    tpId?: string
     status: ExecutionResultStatus
     reason: string
   }>
