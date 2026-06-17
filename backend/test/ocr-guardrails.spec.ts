@@ -27,6 +27,28 @@ describe('OCR cache guardrails', () => {
     expect(svc.get('c')).toBe('3')
     svc.onModuleDestroy()
   })
+
+  it('prefers redis cache when redis is ready', async () => {
+    const redis = {
+      isReady: jest.fn(() => true),
+      getEntry: jest.fn().mockResolvedValue('redis text'),
+      setEntry: jest.fn().mockResolvedValue(undefined),
+    }
+    const svc = new OcrCacheService(
+      configFrom({
+        IMAGE_OCR_CACHE_ENABLED: '1',
+        IMAGE_OCR_CACHE_TTL_DAYS: '7',
+      }),
+      redis as any,
+    )
+
+    await expect(svc.getAsync('abc')).resolves.toBe('redis text')
+    await svc.setAsync('abc', 'new text')
+
+    expect(redis.getEntry).toHaveBeenCalledWith('ocr:result:abc')
+    expect(redis.setEntry).toHaveBeenCalledWith('ocr:result:abc', 'new text', 7 * 24 * 60 * 60)
+    svc.onModuleDestroy()
+  })
 })
 
 describe('OCR queue guardrails', () => {

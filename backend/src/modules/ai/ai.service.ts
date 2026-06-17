@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common'
+import { Injectable, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
@@ -47,6 +47,7 @@ import {
 } from '@/modules/templates/prompt-template-evaluation.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
+import { RedisService } from '@/redis/redis.service'
 
 type PromptEvaluationProgressEvent = {
   stage?:
@@ -64,6 +65,7 @@ type PromptEvaluationProgressEvent = {
 export class AiService {
   private readonly logger = new Logger(AiService.name)
   private readonly jsonSchemaUnsupportedModels = new Set<string>()
+  private crossReviewQueueDraining = false
 
   /** 从模型输出中尽量提取 cases 数组（兼容 Markdown 代码块、前后缀说明文字） */
   private extractCaseRows(raw: string): any[] {
@@ -610,7 +612,28 @@ export class AiService {
     private config: ConfigService,
     private readonly multimodal: MultimodalService,
     private readonly reviews: ReviewsService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
+
+  private async writeCachedStreamContent(res: Response, streamId: string, delta: string): Promise<void> {
+    if (!delta) return
+    await this.redis?.appendStreamChunk(streamId, delta)
+    res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+  }
+
+  async getStreamSnapshot(recordId: string, userId: string) {
+    const record = await this.prisma.generationRecord.findFirst({
+      where: { id: recordId, creatorId: userId, deletedAt: null },
+      select: { id: true, status: true, errorMessage: true },
+    })
+    if (!record) throw new BadRequestException('生成记录不存在或无权访问')
+    return {
+      recordId,
+      status: record.status,
+      errorMessage: record.errorMessage,
+      content: (await this.redis?.getStreamSnapshot(recordId)) ?? '',
+    }
+  }
 
   /** 环境级混元 OpenAI 多模态（HUNYUAN_MULTIMODAL_ENABLED + HUNYUAN_VISION_API_KEY） */
   private hunyuanMultimodalEnvReady(): boolean {
@@ -972,10 +995,45 @@ export class AiService {
       data: { crossReviewStatus: 'running' },
     })
 
-    setImmediate(() => {
-      void this.runAnalysisCrossReviewInBackground(latest.id, secondary, latest.markdown)
-    })
+    if (this.redis?.isReady()) {
+      await this.redis.enqueueJob('ai-cross-review', {
+        versionId: latest.id,
+        model: {
+          apiKey: secondary.apiKey,
+          baseUrl: secondary.baseUrl,
+          modelId: secondary.modelId,
+          name: secondary.name,
+        },
+        markdown: latest.markdown,
+      })
+      setImmediate(() => void this.drainCrossReviewQueue())
+    } else {
+      setImmediate(() => {
+        void this.runAnalysisCrossReviewInBackground(latest.id, secondary, latest.markdown)
+      })
+    }
     return { status: 'running', modelName: secondary.name }
+  }
+
+  private async drainCrossReviewQueue() {
+    if (this.crossReviewQueueDraining || !this.redis?.isReady()) return
+    this.crossReviewQueueDraining = true
+    try {
+      for (let i = 0; i < 5; i++) {
+        const job = await this.redis.dequeueJob<{
+          versionId: string
+          model: { apiKey: string; baseUrl: string; modelId: string; name: string }
+          markdown: string
+        }>('ai-cross-review')
+        if (!job) return
+        await this.runAnalysisCrossReviewInBackground(job.versionId, job.model, job.markdown)
+      }
+    } finally {
+      this.crossReviewQueueDraining = false
+      if ((await this.redis.queueLength('ai-cross-review')) > 0) {
+        setImmediate(() => void this.drainCrossReviewQueue())
+      }
+    }
   }
 
   private async runAnalysisCrossReviewInBackground(versionId: string, model: { apiKey: string; baseUrl: string; modelId: string; name: string }, markdown: string) {
@@ -1973,6 +2031,8 @@ ${originalPrompt}
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
+    res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
+    await this.redis?.enqueueJob('ai-generate', { recordId: record.id, userId })
 
     // 模型两次 token 间隔较长时，部分负载均衡会 idle 断连；SSE 注释行不触发客户端 data 事件
     const keepAliveMs = 15000
@@ -2119,7 +2179,7 @@ ${originalPrompt}
               }
             }
           }
-          res.write(`data: ${JSON.stringify({ content: streamDelta })}\n\n`)
+          await this.writeCachedStreamContent(res, record.id, streamDelta)
         }
       }
 
@@ -2374,6 +2434,8 @@ ${originalPrompt}
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
+    res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
+    await this.redis?.enqueueJob('ai-analysis', { recordId: record.id, userId })
 
     const keepAliveMs = 15000
     const keepAlive = setInterval(() => {
@@ -2415,7 +2477,7 @@ ${originalPrompt}
         const delta = (typeof d?.content === 'string' ? d.content : '') || (typeof d?.reasoning_content === 'string' ? d.reasoning_content : '')
         if (delta) {
           fullContent += delta
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+          await this.writeCachedStreamContent(res, record.id, delta)
         }
       }
 
@@ -2428,7 +2490,10 @@ ${originalPrompt}
           userContent,
           fullContent,
           maxOut,
-          (delta) => res.write(`data: ${JSON.stringify({ content: delta })}\n\n`),
+          (delta) => {
+            void this.redis?.appendStreamChunk(record.id, delta)
+            res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+          },
         )
         fullContent = continued.content
         finishReason = continued.finishReason
@@ -2458,7 +2523,7 @@ ${originalPrompt}
           const appendix = `\n\n---\n\n## 自动质量修复版\n\n${repaired.markdown}`
           fullContent += appendix
           analysisStructuredResult = buildAnalysisStructuredResult(repaired.markdown)
-          res.write(`data: ${JSON.stringify({ content: appendix })}\n\n`)
+          await this.writeCachedStreamContent(res, record.id, appendix)
           this.writeStreamNotice(res, '需求分析报告已自动补齐结构化章节。')
         } else {
           this.writeStreamNotice(res, '需求分析报告自动修复未产出更优结果，已保留原报告并记录质量问题。')

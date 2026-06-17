@@ -5,6 +5,7 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as fs from 'fs'
@@ -28,6 +29,7 @@ import { PdfDocumentParseService } from './pdf-document-parse.service'
 import { PdfFlowchartParseService } from './pdf-flowchart-parse.service'
 import { decidePdfParseStrategy } from './pdf-fast-parse-strategy.util'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
+import { RedisService } from '@/redis/redis.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
 import {
   buildPdfPagedVisionExtractionPrompt,
@@ -67,6 +69,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     private readonly pdfDocumentParse: PdfDocumentParseService,
     private readonly multimodal: MultimodalService,
     private readonly pdfFlowchartParse: PdfFlowchartParseService,
+    @Optional() private readonly redis?: RedisService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads')
     if (!fs.existsSync(this.uploadDir)) {
@@ -271,6 +274,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     fileType: FileType
     mimeType: string
   }): Promise<void> {
+    await this.redis?.enqueueJob('file-parse', { fileId: claimed.id, fileType: claimed.fileType })
     if (!claimed.path?.trim()) return
     if (!this.parseWorkerEnabled) return
     if (this.activeParseWorkerJobs >= this.parseWorkerMaxConcurrent) {
@@ -551,9 +555,22 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     })
     const parseRetryHint = hintRow?.parseRetryHint ?? null
     const uploaderId = hintRow?.uploaderId ?? null
+    let lastHeartbeatDbWriteAt = 0
+    let lastHeartbeatDbStage = ''
 
     const heartbeat = async (stage: string, progress?: Record<string, unknown>) => {
       try {
+        await this.redis?.setFileParseProgress(fileId, stage, progress ?? null)
+        const nowMs = Date.now()
+        const shouldWriteDb =
+          !this.redis?.isReady() ||
+          stage !== lastHeartbeatDbStage ||
+          nowMs - lastHeartbeatDbWriteAt > 10_000 ||
+          !progress ||
+          Object.keys(progress).length === 0
+        if (!shouldWriteDb) return
+        lastHeartbeatDbWriteAt = nowMs
+        lastHeartbeatDbStage = stage
         await this.prisma.uploadedFile.update({
           where: { id: fileId },
           data: {
@@ -676,6 +693,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           parseRetryHint: null,
         },
       })
+      await this.redis?.clearFileParseProgress(fileId)
       this.logger.log(`文件解析完成: ${fileId}`)
     } catch (err) {
       const msg = sanitizeErrorMessageForClient(((err as Error).message || '解析失败').slice(0, 8000), 3800)
@@ -691,6 +709,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
             parseProgress: Prisma.DbNull,
           },
         })
+        await this.redis?.clearFileParseProgress(fileId)
       } catch (e) {
         if (this.isNotFoundUpdateError(e)) {
           this.logger.warn(`文件记录已不存在，无法写入失败状态: ${fileId}`)
@@ -1904,6 +1923,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    if (file.status === FileStatus.PENDING || file.status === FileStatus.PARSING) {
+      return this.redis?.mergeFileParseRealtime(file.id, file) ?? file
+    }
     return file
   }
 
@@ -1931,6 +1953,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.prisma.uploadedFile.delete({ where: { id } })
+    await this.redis?.clearFileParseProgress(id)
   }
 
   /** 取消正在解析的任务 */
@@ -1962,6 +1985,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
         lastHeartbeatAt: new Date(),
       },
     })
+    await this.redis?.clearFileParseProgress(id)
     this.logger.log(`任务已取消: ${id}`)
     return updated
   }

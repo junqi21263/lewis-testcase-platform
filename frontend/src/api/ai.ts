@@ -59,6 +59,13 @@ export type CrossReviewResult = AnalysisCrossReview & {
   versionNumber?: number
 }
 
+export type AiStreamSnapshot = {
+  recordId: string
+  status: string
+  errorMessage?: string | null
+  content: string
+}
+
 export const aiApi = {
   /** 获取可用模型列表 */
   getModels: () =>
@@ -114,6 +121,9 @@ export const aiApi = {
     request.get<AnalysisReportVersionDiffField[]>(`/ai/analysis/records/${recordId}/diff`, {
       params,
     }),
+
+  getStreamSnapshot: (recordId: string) =>
+    request.get<AiStreamSnapshot>(`/ai/streams/${recordId}/snapshot`),
 
   crossReviewAnalysis: (recordId: string) =>
     request.post<CrossReviewResult>(`/ai/analysis/records/${recordId}/cross-review`, {}),

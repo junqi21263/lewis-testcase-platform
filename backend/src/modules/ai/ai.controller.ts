@@ -63,6 +63,12 @@ export class AiController {
     return this.aiService.listAnalysisVersions(recordId, userId)
   }
 
+  @Get('streams/:recordId/snapshot')
+  @ApiOperation({ summary: '获取 AI 流式输出 Redis 恢复快照' })
+  getStreamSnapshot(@Param('recordId') recordId: string, @CurrentUser('id') userId: string) {
+    return this.aiService.getStreamSnapshot(recordId, userId)
+  }
+
   @Get('analysis/records/:recordId/diff')
   @ApiOperation({ summary: 'AI 需求分析报告版本 diff' })
   diffAnalysisVersions(

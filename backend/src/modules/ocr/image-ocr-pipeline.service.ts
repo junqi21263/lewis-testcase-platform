@@ -65,7 +65,7 @@ export class ImageOcrPipelineService {
     diskPath: string | null,
     opts?: { onProgress?: (p: OcrProgressPayload) => void | Promise<void> },
   ): Promise<string> {
-    const cached = this.cache.get(cacheKey)
+    const cached = await this.cache.getAsync(cacheKey)
     if (cached) {
       await opts?.onProgress?.({ phase: 'OCR', message: 'cache_hit' })
       return cached
@@ -77,7 +77,7 @@ export class ImageOcrPipelineService {
       try {
         const text = await this.recognizeOnce(originalBuf, diskPath, opts)
         if (text.trim()) {
-          this.cache.set(cacheKey, text)
+          await this.cache.setAsync(cacheKey, text)
           return text
         }
         lastErr = new Error('OCR 结果为空')

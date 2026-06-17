@@ -7,8 +7,10 @@ import { TencentOcrClientService } from './tencent-ocr.client.service'
 import { ImageOcrPipelineService } from './image-ocr-pipeline.service'
 import { OcrTaskService } from './ocr-task.service'
 import { OcrController } from './ocr.controller'
+import { RedisModule } from '@/redis/redis.module'
 
 @Module({
+  imports: [RedisModule],
   controllers: [OcrController],
   providers: [
     ImagePreprocessService,

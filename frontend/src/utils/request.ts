@@ -184,6 +184,7 @@ export const request = {
 /** 流式结束元信息（后端在 [DONE] 前下发） */
 export type StreamDoneMeta = {
   recordId?: string
+  streamId?: string
   suiteId?: string
   caseCount?: number
   qualityReport?: QualityReport
@@ -296,6 +297,9 @@ export async function streamRequest(
           }
           if (typeof rec.recordId === 'string') {
             doneMeta = { ...doneMeta, recordId: rec.recordId }
+          }
+          if (typeof rec.streamId === 'string') {
+            doneMeta = { ...doneMeta, streamId: rec.streamId }
           }
           if (typeof rec.suiteId === 'string') {
             doneMeta = { ...doneMeta, suiteId: rec.suiteId }

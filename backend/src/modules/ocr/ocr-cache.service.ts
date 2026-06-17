@@ -1,5 +1,6 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { RedisService } from '@/redis/redis.service'
 
 interface CacheEntry {
   text: string
@@ -19,7 +20,10 @@ export class OcrCacheService implements OnModuleDestroy {
   private totalTextBytes = 0
   private sweepTimer?: NodeJS.Timeout
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly redis?: RedisService,
+  ) {
     const enabled = this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') !== '0'
     if (!enabled) {
       this.logger.log('IMAGE_OCR_CACHE_ENABLED=0，OCR 缓存已关闭')
@@ -38,6 +42,14 @@ export class OcrCacheService implements OnModuleDestroy {
     const days = parseFloat(this.config.get<string>('IMAGE_OCR_CACHE_TTL_DAYS') || '7')
     const d = Number.isFinite(days) && days > 0 ? Math.min(days, 90) : 7
     return Math.round(d * 24 * 60 * 60 * 1000)
+  }
+
+  private ttlSec(): number {
+    return Math.max(1, Math.ceil(this.ttlMs() / 1000))
+  }
+
+  private redisKey(md5: string): string {
+    return `ocr:result:${md5}`
   }
 
   private maxEntries(): number {
@@ -86,6 +98,15 @@ export class OcrCacheService implements OnModuleDestroy {
     return e.text
   }
 
+  async getAsync(md5: string): Promise<string | null> {
+    if (this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') === '0') return null
+    if (this.redis?.isReady()) {
+      const redisValue = await this.redis.getEntry(this.redisKey(md5))
+      if (redisValue !== null && redisValue !== undefined) return redisValue
+    }
+    return this.get(md5)
+  }
+
   set(md5: string, text: string): void {
     if (this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') === '0') return
     const prev = this.store.get(md5)
@@ -101,6 +122,14 @@ export class OcrCacheService implements OnModuleDestroy {
     this.store.set(md5, entry)
     this.totalTextBytes += entry.textBytes
     this.evictIfNeeded()
+  }
+
+  async setAsync(md5: string, text: string): Promise<void> {
+    if (this.config.get<string>('IMAGE_OCR_CACHE_ENABLED') === '0') return
+    if (this.redis?.isReady()) {
+      await this.redis.setEntry(this.redisKey(md5), text, this.ttlSec())
+    }
+    this.set(md5, text)
   }
 
   /** 运维 / 调试：清空全部 OCR 缓存 */
