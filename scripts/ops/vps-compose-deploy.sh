@@ -217,6 +217,31 @@ echo "[vps-compose-deploy] compose files: \$COMPOSE_FILES"
 echo "[vps-compose-deploy] backend image: \$BACKEND_IMAGE"
 echo "[vps-compose-deploy] frontend image: \$FRONTEND_IMAGE"
 
+cleanup_legacy_cnb_containers() {
+  case "\$TARGET_ENV" in
+    develop)
+      legacy_names="your-app-frontend-dev your-app-backend-dev your-app-parse-worker-dev"
+      ;;
+    main)
+      legacy_names="your-app-frontend-prod your-app-backend-prod your-app-parse-worker-prod"
+      ;;
+    *)
+      legacy_names=""
+      ;;
+  esac
+
+  [ -n "\$legacy_names" ] || return 0
+
+  for legacy_name in \$legacy_names; do
+    if sudo docker inspect "\$legacy_name" >/dev/null 2>&1; then
+      echo "[vps-compose-deploy] removing legacy CNB docker-run container: \$legacy_name"
+      sudo docker rm -f "\$legacy_name" >/dev/null
+    fi
+  done
+}
+
+cleanup_legacy_cnb_containers
+
 if [ "\$DEPLOY_MODE" = "image" ] && [ "\$TARGET_SERVICE" != "env" ]; then
   sudo env "\${compose_env[@]}" docker compose --env-file "\$ENV_FILE" \$COMPOSE_FILES pull \$PULL_SERVICES
 fi
