@@ -1,138 +1,209 @@
 # AI 测试用例生成平台
 
-基于 **NestJS + React** 的全栈应用：上传多格式需求文档，经解析与多模型 AI 调用，完成 **需求分析、测试用例生成、记录与导出**；支持团队权限、模板与系统设置。生产数据库使用 **PostgreSQL**（Prisma `schema.prod.prisma`）。
+[![Backend](https://img.shields.io/badge/backend-NestJS-cc0000)](backend/package.json)
+[![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20Vite-646cff)](frontend/package.json)
+[![Database](https://img.shields.io/badge/database-PostgreSQL-336791)](backend/prisma/schema.prod.prisma)
+[![E2E](https://img.shields.io/badge/e2e-Playwright-2ead33)](frontend/playwright.config.ts)
 
-## 仓库与远程
+面向个人提效场景的 AI 测试工程平台。项目围绕“需求输入 -> AI 需求分析 -> 用例生成 -> 评审修订 -> 覆盖追踪 -> 执行结果回写”构建，重点解决流程图 PDF、需求文档、长输出模型、用例质量不稳定和交付闭环的问题。
 
-| 用途 | 说明 |
-|------|------|
-| **仓库名** | `lewis-testcase-platform` |
-| **CNB（默认 CI/部署）** | 根目录 [`.cnb.yml`](.cnb.yml) 在推送 `develop` / `main` 时触发构建与 VPS 部署；日常开发验证优先推 **CNB 远程**（本环境 `origin` 常指向 CNB）。 |
-| **GitHub（镜像 / 协作）** | <https://github.com/junqi21263/lewis-testcase-platform> |
+当前代码以 `develop` 作为测试环境分支，`main` 作为生产环境分支。测试环境地址为 `http://139.199.69.115:8083`，生产环境地址为 `http://139.199.69.115`。
 
-```bash
-# 仅克隆 GitHub
-git clone https://github.com/junqi21263/lewis-testcase-platform.git
-# 或 SSH
-git clone git@github.com:junqi21263/lewis-testcase-platform.git
+## 项目目标
 
-# 已有仓库时增加 GitHub 远程（名称可自定）
-git remote add github https://github.com/junqi21263/lewis-testcase-platform.git
-git push github develop
-git push github main
-```
+- 提高需求文档和流程图 PDF 的解析质量。
+- 生成结构化、可评审、可追踪的测试用例。
+- 将需求 `REQ-ID`、测试路径 `TP-ID`、用例和执行结果串成覆盖矩阵。
+- 支持 AI 长输出、自动续写、自动质量修复和多模型交叉评审。
+- 通过 Redis 缓存、实时进度和轻量队列降低长任务对数据库的压力。
 
-CNB 命名空间与流水线配置说明见 [docs/cnb-migration.md](docs/cnb-migration.md)。
+## 核心功能
 
-## 功能概览（与代码对齐）
-
-| 模块 | 路径 / API 前缀 | 能力摘要 |
-|------|-----------------|----------|
-| **工作台** | `/dashboard` | 总览与快捷入口 |
-| **AI 需求分析** | `/ai-analysis`（旧书签 `/upload` 会重定向至此），`POST /api/files/*`、`POST /api/ai/analyze/stream` | **上传**：单文件与分片上传，可选 **腾讯云 COS** 直传；PDF / Word / Excel / 图片等多格式解析与进度；**SSE 流式**结构化报告；Mermaid；**导出 XMind / PDF** |
-| **生成用例** | `/generate`，`POST /api/ai/generate`、`/api/ai/generate/stream` | 非流式与 **SSE 流式**生成测试用例；模型列表 `GET /api/ai/models` |
-| **生成记录** | `/records`，`/api/records` | 记录查询、分享、批量操作；Friendly 主题表格与筛选布局（2026-05 重构） |
-| **模板管理** | `/templates`，`/api/templates` | 用例/提示模板维护 |
-| **团队管理** | `/teams`，`/api/teams` | 团队与成员权限 |
-| **系统设置** | `/settings`，`/api/settings` 等 | **AI 模型配置**；用户偏好；**天气城市**与**壁纸**（顶栏天气、全屏壁纸层，见 `WeatherBadge`、`WallpaperLayer`） |
-| **认证** | `/api/auth` | 注册（邮箱+用户名+密码）、**登录（用户名+密码）**、忘记/重置密码；业务错误多为 **HTTP 200 + JSON `code`**（见 [CHANGELOG](CHANGELOG.md) 2026-04-13） |
-| **管理员** | `/api/admin` | 运维与管理员能力（含模型连通性测试 `POST /api/ai/test` 等） |
-| **文档解析记录** | `/api/document-parse` | 解析任务与记录接口 |
-
-**健康检查**：`GET /health` 返回纯文本 `ok`；`GET /api/health` 返回 JSON；**`GET /api/health/cos`** 可诊断 COS 配置与 PutObject 探针（不返回密钥）。API 全局前缀为 **`/api`**（Swagger：`http://localhost:3000/api/docs`）。
+| 模块 | 入口 | 现有能力 |
+| --- | --- | --- |
+| AI 需求分析 | `/ai-analysis` | 文档上传、PDF/图片/OCR/多模态解析、SSE 流式分析、结构化报告、评分卡、待确认问题、低质量输入提醒、报告版本和 diff |
+| 流程图 PDF 解析 | 后端 `files` 模块 | 流程节点、分支、主路径、异常路径抽取；Mermaid 与 `TP-ID` 联动 |
+| 用例生成 | `/generate` | 流式/非流式生成、JSON schema 约束、长输出自动续写、质量检查、自动修复、分页展示 |
+| 评审中心 | `/reviews/:recordId` | 用例评审、结构化编辑、版本历史、评论、执行结果导入、需求覆盖矩阵 |
+| 生成记录 | `/records` | 记录列表、详情、工作流状态、分享、导出、批量操作 |
+| 模板管理 | `/templates` | 提示词模板 CRUD、模板评测任务、Redis 列表缓存 |
+| 模型配置 | `/settings` | 多供应商模型配置、默认模型、视觉解析模型、连通性测试、删除模型配置 |
+| 多模态与用量 | `/usage-stats` | 多模态运行配置、缓存、调用记录、成本估算 |
+| 团队与权限 | `/teams`、认证模块 | 用户、团队、角色、JWT、限流、管理员审计 |
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| 前端 | React 18、TypeScript、Vite、Tailwind、Zustand、React Router |
-| 后端 | NestJS、Prisma、PostgreSQL、JWT |
-| 解析与多媒体 | pdf-parse、xlsx、mammoth、tesseract.js、多模态视觉管线等 |
+| --- | --- |
+| 前端 | React 18、TypeScript、Vite、Tailwind CSS、Zustand、React Router、Radix UI、Mermaid、Playwright |
+| 后端 | NestJS 11、TypeScript、Prisma、PostgreSQL、JWT、Swagger、Helmet、Throttler |
+| AI 与解析 | OpenAI 兼容接口、腾讯混元多模态、pdf-parse、pdf-to-img、tesseract.js、mammoth、xlsx、canvas、sharp |
+| 缓存与任务 | Redis、ioredis、OCR Redis 缓存、文件解析实时进度、AI 流式输出快照、轻量 Redis 队列 |
+| 部署 | Docker Compose、CNB 镜像、VPS 双环境、Nginx 反代 |
+| 测试 | Jest、Vitest、Playwright E2E、Playwright CT、Allure |
 
-## 环境要求
+## 架构概览
 
-- Node.js ≥ 18、pnpm ≥ 8（推荐 10）
-- Docker / Docker Compose（本地或生产数据库与全栈）
+```mermaid
+flowchart LR
+  U["用户浏览器"] --> FE["React/Vite 前端"]
+  FE --> API["NestJS API /api"]
+  API --> DB["PostgreSQL / Prisma"]
+  API --> R["Redis 缓存/实时态/轻量队列"]
+  API --> AI["OpenAI 兼容模型供应商"]
+  API --> OCR["OCR / 多模态解析"]
+  API --> COS["可选 COS 文件存储"]
+
+  subgraph Core["核心业务闭环"]
+    A["需求文档/PDF"] --> B["AI 需求分析"]
+    B --> C["REQ-ID / TP-ID"]
+    C --> D["测试用例生成"]
+    D --> E["评审中心"]
+    E --> F["执行结果导入"]
+    F --> G["需求覆盖矩阵"]
+  end
+```
+
+## 数据职责
+
+- PostgreSQL 保存用户、团队、上传文件、解析结果、生成记录、测试用例、评审版本、覆盖矩阵、模型配置、用量和审计日志。
+- Redis 保存短期、高频、可重建的数据：模板列表缓存、OCR 结果缓存、文件解析实时进度、AI 流式输出分片、轻量任务队列。
+- 文件源可走本地 `uploads` 或 COS；轻量云策略会保留解析文本并清理过大的中间文件。
 
 ## 快速开始
 
+### 1. 安装依赖
+
 ```bash
-cd frontend && pnpm install
-cd ../backend && pnpm install
-
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-# 编辑 backend/.env：DATABASE_URL、JWT_SECRET、OPENAI_* 等
-
-docker compose up -d
-
-cd backend
-pnpm exec prisma migrate deploy --schema=./prisma/schema.prod.prisma
-pnpm exec prisma generate --schema=./prisma/schema.prod.prisma
-pnpm prisma db seed
-
-pnpm start:dev
-cd ../frontend && pnpm dev
+cd /Users/lewis/lewis_testcase_platform
+pnpm -C backend install
+pnpm -C frontend install
 ```
 
-浏览器打开 <http://localhost:5173>。前端开发可将 `VITE_API_BASE_URL` 设为 `/api`，由 Vite 代理到后端。
+### 2. 准备环境变量
 
-**不启动服务的自检**：`bash scripts/dev-integration-check.sh`
+```bash
+cp backend/.env.example backend/.env
+cp docker-compose.full.env.example .env.development
+```
 
-## 前后端约定
+至少需要配置：
 
-| 项 | 说明 |
-|----|------|
-| API 基址 | 生产常见同源反代 `/api`；开发见 `frontend/.env.example` |
-| 业务错误 | 多数业务接口：**HTTP 200**，`code !== 0` 表示错误；成功为 **`code: 0`** |
-| 裸健康检查 | `GET /health`（负载均衡 / 平台探活） |
+- `DATABASE_URL`
+- `JWT_SECRET`
+- 一个可用 AI 模型配置，或在页面 `/settings` 里创建模型配置
+- 如需 PDF/图片多模态解析，配置 `HUNYUAN_*` 或相应视觉模型配置
 
-## 解析与 AI 相关环境变量（摘要）
+### 3. 启动依赖服务
 
-图片/PDF 解析、混元分页视觉、OCR 兜底、COS 与上传存储等，见 **`backend/.env.example`**（如 `HUNYUAN_*`、`FILE_PARSE_*`、`FILE_UPLOAD_STORAGE`、`COS_*`、`VISION_*`、`IMAGE_OCR_*`）。VPS 双环境 env 同步与 COS 签名排查见 [**VPS_GHCR_DUAL_ENV.md**](docs/deployment/VPS_GHCR_DUAL_ENV.md)。
+```bash
+docker compose -f docker-compose.full.yml --env-file .env.development up -d postgres redis
+pnpm -C backend exec prisma generate --schema=./prisma/schema.prod.prisma
+pnpm -C backend exec prisma migrate deploy --schema=./prisma/schema.prod.prisma
+```
 
-## 文档索引
+### 4. 启动开发服务
 
-| 文档 | 内容 |
-|------|------|
-| [docs/README.md](docs/README.md) | `docs/` 目录说明 |
-| [docs/development/DEVELOPMENT.md](docs/development/DEVELOPMENT.md) | 研发说明 |
-| [docs/development/GIT_WORKFLOW.md](docs/development/GIT_WORKFLOW.md) | 分支与发布流程 |
-| [docs/development/ENVIRONMENT_VARIABLES.md](docs/development/ENVIRONMENT_VARIABLES.md) | 环境变量 |
-| [docs/deployment/VPS_DOCKER.md](docs/deployment/VPS_DOCKER.md) | 自托管 Docker 与 CI |
-| [docs/deployment/VPS_GHCR_DUAL_ENV.md](docs/deployment/VPS_GHCR_DUAL_ENV.md) | VPS 双目录（dev/prod）环境变量同步、COS `env_file` 注入与 compose 命令 |
-| [scripts/diagnose-cos-vps.sh](scripts/diagnose-cos-vps.sh) | VPS 上对比 env 文件与容器内 COS 变量（仅长度/后四位） |
-| [docs/deployment/COMPOSE_FILES.md](docs/deployment/COMPOSE_FILES.md) | 根目录各 `docker-compose*.yml` |
-| [docs/operations/VPS_RELEASE_RUNBOOK.md](docs/operations/VPS_RELEASE_RUNBOOK.md) | 当前实际使用的 VPS 发布命令手册 |
+```bash
+pnpm -C backend start:dev
+pnpm -C frontend dev
+```
+
+浏览器访问 `http://localhost:5173`。后端 Swagger 在开发环境可访问 `http://localhost:3000/api/docs`。
+
+## 常用验证命令
+
+```bash
+pnpm -C backend exec prisma generate --schema=./prisma/schema.prod.prisma
+pnpm -C backend test
+pnpm -C backend build
+pnpm -C frontend test:unit
+pnpm -C frontend build
+pnpm -C frontend test:e2e -- tests/e2e/ai-analysis.spec.ts tests/e2e/reviews-center.spec.ts
+```
+
+最近一次 Redis 改造后的门禁结果见本地执行记录：后端 105 个测试通过，前端 46 个单测通过，核心 Playwright E2E 12 个通过、2 个 live 用例按配置跳过。
+
+## 目录结构
+
+```text
+.
+├── backend/                         # NestJS API、Prisma schema、Jest 测试
+│   ├── prisma/schema.prod.prisma     # 生产 PostgreSQL schema，以此为准
+│   ├── src/modules/ai/               # 需求分析、用例生成、质量修复、覆盖矩阵
+│   ├── src/modules/files/            # 上传、PDF/OCR/多模态解析、解析进度
+│   ├── src/modules/reviews/          # 评审中心、版本、评论、执行结果回写
+│   ├── src/modules/ocr/              # OCR 缓存、队列、识别管线
+│   └── src/redis/                    # Redis 缓存、队列、流式快照
+├── frontend/                         # React 前端、Vitest、Playwright
+│   ├── src/pages/                    # 主业务页面
+│   ├── src/components/               # UI、分析、评审、模板、设置等组件
+│   ├── src/api/                      # API client
+│   └── tests/e2e/                    # Playwright E2E
+├── docs/                             # 研发、部署、评估、QA、运维文档
+├── scripts/                          # 部署、诊断、CI 辅助脚本
+└── docker-compose*.yml               # 本地/开发/生产 compose
+```
+
+## 发布流程
+
+测试环境：
+
+```bash
+cd /Users/lewis/lewis_testcase_platform
+git switch develop
+git pull --ff-only cnb develop
+bash scripts/ops/deploy-develop.sh all
+```
+
+生产环境：
+
+```bash
+cd /Users/lewis/lewis_testcase_platform
+git switch main
+git pull --ff-only origin main
+bash scripts/ops/deploy-main.sh all
+```
+
+详细流程见 [docs/operations/VPS_RELEASE_RUNBOOK.md](docs/operations/VPS_RELEASE_RUNBOOK.md)。
+
+## 文档入口
+
+| 文档 | 说明 |
+| --- | --- |
+| [docs/PROJECT_ASSESSMENT_AND_ITERATION_REPORT.md](docs/PROJECT_ASSESSMENT_AND_ITERATION_REPORT.md) | 项目完成度评估与迭代建议 |
+| [docs/development/TEST_PLAN.md](docs/development/TEST_PLAN.md) | 当前测试策略与门禁清单 |
+| [docs/development/ENVIRONMENT_VARIABLES.md](docs/development/ENVIRONMENT_VARIABLES.md) | 环境变量说明 |
+| [docs/operations/VPS_RELEASE_RUNBOOK.md](docs/operations/VPS_RELEASE_RUNBOOK.md) | VPS 发布操作手册 |
+| [docs/deployment/COMPOSE_FILES.md](docs/deployment/COMPOSE_FILES.md) | Compose 文件说明 |
 | [CHANGELOG.md](CHANGELOG.md) | 变更日志 |
 
-## 仓库结构（摘要）
+## 当前质量状态
 
-```
-├── frontend/          # Web 前端（Vitest / Playwright 见 frontend/README.md）
-├── backend/           # Nest API（Prisma `schema.prod.prisma` 为准）
-├── docker-compose*.yml   # 全栈/依赖服务定义（路径与 build context 绑定根目录，勿随意挪目录）
-├── docker-compose.full.env.example  # 全栈环境变量模板（勿删；复制为 .env / .env.development）
-├── scripts/           # 本地检查、CI 部署脚本
-└── docs/
-```
+| 维度 | 状态 |
+| --- | --- |
+| 架构 | 模块边界清晰，但 `AiService`、`FilesService`、部分页面文件过大，需要拆分编排层和领域服务 |
+| 功能 | AI 需求分析、用例生成、评审、覆盖矩阵已形成闭环 |
+| 性能 | Redis 已接入缓存、实时进度和流式快照；长任务仍需进一步引入可观测任务面板 |
+| 安全 | JWT、角色守卫、限流、Helmet、敏感错误脱敏已存在；依赖审计和密钥轮换需常态化 |
+| 测试 | 单元、组件、E2E 覆盖核心路径；真实外部模型/COS/数据库 live 用例仍需更明确的分层策略 |
 
-**目录约定**：勿在仓库内再克隆一份同名子目录 `lewis-testcase-platform/`（易与 `.gitignore` 中已忽略的误拷副本混淆）；Playwright MCP 等产生的 `.playwright-mcp/` 已忽略，不必提交。根目录勿单独 `npm install`（前后端分别在 `frontend/`、`backend/` 使用 pnpm）。
+## 未来规划
 
-## 默认账号
+1. 将 `backend/src/modules/ai/ai.service.ts` 拆分为分析编排、生成编排、模型调用、流式恢复、覆盖矩阵五类服务。
+2. 将 `backend/src/modules/files/files.service.ts` 拆分为上传、解析 worker、PDF 策略、进度同步、清理策略。
+3. 为 Redis 队列增加任务状态页面，展示等待、执行、失败、重试和耗时。
+4. 对接 Jira/TAPD/飞书，把需求 ID、用例 ID、执行结果回写到外部协作平台。
+5. 补齐真实环境 live E2E：模型连通性、PDF 上传解析、评审中心回写、导出下载。
+6. 建立定期依赖审计和安全基线文档，跟踪 Nest/Vite/Playwright 等工具链升级。
 
-仓库不提供默认口令。本地请注册或通过 seed / `ADMIN_*` 等运维流程创建管理员（见 `backend/.env.example`）。
+## 贡献约定
 
-## 最近更新（2026-05-19）
+- 后端 schema 以 `backend/prisma/schema.prod.prisma` 为准。
+- 修改业务逻辑必须补充或更新 Jest/Vitest/Playwright 测试。
+- 不提交真实 `.env`、API Key、数据库口令、Cookie、上传文件和测试报告产物。
+- 推送前至少运行与变更相关的测试；涉及核心链路时运行完整门禁。
 
-- **生成记录**：Friendly 主题页布局与深色模式 token 优化。
-- **PDF / 混元**：大文件分页多模态、忠实转录、OCR 多级兜底；Docker 内 `canvas` 修复。
-- **COS 上传**：统一 API 错误处理、`/api/health/cos` 探针、`FILE_UPLOAD_STORAGE=local` 应急；Compose **`env_file`** 注入 COS 密钥（避免 `$` 被 compose 展开）。
-- **部署**：CNB 推 `develop` / `main` 触发 `.cnb.yml`；VPS 勿与多个 backend 容器混用，见 CHANGELOG 与 `diagnose-cos-vps.sh`。
+## 许可证
 
-完整条目见 **[CHANGELOG.md](CHANGELOG.md)**。
-
-## 公开仓库与安全
-
-- **勿提交**真实 JWT、数据库口令、云密钥、Cookie；仅保留 `*.env.example`。
-- **双远程**（CNB + GitHub）推送前确认无敏感信息；镜像仓库权限按团队策略管理。
+当前仓库未声明开源许可证。对外公开或协作前，请先补充 `LICENSE` 并明确代码、文档和生成内容的使用范围。

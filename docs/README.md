@@ -12,6 +12,14 @@
 - `operations/`：运维巡检、发布手册、备份恢复、值班流程（如 [operations/VPS_RELEASE_RUNBOOK.md](operations/VPS_RELEASE_RUNBOOK.md)）。
 - `security/`（预留）：安全基线、脱敏规则、合规清单。
 
+## 当前推荐阅读顺序
+
+1. [../README.md](../README.md)：项目总入口、架构、快速开始、发布命令。
+2. [PROJECT_ASSESSMENT_AND_ITERATION_REPORT.md](PROJECT_ASSESSMENT_AND_ITERATION_REPORT.md)：九维完成度评估、风险和迭代路线。
+3. [development/TEST_PLAN.md](development/TEST_PLAN.md)：当前测试分层、核心业务验收和发布门禁。
+4. [operations/VPS_RELEASE_RUNBOOK.md](operations/VPS_RELEASE_RUNBOOK.md)：develop/main 双环境发布手册。
+5. [development/ENVIRONMENT_VARIABLES.md](development/ENVIRONMENT_VARIABLES.md)：后端、前端、AI、Redis、解析相关环境变量。
+
 ## 维护规则
 
 - 根目录只保留入口型文档：`README.md`、`CHANGELOG.md`。
