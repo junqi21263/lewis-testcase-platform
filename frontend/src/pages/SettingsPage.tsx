@@ -2,26 +2,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Save,
-  Plus,
-  Trash2,
-  Bot,
   User,
   Server,
   Sparkles,
   KeyRound,
-  Star,
   RefreshCw,
   ClipboardList,
 } from 'lucide-react'
 import { AppearanceWeatherSection } from '@/components/settings/AppearanceWeatherSection'
 import { CopyableValue } from '@/components/settings/CopyableValue'
+import { FileParsingSettingsSection } from '@/components/settings/FileParsingSettingsSection'
+import { ModelHubSection } from '@/components/settings/ModelHubSection'
+import type { SettingsModelFormDraft } from '@/components/settings/ModelEditorPanel'
 import { PasswordChangeModal } from '@/components/settings/PasswordChangeModal'
 import { SettingsCard } from '@/components/settings/SettingsCard'
 import { SettingsNav } from '@/components/settings/SettingsNav'
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
+import { SettingsOverviewSection } from '@/components/settings/SettingsOverviewSection'
+import { WorkflowDefaultsSection } from '@/components/settings/WorkflowDefaultsSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
 import {
@@ -84,7 +84,7 @@ function formatAuditExtra(action: string, detail: unknown): string {
   return ''
 }
 
-const emptyCreateForm = {
+const emptyCreateForm: SettingsModelFormDraft = {
   name: '',
   provider: 'OpenAI',
   modelId: 'gpt-4o',
@@ -127,7 +127,7 @@ export default function SettingsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState(emptyCreateForm)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState<Partial<AIModelAdmin> & { apiKey?: string }>({})
+  const [editDraft, setEditDraft] = useState<SettingsModelFormDraft | null>(null)
 
   const [genPrefs, setGenPrefs] = useState<GenPrefs>(() => loadGenPrefs())
   const [prefsSaving, setPrefsSaving] = useState(false)
@@ -369,7 +369,8 @@ export default function SettingsPage() {
   }
 
   const submitCreate = async () => {
-    if (!createForm.name.trim() || !createForm.apiKey.trim()) {
+    const apiKey = createForm.apiKey ?? ''
+    if (!createForm.name.trim() || !apiKey.trim()) {
       toast.error('请填写名称与 API Key')
       return
     }
@@ -379,7 +380,7 @@ export default function SettingsPage() {
         provider: createForm.provider.trim(),
         modelId: createForm.modelId.trim(),
         baseUrl: createForm.baseUrl.trim(),
-        apiKey: createForm.apiKey.trim(),
+        apiKey: apiKey.trim(),
         maxTokens: createForm.maxTokens,
         temperature: createForm.temperature,
         isDefault: createForm.isDefault,
@@ -414,6 +415,7 @@ export default function SettingsPage() {
   }
 
   const saveEdit = async (id: string) => {
+    if (!editDraft) return
     try {
       await settingsApi.updateModel(id, {
         name: editDraft.name,
@@ -430,6 +432,7 @@ export default function SettingsPage() {
       })
       toast.success('已保存')
       setEditingId(null)
+      setEditDraft(null)
       refreshModels()
     } catch {
       /* */
@@ -537,10 +540,12 @@ export default function SettingsPage() {
 
   const navItems: SettingsNavItem[] = useMemo(
     () => [
+      { id: 'section-overview', label: '总览' },
       { id: 'section-profile', label: '个人资料' },
       { id: 'section-runtime', label: '运行环境' },
+      { id: 'section-file-parsing', label: '文件解析' },
       ...(admin ? [{ id: 'section-multimodal', label: '多模态配置' }] : []),
-      { id: 'section-gen-prefs', label: '生成默认' },
+      { id: 'section-workflow-defaults', label: '工作流默认' },
       { id: 'appearance-weather', label: '外观天气' },
       { id: 'section-ai-models', label: 'AI 模型' },
       ...(superAdmin ? [{ id: 'section-super-admin', label: '管理工具' }] : []),
@@ -579,6 +584,13 @@ export default function SettingsPage() {
           <SettingsNav items={navItems} activeId={activeSection} onSelect={setActiveSection} />
 
           <div className={set.content}>
+            <SettingsOverviewSection
+              runtime={runtime}
+              models={adminModels}
+              loading={runtimeLoading}
+              onRefresh={refreshRuntime}
+            />
+
             <SettingsCard
               id="section-profile"
               icon={User}
@@ -768,6 +780,8 @@ export default function SettingsPage() {
               </p>
             </SettingsCard>
 
+            <FileParsingSettingsSection runtime={runtime} />
+
             {admin && multimodalConfig ? (
               <SettingsCard
                 id="section-multimodal"
@@ -900,75 +914,12 @@ export default function SettingsPage() {
               </SettingsCard>
             ) : null}
 
-            <SettingsCard
-              id="section-gen-prefs"
-              icon={Sparkles}
-              title="生成默认参数"
-              description="保存在本机浏览器，用于「生成测试用例」页的默认温度与 Token 上限"
-              footer={
-                <Button
-                  variant="outline"
-                  className={set.btnSecondary}
-                  onClick={saveGenPreferences}
-                  disabled={prefsSaving}
-                >
-                  <Save className="h-4 w-4" />
-                  保存生成默认参数
-                </Button>
-              }
-            >
-              <div className={set.formGrid}>
-                <div className={set.formRow}>
-                  <label className={set.label}>默认 temperature</label>
-                  <p className={set.hint}>越高越发散，建议 0.3–1.0</p>
-                  <div className={set.sliderRow}>
-                    <input
-                      type="range"
-                      className={set.slider}
-                      min={0}
-                      max={2}
-                      step={0.05}
-                      value={genPrefs.defaultTemperature}
-                      onChange={(e) =>
-                        setGenPrefs((p) => ({
-                          ...p,
-                          defaultTemperature: Number(e.target.value),
-                        }))
-                      }
-                    />
-                    <Input
-                      className={cn(set.control, 'w-24 shrink-0')}
-                      type="number"
-                      step="0.05"
-                      min={0}
-                      max={2}
-                      value={genPrefs.defaultTemperature}
-                      onChange={(e) =>
-                        setGenPrefs((p) => ({
-                          ...p,
-                          defaultTemperature: Number(e.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <div className={set.formRow}>
-                  <label className={set.label}>默认 maxTokens</label>
-                  <p className={set.hint}>控制单次生成上限</p>
-                  <Input
-                    className={set.control}
-                    type="number"
-                    step={256}
-                    min={256}
-                    max={128000}
-                    value={genPrefs.defaultMaxTokens}
-                    onChange={(e) =>
-                      setGenPrefs((p) => ({ ...p, defaultMaxTokens: Number(e.target.value) }))
-                    }
-                  />
-                </div>
-              </div>
-            </SettingsCard>
+            <WorkflowDefaultsSection
+              genPrefs={genPrefs}
+              saving={prefsSaving}
+              onChange={setGenPrefs}
+              onSave={saveGenPreferences}
+            />
 
             <AppearanceWeatherSection
               userPrefs={userPrefs}
@@ -983,275 +934,31 @@ export default function SettingsPage() {
               onRotateWallpaper={rotateWallpaperNow}
             />
 
-            <SettingsCard
-              id="section-ai-models"
-              icon={Bot}
-              title="AI 模型配置"
-              description={
-                admin
-                  ? '管理员可增删改模型、设置默认；API Key 仅创建/更新时提交，列表中不会回显。'
-                  : '当前账号可查看已启用的模型；配置变更请联系管理员。'
-              }
-              actions={
-                <>
-                  <Button
-                    variant="outline"
-                    className={set.btnSecondary}
-                    onClick={refreshModels}
-                    disabled={loadingModels}
-                  >
-                    <RefreshCw className={cn('h-4 w-4', loadingModels && 'animate-spin')} />
-                    刷新
-                  </Button>
-                  {admin ? (
-                    <Button
-                      className={set.btnPrimary}
-                      onClick={() => setShowCreate((s) => !s)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      {showCreate ? '收起' : '添加模型'}
-                    </Button>
-                  ) : null}
-                </>
-              }
-            >
-              <div className="space-y-4">
-              {admin && showCreate && (
-            <div className="space-y-3 rounded-[18px] border border-[hsl(var(--settings-card-border))] bg-[hsl(var(--settings-info-bg))]/60 p-4">
-              <p className={set.label}>新模型</p>
-              <div className={set.formGrid}>
-                <Input className={set.control} placeholder="显示名称" value={createForm.name} onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))} />
-                <Input className={set.control} placeholder="提供商" value={createForm.provider} onChange={(e) => setCreateForm((f) => ({ ...f, provider: e.target.value }))} />
-                <Input className={set.control} placeholder="Model ID（如 gpt-4o）" value={createForm.modelId} onChange={(e) => setCreateForm((f) => ({ ...f, modelId: e.target.value }))} />
-                <Input className={set.control} placeholder="Base URL" value={createForm.baseUrl} onChange={(e) => setCreateForm((f) => ({ ...f, baseUrl: e.target.value }))} />
-                <Input className={cn(set.control, 'sm:col-span-2')} placeholder="API Key" type="password" autoComplete="off" value={createForm.apiKey} onChange={(e) => setCreateForm((f) => ({ ...f, apiKey: e.target.value }))} />
-                <Input className={set.control} type="number" placeholder="maxTokens" value={createForm.maxTokens} onChange={(e) => setCreateForm((f) => ({ ...f, maxTokens: Number(e.target.value) }))} />
-                <Input className={set.control} type="number" step="0.05" placeholder="temperature" value={createForm.temperature} onChange={(e) => setCreateForm((f) => ({ ...f, temperature: Number(e.target.value) }))} />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={createForm.isDefault}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, isDefault: e.target.checked }))}
-                />
-                设为默认模型
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={createForm.supportsVision}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, supportsVision: e.target.checked }))}
-                />
-                支持视觉（多模态 image_url，用于上传图/PDF 解析）
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={createForm.useForDocumentVisionParse}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, useForDocumentVisionParse: e.target.checked }))
-                  }
-                />
-                作为「文档视觉解析」专用模型（全局仅选一个；与生成用例的默认模型可不同）
-              </label>
-              <Button className={set.btnPrimary} onClick={submitCreate}>
-                创建
-              </Button>
-            </div>
-              )}
-
-              {admin && adminModels.length === 0 && !showCreate ? (
-            <div className={set.empty}>
-              <Bot className={set.emptyIcon} />
-              <p className={set.emptyTitle}>暂无模型</p>
-              <p className={set.emptySub}>请点击「添加模型」创建配置</p>
-            </div>
-              ) : null}
-
-              <div className={admin ? set.modelList : 'space-y-4'}>
-          {admin &&
-            adminModels.map((model) => (
-              <div key={model.id} className={set.modelCard}>
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-sm">{model.name}</p>
-                    {model.isDefault && (
-                      <Badge className="text-xs gap-0.5">
-                        <Star className="w-3 h-3" />
-                        默认
-                      </Badge>
-                    )}
-                    {!model.isActive && (
-                      <Badge variant="secondary" className="text-xs">
-                        已归档
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-xs">
-                      Key: {model.hasApiKey ? '已配置' : '未配置'}
-                    </Badge>
-                    {model.supportsVision && (
-                      <Badge variant="secondary" className="text-xs">
-                        视觉
-                      </Badge>
-                    )}
-                    {model.useForDocumentVisionParse && (
-                      <span className={cn(set.badge, set.badgeViolet)}>文档视觉解析</span>
-                    )}
-                    {model.lastTestAt != null && (
-                      <Badge
-                        variant="outline"
-                        className={`text-xs max-w-[min(100%,22rem)] truncate font-normal ${
-                          model.lastTestOk === false ? 'text-destructive ring-destructive/45' : ''
-                        }`}
-                        title={
-                          model.lastTestOk === false && model.lastTestError
-                            ? model.lastTestError
-                            : undefined
-                        }
-                      >
-                        上次测试{' '}
-                        {model.lastTestOk === true && model.lastTestLatencyMs != null
-                          ? `成功 ${model.lastTestLatencyMs}ms`
-                          : model.lastTestOk === false
-                            ? '失败'
-                            : '—'}{' '}
-                        · {format(new Date(model.lastTestAt), 'MM-dd HH:mm')}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {admin && model.isActive && !model.isDefault && (
-                      <Button className={set.btnGhost} onClick={() => setDefault(model.id)}>
-                        设默认
-                      </Button>
-                    )}
-                    {admin && (
-                      <Button
-                        className={set.btnGhost}
-                        onClick={() => testModel(model.id)}
-                        disabled={!model.hasApiKey || testingModelId === model.id}
-                        title={!model.hasApiKey ? '请先配置 API Key' : '发送一个小请求测试连通性'}
-                      >
-                        {testingModelId === model.id ? '测试中…' : '测试'}
-                      </Button>
-                    )}
-                    {admin && (
-                      <Button className={set.btnGhost} onClick={() => startEdit(model)}>
-                        编辑
-                      </Button>
-                    )}
-                    {admin && (
-                      <Button
-                        className={set.btnDanger}
-                        onClick={() => deleteModel(model.id)}
-                        title="删除模型配置"
-                        aria-label={`删除模型配置：${model.name}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {editingId === model.id ? (
-                  <div className={cn(set.formGrid, 'border-t border-[hsl(var(--settings-card-border))]/60 pt-4')}>
-                    <Input className={set.control} value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
-                    <Input className={set.control} value={editDraft.provider} onChange={(e) => setEditDraft((d) => ({ ...d, provider: e.target.value }))} />
-                    <Input className={set.control} value={editDraft.modelId} onChange={(e) => setEditDraft((d) => ({ ...d, modelId: e.target.value }))} />
-                    <Input className={set.control} value={editDraft.baseUrl} onChange={(e) => setEditDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
-                    <Input className={set.control} type="number" value={editDraft.maxTokens} onChange={(e) => setEditDraft((d) => ({ ...d, maxTokens: Number(e.target.value) }))} />
-                    <Input className={set.control} type="number" step="0.05" value={editDraft.temperature} onChange={(e) => setEditDraft((d) => ({ ...d, temperature: Number(e.target.value) }))} />
-                    <Input className={cn(set.control, 'sm:col-span-2')} type="password" placeholder="新 API Key（留空不修改）" value={editDraft.apiKey} onChange={(e) => setEditDraft((d) => ({ ...d, apiKey: e.target.value }))} />
-                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={editDraft.isActive}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, isActive: e.target.checked }))}
-                      />
-                      启用
-                    </label>
-                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={editDraft.isDefault}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, isDefault: e.target.checked }))}
-                      />
-                      设为默认
-                    </label>
-                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={!!editDraft.supportsVision}
-                        onChange={(e) =>
-                          setEditDraft((d) => ({ ...d, supportsVision: e.target.checked }))
-                        }
-                      />
-                      支持视觉（多模态）
-                    </label>
-                    <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={!!editDraft.useForDocumentVisionParse}
-                        onChange={(e) =>
-                          setEditDraft((d) => ({
-                            ...d,
-                            useForDocumentVisionParse: e.target.checked,
-                          }))
-                        }
-                      />
-                      文档视觉解析专用（全局仅一个）
-                    </label>
-                    <div className="flex gap-2 sm:col-span-2">
-                      <Button className={set.btnPrimary} onClick={() => saveEdit(model.id)}>
-                        保存
-                      </Button>
-                      <Button className={set.btnSecondary} onClick={() => setEditingId(null)}>
-                        取消
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className={set.infoGrid}>
-                    <div className={set.infoItem}>
-                      <p className={set.infoLabel}>提供商</p>
-                      <p className={cn(set.infoValue, 'font-sans')}>{model.provider}</p>
-                    </div>
-                    <div className={set.infoItem}>
-                      <p className={set.infoLabel}>Model ID</p>
-                      <p className={cn(set.infoValue, 'font-sans')}>{model.modelId}</p>
-                    </div>
-                    <div className={cn(set.infoItem, 'sm:col-span-2')}>
-                      <p className={set.infoLabel}>Base URL</p>
-                      <p className={set.infoValue}>{model.baseUrl}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-              </div>
-
-          {!admin &&
-            (publicModels.length === 0 ? (
-              <div className={set.empty}>
-                <p className={set.emptyTitle}>暂无可用模型</p>
-              </div>
-            ) : (
-              publicModels.map((model) => (
-                <div key={model.id} className={set.modelCard}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm text-[hsl(var(--settings-text-primary))]">{model.name}</p>
-                      <p className={cn(set.hint, 'mt-1')}>
-                        {model.provider} · {model.modelId}
-                      </p>
-                    </div>
-                    {model.isDefault ? <span className={cn(set.badge, set.badgeSuccess)}>默认</span> : null}
-                  </div>
-                </div>
-              ))
-            ))}
-              </div>
-            </SettingsCard>
+            <ModelHubSection
+              admin={admin}
+              adminModels={adminModels}
+              publicModels={publicModels}
+              loading={loadingModels}
+              testingModelId={testingModelId}
+              showCreate={showCreate}
+              createForm={createForm}
+              editingId={editingId}
+              editDraft={editDraft}
+              onRefresh={refreshModels}
+              onShowCreateChange={setShowCreate}
+              onCreateFormChange={setCreateForm}
+              onSubmitCreate={submitCreate}
+              onStartEdit={startEdit}
+              onEditDraftChange={setEditDraft}
+              onSaveEdit={saveEdit}
+              onCancelEdit={() => {
+                setEditingId(null)
+                setEditDraft(null)
+              }}
+              onDelete={deleteModel}
+              onSetDefault={setDefault}
+              onTest={testModel}
+            />
 
             {superAdmin ? (
               <SettingsCard
