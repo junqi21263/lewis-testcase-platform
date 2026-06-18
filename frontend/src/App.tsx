@@ -6,6 +6,7 @@ import { AppConfirmHost } from '@/components/ui/AppConfirmHost'
 import MainLayout from '@/components/layout/MainLayout'
 import AuthLayout from '@/components/layout/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
+import { RouteErrorBoundary } from '@/components/runtime/RouteErrorBoundary'
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const GeneratePage = lazy(() => import('@/pages/GeneratePage'))
@@ -71,44 +72,46 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppConfirmHost />
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<LoginPage />} />
-            <Route path="/verify-email" element={<Navigate to="/login" replace />} />
-            <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
-            <Route path="/reset-password" element={<Navigate to="/login" replace />} />
-          </Route>
+      <RouteErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route element={<AuthLayout />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<LoginPage />} />
+              <Route path="/verify-email" element={<Navigate to="/login" replace />} />
+              <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+              <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+            </Route>
 
-          <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />
+            <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />
 
-          <Route
-            element={
-              <PrivateRoute>
-                <MainLayout />
-              </PrivateRoute>
-            }
-          >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/upload" element={<Navigate to="/ai-analysis" replace />} />
-            <Route path="/ai-analysis" element={<AiAnalysisPage />} />
-            <Route path="/generate" element={<GeneratePage />} />
-            <Route path="/records" element={<RecordsPage />} />
-            <Route path="/records/:id" element={<RecordDetailPage />} />
-            <Route path="/reviews" element={<ReviewsIndexPage />} />
-            <Route path="/reviews/:recordId" element={<ReviewCenterPage />} />
-            <Route path="/templates" element={<TemplatesPage />} />
-            <Route path="/teams" element={<TeamsPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/usage-stats" element={<UsageStatsPage />} />
-          </Route>
+            <Route
+              element={
+                <PrivateRoute>
+                  <MainLayout />
+                </PrivateRoute>
+              }
+            >
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/upload" element={<Navigate to="/ai-analysis" replace />} />
+              <Route path="/ai-analysis" element={<AiAnalysisPage />} />
+              <Route path="/generate" element={<GeneratePage />} />
+              <Route path="/records" element={<RecordsPage />} />
+              <Route path="/records/:id" element={<RecordDetailPage />} />
+              <Route path="/reviews" element={<ReviewsIndexPage />} />
+              <Route path="/reviews/:recordId" element={<ReviewCenterPage />} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/teams" element={<TeamsPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/usage-stats" element={<UsageStatsPage />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </RouteErrorBoundary>
     </BrowserRouter>
   )
 }
