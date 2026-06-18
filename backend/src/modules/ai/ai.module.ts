@@ -2,14 +2,16 @@ import { Module } from '@nestjs/common'
 import { AiService } from './ai.service'
 import { AiController } from './ai.controller'
 import { AnalysisReportPdfService } from './analysis-report-pdf.service'
+import { AiRuntimeQueueService } from './ai-runtime-queue.service'
+import { AiStreamRecoveryService } from './ai-stream-recovery.service'
 import { MultimodalModule } from '@/modules/multimodal/multimodal.module'
 import { ReviewsModule } from '@/modules/reviews/reviews.module'
 import { RedisModule } from '@/redis/redis.module'
 
 @Module({
   imports: [MultimodalModule, ReviewsModule, RedisModule],
-  providers: [AiService, AnalysisReportPdfService],
+  providers: [AiService, AnalysisReportPdfService, AiRuntimeQueueService, AiStreamRecoveryService],
   controllers: [AiController],
-  exports: [AiService, AnalysisReportPdfService],
+  exports: [AiService, AnalysisReportPdfService, AiRuntimeQueueService, AiStreamRecoveryService],
 })
 export class AiModule {}

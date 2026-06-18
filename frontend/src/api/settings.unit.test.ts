@@ -13,6 +13,19 @@ vi.mock('@/utils/request', () => ({
 }))
 
 describe('settingsApi', () => {
+  it('loads runtime hints with redis queue observability fields', async () => {
+    vi.mocked(request.get).mockResolvedValueOnce({
+      redis: { ready: true, enabled: true, urlConfigured: true },
+      queues: [{ name: 'ai-analysis', pending: 1 }],
+    })
+
+    const runtime = await settingsApi.getRuntime()
+
+    expect(request.get).toHaveBeenCalledWith('/settings/runtime')
+    expect(runtime.redis?.ready).toBe(true)
+    expect(runtime.queues?.[0]).toEqual({ name: 'ai-analysis', pending: 1 })
+  })
+
   it('deletes AI model configs with DELETE instead of archive POST', async () => {
     await settingsApi.deleteModel('model-1')
 

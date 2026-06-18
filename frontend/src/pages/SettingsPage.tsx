@@ -104,6 +104,7 @@ export default function SettingsPage() {
   const setAiParams = useGenerateStore((s) => s.setAiParams)
 
   const [runtime, setRuntime] = useState<RuntimeHints | null>(null)
+  const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [multimodalConfig, setMultimodalConfig] = useState<MultimodalRuntimeConfig | null>(null)
   const [multimodalSaving, setMultimodalSaving] = useState(false)
   const [adminModels, setAdminModels] = useState<AIModelAdmin[]>([])
@@ -169,10 +170,22 @@ export default function SettingsPage() {
     }
   }, [admin])
 
-  useEffect(() => {
-    settingsApi.getRuntime().then(setRuntime).catch(() => setRuntime(null))
-    settingsApi.getMultimodalConfig().then(setMultimodalConfig).catch(() => setMultimodalConfig(null))
+  const refreshRuntime = useCallback(async () => {
+    setRuntimeLoading(true)
+    try {
+      const next = await settingsApi.getRuntime()
+      setRuntime(next)
+    } catch {
+      setRuntime(null)
+    } finally {
+      setRuntimeLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    refreshRuntime()
+    settingsApi.getMultimodalConfig().then(setMultimodalConfig).catch(() => setMultimodalConfig(null))
+  }, [refreshRuntime])
 
   useEffect(() => {
     authApi
@@ -663,6 +676,17 @@ export default function SettingsPage() {
               icon={Server}
               title="运行环境"
               description="只读信息，来自服务端环境变量与当前前端配置"
+              actions={
+                <Button
+                  variant="outline"
+                  className={set.btnSecondary}
+                  onClick={refreshRuntime}
+                  disabled={runtimeLoading}
+                >
+                  <RefreshCw className={cn('h-4 w-4', runtimeLoading ? 'animate-spin' : '')} />
+                  刷新
+                </Button>
+              }
             >
               <p className={set.infoPill}>
                 此区域为运行环境只读信息，需在服务端配置中修改。
@@ -682,6 +706,45 @@ export default function SettingsPage() {
                       <p className={set.infoLabel}>全局限流</p>
                       <p className={set.infoValue}>
                         {runtime.throttleLimit} 次 / {runtime.throttleTtlSec} 秒
+                      </p>
+                    </div>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>Redis 运行态</p>
+                      <p className={cn(set.infoValue, runtime.redis?.ready ? 'text-emerald-300' : 'text-amber-300')}>
+                        {runtime.redis?.ready ? '已连接' : runtime.redis?.urlConfigured ? '未连接' : '未配置'}
+                      </p>
+                    </div>
+                    <div className={set.infoItem}>
+                      <p className={set.infoLabel}>文件解析 Worker</p>
+                      <p className={cn(set.infoValue, 'font-sans text-sm')}>
+                        {runtime.workers?.fileParseEnabled ? '已启用' : '已关闭'} · 并发{' '}
+                        {runtime.workers?.fileParseMaxConcurrent ?? '-'} · 间隔{' '}
+                        {runtime.workers?.fileParseIntervalMs ?? '-'}ms
+                      </p>
+                    </div>
+                    <div className={cn(set.infoItem, 'sm:col-span-2')}>
+                      <p className={set.infoLabel}>Redis 队列</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {(runtime.queues ?? []).map((queue) => (
+                          <div
+                            key={queue.name}
+                            className="rounded-md border border-[hsl(var(--settings-card-border))] bg-[hsl(var(--settings-info-bg))]/60 px-3 py-2"
+                          >
+                            <p className="truncate font-mono text-[11px] text-[hsl(var(--settings-text-muted))]">
+                              {queue.name}
+                            </p>
+                            <p className="mt-1 text-lg font-semibold text-[hsl(var(--settings-text-primary))]">
+                              {queue.pending}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className={cn(set.infoItem, 'sm:col-span-2')}>
+                      <p className={set.infoLabel}>流式输出恢复</p>
+                      <p className={cn(set.infoValue, 'break-all font-mono text-xs')}>
+                        {runtime.streamRecovery?.enabled ? 'enabled' : 'fallback'} ·{' '}
+                        {runtime.streamRecovery?.snapshotEndpoint ?? '/api/ai/streams/:recordId/snapshot'}
                       </p>
                     </div>
                     {typeof runtime.visionPdfMinTextChars === 'number' ? (

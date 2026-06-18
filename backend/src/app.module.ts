@@ -33,6 +33,7 @@ import { WeatherModule } from './modules/weather/weather.module'
 import { MultimodalModule } from './modules/multimodal/multimodal.module'
 import { UsageModule } from './modules/usage/usage.module'
 import { ReviewsModule } from './modules/reviews/reviews.module'
+import { IntegrationsModule } from './modules/integrations/integrations.module'
 
 @Module({
   controllers: [HealthController],
@@ -74,6 +75,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module'
     MultimodalModule,
     UsageModule,
     ReviewsModule,
+    IntegrationsModule,
 
     // 中间件配置
     MiddlewareConfiguration,

@@ -10,7 +10,8 @@
 - `history/`：里程碑长文存档（`MILESTONES.md`），日常变更以根目录 `CHANGELOG.md` 为准。
 - `qa/`：安全扫描、测试报告摘要。
 - `operations/`：运维巡检、发布手册、备份恢复、值班流程（如 [operations/VPS_RELEASE_RUNBOOK.md](operations/VPS_RELEASE_RUNBOOK.md)）。
-- `security/`（预留）：安全基线、脱敏规则、合规清单。
+- `security/`：安全基线、脱敏规则、合规清单（如 [security/SECURITY_BASELINE.md](security/SECURITY_BASELINE.md)）。
+- `assets/screenshots/`：README 与评估报告使用的真实产品截图资产。
 
 ## 当前推荐阅读顺序
 
@@ -19,6 +20,7 @@
 3. [development/TEST_PLAN.md](development/TEST_PLAN.md)：当前测试分层、核心业务验收和发布门禁。
 4. [operations/VPS_RELEASE_RUNBOOK.md](operations/VPS_RELEASE_RUNBOOK.md)：develop/main 双环境发布手册。
 5. [development/ENVIRONMENT_VARIABLES.md](development/ENVIRONMENT_VARIABLES.md)：后端、前端、AI、Redis、解析相关环境变量。
+6. [security/SECURITY_BASELINE.md](security/SECURITY_BASELINE.md)：密钥、CORS、日志脱敏、Redis、上传解析和备份基线。
 
 ## 维护规则
 

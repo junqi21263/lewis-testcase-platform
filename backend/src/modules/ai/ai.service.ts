@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ForbiddenException, Logger, Optional } from '@nestjs/common'
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import OpenAI from 'openai'
 import { Response } from 'express'
@@ -47,7 +47,8 @@ import {
 } from '@/modules/templates/prompt-template-evaluation.util'
 import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
-import { RedisService } from '@/redis/redis.service'
+import { AiRuntimeQueueService } from './ai-runtime-queue.service'
+import { AiStreamRecoveryService } from './ai-stream-recovery.service'
 
 type PromptEvaluationProgressEvent = {
   stage?:
@@ -65,7 +66,6 @@ type PromptEvaluationProgressEvent = {
 export class AiService {
   private readonly logger = new Logger(AiService.name)
   private readonly jsonSchemaUnsupportedModels = new Set<string>()
-  private crossReviewQueueDraining = false
 
   /** 从模型输出中尽量提取 cases 数组（兼容 Markdown 代码块、前后缀说明文字） */
   private extractCaseRows(raw: string): any[] {
@@ -612,13 +612,12 @@ export class AiService {
     private config: ConfigService,
     private readonly multimodal: MultimodalService,
     private readonly reviews: ReviewsService,
-    @Optional() private readonly redis?: RedisService,
+    private readonly aiRuntimeQueue: AiRuntimeQueueService = new AiRuntimeQueueService(),
+    private readonly aiStreamRecovery: AiStreamRecoveryService = new AiStreamRecoveryService(),
   ) {}
 
   private async writeCachedStreamContent(res: Response, streamId: string, delta: string): Promise<void> {
-    if (!delta) return
-    await this.redis?.appendStreamChunk(streamId, delta)
-    res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+    await this.aiStreamRecovery.writeSseContent(res, streamId, delta)
   }
 
   async getStreamSnapshot(recordId: string, userId: string) {
@@ -631,7 +630,7 @@ export class AiService {
       recordId,
       status: record.status,
       errorMessage: record.errorMessage,
-      content: (await this.redis?.getStreamSnapshot(recordId)) ?? '',
+      content: await this.aiStreamRecovery.snapshot(recordId),
     }
   }
 
@@ -995,8 +994,8 @@ export class AiService {
       data: { crossReviewStatus: 'running' },
     })
 
-    if (this.redis?.isReady()) {
-      await this.redis.enqueueJob('ai-cross-review', {
+    if (this.aiRuntimeQueue.isReady()) {
+      await this.aiRuntimeQueue.enqueue('ai-cross-review', {
         versionId: latest.id,
         model: {
           apiKey: secondary.apiKey,
@@ -1016,24 +1015,17 @@ export class AiService {
   }
 
   private async drainCrossReviewQueue() {
-    if (this.crossReviewQueueDraining || !this.redis?.isReady()) return
-    this.crossReviewQueueDraining = true
-    try {
-      for (let i = 0; i < 5; i++) {
-        const job = await this.redis.dequeueJob<{
-          versionId: string
-          model: { apiKey: string; baseUrl: string; modelId: string; name: string }
-          markdown: string
-        }>('ai-cross-review')
-        if (!job) return
+    await this.aiRuntimeQueue.drain<{
+      versionId: string
+      model: { apiKey: string; baseUrl: string; modelId: string; name: string }
+      markdown: string
+    }>(
+      'ai-cross-review',
+      async (job) => {
         await this.runAnalysisCrossReviewInBackground(job.versionId, job.model, job.markdown)
-      }
-    } finally {
-      this.crossReviewQueueDraining = false
-      if ((await this.redis.queueLength('ai-cross-review')) > 0) {
-        setImmediate(() => void this.drainCrossReviewQueue())
-      }
-    }
+      },
+      { batchSize: 5, onMore: () => setImmediate(() => void this.drainCrossReviewQueue()) },
+    )
   }
 
   private async runAnalysisCrossReviewInBackground(versionId: string, model: { apiKey: string; baseUrl: string; modelId: string; name: string }, markdown: string) {
@@ -2032,7 +2024,7 @@ ${originalPrompt}
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
     res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
-    await this.redis?.enqueueJob('ai-generate', { recordId: record.id, userId })
+    await this.aiRuntimeQueue.enqueue('ai-generate', { recordId: record.id, userId })
 
     // 模型两次 token 间隔较长时，部分负载均衡会 idle 断连；SSE 注释行不触发客户端 data 事件
     const keepAliveMs = 15000
@@ -2435,7 +2427,7 @@ ${originalPrompt}
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
     res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
-    await this.redis?.enqueueJob('ai-analysis', { recordId: record.id, userId })
+    await this.aiRuntimeQueue.enqueue('ai-analysis', { recordId: record.id, userId })
 
     const keepAliveMs = 15000
     const keepAlive = setInterval(() => {
@@ -2491,7 +2483,7 @@ ${originalPrompt}
           fullContent,
           maxOut,
           (delta) => {
-            void this.redis?.appendStreamChunk(record.id, delta)
+            void this.aiStreamRecovery.append(record.id, delta)
             res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
           },
         )

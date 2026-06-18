@@ -7,6 +7,30 @@ export interface RuntimeHints {
   throttleLimit: number
   visionPdfMinTextChars?: number
   visionPdfAlways?: boolean
+  redis?: {
+    ready: boolean
+    enabled: boolean
+    urlConfigured: boolean
+  }
+  queues?: Array<{
+    name: string
+    pending: number
+  }>
+  workers?: {
+    fileParseEnabled: boolean
+    fileParseMaxConcurrent: number
+    fileParseIntervalMs: number
+    fileParseTimeoutMinutes: number
+  }
+  streamRecovery?: {
+    enabled: boolean
+    snapshotEndpoint: string
+    maxChars: number
+  }
+  templateCache?: {
+    redisEnabled: boolean
+    ttlMs: number
+  }
 }
 
 export interface MultimodalRuntimeConfig {

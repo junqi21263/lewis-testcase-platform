@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Optional } from '@nestjs/common'
 import { AIModelConfig, Prisma } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-model-settings.dto'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { DEFAULT_OUTPUT_TOKENS } from '@/modules/ai/ai-output-budget.util'
+import { RedisService } from '@/redis/redis.service'
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '')
@@ -14,6 +15,7 @@ export class SettingsService {
   constructor(
     private prisma: PrismaService,
     private readonly multimodal: MultimodalService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   private mapToAdminView(r: AIModelConfig) {
@@ -39,9 +41,16 @@ export class SettingsService {
     }
   }
 
-  getRuntimeHints() {
+  async getRuntimeHints() {
     const raw = parseInt(process.env.MAX_FILE_SIZE || '10485760', 10)
     const maxUploadMb = Math.max(1, Math.floor(raw / 1024 / 1024))
+    const queueNames = ['file-parse', 'ai-analysis', 'ai-generate', 'ai-cross-review']
+    const queues = await Promise.all(
+      queueNames.map(async (name) => ({
+        name,
+        pending: await this.redisQueueLengthSafe(name),
+      })),
+    )
     return {
       maxUploadMb,
       maxFileSizeBytes: raw,
@@ -49,6 +58,35 @@ export class SettingsService {
       throttleLimit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
       visionPdfMinTextChars: parseInt(process.env.VISION_PDF_MIN_TEXT_CHARS || '120', 10),
       visionPdfAlways: process.env.VISION_PDF_ALWAYS === '1',
+      redis: {
+        ready: this.redis?.isReady() ?? false,
+        enabled: Boolean(process.env.REDIS_URL?.trim()) && process.env.REDIS_ENABLED !== '0',
+        urlConfigured: Boolean(process.env.REDIS_URL?.trim()),
+      },
+      queues,
+      workers: {
+        fileParseEnabled: process.env.FILE_PARSE_WORKER_ENABLED !== '0',
+        fileParseMaxConcurrent: parseInt(process.env.FILE_PARSE_WORKER_MAX_CONCURRENT || '3', 10),
+        fileParseIntervalMs: parseInt(process.env.FILE_PARSE_WORKER_INTERVAL_MS || '1500', 10),
+        fileParseTimeoutMinutes: parseInt(process.env.FILE_PARSE_TIMEOUT_MINUTES || '15', 10),
+      },
+      streamRecovery: {
+        enabled: this.redis?.isReady() ?? false,
+        snapshotEndpoint: '/api/ai/streams/:recordId/snapshot',
+        maxChars: parseInt(process.env.STREAM_FULL_CONTENT_MAX_CHARS || '2000000', 10),
+      },
+      templateCache: {
+        redisEnabled: process.env.TEMPLATES_LIST_CACHE_REDIS !== '0',
+        ttlMs: parseInt(process.env.TEMPLATES_LIST_CACHE_TTL_MS || '30000', 10),
+      },
+    }
+  }
+
+  private async redisQueueLengthSafe(queueName: string): Promise<number> {
+    try {
+      return await (this.redis?.queueLength(queueName) ?? Promise.resolve(0))
+    } catch {
+      return 0
     }
   }
 

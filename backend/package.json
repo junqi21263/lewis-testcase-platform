@@ -18,6 +18,7 @@
     "test:smtp": "ts-node scripts/test-smtp-send.ts",
     "smoke:enhancements": "ts-node scripts/smoke-enhancements.ts",
     "smoke:hunyuan-pdf": "pnpm exec ts-node scripts/smoke-hunyuan-pdf.ts",
+    "smoke:real-pdf-analysis": "pnpm exec ts-node -r tsconfig-paths/register scripts/smoke-real-pdf-analysis.ts",
     "debug:file-parse": "pnpm exec ts-node scripts/debug-file-parse.ts",
     "smoke:export-analysis-pdf": "pnpm exec ts-node -r tsconfig-paths/register scripts/smoke-export-analysis-pdf.ts",
     "user:reset-password": "ts-node scripts/reset-user-password.ts",
