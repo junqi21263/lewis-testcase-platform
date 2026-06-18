@@ -220,8 +220,7 @@ export class AiService {
   }
 
   private writeStreamNotice(res: Response, text: string) {
-    if (res.writableEnded) return
-    res.write(`data: ${JSON.stringify({ notice: text })}\n\n`)
+    this.aiStreamRecovery.writeData(res, { notice: text })
   }
 
   private strictSchemaEnabled(): boolean {
@@ -2023,13 +2022,13 @@ ${originalPrompt}
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
-    res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
+    this.aiStreamRecovery.writeData(res, { recordId: record.id, streamId: record.id })
     await this.aiRuntimeQueue.enqueue('ai-generate', { recordId: record.id, userId })
 
     // 模型两次 token 间隔较长时，部分负载均衡会 idle 断连；SSE 注释行不触发客户端 data 事件
     const keepAliveMs = 15000
     const keepAlive = setInterval(() => {
-      if (!res.writableEnded) res.write(': ping\n\n')
+      this.aiStreamRecovery.writeRaw(res, ': ping\n\n')
     }, keepAliveMs)
 
     let fullContent = ''
@@ -2105,17 +2104,15 @@ ${originalPrompt}
               }
               const finalCases = autoRepair?.cases ?? suite.cases
               const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
-              res.write(
-                `data: ${JSON.stringify({
-                  recordId: record.id,
-                  suiteId: suite.id,
-                  caseCount: finalCases.length,
-                  qualityReport: finalQualityReport,
-                  ...(autoRepair ? { autoRepair } : {}),
-                })}\n\n`,
-              )
-              res.write(`data: [DONE]\n\n`)
-              res.end()
+              this.aiStreamRecovery.writeData(res, {
+                recordId: record.id,
+                suiteId: suite.id,
+                caseCount: finalCases.length,
+                qualityReport: finalQualityReport,
+                ...(autoRepair ? { autoRepair } : {}),
+              })
+              this.aiStreamRecovery.writeDone(res)
+              this.aiStreamRecovery.end(res)
               return
             }
             if (text?.trim()) fileContent = text.trim()
@@ -2220,11 +2217,9 @@ ${originalPrompt}
             duration: Date.now() - startTime,
           },
         })
-        if (!res.writableEnded) {
-          res.write(`data: ${JSON.stringify({ error: msg, recordId: record.id })}\n\n`)
-          res.write(`data: [DONE]\n\n`)
-          res.end()
-        }
+        this.aiStreamRecovery.writeData(res, { error: msg, recordId: record.id })
+        this.aiStreamRecovery.writeDone(res)
+        this.aiStreamRecovery.end(res)
         return
       }
 
@@ -2269,27 +2264,23 @@ ${originalPrompt}
       const finalCases = autoRepair?.cases ?? suite.cases
       const finalQualityReport = autoRepair?.qualityReport ?? qualityReport
 
-      res.write(
-        `data: ${JSON.stringify({
-          recordId: record.id,
-          suiteId: suite.id,
-          caseCount: finalCases.length,
-          qualityReport: finalQualityReport,
-          ...(autoRepair ? { autoRepair } : {}),
-        })}\n\n`,
-      )
-      res.write(`data: [DONE]\n\n`)
-      res.end()
+      this.aiStreamRecovery.writeData(res, {
+        recordId: record.id,
+        suiteId: suite.id,
+        caseCount: finalCases.length,
+        qualityReport: finalQualityReport,
+        ...(autoRepair ? { autoRepair } : {}),
+      })
+      this.aiStreamRecovery.writeDone(res)
+      this.aiStreamRecovery.end(res)
     } catch (err: unknown) {
       const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
       await this.prisma.generationRecord.update({
         where: { id: record.id },
         data: { status: GenerationStatus.FAILED, errorMessage: message },
       })
-      if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ error: message })}\n\n`)
-        res.end()
-      }
+      this.aiStreamRecovery.writeData(res, { error: message })
+      this.aiStreamRecovery.end(res)
     } finally {
       clearInterval(keepAlive)
     }
@@ -2426,12 +2417,12 @@ ${originalPrompt}
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
-    res.write(`data: ${JSON.stringify({ recordId: record.id, streamId: record.id })}\n\n`)
+    this.aiStreamRecovery.writeData(res, { recordId: record.id, streamId: record.id })
     await this.aiRuntimeQueue.enqueue('ai-analysis', { recordId: record.id, userId })
 
     const keepAliveMs = 15000
     const keepAlive = setInterval(() => {
-      if (!res.writableEnded) res.write(': ping\n\n')
+      this.aiStreamRecovery.writeRaw(res, ': ping\n\n')
     }, keepAliveMs)
 
     let fullContent = ''
@@ -2483,8 +2474,7 @@ ${originalPrompt}
           fullContent,
           maxOut,
           (delta) => {
-            void this.aiStreamRecovery.append(record.id, delta)
-            res.write(`data: ${JSON.stringify({ content: delta })}\n\n`)
+            void this.aiStreamRecovery.writeSseContent(res, record.id, delta)
           },
         )
         fullContent = continued.content
@@ -2548,25 +2538,23 @@ ${originalPrompt}
       })
       await this.rebuildRequirementCoverageMatrix(record.id, analysisStructuredResult)
 
-      res.write(`data: ${JSON.stringify({
+      this.aiStreamRecovery.writeData(res, {
         recordId: record.id,
         analysisQuality: analysisStructuredResult.quality,
         analysisStructuredResult,
         analysisVersionNumber: analysisVersion.versionNumber,
         done: true,
-      })}\n\n`)
-      res.write(`data: [DONE]\n\n`)
-      res.end()
+      })
+      this.aiStreamRecovery.writeDone(res)
+      this.aiStreamRecovery.end(res)
     } catch (err: unknown) {
       const message = humanizeAiProviderError(err instanceof Error ? err.message : String(err))
       await this.prisma.generationRecord.update({
         where: { id: record.id },
         data: { status: GenerationStatus.FAILED, errorMessage: message },
       })
-      if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ error: message })}\n\n`)
-        res.end()
-      }
+      this.aiStreamRecovery.writeData(res, { error: message })
+      this.aiStreamRecovery.end(res)
     } finally {
       clearInterval(keepAlive)
     }

@@ -72,6 +72,12 @@ import {
 import { renderMermaidChartsToPngBase64 } from '@/utils/analysisMermaidPdf'
 import { buildAnalysisXmindBlob } from '@/utils/buildAnalysisXmind'
 import {
+  loadHumanReviewPreference,
+  resolveRecoveredAnalysisStatus,
+  saveHumanReviewPreference,
+  type RecoveredAnalysisStatus,
+} from '@/utils/aiAnalysisRecovery'
+import {
   ANALYSIS_PROMPT_PRESETS,
   findPresetIdForBody,
   touchRecentPresetId,
@@ -124,6 +130,7 @@ type Action =
   | { type: 'ERROR'; log: LogEntry }
   | { type: 'STOP_TO_IDLE' }
   | { type: 'LOAD_SAVED_REPORT'; text: string }
+  | { type: 'LOAD_RECOVERED_REPORT'; text: string; status: RecoveredAnalysisStatus }
   | { type: 'CLEAR_LOGS' }
 
 const initialPageState: PageState = {
@@ -192,6 +199,24 @@ function pageReducer(state: PageState, action: Action): PageState {
         reportText: action.text,
         reviewText: '',
         logs: [],
+      }
+    case 'LOAD_RECOVERED_REPORT':
+      return {
+        ...state,
+        status: action.status === 'idle' ? 'idle' : action.status,
+        reportText: action.text,
+        reviewText: '',
+        logs:
+          action.status === 'analyzing'
+            ? [
+                {
+                  id: safeRandomUUID(),
+                  text: '正在从流式快照恢复，任务仍在后台处理中…',
+                  timestamp: nowTime(),
+                  statusOverride: 'running',
+                },
+              ]
+            : [],
       }
     case 'CLEAR_LOGS':
       return { ...state, logs: [] }
@@ -713,7 +738,7 @@ function AiAnalysisPageInner() {
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportingXmind, setExportingXmind] = useState(false)
-  const [humanReview, setHumanReview] = useState(true)
+  const [humanReview, setHumanReview] = useState(loadHumanReviewPreference)
   const [modelInfo, setModelInfo] = useState<AIModel | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [fileHistory, setFileHistory] = useState<UploadedFile[]>([])
@@ -910,6 +935,11 @@ function AiAnalysisPageInner() {
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
     if (dist > 50) setAutoScroll(false)
+  }, [])
+
+  const updateHumanReviewPreference = useCallback((next: boolean) => {
+    setHumanReview(next)
+    saveHumanReviewPreference(next)
   }, [])
 
   const copyAnalysisReport = useCallback(async () => {
@@ -1321,8 +1351,30 @@ function AiAnalysisPageInner() {
   const applyAnalysisRecord = useCallback(async (id: string) => {
     try {
       const r = await recordsApi.getRecordById(id)
-      const text = r.demandContent?.trim() ?? ''
+      let effectiveStatus = r.status
+      let text = r.demandContent?.trim() ?? ''
+      if (r.status === 'PROCESSING' || r.status === 'PENDING') {
+        try {
+          const snapshot = await aiApi.getStreamSnapshot(r.id)
+          effectiveStatus = snapshot.status as GenerationStatus
+          if (snapshot.content?.trim()) text = snapshot.content.trim()
+          if (snapshot.errorMessage?.trim() && effectiveStatus === 'FAILED') {
+            toast.error(snapshot.errorMessage)
+          }
+        } catch {
+          /* snapshot is a best-effort recovery path */
+        }
+      }
+      const recoveredStatus = resolveRecoveredAnalysisStatus(effectiveStatus, humanReview, text)
       if (!text) {
+        if (recoveredStatus === 'analyzing') {
+          setCurrentAnalysisRecordId(r.id)
+          setCurrentAnalysisStructured(null)
+          setCurrentAnalysisVersion(null)
+          dispatch({ type: 'LOAD_RECOVERED_REPORT', text: '', status: 'analyzing' })
+          toast('该分析仍在后台处理中，稍后刷新或重新进入可恢复结果')
+          return
+        }
         toast.error('该记录无可展示内容')
         return
       }
@@ -1332,12 +1384,18 @@ function AiAnalysisPageInner() {
       setAnalysisVersions([])
       setAnalysisDiff([])
       setAnalysisVersionsOpen(false)
-      dispatch({ type: 'LOAD_SAVED_REPORT', text })
-      toast.success('已载入分析结果')
+      dispatch({ type: 'LOAD_RECOVERED_REPORT', text, status: recoveredStatus })
+      if (recoveredStatus === 'analyzing') {
+        toast('已恢复流式快照，任务仍在后台处理中')
+      } else if (recoveredStatus === 'error') {
+        toast.error('该分析记录已失败，已载入最后可用内容')
+      } else {
+        toast.success('已载入分析结果')
+      }
     } catch {
       toast.error('加载记录失败')
     }
-  }, [])
+  }, [humanReview])
 
   const handleBatchImageUpload = useCallback(
     async (files: File[]) => {
@@ -2736,7 +2794,7 @@ ${state.reportText}
               aria-checked={humanReview}
               aria-labelledby="human-review-label"
               aria-label="人工审阅"
-              onClick={() => setHumanReview(!humanReview)}
+              onClick={() => updateHumanReviewPreference(!humanReview)}
               className={`
                 relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200
                 ${humanReview ? 'bg-blue-600' : 'bg-gray-600'}

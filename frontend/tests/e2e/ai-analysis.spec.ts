@@ -30,8 +30,12 @@ test.describe('E2E: AI 需求分析全流程', () => {
   test.beforeEach(async ({ page }) => {
     // 注入已认证状态
     await page.addInitScript(() => {
+      const humanReviewPreference = localStorage.getItem('ai-analysis-human-review-enabled')
       localStorage.clear()
       sessionStorage.clear()
+      if (humanReviewPreference !== null) {
+        localStorage.setItem('ai-analysis-human-review-enabled', humanReviewPreference)
+      }
       localStorage.setItem(
         'auth-storage',
         JSON.stringify({
@@ -295,9 +299,13 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
 
+    await page.reload({ waitUntil: 'networkidle' })
+    const reloadedToggle = page.getByRole('switch', { name: '人工审阅' })
+    await expect(reloadedToggle).toHaveAttribute('aria-checked', 'false')
+
     // 再次点击开启
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await reloadedToggle.click()
+    await expect(reloadedToggle).toHaveAttribute('aria-checked', 'true')
   })
 
   test('上传非解析文件后显示解析等待状态', async ({ page }) => {

@@ -120,6 +120,25 @@ describe('Redis runtime helpers', () => {
     await expect(queue.drain('ai-generate', jest.fn())).resolves.toBeUndefined()
   })
 
+  it('keeps caching stream chunks when the browser response is already closed', async () => {
+    const redis = {
+      appendStreamChunk: jest.fn().mockResolvedValue(undefined),
+    }
+    const stream = new AiStreamRecoveryService(redis as any)
+    const response = {
+      destroyed: true,
+      writableEnded: false,
+      write: jest.fn(() => {
+        throw new Error('Cannot write after close')
+      }),
+    }
+
+    await expect(stream.writeSseContent(response as any, 'record-1', 'delta')).resolves.toBeUndefined()
+
+    expect(redis.appendStreamChunk).toHaveBeenCalledWith('record-1', 'delta')
+    expect(response.write).not.toHaveBeenCalled()
+  })
+
   it('delegates file parse runtime to redis when available and throttles db heartbeats', async () => {
     const redis = {
       isReady: jest.fn(() => true),
