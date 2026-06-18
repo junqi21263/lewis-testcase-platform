@@ -8,11 +8,14 @@ import { JwtStrategy } from './strategies/jwt.strategy'
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { MailModule } from '@/modules/mail/mail.module'
 import { getJwtExpiresIn, getJwtSecret } from './jwt-config.util'
+import { CaptchaService } from './captcha.service'
+import { RedisModule } from '@/redis/redis.module'
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     MailModule,
+    RedisModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -22,7 +25,7 @@ import { getJwtExpiresIn, getJwtSecret } from './jwt-config.util'
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, PasswordValidator],
+  providers: [AuthService, JwtStrategy, PasswordValidator, CaptchaService],
   controllers: [AuthController],
   exports: [AuthService, JwtModule],
 })

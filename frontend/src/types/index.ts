@@ -39,20 +39,33 @@ export interface User {
 }
 
 export interface LoginPayload {
-  username: string
+  email?: string
+  username?: string
   password: string
+  captchaId: string
+  captchaCode: string
 }
 
 export interface RegisterPayload {
   email: string
-  username: string
+  username?: string
   password: string
+  confirmPassword: string
+  inviteCode: string
+  captchaId: string
+  captchaCode: string
 }
 
 export interface AuthTokens {
   accessToken: string
   refreshToken?: string
   user: User
+}
+
+export interface CaptchaChallenge {
+  captchaId: string
+  imageSvg: string
+  expiresInSec: number
 }
 
 /** POST /auth/register/send-code、/auth/register/resend-code 返回的 data */

@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Loader2, User, Mail, Lock, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Mail, Lock, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
@@ -10,13 +10,14 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { PasswordStrength } from '@/components/PasswordStrength'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
-
-const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
+import type { CaptchaChallenge } from '@/types'
 
 interface RegisterForm {
   email: string
-  username: string
   password: string
+  confirmPassword: string
+  inviteCode: string
+  captchaCode: string
   agreeTerms: boolean
 }
 
@@ -31,9 +32,12 @@ export default function RegisterPage() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const loading = useAuthStore((s) => s.loading)
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [step, setStep] = useState<'form' | 'code'>('form')
   const [pendingEmail, setPendingEmail] = useState('')
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null)
+  const [captchaLoading, setCaptchaLoading] = useState(false)
 
   const {
     register,
@@ -50,14 +54,36 @@ export default function RegisterPage() {
 
   const passwordValue = watch('password', '')
 
+  const loadCaptcha = async () => {
+    setCaptchaLoading(true)
+    try {
+      setCaptcha(await authApi.getCaptcha('register'))
+    } catch {
+      toast.error('图形验证码加载失败，请稍后重试')
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadCaptcha()
+  }, [])
+
   const onSendCode = async (data: RegisterForm) => {
     setError(null)
+    if (!captcha?.captchaId) {
+      toast.error('请先刷新并填写图形验证码')
+      return
+    }
     try {
-      const { email, username, password } = data
+      const { email, password, confirmPassword, inviteCode, captchaCode } = data
       const meta = await authApi.sendRegisterCode({
         email: email.trim().toLowerCase(),
-        username: username.trim(),
         password,
+        confirmPassword,
+        inviteCode,
+        captchaId: captcha.captchaId,
+        captchaCode,
       })
       setPendingEmail(meta.email)
       if (meta.mailConfigured === false && meta.mailIssues?.length) {
@@ -71,6 +97,7 @@ export default function RegisterPage() {
       setStep('code')
     } catch {
       /* 错误已由 axios 拦截器与 authApi setError 处理 */
+      void loadCaptcha()
     }
   }
 
@@ -112,7 +139,7 @@ export default function RegisterPage() {
         <CardTitle className="text-[22px] font-semibold tracking-tight text-center">创建新账号</CardTitle>
         <CardDescription className="text-center">
           {step === 'form'
-            ? '使用邮箱 + 用户名 + 密码注册；登录时使用用户名'
+            ? '仅限邀请注册：邮箱 + 图形验证码 + 密码 + 邀请码 + 邮箱验证码'
             : `我们已向 ${pendingEmail} 发送 6 位验证码，填写后即可完成注册`}
         </CardDescription>
       </CardHeader>
@@ -147,30 +174,6 @@ export default function RegisterPage() {
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <User className="w-4 h-4" />
-                用户名
-              </label>
-              <Input
-                type="text"
-                placeholder="请输入用户名"
-                {...register('username', {
-                  required: '请输入用户名',
-                  minLength: { value: 2, message: '用户名至少2个字符' },
-                  maxLength: { value: 50, message: '用户名最多50个字符' },
-                  pattern: {
-                    value: USERNAME_RE,
-                    message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
-                  },
-                })}
-                className={errors.username ? 'border-destructive' : ''}
-              />
-              {errors.username && (
-                <p className="text-xs text-destructive">{errors.username.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground flex items-center gap-2">
                 <Lock className="w-4 h-4" />
                 密码
               </label>
@@ -196,6 +199,95 @@ export default function RegisterPage() {
                 <p className="text-xs text-destructive">{errors.password.message}</p>
               )}
               <PasswordStrength password={passwordValue} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Lock className="w-4 h-4" />
+                确认密码
+              </label>
+              <div className="relative">
+                <Input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="请再次输入密码"
+                  {...register('confirmPassword', {
+                    required: '请再次输入密码',
+                    validate: (v) => v === passwordValue || '两次输入的密码不一致',
+                  })}
+                  className={`pr-10 ${errors.confirmPassword ? 'border-destructive' : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showConfirmPassword ? '隐藏确认密码' : '显示确认密码'}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.confirmPassword && (
+                <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                图形验证码
+              </label>
+              <div className="grid grid-cols-[minmax(0,1fr)_132px] gap-2">
+                <Input
+                  type="text"
+                  autoComplete="off"
+                  placeholder="输入图中字符"
+                  {...register('captchaCode', {
+                    required: '请输入图形验证码',
+                    minLength: { value: 4, message: '验证码至少4个字符' },
+                  })}
+                  className={errors.captchaCode ? 'border-destructive' : ''}
+                />
+                <button
+                  type="button"
+                  onClick={() => void loadCaptcha()}
+                  disabled={captchaLoading}
+                  className="flex h-10 items-center justify-center overflow-hidden rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-60"
+                  aria-label="刷新图形验证码"
+                  title="点击刷新验证码"
+                >
+                  {captchaLoading || !captcha ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span
+                      className="flex h-full w-full items-center justify-center [&>svg]:h-full [&>svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: captcha.imageSvg }}
+                    />
+                  )}
+                </button>
+              </div>
+              {errors.captchaCode && (
+                <p className="text-xs text-destructive">{errors.captchaCode.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <KeyRound className="w-4 h-4" />
+                邀请码
+              </label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="请输入邀请码"
+                {...register('inviteCode', {
+                  required: '请输入邀请码',
+                  validate: (v) => v.trim() === '0628' || '邀请码不正确',
+                })}
+                className={errors.inviteCode ? 'border-destructive' : ''}
+              />
+              {errors.inviteCode && (
+                <p className="text-xs text-destructive">{errors.inviteCode.message}</p>
+              )}
             </div>
           </CardContent>
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useForm } from "react-hook-form";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -17,21 +17,15 @@ import {
   type LoginMascotMood,
 } from "@/components/auth/LoginMascot";
 import { LoginThemeToggle } from "@/components/auth/LoginThemeToggle";
+import type { CaptchaChallenge } from "@/types";
 
-const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/;
 /** 简单邮箱格式（与后端 LoginDto 的邮箱分支一致） */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function isValidLoginId(value: string): boolean {
-  const v = value.trim();
-  if (!v) return false;
-  if (v.includes("@")) return EMAIL_RE.test(v);
-  return USERNAME_RE.test(v);
-}
-
 interface LoginForm {
-  username: string;
+  email: string;
   password: string;
+  captchaCode: string;
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -53,6 +47,8 @@ export default function LoginPage() {
   const [look, setLook] = useState({ x: 0, y: 0 });
   const [shakeId, setShakeId] = useState(0);
   const [celebrate, setCelebrate] = useState(false);
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
+  const [captchaLoading, setCaptchaLoading] = useState(false);
   const mascotRef = useRef<HTMLDivElement>(null);
   const prevLoading = useRef(loading);
 
@@ -79,23 +75,38 @@ export default function LoginPage() {
   } = useForm<LoginForm>();
 
   const passwordValue = watch("password") ?? "";
-  const usernameValue = watch("username") ?? "";
+  const emailValue = watch("email") ?? "";
 
-  const usernameReg = register("username", {
-    required: "请输入用户名或邮箱",
-    minLength: { value: 2, message: "至少2个字符" },
+  const emailReg = register("email", {
+    required: "请输入电子邮箱",
     maxLength: { value: 255, message: "过长" },
-    validate: (v) =>
-      isValidLoginId(v) ||
-      (v.includes("@")
-        ? "邮箱格式不正确"
-        : "用户名仅支持字母、数字、下划线、中文、点与短横线"),
+    pattern: { value: EMAIL_RE, message: "邮箱格式不正确" },
   });
 
   const passwordReg = register("password", {
     required: "请输入密码",
     minLength: { value: 6, message: "密码至少6位" },
   });
+
+  const captchaReg = register("captchaCode", {
+    required: "请输入图形验证码",
+    minLength: { value: 4, message: "验证码至少4个字符" },
+  });
+
+  const loadCaptcha = async () => {
+    setCaptchaLoading(true);
+    try {
+      setCaptcha(await authApi.getCaptcha("login"));
+    } catch {
+      toast.error("图形验证码加载失败，请稍后重试");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCaptcha();
+  }, []);
 
   useEffect(() => {
     if (prevLoading.current && !loading && authError) {
@@ -148,13 +159,22 @@ export default function LoginPage() {
   if (celebrate) mascotMood = "success";
   else if (loading) mascotMood = "loading";
   else if (authError) mascotMood = "error";
-  else if (userFocus && usernameValue.trim().length > 0 && !pwdFocus)
+  else if (userFocus && emailValue.trim().length > 0 && !pwdFocus)
     mascotMood = "listening";
 
   const onSubmit = async (data: LoginForm) => {
     setError(null);
+    if (!captcha?.captchaId) {
+      toast.error("请先刷新并填写图形验证码");
+      return;
+    }
     try {
-      const result = await authApi.login(data);
+      const result = await authApi.login({
+        email: data.email,
+        password: data.password,
+        captchaId: captcha.captchaId,
+        captchaCode: data.captchaCode,
+      });
       setAuth(result.user, result.accessToken, rememberMe);
       toast.success("登录成功");
       setCelebrate(true);
@@ -163,6 +183,7 @@ export default function LoginPage() {
       navigate("/dashboard");
     } catch {
       /* 错误已由 axios 拦截器与 authApi setError 处理 */
+      void loadCaptcha();
     }
   };
 
@@ -322,36 +343,36 @@ export default function LoginPage() {
                             className="text-[13px] font-medium transition-colors duration-200 group-focus-within/login-user:text-[color:var(--lp-label-focus)]"
                             style={{ color: "var(--lp-label)" }}
                           >
-                            用户名或邮箱
+                            电子邮箱
                           </label>
                           <Input
                             id="login-username"
-                            type="text"
-                            autoComplete="username"
-                            placeholder="请输入用户名或邮箱"
-                            {...usernameReg}
+                            type="email"
+                            autoComplete="email"
+                            placeholder="请输入已注册邮箱"
+                            {...emailReg}
                             onFocus={() => setUserFocus(true)}
                             onBlur={(e) => {
                               setUserFocus(false);
-                              void usernameReg.onBlur(e);
+                              void emailReg.onBlur(e);
                             }}
                             className={cn(
                               inputBase,
-                              errors.username && "login-soft-input--error",
+                              errors.email && "login-soft-input--error",
                             )}
-                            aria-invalid={errors.username ? true : undefined}
+                            aria-invalid={errors.email ? true : undefined}
                             aria-describedby={
-                              errors.username
+                              errors.email
                                 ? "login-username-error"
                                 : undefined
                             }
                           />
-                          {errors.username && (
+                          {errors.email && (
                             <p
                               id="login-username-error"
                               className="text-xs font-medium text-red-500 dark:text-red-400"
                             >
-                              {errors.username.message}
+                              {errors.email.message}
                             </p>
                           )}
                         </div>
@@ -421,6 +442,62 @@ export default function LoginPage() {
                               className="text-xs font-medium text-red-500 dark:text-red-400"
                             >
                               {errors.password.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="group/login-captcha space-y-2">
+                          <label
+                            htmlFor="login-captcha"
+                            className="flex items-center gap-2 text-[13px] font-medium transition-colors duration-200 group-focus-within/login-captcha:text-[color:var(--lp-label-focus)]"
+                            style={{ color: "var(--lp-label)" }}
+                          >
+                            <ShieldCheck className="h-4 w-4" aria-hidden />
+                            图形验证码
+                          </label>
+                          <div className="grid grid-cols-[minmax(0,1fr)_132px] gap-2">
+                            <Input
+                              id="login-captcha"
+                              type="text"
+                              autoComplete="off"
+                              placeholder="输入图中字符"
+                              {...captchaReg}
+                              className={cn(
+                                inputBase,
+                                "h-[48px]",
+                                errors.captchaCode && "login-soft-input--error",
+                              )}
+                              aria-invalid={errors.captchaCode ? true : undefined}
+                              aria-describedby={
+                                errors.captchaCode
+                                  ? "login-captcha-error"
+                                  : undefined
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void loadCaptcha()}
+                              disabled={captchaLoading}
+                              className="flex h-[48px] items-center justify-center overflow-hidden rounded-[15px] border border-white/15 bg-white/70 text-sm shadow-sm transition hover:bg-white/85 disabled:opacity-60 dark:bg-white/10 dark:hover:bg-white/15"
+                              aria-label="刷新图形验证码"
+                              title="点击刷新验证码"
+                            >
+                              {captchaLoading || !captcha ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" aria-hidden />
+                              ) : (
+                                <span
+                                  className="flex h-full w-full items-center justify-center [&>svg]:h-full [&>svg]:w-full"
+                                  dangerouslySetInnerHTML={{ __html: captcha.imageSvg }}
+                                />
+                              )}
+                            </button>
+                          </div>
+                          {errors.captchaCode && (
+                            <p
+                              id="login-captcha-error"
+                              className="text-xs font-medium text-red-500 dark:text-red-400"
+                            >
+                              {errors.captchaCode.message}
                             </p>
                           )}
                         </div>

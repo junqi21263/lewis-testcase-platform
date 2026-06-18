@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, HttpCode, HttpStatus, Body } from '@nestjs/common'
+import { Controller, Post, Get, Patch, HttpCode, HttpStatus, Body, Query } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import {
@@ -12,11 +12,22 @@ import {
 } from './dto/auth.dto'
 import { Public } from '@/common/decorators/public.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { CaptchaService } from './captcha.service'
 
 @ApiTags('认证')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private captchaService: CaptchaService,
+  ) {}
+
+  @Public()
+  @Get('captcha')
+  @ApiOperation({ summary: '生成登录/注册图形验证码' })
+  async captcha(@Query('action') action?: string) {
+    return this.captchaService.create(action)
+  }
 
   @Public()
   @Post('login')

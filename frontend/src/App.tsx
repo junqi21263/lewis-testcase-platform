@@ -7,6 +7,7 @@ import MainLayout from '@/components/layout/MainLayout'
 import AuthLayout from '@/components/layout/AuthLayout'
 import LoginPage from '@/pages/LoginPage'
 
+const RegisterPage = lazy(() => import('@/pages/RegisterPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const GeneratePage = lazy(() => import('@/pages/GeneratePage'))
 const RecordsPage = lazy(() => import('@/pages/RecordsPage'))
@@ -75,7 +76,7 @@ export default function App() {
         <Routes>
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<Navigate to="/login" replace />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route path="/verify-email" element={<Navigate to="/login" replace />} />
             <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
             <Route path="/reset-password" element={<Navigate to="/login" replace />} />

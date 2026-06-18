@@ -24,9 +24,11 @@ import {
 import { PasswordValidator } from '@/common/validators/password.validator'
 import { isDirectAvatarImageUrl, resolveAvatarUrlForStorage } from '@/common/avatar-url.util'
 import { MailService } from '@/modules/mail/mail.service'
+import { CaptchaService, type CaptchaAction } from './captcha.service'
 
 const OTP_TTL_MS = 15 * 60 * 1000
 const RESEND_COOLDOWN_MS = 60 * 1000
+const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
 
 @Injectable()
 export class AuthService {
@@ -37,6 +39,7 @@ export class AuthService {
     private jwtService: JwtService,
     private passwordValidator: PasswordValidator,
     private mail: MailService,
+    private captcha: CaptchaService,
   ) {}
 
   /**
@@ -58,6 +61,44 @@ export class AuthService {
 
   private normalizeEmail(raw: string) {
     return raw.trim().toLowerCase()
+  }
+
+  private expectedInviteCode(): string {
+    return (process.env.AUTH_REGISTER_INVITE_CODE || '0628').trim()
+  }
+
+  private assertInviteCode(inviteCode?: string | null) {
+    if ((inviteCode ?? '').trim() !== this.expectedInviteCode()) {
+      throw new BadRequestException('邀请码无效，请确认后再注册')
+    }
+  }
+
+  private async assertCaptcha(action: CaptchaAction, captchaId?: string | null, captchaCode?: string | null) {
+    const ok = await this.captcha.validateAndConsume(action, captchaId, captchaCode)
+    if (!ok) throw new BadRequestException('图形验证码错误或已过期，请刷新后重试')
+  }
+
+  private sanitizeUsernameSeed(seed: string): string {
+    const cleaned = seed
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_\u4e00-\u9fa5.-]/g, '')
+      .slice(0, 32)
+    return cleaned.length >= 2 ? cleaned : 'user'
+  }
+
+  private async resolveRegisterUsername(email: string, requested?: string | null): Promise<string> {
+    const base = this.sanitizeUsernameSeed(requested?.trim() || email.split('@')[0] || 'user')
+    if (!USERNAME_RE.test(base)) throw new BadRequestException('用户名仅支持字母、数字、下划线、中文、点与短横线')
+    if (base.length < 2 || base.length > 50) throw new BadRequestException('用户名长度需为 2-50 个字符')
+
+    for (let i = 0; i < 8; i += 1) {
+      const candidate = i === 0 ? base : `${base.slice(0, 42)}_${randomInt(1000, 9999)}`
+      // eslint-disable-next-line no-await-in-loop
+      const taken = await this.prisma.user.findFirst({ where: { username: candidate } })
+      if (!taken) return candidate
+    }
+    throw new ConflictException('用户名已被使用，请稍后重试')
   }
 
   private passwordLooksBcrypt(stored: string): boolean {
@@ -129,7 +170,8 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const rawLogin = dto.username.trim()
+    await this.assertCaptcha('login', dto.captchaId, dto.captchaCode)
+    const rawLogin = (dto.email || dto.username || '').trim()
     const plainPwd = (dto.password ?? '').trim()
     if (!rawLogin || !plainPwd) {
       throw new UnauthorizedException('用户名或密码错误')
@@ -178,14 +220,18 @@ export class AuthService {
   /** 注册第一步：校验资料、写入待验证记录、发验证码（不写 users） */
   async registerSendCode(dto: RegisterSendCodeDto) {
     this.assertAdminOnlyAllowed('注册')
+    this.assertInviteCode(dto.inviteCode)
+    await this.assertCaptcha('register', dto.captchaId, dto.captchaCode)
+
     const email = this.normalizeEmail(dto.email)
-    const username = dto.username.trim()
+    const username = await this.resolveRegisterUsername(email, dto.username)
+
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('两次输入的密码不一致')
+    }
 
     const existsEmail = await this.prisma.user.findUnique({ where: { email } })
     if (existsEmail) throw new ConflictException('该邮箱已被注册')
-
-    const usernameTaken = await this.prisma.user.findFirst({ where: { username } })
-    if (usernameTaken) throw new ConflictException('该用户名已被使用')
 
     const passwordValidation = this.passwordValidator.validate(dto.password)
     if (!passwordValidation.valid) {

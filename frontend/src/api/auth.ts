@@ -1,16 +1,23 @@
 import { request } from '@/utils/request'
 import { useAuthStore } from '@/store/authStore'
-import type { AuthTokens, LoginPayload, RegisterPayload, RegisterOtpMeta, User } from '@/types'
+import type { AuthTokens, CaptchaChallenge, LoginPayload, RegisterPayload, RegisterOtpMeta, User } from '@/types'
 import { getApiErrorMessage } from '@/utils/apiErrorMessage'
 
 export const authApi = {
+  getCaptcha: (action: 'login' | 'register' | 'reset' = 'login') =>
+    request.get<CaptchaChallenge>('/auth/captcha', { params: { action } }),
+
   login: async (payload: LoginPayload) => {
     const { setLoading, setError } = useAuthStore.getState()
     setLoading(true)
     try {
+      const email = payload.email?.trim().toLowerCase()
+      const username = payload.username?.trim()
       const result = await request.post<AuthTokens>('/auth/login', {
-        username: payload.username.trim(),
+        ...(email ? { email } : { username }),
         password: payload.password,
+        captchaId: payload.captchaId,
+        captchaCode: payload.captchaCode.trim(),
       })
       return result
     } catch (error: unknown) {
@@ -28,8 +35,12 @@ export const authApi = {
     try {
       const body = {
         email: payload.email.trim().toLowerCase(),
-        username: payload.username.trim(),
+        ...(payload.username?.trim() ? { username: payload.username.trim() } : {}),
         password: payload.password,
+        confirmPassword: payload.confirmPassword,
+        inviteCode: payload.inviteCode.trim(),
+        captchaId: payload.captchaId,
+        captchaCode: payload.captchaCode.trim(),
       }
       return await request.post<RegisterOtpMeta>('/auth/register/send-code', body)
     } catch (error: unknown) {

@@ -12,7 +12,13 @@ import { ApiProperty } from '@nestjs/swagger'
 const USERNAME_RE = /^[a-zA-Z0-9_\u4e00-\u9fa5.-]+$/
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin_user 或 user@example.com' })
+  @ApiProperty({ example: 'user@example.com', required: false })
+  @IsOptional()
+  @IsEmail({}, { message: '邮箱格式不正确' })
+  email?: string
+
+  @ApiProperty({ example: 'admin_user 或 user@example.com', required: false })
+  @IsOptional()
   @IsString()
   @MinLength(2, { message: '用户名或邮箱至少2个字符' })
   @MaxLength(255, { message: '用户名或邮箱过长' })
@@ -23,12 +29,20 @@ export class LoginDto {
   })
   @ValidateIf((o: LoginDto) => String(o.username || '').includes('@'))
   @IsEmail({}, { message: '邮箱格式不正确' })
-  username: string
+  username?: string
 
   @ApiProperty({ example: 'Admin@123456' })
   @IsString()
   @MinLength(6, { message: '密码至少6位' })
   password: string
+
+  @ApiProperty({ example: 'captcha-id' })
+  @IsString()
+  captchaId: string
+
+  @ApiProperty({ example: 'a7k9' })
+  @IsString()
+  captchaCode: string
 }
 
 /** 第一步：提交资料并发送邮箱验证码（此时不落 users 表） */
@@ -37,19 +51,37 @@ export class RegisterSendCodeDto {
   @IsEmail({}, { message: '邮箱格式不正确' })
   email: string
 
-  @ApiProperty({ example: 'TestUser' })
+  @ApiProperty({ example: 'TestUser', required: false })
+  @IsOptional()
   @IsString()
   @MinLength(2, { message: '用户名至少2个字符' })
   @MaxLength(50, { message: '用户名最多50个字符' })
   @Matches(USERNAME_RE, {
     message: '用户名仅支持字母、数字、下划线、中文、点与短横线',
   })
-  username: string
+  username?: string
 
   @ApiProperty()
   @IsString()
   @MinLength(6, { message: '密码至少6位' })
   password: string
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(6, { message: '确认密码至少6位' })
+  confirmPassword: string
+
+  @ApiProperty({ example: '0628' })
+  @IsString()
+  inviteCode: string
+
+  @ApiProperty({ example: 'captcha-id' })
+  @IsString()
+  captchaId: string
+
+  @ApiProperty({ example: 'a7k9' })
+  @IsString()
+  captchaCode: string
 
   @ApiProperty({ required: false, example: 'avatar.png' })
   @IsOptional()
