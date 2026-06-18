@@ -5,10 +5,13 @@ import { CreateAiModelSettingsDto, UpdateAiModelSettingsDto } from './dto/ai-mod
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { DEFAULT_OUTPUT_TOKENS } from '@/modules/ai/ai-output-budget.util'
 import { RedisService } from '@/redis/redis.service'
+import { ADMIN_AUDIT_ACTION } from '@/modules/admin/admin.constants'
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '')
 }
+
+type SettingsAuditTargetType = 'AI_MODEL' | 'SETTINGS'
 
 @Injectable()
 export class SettingsService {
@@ -90,24 +93,77 @@ export class SettingsService {
     }
   }
 
+  private clipIp(ip?: string | null): string | null {
+    if (!ip || !ip.trim()) return null
+    const s = ip.trim()
+    return s.length > 64 ? s.slice(0, 64) : s
+  }
+
+  private changedFields(payload: Record<string, unknown>): string[] {
+    return Object.entries(payload)
+      .filter(([key, value]) => value !== undefined && !(key === 'apiKey' && String(value).trim() === ''))
+      .map(([key]) => key)
+  }
+
+  private async writeSettingsAudit(input: {
+    operatorId?: string | null
+    action: string
+    targetType: SettingsAuditTargetType
+    targetName: string
+    targetId?: string | null
+    detail?: Record<string, unknown>
+    ip?: string | null
+  }) {
+    if (!input.operatorId) return
+    await this.prisma.adminAuditLog.create({
+      data: {
+        operatorId: input.operatorId,
+        targetUserId: input.operatorId,
+        action: input.action,
+        ip: this.clipIp(input.ip),
+        detail: {
+          targetType: input.targetType,
+          targetId: input.targetId ?? null,
+          targetName: input.targetName,
+          ...(input.detail ?? {}),
+        },
+      },
+    })
+  }
+
   getMultimodalConfig() {
     return this.multimodal.getRuntimeConfig()
   }
 
-  updateMultimodalConfig(payload: {
-    multimodalEnabled?: boolean
-    multimodalDefaultModel?: string
-    textFallbackModel?: string
-    maxConcurrentTasks?: number
-    cacheTtlDays?: number
-    monthlyCostAlertCny?: number
-    autoDowngradeWhenOverBudget?: boolean
-    multimodalInputPricePer1kCny?: number
-    multimodalOutputPricePer1kCny?: number
-    textInputPricePer1kCny?: number
-    textOutputPricePer1kCny?: number
-  }) {
-    return this.multimodal.upsertRuntimeConfig(payload)
+  async updateMultimodalConfig(
+    payload: {
+      multimodalEnabled?: boolean
+      multimodalDefaultModel?: string
+      textFallbackModel?: string
+      maxConcurrentTasks?: number
+      cacheTtlDays?: number
+      monthlyCostAlertCny?: number
+      autoDowngradeWhenOverBudget?: boolean
+      multimodalInputPricePer1kCny?: number
+      multimodalOutputPricePer1kCny?: number
+      textInputPricePer1kCny?: number
+      textOutputPricePer1kCny?: number
+    },
+    operatorId?: string,
+    ip?: string,
+  ) {
+    const result = this.multimodal.upsertRuntimeConfig(payload)
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_MULTIMODAL_CONFIG_UPDATE,
+      targetType: 'SETTINGS',
+      targetName: '多模态配置',
+      detail: {
+        changedFields: this.changedFields(payload),
+      },
+    })
+    return result
   }
 
   async listAiModelsAdmin() {
@@ -134,7 +190,7 @@ export class SettingsService {
     })
   }
 
-  async createAiModel(dto: CreateAiModelSettingsDto) {
+  async createAiModel(dto: CreateAiModelSettingsDto, operatorId?: string, ip?: string) {
     const baseUrl = normalizeBaseUrl(dto.baseUrl)
     const activeDefaultCount = await this.prisma.aIModelConfig.count({
       where: { isDefault: true, isActive: true },
@@ -165,11 +221,31 @@ export class SettingsService {
         useForDocumentVisionParse: dto.useForDocumentVisionParse ?? false,
       },
     })
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_AI_MODEL_CREATE,
+      targetType: 'AI_MODEL',
+      targetId: row.id,
+      targetName: row.name,
+      detail: {
+        provider: row.provider,
+        modelId: row.modelId,
+        baseUrl: row.baseUrl,
+        hasApiKey: !!dto.apiKey.trim(),
+        isDefault: row.isDefault,
+        isActive: row.isActive,
+        supportsVision: row.supportsVision,
+        useForDocumentVisionParse: row.useForDocumentVisionParse,
+      },
+    })
     return this.mapToAdminView(row)
   }
 
-  async updateAiModel(id: string, dto: UpdateAiModelSettingsDto) {
-    const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
+  async updateAiModel(id: string, dto: UpdateAiModelSettingsDto, operatorId?: string, ip?: string) {
+    const existing = await this.prisma.aIModelConfig.findUnique({
+      where: { id },
+    })
     if (!existing) throw new NotFoundException('模型配置不存在')
 
     if (dto.isDefault === true && (dto.isActive === false || (dto.isActive === undefined && !existing.isActive))) {
@@ -205,7 +281,10 @@ export class SettingsService {
       data.useForDocumentVisionParse = dto.useForDocumentVisionParse
     }
 
-    const result = await this.prisma.aIModelConfig.update({ where: { id }, data })
+    const result = await this.prisma.aIModelConfig.update({
+      where: { id },
+      data,
+    })
 
     if (willDeactivateDefault) {
       const next = await this.prisma.aIModelConfig.findFirst({
@@ -220,11 +299,32 @@ export class SettingsService {
       }
     }
 
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_AI_MODEL_UPDATE,
+      targetType: 'AI_MODEL',
+      targetId: existing.id,
+      targetName: existing.name,
+      detail: {
+        changedFields: this.changedFields(dto as Record<string, unknown>),
+        apiKeyChanged: dto.apiKey !== undefined && dto.apiKey.trim() !== '',
+        provider: result.provider,
+        modelId: result.modelId,
+        isDefault: result.isDefault,
+        isActive: result.isActive,
+        supportsVision: result.supportsVision,
+        useForDocumentVisionParse: result.useForDocumentVisionParse,
+      },
+    })
+
     return this.mapToAdminView(result)
   }
 
-  async archiveAiModel(id: string) {
-    const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
+  async archiveAiModel(id: string, operatorId?: string, ip?: string) {
+    const existing = await this.prisma.aIModelConfig.findUnique({
+      where: { id },
+    })
     if (!existing) throw new NotFoundException('模型配置不存在')
     if (existing.isDefault) {
       const next = await this.prisma.aIModelConfig.findFirst({
@@ -253,11 +353,26 @@ export class SettingsService {
         })
       }
     }
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_AI_MODEL_UPDATE,
+      targetType: 'AI_MODEL',
+      targetId: existing.id,
+      targetName: existing.name,
+      detail: {
+        changedFields: ['isActive', 'isDefault'],
+        archived: true,
+        modelId: existing.modelId,
+      },
+    })
     return { ok: true }
   }
 
-  async deleteAiModel(id: string) {
-    const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
+  async deleteAiModel(id: string, operatorId?: string, ip?: string) {
+    const existing = await this.prisma.aIModelConfig.findUnique({
+      where: { id },
+    })
     if (!existing) throw new NotFoundException('模型配置不存在')
 
     try {
@@ -283,11 +398,27 @@ export class SettingsService {
       }
       throw error
     }
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_AI_MODEL_DELETE,
+      targetType: 'AI_MODEL',
+      targetId: existing.id,
+      targetName: existing.name,
+      detail: {
+        provider: existing.provider,
+        modelId: existing.modelId,
+        wasDefault: existing.isDefault,
+        wasActive: existing.isActive,
+      },
+    })
     return { ok: true }
   }
 
-  async setDefaultAiModel(id: string) {
-    const existing = await this.prisma.aIModelConfig.findUnique({ where: { id } })
+  async setDefaultAiModel(id: string, operatorId?: string, ip?: string) {
+    const existing = await this.prisma.aIModelConfig.findUnique({
+      where: { id },
+    })
     if (!existing) throw new NotFoundException('模型配置不存在')
     if (!existing.isActive) throw new BadRequestException('已归档的模型不能设为默认')
 
@@ -295,6 +426,18 @@ export class SettingsService {
     await this.prisma.aIModelConfig.update({
       where: { id },
       data: { isDefault: true, isActive: true },
+    })
+    await this.writeSettingsAudit({
+      operatorId,
+      ip,
+      action: ADMIN_AUDIT_ACTION.SETTINGS_AI_MODEL_SET_DEFAULT,
+      targetType: 'AI_MODEL',
+      targetId: existing.id,
+      targetName: existing.name,
+      detail: {
+        changedFields: ['isDefault', 'isActive'],
+        modelId: existing.modelId,
+      },
     })
     return { ok: true }
   }

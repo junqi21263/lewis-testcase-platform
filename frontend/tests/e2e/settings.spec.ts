@@ -187,7 +187,31 @@ test.describe('系统设置控制台', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(apiOk({ list: [], total: 0, page: 1, pageSize: 30 })),
+          body: JSON.stringify(
+            apiOk({
+              list: [
+                {
+                  id: 'audit-1',
+                  action: 'SETTINGS_AI_MODEL_UPDATE',
+                  detail: {
+                    targetType: 'AI_MODEL',
+                    targetId: 'm-1',
+                    targetName: 'GPT 默认模型',
+                    changedFields: ['name', 'apiKey'],
+                    apiKeyChanged: true,
+                    modelId: 'gpt-4o',
+                  },
+                  ip: '127.0.0.1',
+                  createdAt: '2026-06-18T08:00:00.000Z',
+                  operator: { id: 'admin-1', username: 'settings-admin' },
+                  targetUser: { id: 'admin-1', username: 'settings-admin' },
+                },
+              ],
+              total: 1,
+              page: 1,
+              pageSize: 30,
+            }),
+          ),
         })
         return
       }
@@ -221,5 +245,17 @@ test.describe('系统设置控制台', () => {
     const modelHub = page.locator('#section-ai-models')
     await expect(modelHub.getByText('Ark 视觉模型')).toBeVisible()
     await expect(modelHub.getByText('GPT 默认模型')).toBeHidden()
+  })
+
+  test('运维审计日志展示系统设置操作和安全摘要', async ({ page }) => {
+    await page.goto('/settings', { waitUntil: 'networkidle' })
+
+    await page.getByRole('heading', { name: '运维审计日志' }).scrollIntoViewIfNeeded()
+    const auditSection = page.locator('#section-audit')
+    await expect(auditSection.getByText('编辑模型')).toBeVisible()
+    await expect(auditSection.getByText('目标：')).toBeVisible()
+    await expect(auditSection.getByText('GPT 默认模型')).toBeVisible()
+    await expect(auditSection.getByText('字段：name、apiKey，API Key 已更新')).toBeVisible()
+    await expect(auditSection.getByText('IP：127.0.0.1')).toBeVisible()
   })
 })

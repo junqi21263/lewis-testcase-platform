@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import {
-  Save,
-  User,
-  Server,
-  Sparkles,
-  KeyRound,
-  RefreshCw,
-  ClipboardList,
-} from 'lucide-react'
+import { Save, User, Server, Sparkles, KeyRound, RefreshCw, ClipboardList } from 'lucide-react'
 import { AppearanceWeatherSection } from '@/components/settings/AppearanceWeatherSection'
 import { CopyableValue } from '@/components/settings/CopyableValue'
 import { FileParsingSettingsSection } from '@/components/settings/FileParsingSettingsSection'
@@ -24,12 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
-import {
-  settingsApi,
-  type AIModelAdmin,
-  type RuntimeHints,
-  type MultimodalRuntimeConfig,
-} from '@/api/settings'
+import { settingsApi, type AIModelAdmin, type RuntimeHints, type MultimodalRuntimeConfig } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import { adminApi, type AdminAuditLogItem, type AdminUserItem } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
@@ -68,19 +55,43 @@ function isAdminRole(role?: UserRole | null): boolean {
 function auditActionLabel(action: string): string {
   if (action === 'ADMIN_RESET_PASSWORD') return '重置密码'
   if (action === 'ADMIN_UPDATE_ROLE') return '修改角色'
+  if (action === 'SETTINGS_AI_MODEL_CREATE') return '新增模型'
+  if (action === 'SETTINGS_AI_MODEL_UPDATE') return '编辑模型'
+  if (action === 'SETTINGS_AI_MODEL_DELETE') return '删除模型'
+  if (action === 'SETTINGS_AI_MODEL_SET_DEFAULT') return '设为默认模型'
+  if (action === 'SETTINGS_MULTIMODAL_CONFIG_UPDATE') return '修改多模态配置'
   return action
 }
 
+function auditDetail(detail: unknown): Record<string, unknown> {
+  return detail && typeof detail === 'object' ? (detail as Record<string, unknown>) : {}
+}
+
+function auditTargetLabel(log: AdminAuditLogItem): string {
+  const d = auditDetail(log.detail)
+  if (typeof d.targetName === 'string' && d.targetName.trim()) return d.targetName
+  if (typeof d.targetUsername === 'string' && d.targetUsername.trim()) return d.targetUsername
+  return log.targetUser.username
+}
+
+function formatChangedFields(fields: unknown): string {
+  if (!Array.isArray(fields)) return ''
+  const list = fields.filter((field): field is string => typeof field === 'string' && field.trim().length > 0)
+  if (!list.length) return ''
+  return `字段：${list.join('、')}`
+}
+
 function formatAuditExtra(action: string, detail: unknown): string {
-  if (!detail || typeof detail !== 'object') return ''
-  const d = detail as Record<string, unknown>
-  if (
-    action === 'ADMIN_UPDATE_ROLE' &&
-    typeof d.fromRole === 'string' &&
-    typeof d.toRole === 'string'
-  ) {
+  const d = auditDetail(detail)
+  if (action === 'ADMIN_UPDATE_ROLE' && typeof d.fromRole === 'string' && typeof d.toRole === 'string') {
     return `${roleLabel(d.fromRole as UserRole)} → ${roleLabel(d.toRole as UserRole)}`
   }
+  const changed = formatChangedFields(d.changedFields)
+  if (changed) {
+    const apiKeyHint = d.apiKeyChanged === true ? '，API Key 已更新' : ''
+    return `${changed}${apiKeyHint}`
+  }
+  if (typeof d.modelId === 'string' && d.modelId.trim()) return `模型：${d.modelId}`
   return ''
 }
 
@@ -184,7 +195,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     refreshRuntime()
-    settingsApi.getMultimodalConfig().then(setMultimodalConfig).catch(() => setMultimodalConfig(null))
+    settingsApi
+      .getMultimodalConfig()
+      .then(setMultimodalConfig)
+      .catch(() => setMultimodalConfig(null))
   }, [refreshRuntime])
 
   useEffect(() => {
@@ -357,7 +371,11 @@ export default function SettingsPage() {
     try {
       const res = await wallpaperApi.next({ force: true })
       if (res?.url) {
-        window.dispatchEvent(new CustomEvent('wallpaper-url-updated', { detail: { url: res.url } }))
+        window.dispatchEvent(
+          new CustomEvent('wallpaper-url-updated', {
+            detail: { url: res.url },
+          }),
+        )
       }
       const next = await preferencesApi.getMy()
       setUserPrefs(next)
@@ -484,7 +502,11 @@ export default function SettingsPage() {
     if (!superAdmin) return
     setAdminLoadingUsers(true)
     try {
-      const res = await adminApi.listUsers({ keyword: adminKeyword.trim() || undefined, page: 1, pageSize: 20 })
+      const res = await adminApi.listUsers({
+        keyword: adminKeyword.trim() || undefined,
+        page: 1,
+        pageSize: 20,
+      })
       setAdminUsers(res.list)
       if (adminSelectedUser) {
         const next = res.list.find((u) => u.id === adminSelectedUser.id) ?? null
@@ -527,7 +549,9 @@ export default function SettingsPage() {
     }
     setAdminOpLoading(true)
     try {
-      await adminApi.resetUserPassword(adminSelectedUser.id, { newPassword: adminNewPwd })
+      await adminApi.resetUserPassword(adminSelectedUser.id, {
+        newPassword: adminNewPwd,
+      })
       toast.success('密码已重置')
       setAdminNewPwd('')
       await refreshAuditLogs()
@@ -613,19 +637,11 @@ export default function SettingsPage() {
               <div className={set.formGrid}>
                 <div className={set.formRow}>
                   <label className={set.label}>用户名</label>
-                  <Input
-                    className={set.control}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                  />
+                  <Input className={set.control} value={username} onChange={(e) => setUsername(e.target.value)} />
                 </div>
                 <div className={set.formRow}>
                   <label className={set.label}>邮箱</label>
-                  <Input
-                    className={cn(set.control, 'opacity-90')}
-                    value={user?.email ?? ''}
-                    readOnly
-                  />
+                  <Input className={cn(set.control, 'opacity-90')} value={user?.email ?? ''} readOnly />
                 </div>
                 <div className={cn(set.formRow, 'sm:col-span-2')}>
                   <label className={set.label}>头像 URL（可选）</label>
@@ -660,11 +676,7 @@ export default function SettingsPage() {
                     <p className={set.toggleHint}>定期更新密码以保障账号安全</p>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  className={set.btnSecondary}
-                  onClick={() => setPasswordModalOpen(true)}
-                >
+                <Button variant="outline" className={set.btnSecondary} onClick={() => setPasswordModalOpen(true)}>
                   修改密码
                 </Button>
               </div>
@@ -700,9 +712,7 @@ export default function SettingsPage() {
                 </Button>
               }
             >
-              <p className={set.infoPill}>
-                此区域为运行环境只读信息，需在服务端配置中修改。
-              </p>
+              <p className={set.infoPill}>此区域为运行环境只读信息，需在服务端配置中修改。</p>
               <div className={set.infoGrid}>
                 <div className={set.infoItem}>
                   <p className={set.infoLabel}>前端 API 基址</p>
@@ -776,7 +786,7 @@ export default function SettingsPage() {
                 <code className="rounded bg-[hsl(var(--settings-info-bg))] px-1.5 py-0.5 font-mono text-xs">
                   MAX_FILE_SIZE
                 </code>{' '}
-               （字节）。
+                （字节）。
               </p>
             </SettingsCard>
 
@@ -789,11 +799,7 @@ export default function SettingsPage() {
                 title="多模态配置"
                 description="全局多模态开关、并发、缓存和成本阈值（实时生效，无需重启）"
                 footer={
-                  <Button
-                    className={set.btnPrimary}
-                    onClick={saveMultimodalConfig}
-                    disabled={multimodalSaving}
-                  >
+                  <Button className={set.btnPrimary} onClick={saveMultimodalConfig} disabled={multimodalSaving}>
                     <Save className="h-4 w-4" />
                     保存多模态配置
                   </Button>
@@ -806,11 +812,10 @@ export default function SettingsPage() {
                     <span className={cn(set.statusChip, set.badgeMuted)}>多模态已关闭</span>
                   )}
                   <span className={cn(set.statusChip, set.badgeMuted)}>
-                    自动降级{multimodalConfig.autoDowngradeWhenOverBudget ? '开启' : '关闭'}
+                    自动降级
+                    {multimodalConfig.autoDowngradeWhenOverBudget ? '开启' : '关闭'}
                   </span>
-                  <span className={cn(set.statusChip, set.badgeMuted)}>
-                    缓存 {multimodalConfig.cacheTtlDays} 天
-                  </span>
+                  <span className={cn(set.statusChip, set.badgeMuted)}>缓存 {multimodalConfig.cacheTtlDays} 天</span>
                 </div>
                 <div className={set.formGrid}>
                   <label className={cn(set.toggleRow, 'sm:col-span-1')}>
@@ -820,9 +825,7 @@ export default function SettingsPage() {
                       className="settings-checkbox h-4 w-4"
                       checked={multimodalConfig.multimodalEnabled}
                       onChange={(e) =>
-                        setMultimodalConfig((prev) =>
-                          prev ? { ...prev, multimodalEnabled: e.target.checked } : prev,
-                        )
+                        setMultimodalConfig((prev) => (prev ? { ...prev, multimodalEnabled: e.target.checked } : prev))
                       }
                     />
                   </label>
@@ -835,7 +838,10 @@ export default function SettingsPage() {
                       onChange={(e) =>
                         setMultimodalConfig((prev) =>
                           prev
-                            ? { ...prev, autoDowngradeWhenOverBudget: e.target.checked }
+                            ? {
+                                ...prev,
+                                autoDowngradeWhenOverBudget: e.target.checked,
+                              }
                             : prev,
                         )
                       }
@@ -848,7 +854,12 @@ export default function SettingsPage() {
                       value={multimodalConfig.multimodalDefaultModel}
                       onChange={(e) =>
                         setMultimodalConfig((prev) =>
-                          prev ? { ...prev, multimodalDefaultModel: e.target.value } : prev,
+                          prev
+                            ? {
+                                ...prev,
+                                multimodalDefaultModel: e.target.value,
+                              }
+                            : prev,
                         )
                       }
                     />
@@ -859,9 +870,7 @@ export default function SettingsPage() {
                       className={set.control}
                       value={multimodalConfig.textFallbackModel}
                       onChange={(e) =>
-                        setMultimodalConfig((prev) =>
-                          prev ? { ...prev, textFallbackModel: e.target.value } : prev,
-                        )
+                        setMultimodalConfig((prev) => (prev ? { ...prev, textFallbackModel: e.target.value } : prev))
                       }
                     />
                   </div>
@@ -875,7 +884,12 @@ export default function SettingsPage() {
                       value={multimodalConfig.maxConcurrentTasks}
                       onChange={(e) =>
                         setMultimodalConfig((prev) =>
-                          prev ? { ...prev, maxConcurrentTasks: Number(e.target.value) } : prev,
+                          prev
+                            ? {
+                                ...prev,
+                                maxConcurrentTasks: Number(e.target.value),
+                              }
+                            : prev,
                         )
                       }
                     />
@@ -889,9 +903,7 @@ export default function SettingsPage() {
                       max={30}
                       value={multimodalConfig.cacheTtlDays}
                       onChange={(e) =>
-                        setMultimodalConfig((prev) =>
-                          prev ? { ...prev, cacheTtlDays: Number(e.target.value) } : prev,
-                        )
+                        setMultimodalConfig((prev) => (prev ? { ...prev, cacheTtlDays: Number(e.target.value) } : prev))
                       }
                     />
                   </div>
@@ -905,7 +917,12 @@ export default function SettingsPage() {
                       value={multimodalConfig.monthlyCostAlertCny}
                       onChange={(e) =>
                         setMultimodalConfig((prev) =>
-                          prev ? { ...prev, monthlyCostAlertCny: Number(e.target.value) } : prev,
+                          prev
+                            ? {
+                                ...prev,
+                                monthlyCostAlertCny: Number(e.target.value),
+                              }
+                            : prev,
                         )
                       }
                     />
@@ -984,7 +1001,9 @@ export default function SettingsPage() {
                   </Button>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className={cn(set.adminList, 'rounded-[18px] border border-[hsl(var(--settings-card-border))] p-3')}>
+                  <div
+                    className={cn(set.adminList, 'rounded-[18px] border border-[hsl(var(--settings-card-border))] p-3')}
+                  >
                     {adminUsers.length === 0 ? (
                       <div className={set.empty}>
                         <p className={set.emptyTitle}>暂无数据</p>
@@ -998,14 +1017,13 @@ export default function SettingsPage() {
                             key={u.id}
                             type="button"
                             onClick={() => setAdminSelectedUser(u)}
-                            className={cn(
-                              set.adminUserBtn,
-                              active ? set.adminUserBtnActive : set.adminUserBtnIdle,
-                            )}
+                            className={cn(set.adminUserBtn, active ? set.adminUserBtnActive : set.adminUserBtnIdle)}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-[hsl(var(--settings-text-primary))]">{u.username}</p>
+                                <p className="truncate text-sm font-medium text-[hsl(var(--settings-text-primary))]">
+                                  {u.username}
+                                </p>
                                 <p className="truncate text-xs text-[hsl(var(--settings-text-muted))]">{u.email}</p>
                               </div>
                               <span className={roleBadgeClass(u.role)}>{roleLabel(u.role)}</span>
@@ -1079,7 +1097,7 @@ export default function SettingsPage() {
                 id="section-audit"
                 icon={ClipboardList}
                 title="运维审计日志"
-                description="仅记录操作类型与目标用户，不记录密码内容"
+                description="记录系统设置与管理员操作，不记录密码、API Key 等敏感内容"
                 actions={
                   <Button
                     variant="outline"
@@ -1115,14 +1133,12 @@ export default function SettingsPage() {
                             {log.operator.username}
                             <span className="mx-1 text-[hsl(var(--settings-text-muted))]">→</span>
                             <span className="text-[hsl(var(--settings-text-muted))]">目标：</span>
-                            {log.targetUser.username}
+                            {auditTargetLabel(log)}
                             {extra ? (
                               <span className="ml-1 text-[hsl(var(--settings-text-muted))]">（{extra}）</span>
                             ) : null}
                           </p>
-                          {log.ip ? (
-                            <p className="text-[hsl(var(--settings-text-muted))]">IP：{log.ip}</p>
-                          ) : null}
+                          {log.ip ? <p className="text-[hsl(var(--settings-text-muted))]">IP：{log.ip}</p> : null}
                         </div>
                       )
                     })}
