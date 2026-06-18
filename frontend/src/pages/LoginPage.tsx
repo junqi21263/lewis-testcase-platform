@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useForm } from "react-hook-form";
 import { Eye, EyeOff, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
@@ -540,6 +540,18 @@ export default function LoginPage() {
                             {loading ? "登录中..." : "登录"}
                           </span>
                         </Button>
+                        <p
+                          className="text-center text-[13px] leading-6"
+                          style={{ color: "var(--lp-card-muted)" }}
+                        >
+                          没有账号？{" "}
+                          <Link
+                            to="/register"
+                            className="font-semibold text-cyan-200 underline-offset-4 transition hover:text-cyan-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
+                          >
+                            邀请码注册
+                          </Link>
+                        </p>
                       </div>
                     </form>
                   </div>

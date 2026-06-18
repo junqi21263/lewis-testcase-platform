@@ -35,6 +35,17 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     })
   })
 
+  test('登录页展示邀请注册入口并可跳转注册页', async ({ page }) => {
+    await page.goto('/login')
+
+    const registerLink = page.getByRole('link', { name: /邀请码注册|创建账号|注册/ })
+    await expect(registerLink).toBeVisible()
+    await registerLink.click()
+
+    await expect(page).toHaveURL(/\/register$/)
+    await expect(page.getByRole('heading', { name: '创建新账号' })).toBeVisible()
+  })
+
   test('注册第一步必须提交邮箱、邀请码、图形验证码和确认密码', async ({ page }) => {
     let requestBody: Record<string, unknown> | null = null
     await page.route('**/api/auth/register/send-code', async (route) => {
