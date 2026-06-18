@@ -44,6 +44,28 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
 
     await expect(page).toHaveURL(/\/register$/)
     await expect(page.getByRole('heading', { name: '创建新账号' })).toBeVisible()
+    await expect(page.getByText('让测试用例自己跑起来')).toBeVisible()
+    await expect(page.getByRole('link', { name: '立即登录' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '服务条款' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '隐私政策' })).toBeVisible()
+  })
+
+  test('注册页密码规则实时高亮', async ({ page }) => {
+    await page.goto('/register')
+
+    const password = page.getByPlaceholder('请输入密码')
+    await expect(page.getByTestId('password-rule-uppercase')).toHaveAttribute('data-valid', 'false')
+    await expect(page.getByTestId('password-rule-lowercase')).toHaveAttribute('data-valid', 'false')
+    await expect(page.getByTestId('password-rule-number')).toHaveAttribute('data-valid', 'false')
+    await expect(page.getByTestId('password-rule-symbol')).toHaveAttribute('data-valid', 'false')
+
+    await password.fill('Friend@123456')
+
+    await expect(page.getByTestId('password-rule-uppercase')).toHaveAttribute('data-valid', 'true')
+    await expect(page.getByTestId('password-rule-lowercase')).toHaveAttribute('data-valid', 'true')
+    await expect(page.getByTestId('password-rule-number')).toHaveAttribute('data-valid', 'true')
+    await expect(page.getByTestId('password-rule-symbol')).toHaveAttribute('data-valid', 'true')
+    await expect(page.getByTestId('password-strength-label')).toContainText('强')
   })
 
   test('注册第一步必须提交邮箱、邀请码、图形验证码和确认密码', async ({ page }) => {
@@ -75,6 +97,8 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     await page.getByRole('button', { name: '发送验证码' }).click()
 
     await expect(page.getByText(/我们已向 friend@example.com 发送 6 位验证码/)).toBeVisible()
+    await expect(page.getByPlaceholder('请输入 6 位邮箱验证码')).toHaveValue('')
+    await expect(page).toHaveURL(/\/register$/)
     expect(requestBody).toMatchObject({
       email: 'friend@example.com',
       password: 'Friend@123456',
@@ -84,6 +108,35 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
       captchaCode: 'a7k9',
     })
     expect(requestBody).not.toHaveProperty('username')
+  })
+
+  test('邮箱通道未配置时显示内联修复提示且停留在注册表单', async ({ page }) => {
+    await page.route('**/api/auth/register/send-code', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          apiResponse({
+            email: 'friend@example.com',
+            mailConfigured: false,
+            mailIssues: ['未设置 MAIL_HOST 或 SMTP_HOST'],
+          }),
+        ),
+      })
+    })
+
+    await page.goto('/register')
+    await page.getByPlaceholder('请输入邮箱地址').fill('friend@example.com')
+    await page.getByPlaceholder('请输入密码').fill('Friend@123456')
+    await page.getByPlaceholder('请再次输入密码').fill('Friend@123456')
+    await page.getByPlaceholder('输入图中字符').fill('a7k9')
+    await page.getByPlaceholder('请输入邀请码').fill('0628')
+    await page.getByRole('checkbox').check()
+    await page.getByRole('button', { name: '发送验证码' }).click()
+
+    await expect(page.getByRole('alert')).toContainText('发信通道未配置')
+    await expect(page.getByRole('button', { name: '发送验证码' })).toBeVisible()
+    await expect(page.getByPlaceholder('请输入 6 位邮箱验证码')).toHaveCount(0)
   })
 
   test('登录必须提交已注册邮箱和图形验证码', async ({ page }) => {

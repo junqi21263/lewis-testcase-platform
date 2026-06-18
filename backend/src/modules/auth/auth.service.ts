@@ -221,9 +221,22 @@ export class AuthService {
   async registerSendCode(dto: RegisterSendCodeDto) {
     this.assertAdminOnlyAllowed('注册')
     this.assertInviteCode(dto.inviteCode)
-    await this.assertCaptcha('register', dto.captchaId, dto.captchaCode)
 
     const email = this.normalizeEmail(dto.email)
+    const mailReady = this.mail.getMailTransportReadiness()
+    if (!mailReady.ready) {
+      return {
+        message: '发信通道未配置，暂时无法发送邮箱验证码',
+        data: {
+          email,
+          mailConfigured: false,
+          mailIssues: mailReady.issues,
+        },
+      }
+    }
+
+    await this.assertCaptcha('register', dto.captchaId, dto.captchaCode)
+
     const username = await this.resolveRegisterUsername(email, dto.username)
 
     if (dto.password !== dto.confirmPassword) {
@@ -270,7 +283,6 @@ export class AuthService {
       },
     })
 
-    const mailReady = this.mail.getMailTransportReadiness()
     void this.queueOtpEmail(email, plainCode, 'register').catch((err) =>
       this.logger.error(
         `异步发送注册验证码失败: ${err instanceof Error ? err.message : String(err)}`,

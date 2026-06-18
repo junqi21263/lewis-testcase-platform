@@ -28,11 +28,15 @@ function createPrismaMock() {
   return prisma
 }
 
-function createAuthService(options?: { captchaValid?: boolean }) {
+function createAuthService(options?: { captchaValid?: boolean; mailReady?: boolean }) {
   const prisma = createPrismaMock()
   const jwt = { sign: jest.fn().mockReturnValue('jwt-token') }
   const mail = {
-    getMailTransportReadiness: jest.fn().mockReturnValue({ ready: true, issues: [] }),
+    getMailTransportReadiness: jest.fn().mockReturnValue(
+      options?.mailReady === false
+        ? { ready: false, issues: ['未设置 MAIL_HOST 或 SMTP_HOST'] }
+        : { ready: true, issues: [] },
+    ),
     sendMail: jest.fn().mockResolvedValue({ skipped: false, messageId: 'mail-1' }),
   }
   const captcha = {
@@ -89,6 +93,21 @@ describe('AuthService captcha and invite gate', () => {
     await expect(service.registerSendCode(validRegisterPayload)).rejects.toThrow('图形验证码')
 
     expect(captcha.validateAndConsume).toHaveBeenCalledWith('register', 'cap-1', 'a7k9')
+    expect(prisma.emailOtpChallenge.upsert).not.toHaveBeenCalled()
+    expect(mail.sendMail).not.toHaveBeenCalled()
+  })
+
+  it('does not consume captcha or create OTP when mail transport is not configured', async () => {
+    const { service, prisma, captcha, mail } = createAuthService({ mailReady: false })
+
+    const result = await service.registerSendCode(validRegisterPayload)
+
+    expect(result.data).toMatchObject({
+      email: 'friend@example.com',
+      mailConfigured: false,
+      mailIssues: ['未设置 MAIL_HOST 或 SMTP_HOST'],
+    })
+    expect(captcha.validateAndConsume).not.toHaveBeenCalled()
     expect(prisma.emailOtpChallenge.upsert).not.toHaveBeenCalled()
     expect(mail.sendMail).not.toHaveBeenCalled()
   })

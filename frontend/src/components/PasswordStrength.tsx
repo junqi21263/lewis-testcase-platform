@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { CheckCircle2, Circle } from 'lucide-react'
 
 interface PasswordStrengthProps {
   password: string
@@ -6,67 +6,55 @@ interface PasswordStrengthProps {
 }
 
 export function PasswordStrength({ password, showStrength = true }: PasswordStrengthProps) {
-  const [strength, setStrength] = useState(0)
-  const [strengthText, setStrengthText] = useState('')
-
-  useEffect(() => {
-    let score = 0
-
-    // 长度检查
-    if (password.length >= 8) score += 1
-    if (password.length >= 12) score += 1
-
-    // 字符类型检查
-    if (/[a-z]/.test(password)) score += 1
-    if (/[A-Z]/.test(password)) score += 1
-    if (/[0-9]/.test(password)) score += 1
-    if (/[^a-zA-Z0-9]/.test(password)) score += 1
-
-    setStrength(score)
-
-    // 设置强度文本
-    if (score <= 2) {
-      setStrengthText('弱')
-    } else if (score <= 4) {
-      setStrengthText('中等')
-    } else {
-      setStrengthText('强')
-    }
-  }, [password])
-
-  const getStrengthColor = () => {
-    if (strength <= 2) return 'text-red-500'
-    if (strength <= 4) return 'text-yellow-500'
-    return 'text-green-500'
-  }
-
-  const getStrengthBarColor = () => {
-    if (strength <= 2) return 'bg-red-500'
-    if (strength <= 4) return 'bg-yellow-500'
-    return 'bg-green-500'
-  }
-
   if (!showStrength) return null
 
+  const rules = [
+    { id: 'length', label: '至少 6 个字符', valid: password.length >= 6 },
+    { id: 'uppercase', label: '包含大写字母', valid: /[A-Z]/.test(password) },
+    { id: 'lowercase', label: '包含小写字母', valid: /[a-z]/.test(password) },
+    { id: 'number', label: '包含数字', valid: /\d/.test(password) },
+    { id: 'symbol', label: '包含特殊字符', valid: /[^a-zA-Z0-9]/.test(password) },
+  ]
+
+  const passed = rules.filter((rule) => rule.valid).length
+  const strengthText = passed >= 5 ? '强' : passed >= 3 ? '中等' : '弱'
+  const strengthClass =
+    passed >= 5 ? 'text-emerald-300' : passed >= 3 ? 'text-amber-300' : 'text-rose-300'
+  const barClass =
+    passed >= 5 ? 'bg-emerald-400' : passed >= 3 ? 'bg-amber-300' : 'bg-rose-400'
+
   return (
-    <div className="mt-2">
-      <div className="flex items-center justify-between text-sm">
-        <span className={`font-medium ${getStrengthColor()}`}>
-          密码强度: {strengthText}
+    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 shadow-inner">
+      <div className="flex items-center justify-between text-xs">
+        <span data-testid="password-strength-label" className={`font-semibold ${strengthClass}`}>
+          密码强度：{strengthText}
         </span>
-        <span className="text-gray-500">{strength}/6</span>
+        <span className="text-white/50">{passed}/5</span>
       </div>
-      <div className="mt-1 w-full bg-gray-200 rounded-full h-2">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/12">
         <div
-          className={`h-2 rounded-full transition-all duration-300 ${getStrengthBarColor()}`}
-          style={{ width: `${(strength / 6) * 100}%` }}
+          className={`h-full rounded-full transition-all duration-300 ${barClass}`}
+          style={{ width: `${Math.max((passed / rules.length) * 100, 8)}%` }}
         />
       </div>
-      <div className="mt-2 text-xs text-gray-500 space-y-1">
-        <p>• 至少 6 个字符</p>
-        <p>• 包含大小写字母</p>
-        <p>• 包含数字</p>
-        <p>• 包含特殊字符</p>
+      <div className="mt-3 grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-2">
+        {rules.map((rule) => (
+          <div
+            key={rule.id}
+            data-testid={`password-rule-${rule.id}`}
+            data-valid={String(rule.valid)}
+            className={`flex items-center gap-1.5 transition-colors ${
+              rule.valid ? 'text-emerald-200' : 'text-white/45'
+            }`}
+          >
+            {rule.valid ? (
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            ) : (
+              <Circle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            <span>{rule.label}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
