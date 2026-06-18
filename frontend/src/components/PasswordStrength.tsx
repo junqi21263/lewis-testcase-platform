@@ -19,19 +19,23 @@ export function PasswordStrength({ password, showStrength = true }: PasswordStre
   const passed = rules.filter((rule) => rule.valid).length
   const strengthText = passed >= 5 ? '强' : passed >= 3 ? '中等' : '弱'
   const strengthClass =
-    passed >= 5 ? 'text-emerald-300' : passed >= 3 ? 'text-amber-300' : 'text-rose-300'
+    passed >= 5
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : passed >= 3
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-rose-700 dark:text-rose-300'
   const barClass =
     passed >= 5 ? 'bg-emerald-400' : passed >= 3 ? 'bg-amber-300' : 'bg-rose-400'
 
   return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 shadow-inner">
+    <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white/65 p-3 shadow-inner dark:border-white/10 dark:bg-white/[0.055]">
       <div className="flex items-center justify-between text-xs">
         <span data-testid="password-strength-label" className={`font-semibold ${strengthClass}`}>
           密码强度：{strengthText}
         </span>
-        <span className="text-white/50">{passed}/5</span>
+        <span className="text-slate-500 dark:text-white/50">{passed}/5</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/12">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-white/12">
         <div
           className={`h-full rounded-full transition-all duration-300 ${barClass}`}
           style={{ width: `${Math.max((passed / rules.length) * 100, 8)}%` }}
@@ -44,7 +48,7 @@ export function PasswordStrength({ password, showStrength = true }: PasswordStre
             data-testid={`password-rule-${rule.id}`}
             data-valid={String(rule.valid)}
             className={`flex items-center gap-1.5 transition-colors ${
-              rule.valid ? 'text-emerald-200' : 'text-white/45'
+              rule.valid ? 'text-emerald-700 dark:text-emerald-200' : 'text-slate-500 dark:text-white/45'
             }`}
           >
             {rule.valid ? (

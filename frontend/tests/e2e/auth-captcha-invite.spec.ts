@@ -46,8 +46,9 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     await expect(page.getByRole('heading', { name: '创建新账号' })).toBeVisible()
     await expect(page.getByText('让测试用例自己跑起来')).toBeVisible()
     await expect(page.getByRole('link', { name: '立即登录' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '服务条款' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '隐私政策' })).toBeVisible()
+    await expect(page.getByText('我同意')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '服务条款' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '隐私政策' })).toHaveCount(0)
   })
 
   test('注册页密码规则实时高亮', async ({ page }) => {
@@ -93,7 +94,6 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     await page.getByPlaceholder('请再次输入密码').fill('Friend@123456')
     await page.getByPlaceholder('输入图中字符').fill('a7k9')
     await page.getByPlaceholder('请输入邀请码').fill('0628')
-    await page.getByRole('checkbox').check()
     await page.getByRole('button', { name: '发送验证码' }).click()
 
     await expect(page.getByText(/我们已向 friend@example.com 发送 6 位验证码/)).toBeVisible()
@@ -131,12 +131,32 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     await page.getByPlaceholder('请再次输入密码').fill('Friend@123456')
     await page.getByPlaceholder('输入图中字符').fill('a7k9')
     await page.getByPlaceholder('请输入邀请码').fill('0628')
-    await page.getByRole('checkbox').check()
     await page.getByRole('button', { name: '发送验证码' }).click()
 
-    await expect(page.getByRole('alert')).toContainText('发信通道未配置')
+    await expect(page.getByRole('alert')).toContainText('邮箱验证码暂不可用')
+    await expect(page.getByRole('alert')).not.toContainText('MAIL_HOST')
+    await expect(page.getByRole('alert')).not.toContainText('SMTP_HOST')
     await expect(page.getByRole('button', { name: '发送验证码' })).toBeVisible()
     await expect(page.getByPlaceholder('请输入 6 位邮箱验证码')).toHaveCount(0)
+  })
+
+  test('注册页浅色和深色模式下提示与密码规则都有可读颜色', async ({ page }) => {
+    await page.goto('/register')
+    await page.getByPlaceholder('请输入密码').fill('Friend@123456')
+
+    const lightStyles = await page.evaluate(() => {
+      const strength = getComputedStyle(document.querySelector('[data-testid="password-strength-label"]')!)
+      const panel = getComputedStyle(document.querySelector('.login-panel-body')!)
+      return { strengthColor: strength.color, panelBackground: panel.backgroundImage || panel.backgroundColor }
+    })
+
+    await expect(page.getByTestId('password-strength-label')).toContainText('强')
+    expect(lightStyles.strengthColor).not.toBe('rgb(167, 243, 208)')
+    expect(lightStyles.panelBackground).toContain('rgb')
+
+    await page.getByRole('button', { name: '切换到深色模式' }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    await expect(page.getByTestId('password-rule-symbol')).toHaveAttribute('data-valid', 'true')
   })
 
   test('登录必须提交已注册邮箱和图形验证码', async ({ page }) => {

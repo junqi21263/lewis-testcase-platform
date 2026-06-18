@@ -75,7 +75,6 @@ export default function LoginPage() {
   const [captchaLoading, setCaptchaLoading] = useState(false);
   const [registerStep, setRegisterStep] = useState<"form" | "code">("form");
   const [pendingEmail, setPendingEmail] = useState("");
-  const [agreeTerms, setAgreeTerms] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formNotice, setFormNotice] = useState<{
     tone: "error" | "warning" | "success";
@@ -279,9 +278,8 @@ export default function LoginPage() {
       if (meta.mailConfigured === false) {
         setFormNotice({
           tone: "warning",
-          title: "发信通道未配置",
-          message: "邮箱验证码没有发出。请在 VPS 环境配置 Resend 或 SMTP 后再邀请朋友注册。",
-          details: meta.mailIssues ?? [],
+          title: "邮箱验证码暂不可用",
+          message: "当前环境还没有配置可用的发信服务。请联系管理员完成邮箱服务配置后再注册。",
         });
         void loadCaptcha("register");
         return;
@@ -329,17 +327,6 @@ export default function LoginPage() {
     } catch {
       /* 错误已由 axios 拦截器与 authApi setError 处理 */
     }
-  };
-
-  const showTerms = (kind: "terms" | "privacy") => {
-    setFormNotice({
-      tone: "warning",
-      title: kind === "terms" ? "服务条款" : "隐私政策",
-      message:
-        kind === "terms"
-          ? "当前为灰度测试邀请注册，账号仅用于 AI 用例平台体验与问题反馈。"
-          : "当前仅收集注册邮箱、用户名和必要登录状态，用于账号识别和安全校验。",
-    });
   };
 
   const inputBase = cn(
@@ -507,11 +494,11 @@ export default function LoginPage() {
                         className={cn(
                           "login-enter login-enter-delay-4 mb-5 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur",
                           notice.tone === "error" &&
-                            "border-rose-300/35 bg-rose-500/12 text-rose-50",
+                            "border-rose-300/55 bg-rose-50/95 text-rose-950 dark:border-rose-300/35 dark:bg-rose-500/12 dark:text-rose-50",
                           notice.tone === "warning" &&
-                            "border-amber-300/35 bg-amber-400/12 text-amber-50",
+                            "border-amber-300/70 bg-amber-50/95 text-amber-950 dark:border-amber-300/35 dark:bg-amber-400/12 dark:text-amber-50",
                           notice.tone === "success" &&
-                            "border-emerald-300/35 bg-emerald-400/12 text-emerald-50",
+                            "border-emerald-300/60 bg-emerald-50/95 text-emerald-950 dark:border-emerald-300/35 dark:bg-emerald-400/12 dark:text-emerald-50",
                         )}
                       >
                         <div className="flex gap-3">
@@ -961,43 +948,13 @@ export default function LoginPage() {
                             )}
                           </div>
 
-                          <label
-                            className="flex cursor-pointer select-none items-start gap-3 text-[13px] leading-6"
-                            style={{ color: "var(--lp-label)" }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={agreeTerms}
-                              onChange={(e) => setAgreeTerms(e.target.checked)}
-                              className="login-form-checkbox mt-1 h-[18px] w-[18px] cursor-pointer rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--lp-checkbox-ring-offset)]"
-                              aria-label="同意服务条款和隐私政策"
-                            />
-                            <span>
-                              我同意{" "}
-                              <button
-                                type="button"
-                                onClick={() => showTerms("terms")}
-                                className="font-semibold text-cyan-200 underline-offset-4 hover:text-cyan-100 hover:underline"
-                              >
-                                服务条款
-                              </button>{" "}
-                              和{" "}
-                              <button
-                                type="button"
-                                onClick={() => showTerms("privacy")}
-                                className="font-semibold text-cyan-200 underline-offset-4 hover:text-cyan-100 hover:underline"
-                              >
-                                隐私政策
-                              </button>
-                            </span>
-                          </label>
                         </div>
 
                         <div className="login-enter login-enter-delay-5 mt-7 flex flex-col gap-4">
                           <Button
                             type="submit"
                             variant="default"
-                            disabled={loading || !agreeTerms}
+                            disabled={loading}
                             aria-busy={loading}
                             className={cn(
                               "login-btn-shine login-submit-btn relative h-[54px] w-full overflow-hidden rounded-2xl border-0 px-4 text-[15px] font-semibold text-white !ring-0",
@@ -1018,7 +975,7 @@ export default function LoginPage() {
                             已有账号？{" "}
                             <Link
                               to="/login"
-                              className="font-semibold text-cyan-200 underline-offset-4 transition hover:text-cyan-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
+                              className="font-semibold text-sky-700 underline-offset-4 transition hover:text-sky-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 dark:text-cyan-200 dark:hover:text-cyan-100"
                             >
                               立即登录
                             </Link>
@@ -1081,7 +1038,7 @@ export default function LoginPage() {
                               variant="ghost"
                               disabled={loading}
                               onClick={() => void handleResend()}
-                              className="h-11 rounded-xl text-cyan-100 hover:bg-white/10"
+                              className="h-11 rounded-xl text-sky-700 hover:bg-sky-100/60 dark:text-cyan-100 dark:hover:bg-white/10"
                             >
                               重发验证码
                             </Button>
@@ -1094,7 +1051,7 @@ export default function LoginPage() {
                                 setFormNotice(null);
                                 codeForm.reset({ code: "" });
                               }}
-                              className="h-11 rounded-xl text-cyan-100 hover:bg-white/10"
+                              className="h-11 rounded-xl text-sky-700 hover:bg-sky-100/60 dark:text-cyan-100 dark:hover:bg-white/10"
                             >
                               <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden />
                               返回修改
