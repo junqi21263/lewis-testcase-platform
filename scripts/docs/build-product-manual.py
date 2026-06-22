@@ -2,39 +2,46 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
-from PIL import Image
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm, mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Flowable,
-    Image as RLImage,
-    KeepTogether,
-    ListFlowable,
-    ListItem,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+try:
+    from PIL import Image
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm, mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import (
+        Flowable,
+        Image as RLImage,
+        KeepTogether,
+        ListFlowable,
+        ListItem,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+except ModuleNotFoundError as exc:
+    missing = exc.name or "dependency"
+    print(
+        f"[build-product-manual] missing python package: {missing}\n"
+        "Install with: python3 -m pip install reportlab pillow",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "output" / "pdf"
 SCREENSHOT_DIR = ROOT / "docs" / "assets" / "screenshots"
 PDF_PATH = OUT_DIR / "AI用例平台-产品使用手册.pdf"
-SOURCE_SCREENSHOT = Path(
-    "/Users/lewis/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/"
-    "wxid_h1ktwsq1bkil22_8cd1/temp/RWTemp/2026-06/5fa3a3245836ef6de47eb99b714f3c3a.png"
-)
 MANUAL_SCREENSHOT = SCREENSHOT_DIR / "product-manual-ai-analysis.png"
+OPTIONAL_SOURCE_SCREENSHOT = os.getenv("MANUAL_SCREENSHOT_SOURCE")
 
 def register_fonts() -> tuple[str, str]:
     candidates = [
@@ -54,8 +61,10 @@ FONT, FONT_BOLD_NAME = register_fonts()
 def ensure_assets() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    if SOURCE_SCREENSHOT.exists():
-        shutil.copy2(SOURCE_SCREENSHOT, MANUAL_SCREENSHOT)
+    if OPTIONAL_SOURCE_SCREENSHOT:
+        source = Path(OPTIONAL_SOURCE_SCREENSHOT).expanduser()
+        if source.exists():
+            shutil.copy2(source, MANUAL_SCREENSHOT)
 
 
 class WorkflowStrip(Flowable):

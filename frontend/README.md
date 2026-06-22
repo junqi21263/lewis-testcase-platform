@@ -18,6 +18,7 @@ pnpm lint
 pnpm test:unit                  # Vitest
 pnpm test:ct                    # Playwright 组件测试
 pnpm test:e2e                   # E2E（会先起 dev server）
+pnpm test:pw:dev                # Vitest + CT + develop 风格 E2E
 pnpm allure:report              # 单测 + CT + E2E + 生成 Allure（需本机 JRE）
 pnpm test:pw:install            # 安装浏览器（首次/升级 Playwright 后）
 ```
@@ -35,4 +36,8 @@ pnpm test:pw:install            # 安装浏览器（首次/升级 Playwright 后
 
 生产默认随仓库根目录 **`docker-compose.full.yml`**（Nginx 反代 + 静态资源）。单独构建静态资源：`pnpm build`，产物在 `dist/`。
 
-Playwright Agent 定义见 `.github/agents/`。
+## Playwright MCP / Agent
+
+- Cursor 的浏览器 MCP 配置参考：`frontend/config/mcp-playwright-cursor.json`
+- VS Code 的浏览器 MCP 配置参考：`frontend/config/mcp-playwright-vscode.json`
+- Playwright Agent 定义以仓库根目录 `.github/agents/` 为准，不再维护 `frontend/.github/` 副本

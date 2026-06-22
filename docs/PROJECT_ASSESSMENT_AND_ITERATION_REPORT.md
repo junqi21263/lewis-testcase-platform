@@ -147,9 +147,9 @@ flowchart TD
 
 建议后续继续重构：
 
-- `docs/development/ROADMAP.md`：目前内容偏旧，应拆成“已完成/下一阶段/待规划”。
+- `docs/development/ROADMAP.md`：已改成当前阶段路线图，后续需随 P1 以上能力持续更新。
 - `docs/qa/SECURITY_QA_REPORT_2026-05-09.md`：日期较旧，应追加 2026-06 的依赖审计和 Redis 改造后的安全影响。
-- `docs/development/ENVIRONMENT_VARIABLES.md`：补充 Redis、AI 长输出、PDF 快速解析和队列相关变量的分组说明。
+- `docs/development/ENVIRONMENT_VARIABLES.md`：已补充 Redis、AI 长输出、PDF 快速解析和队列相关变量分组，后续继续随 env 变更同步。
 
 ## 综合评级
 
