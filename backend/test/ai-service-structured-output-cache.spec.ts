@@ -37,4 +37,27 @@ describe('AiService structured output capability cache', () => {
     expect(client.chat.completions.create.mock.calls[1][0].response_format.type).toBe('json_object')
     expect(client.chat.completions.create.mock.calls[2][0].response_format.type).toBe('json_object')
   })
+
+  it('falls back to prompt-only JSON when json_object is unsupported', async () => {
+    const service = createService()
+    const create = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('response_format json_schema is not supported'))
+      .mockRejectedValueOnce(new Error('response_format.type json_object is not supported by this model'))
+      .mockResolvedValueOnce({ choices: [{ message: { content: '{"cases":[]}' } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: '{"cases":[]}' } }] })
+    const client = { chat: { completions: { create } } }
+    const payload = { model: 'ark-code-latest', messages: [], max_tokens: 12000 }
+
+    const first = await service.createCaseCompletion(client, payload)
+    const second = await service.createCaseCompletion(client, payload)
+
+    expect(first.fallbackNotice).toContain('json_object')
+    expect(second.fallbackNotice).toContain('json_object')
+    expect(create).toHaveBeenCalledTimes(4)
+    expect(create.mock.calls[0][0].response_format.type).toBe('json_schema')
+    expect(create.mock.calls[1][0].response_format.type).toBe('json_object')
+    expect(create.mock.calls[2][0].response_format).toBeUndefined()
+    expect(create.mock.calls[3][0].response_format).toBeUndefined()
+  })
 })

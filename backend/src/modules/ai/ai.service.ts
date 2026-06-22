@@ -66,6 +66,7 @@ type PromptEvaluationProgressEvent = {
 export class AiService {
   private readonly logger = new Logger(AiService.name)
   private readonly jsonSchemaUnsupportedModels = new Set<string>()
+  private readonly jsonObjectUnsupportedModels = new Set<string>()
 
   /** 从模型输出中尽量提取 cases 数组（兼容 Markdown 代码块、前后缀说明文字） */
   private extractCaseRows(raw: string): any[] {
@@ -232,6 +233,10 @@ export class AiService {
     return '当前模型网关不支持 json_schema 严格结构化输出，已回退兼容模式，并继续执行本地 schema 校验与自动修复。'
   }
 
+  private jsonObjectFallbackNotice(): string {
+    return '当前模型网关不支持 response_format json_object，已改用 Prompt JSON 约束与本地解析/修复兼容模式。'
+  }
+
   private schemaRepairNotice(errors?: string[]): string {
     const detail = errors?.length ? `（${errors.slice(0, 4).join('；')}）` : ''
     return `AI 输出未完全符合严格用例 schema${detail}，已自动修复/规范化后入库。`
@@ -278,6 +283,40 @@ export class AiService {
     return model
   }
 
+  private joinFallbackNotices(values: Array<string | undefined>): string | undefined {
+    const unique = [...new Set(values.filter((v): v is string => Boolean(v)))]
+    return unique.length > 0 ? unique.join(' ') : undefined
+  }
+
+  private async createJsonObjectCompatibleCompletion(
+    client: OpenAI,
+    payload: Record<string, unknown>,
+    context: string,
+  ): Promise<{ completion: any; fallbackNotice?: string }> {
+    const cacheKey = this.structuredOutputCacheKey(payload)
+    if (!this.jsonObjectUnsupportedModels.has(cacheKey)) {
+      try {
+        const completion = await client.chat.completions.create({
+          ...payload,
+          response_format: buildJsonObjectResponseFormat() as any,
+        } as any)
+        return { completion }
+      } catch (err) {
+        if (!isStructuredOutputUnsupportedError(err)) throw err
+        this.jsonObjectUnsupportedModels.add(cacheKey)
+        this.logger.warn(`${context} json_object 输出不可用，回退无 response_format: ${(err as Error).message}`)
+      }
+    }
+
+    const completion = await client.chat.completions.create({
+      ...payload,
+    } as any)
+    return {
+      completion,
+      fallbackNotice: this.jsonObjectFallbackNotice(),
+    }
+  }
+
   private async createCaseCompletion(client: OpenAI, payload: Record<string, unknown>): Promise<{ completion: any; fallbackNotice?: string }> {
     const cacheKey = this.structuredOutputCacheKey(payload)
     const shouldTryStrictSchema = this.strictSchemaEnabled() && !this.jsonSchemaUnsupportedModels.has(cacheKey)
@@ -298,13 +337,17 @@ export class AiService {
       }
     }
 
-    const completion = await client.chat.completions.create({
-      ...payload,
-      response_format: buildJsonObjectResponseFormat() as any,
-    } as any)
+    const { completion, fallbackNotice } = await this.createJsonObjectCompatibleCompletion(
+      client,
+      payload,
+      '用例生成',
+    )
     return {
       completion,
-      fallbackNotice: discoveredUnsupported ? this.structuredOutputFallbackNotice() : undefined,
+      fallbackNotice: this.joinFallbackNotices([
+        discoveredUnsupported ? this.structuredOutputFallbackNotice() : undefined,
+        fallbackNotice,
+      ]),
     }
   }
 
@@ -1566,11 +1609,10 @@ export class AiService {
     localAnalysisSummary: string,
   ): Promise<PromptOptimizationDraft> {
     try {
-      const completion = await client.chat.completions.create({
+      const { completion, fallbackNotice } = await this.createJsonObjectCompatibleCompletion(client, {
         model: modelId,
         temperature: 0.2,
         max_tokens: this.effectiveMaxTokens(),
-        response_format: buildJsonObjectResponseFormat() as any,
         messages: [
           {
             role: 'system',
@@ -1602,7 +1644,7 @@ ${originalPrompt}
 `.trim(),
           },
         ],
-      } as any)
+      }, 'Prompt 优化')
 
       const choice = completion.choices?.[0]
       if (choice?.finish_reason === 'length') {
@@ -1614,10 +1656,11 @@ ${originalPrompt}
         }
       }
       const parsed = this.extractPromptOptimizationPayload(String(choice?.message?.content ?? '').trim())
+      const reasons = fallbackNotice ? [fallbackNotice, ...parsed.reasons] : parsed.reasons
       if (!parsed.optimizedContent) {
         return {
           status: 'failed',
-          reasons: parsed.reasons,
+          reasons,
           guardrails: [],
           error: 'AI 未返回 optimizedContent，无法生成完整优化版 Prompt。',
         }
@@ -1627,7 +1670,7 @@ ${originalPrompt}
       return {
         status: failed.length > 0 ? 'failed' : 'completed',
         optimizedContent: parsed.optimizedContent,
-        reasons: parsed.reasons.length > 0 ? parsed.reasons : ['基于原 Prompt 增加评测模式、输出前自检和结构化约束。'],
+        reasons: reasons.length > 0 ? reasons : ['基于原 Prompt 增加评测模式、输出前自检和结构化约束。'],
         guardrails,
         ...(failed.length > 0
           ? { error: `AI 优化版未通过守护校验：${failed.map((item) => item.label).join('、')}` }
