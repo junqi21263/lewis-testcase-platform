@@ -138,6 +138,9 @@ if [ "$SYNC_SOURCE" = "1" ]; then
     --rsync-path="sudo rsync" \
     -e "ssh -o StrictHostKeyChecking=accept-new" \
     --exclude ".git/" \
+    --exclude ".agents/" \
+    --exclude ".codex-pet-runs/" \
+    --exclude ".pnpm-store/" \
     --exclude ".env" \
     --exclude ".env.*" \
     --exclude "backend/.env" \
