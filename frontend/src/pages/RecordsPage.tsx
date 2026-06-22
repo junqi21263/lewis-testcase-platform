@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { recordsApi, type RecordsListQuery, type RecordsSummary } from '@/api/records'
 import { settingsApi } from '@/api/settings'
+import { aiApi } from '@/api/ai'
 import { filesApi } from '@/api/files'
 import { formatDate } from '@/utils/format'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -42,6 +43,12 @@ import {
   type RecordsColumnKey,
 } from '@/utils/recordsPrefs'
 import { rangeFromPreset, toIsoDate, type DatePresetId } from '@/utils/recordsDateRange'
+import {
+  buildRecordsModelFilterOptions,
+  buildRecordsModelFilterParam,
+  getRecordsModelFilterLabel,
+  type RecordsModelFilterOption,
+} from '@/utils/recordsModelFilter'
 import { HighlightText } from '@/components/records/HighlightText'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/cn'
@@ -138,9 +145,9 @@ export default function RecordsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [caseBucket, setCaseBucket] = useState('all')
-  const [modelPick, setModelPick] = useState<string[]>([])
+  const [modelPick, setModelPick] = useState('all')
   const [sourcePick, setSourcePick] = useState<string[]>([])
-  const [modelOptions, setModelOptions] = useState<{ modelId: string; modelName: string }[]>([])
+  const [modelOptions, setModelOptions] = useState<RecordsModelFilterOption[]>([])
 
   const formatModelLabel = useCallback((name: string) => {
     const t = String(name || '').trim()
@@ -202,7 +209,7 @@ export default function RecordsPage() {
       reviewStatuses,
       dateFrom: df,
       dateTo: dt,
-      models: modelPick.length ? modelPick.join(',') : undefined,
+      models: buildRecordsModelFilterParam(modelPick, modelOptions),
       caseBucket: caseBucket === 'all' ? undefined : caseBucket,
       sources: sourcePick.length ? sourcePick.join(',') : undefined,
       sortBy: sort.sortBy,
@@ -220,6 +227,7 @@ export default function RecordsPage() {
     dateTo,
     datePreset,
     modelPick,
+    modelOptions,
     caseBucket,
     sourcePick,
     sort,
@@ -262,10 +270,27 @@ export default function RecordsPage() {
   }, [fetchList])
 
   useEffect(() => {
-    recordsApi
-      .getMetaModels()
-      .then(setModelOptions)
-      .catch(() => {})
+    let cancelled = false
+    async function loadModelOptions() {
+      try {
+        const [configuredModels, historicalModels] = await Promise.all([
+          aiApi.getModels().catch(() => []),
+          recordsApi.getMetaModels().catch(() => []),
+        ])
+        if (cancelled) return
+        const next = buildRecordsModelFilterOptions(configuredModels, historicalModels)
+        setModelOptions(next)
+        setModelPick((current) =>
+          current === 'all' || next.some((item) => item.key === current) ? current : 'all',
+        )
+      } catch {
+        if (!cancelled) setModelOptions([])
+      }
+    }
+    void loadModelOptions()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const statusCounts = useMemo(() => {
@@ -307,7 +332,7 @@ export default function RecordsPage() {
     setDateFrom('')
     setDateTo('')
     setCaseBucket('all')
-    setModelPick([])
+    setModelPick('all')
     setSourcePick([])
     setPage(1)
   }
@@ -528,7 +553,7 @@ export default function RecordsPage() {
       !!dateFrom ||
       !!dateTo ||
       caseBucket !== 'all' ||
-      modelPick.length > 0 ||
+      modelPick !== 'all' ||
       sourcePick.length > 0
     )
   }, [debouncedKeyword, statusSet, datePreset, dateFrom, dateTo, caseBucket, modelPick, sourcePick])
@@ -551,7 +576,8 @@ export default function RecordsPage() {
     } else if (dateFrom || dateTo) {
       chips.push(`日期 ${dateFrom || '…'} — ${dateTo || '…'}`)
     }
-    if (modelPick.length) chips.push(`模型：${modelPick.join('、')}`)
+    const modelLabel = getRecordsModelFilterLabel(modelPick, modelOptions)
+    if (modelLabel) chips.push(`模型：${modelLabel}`)
     if (caseBucket !== 'all') {
       const caseLabels: Record<string, string> = {
         zero: '0 条',
@@ -569,6 +595,7 @@ export default function RecordsPage() {
     dateFrom,
     dateTo,
     modelPick,
+    modelOptions,
     caseBucket,
     sourcePick,
   ])
@@ -780,30 +807,28 @@ export default function RecordsPage() {
 
             <div className={rec.filterGroup}>
               <span className={rec.filterRowLabel}>模型</span>
-              {modelPick.length > 0 && (
-                <span className={rec.appliedChip} title={modelPick.join('、')}>
-                  {modelPick.length} 个已选
+              {modelPick !== 'all' && (
+                <span
+                  className={rec.appliedChip}
+                  title={getRecordsModelFilterLabel(modelPick, modelOptions) ?? '已筛选模型'}
+                >
+                  单选
                 </span>
               )}
               <select
-                multiple
-                size={1}
-                title={
-                  modelPick.length
-                    ? `已选 ${modelPick.length} 个模型：${modelPick.join('、')}`
-                    : '按住 Ctrl / ⌘ 可多选模型'
-                }
-                className={cn(rec.control, rec.controlSm, 'h-9 max-w-[180px] truncate')}
+                title="按后台当前启用模型筛选生成记录"
+                aria-label="按模型筛选生成记录"
+                className={cn(rec.control, rec.controlSm, 'h-9 min-w-[150px] max-w-[200px] truncate')}
                 value={modelPick}
                 onChange={(e) => {
-                  const v = [...e.target.selectedOptions].map((o) => o.value)
-                  setModelPick(v)
+                  setModelPick(e.target.value)
                   setPage(1)
                 }}
               >
+                <option value="all">全部</option>
                 {modelOptions.map((m) => (
-                  <option key={m.modelId} value={m.modelName} title={m.modelName}>
-                    {formatModelLabel(m.modelName)}
+                  <option key={m.key} value={m.key} title={m.title}>
+                    {formatModelLabel(m.label)}
                   </option>
                 ))}
               </select>
