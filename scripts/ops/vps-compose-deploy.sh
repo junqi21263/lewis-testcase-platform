@@ -141,6 +141,7 @@ if [ "$SYNC_SOURCE" = "1" ]; then
     --exclude ".agents/" \
     --exclude ".codex-pet-runs/" \
     --exclude ".pnpm-store/" \
+    --exclude "ops-archive/" \
     --exclude ".env" \
     --exclude ".env.*" \
     --exclude "backend/.env" \
