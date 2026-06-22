@@ -288,6 +288,51 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(textarea).toHaveValue('这是一个补充说明，描述业务背景')
   })
 
+  test('直接输入需求可跳过上传并以 text sourceType 发起分析', async ({ page }) => {
+    let analyzePayload: Record<string, unknown> | null = null
+
+    await page.route('**/api/ai/analyze/stream', async (route) => {
+      analyzePayload = route.request().postDataJSON() as Record<string, unknown>
+      const sseBody = [
+        'data: {"content":"## 1. 主要功能需求\\n"}\n\n',
+        'data: {"content":"- 用户可以提交订单并查看支付结果\\n"}\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+        body: sseBody,
+      })
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+    await page.getByTestId('ai-analysis-input-mode-text').click()
+    await page
+      .getByTestId('ai-analysis-direct-textarea')
+      .fill('主流程：用户提交订单，系统创建支付单并返回支付结果。')
+    await page
+      .getByPlaceholder('例如：这是哪个产品版本、要解决什么问题、关键用户旅程是什么……')
+      .fill('订单 V1.2 灰度需求')
+    await page
+      .getByPlaceholder('约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。')
+      .fill('需要覆盖支付失败与重复提交。')
+
+    await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
+    await page.getByRole('button', { name: '开始分析' }).click()
+    await expect(page.getByText('用户可以提交订单并查看支付结果')).toBeVisible({ timeout: 15000 })
+
+    expect(analyzePayload?.sourceType).toBe('text')
+    expect(String(analyzePayload?.text ?? '')).toContain('【直接输入需求】')
+    expect(String(analyzePayload?.text ?? '')).toContain('订单 V1.2 灰度需求')
+    expect(String(analyzePayload?.text ?? '')).toContain('需要覆盖支付失败与重复提交。')
+    expect(analyzePayload?.fileId).toBeUndefined()
+  })
+
   test('人工审阅开关切换', async ({ page }) => {
     await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
 

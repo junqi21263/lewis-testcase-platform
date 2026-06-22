@@ -78,6 +78,12 @@ import {
   type RecoveredAnalysisStatus,
 } from '@/utils/aiAnalysisRecovery'
 import {
+  buildDirectAnalysisText,
+  canStartAiAnalysisFromInput,
+  getAiAnalysisFlowSteps,
+  type AiAnalysisInputMode,
+} from '@/utils/aiAnalysisInput'
+import {
   ANALYSIS_PROMPT_PRESETS,
   findPresetIdForBody,
   touchRecentPresetId,
@@ -733,6 +739,8 @@ function AiAnalysisPageInner() {
   const [analysisDiff, setAnalysisDiff] = useState<Array<{ field: string; label: string; before: string; after: string; changed: boolean }>>([])
   const [analysisVersionLoading, setAnalysisVersionLoading] = useState(false)
   const [crossReviewBusy, setCrossReviewBusy] = useState(false)
+  const [analysisInputMode, setAnalysisInputMode] = useState<AiAnalysisInputMode>('upload')
+  const [directRequirementText, setDirectRequirementText] = useState('')
   const [requirementDescription, setRequirementDescription] = useState('')
   const [requirementSupplement, setRequirementSupplement] = useState('')
   const [analysisPromptTemplate, setAnalysisPromptTemplate] = useState(loadStoredPromptTemplate)
@@ -1697,7 +1705,18 @@ function AiAnalysisPageInner() {
 
   const runAnalyzeStream = useCallback(
     async (customPrompt: string, isRevision: boolean) => {
-      if (!uploadedFile && !parsePreviewDirty) {
+      const directText = buildDirectAnalysisText({
+        directText: directRequirementText,
+        requirementDescription,
+        requirementSupplement,
+      })
+
+      if (analysisInputMode === 'text' && !directText.trim()) {
+        toast.error('请先填写需求文本')
+        return
+      }
+
+      if (analysisInputMode === 'upload' && !uploadedFile && !parsePreviewDirty) {
         toast.error('请先上传文档')
         return
       }
@@ -1730,7 +1749,18 @@ function AiAnalysisPageInner() {
         uploadedFile?.status === 'PARSED'
 
       const payload =
-        useText && editedParsedText.trim()
+        analysisInputMode === 'text' && directText.trim()
+          ? {
+              sourceType: 'text' as const,
+              text: directText.trim(),
+              customPrompt,
+              stream: true as const,
+              modelConfigId: selectedModelId,
+              ...(isRevision && currentAnalysisRecordId
+                ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }
+                : {}),
+            }
+          : useText && editedParsedText.trim()
           ? {
               sourceType: 'text' as const,
               text: editedParsedText.trim(),
@@ -1802,6 +1832,10 @@ function AiAnalysisPageInner() {
     [
       uploadedFile,
       additionalAnalysisFiles,
+      analysisInputMode,
+      directRequirementText,
+      requirementDescription,
+      requirementSupplement,
       parsePreviewDirty,
       editedParsedText,
       humanReview,
@@ -1815,7 +1849,12 @@ function AiAnalysisPageInner() {
   )
 
   const handleStartAnalysis = useCallback(async () => {
-    if (!uploadedFile || uploadedFile.status !== 'PARSED') {
+    if (analysisInputMode === 'text') {
+      if (!directRequirementText.trim()) {
+        toast.error('请先填写需求文本')
+        return
+      }
+    } else if (!uploadedFile || uploadedFile.status !== 'PARSED') {
       toast.error('请先上传并等待解析完成')
       return
     }
@@ -1829,6 +1868,8 @@ function AiAnalysisPageInner() {
     }
     await runAnalyzeStream(buildCustomPrompt(), false)
   }, [
+    analysisInputMode,
+    directRequirementText,
     uploadedFile,
     additionalAnalysisFiles,
     analysisPromptTemplate,
@@ -1841,7 +1882,7 @@ function AiAnalysisPageInner() {
       toast.error('请输入修改意见')
       return
     }
-    if (!uploadedFile) return
+    if (analysisInputMode === 'upload' && !uploadedFile) return
 
     const revisionPrompt = `${analysisPromptTemplate}
 
@@ -1861,6 +1902,7 @@ ${state.reportText}
     analysisPromptTemplate,
     state.reviewText,
     state.reportText,
+    analysisInputMode,
     uploadedFile,
     requirementDescription,
     requirementSupplement,
@@ -1924,7 +1966,20 @@ ${state.reportText}
   const allSourcesParsed =
     uploadedFile?.status === 'PARSED' &&
     additionalAnalysisFiles.every((f) => f.status === 'PARSED')
-  const canStartAnalysis = Boolean(uploadedFile && allSourcesParsed)
+  const canStartAnalysis = canStartAiAnalysisFromInput({
+    inputMode: analysisInputMode,
+    directText: directRequirementText,
+    hasParsedFile: Boolean(uploadedFile && allSourcesParsed),
+    additionalFilesParsed: additionalAnalysisFiles.every((f) => f.status === 'PARSED'),
+  })
+  const aiAnalysisFlowSteps = getAiAnalysisFlowSteps({
+    inputMode: analysisInputMode,
+    directText: directRequirementText,
+    hasParsedFile: Boolean(uploadedFile && uploadedFile.status === 'PARSED'),
+    additionalFilesParsed: additionalAnalysisFiles.every((f) => f.status === 'PARSED'),
+    pageStatus: state.status,
+    hasReport: state.reportText.trim().length > 0,
+  })
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
   const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
@@ -1959,7 +2014,9 @@ ${state.reportText}
 
   const prepStripSummary = (() => {
     const bits: string[] = []
-    if (uploadedFile) {
+    if (analysisInputMode === 'text') {
+      bits.push(directRequirementText.trim() ? `已输入 ${directRequirementText.trim().length} 字` : '尚未填写需求文本')
+    } else if (uploadedFile) {
       const n = 1 + additionalAnalysisFiles.length
       bits.push(n > 1 ? `已上传 ${n} 个文件` : '已上传 1 个文件')
     } else bits.push('尚未选择文件')
@@ -2035,6 +2092,48 @@ ${state.reportText}
         </div>
       )}
 
+      <div
+        className="shrink-0 border-b border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-panel-bg)]/85 px-4 py-3 backdrop-blur-md sm:px-5"
+        data-testid="ai-analysis-flow-stepper"
+      >
+        <div className="grid gap-2 sm:grid-cols-4">
+          {aiAnalysisFlowSteps.map((step, idx) => {
+            const active = step.status === 'active'
+            const done = step.status === 'done'
+            return (
+              <div
+                key={step.id}
+                className={`relative rounded-xl border px-3 py-2 transition-[background-color,border-color,box-shadow] ${
+                  done
+                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100'
+                    : active
+                      ? 'border-cyan-400/45 bg-cyan-500/10 text-cyan-950 shadow-[0_0_0_3px_rgba(34,211,238,0.08)] dark:text-cyan-100'
+                      : 'border-workspace-panel-border/60 bg-workspace-panel-muted/35 text-workspace-text-muted dark:border-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                      done
+                        ? 'bg-emerald-500 text-white'
+                        : active
+                          ? 'bg-cyan-500 text-white'
+                          : 'bg-workspace-panel-muted text-workspace-text-muted'
+                    }`}
+                  >
+                    {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : idx + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold">{step.title}</p>
+                    <p className="truncate text-[10px] opacity-75">{step.description}</p>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
       <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,42%)_minmax(0,58%)] lg:grid-rows-1">
         {/* 左栏：仅中间区域滚动；底部「人工审阅开关 + 开始/停止」固定可见 */}
@@ -2053,7 +2152,64 @@ ${state.reportText}
               onChange={handleInputChange}
             />
 
-            {!uploadedFile ? (
+            <div
+              className="grid grid-cols-2 gap-1 rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)]/70 p-1"
+              data-testid="ai-analysis-input-mode-tabs"
+            >
+              <button
+                type="button"
+                data-testid="ai-analysis-input-mode-upload"
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-[opacity,transform,background-color] ${
+                  analysisInputMode === 'upload'
+                    ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
+                    : 'text-workspace-text-secondary hover:bg-white/50 hover:text-workspace-text-primary dark:hover:bg-white/5'
+                }`}
+                onClick={() => setAnalysisInputMode('upload')}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                上传文档
+              </button>
+              <button
+                type="button"
+                data-testid="ai-analysis-input-mode-text"
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-[opacity,transform,background-color] ${
+                  analysisInputMode === 'text'
+                    ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
+                    : 'text-workspace-text-secondary hover:bg-white/50 hover:text-workspace-text-primary dark:hover:bg-white/5'
+                }`}
+                onClick={() => setAnalysisInputMode('text')}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                直接输入
+              </button>
+            </div>
+
+            {analysisInputMode === 'text' && (
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] p-3 dark:border-cyan-400/20 dark:bg-cyan-400/[0.05]">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-workspace-text-primary" htmlFor="ai-analysis-direct-text">
+                    直接粘贴需求
+                  </label>
+                  <span className="text-[10px] tabular-nums text-workspace-text-muted">
+                    {directRequirementText.length} 字
+                  </span>
+                </div>
+                <textarea
+                  id="ai-analysis-direct-text"
+                  data-testid="ai-analysis-direct-textarea"
+                  rows={8}
+                  className="ars-textarea-field min-h-[180px] w-full resize-y rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)] px-3 py-2.5 text-sm leading-relaxed text-workspace-text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] placeholder:text-workspace-text-muted/80 focus:border-cyan-500/55 focus:outline-none focus:shadow-[0_0_0_3px_rgba(34,211,238,0.16)] dark:bg-slate-950/50 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  placeholder="粘贴 PRD、用户故事、业务规则或接口说明。适合 PDF 解析较慢、OCR 质量不稳定、或只需要快速分析一段需求的场景。"
+                  value={directRequirementText}
+                  onChange={(e) => setDirectRequirementText(e.target.value)}
+                />
+                <p className="mt-2 text-[11px] leading-relaxed text-workspace-text-secondary">
+                  文本模式会直接调用需求分析通道，不经过文件上传和 OCR；下方“需求上下文”仍会作为补充说明发送给模型。
+                </p>
+              </div>
+            )}
+
+            {analysisInputMode === 'upload' && (!uploadedFile ? (
               <div
                 onDragEnter={(e) => {
                   e.preventDefault()
@@ -2155,9 +2311,9 @@ ${state.reportText}
                   <X className="h-4 w-4" />
                 </button>
               </div>
-            )}
+            ))}
 
-            {state.status === 'uploading' && (
+            {analysisInputMode === 'upload' && state.status === 'uploading' && (
               <div className="space-y-1">
                 <div className="w-full bg-secondary rounded-full h-1.5">
                   <div
@@ -2179,7 +2335,7 @@ ${state.reportText}
               </div>
             )}
 
-            {state.status === 'parsing' && (
+            {analysisInputMode === 'upload' && state.status === 'parsing' && (
               <div className="flex flex-col gap-1 text-xs text-amber-400">
                 <div className="flex items-center gap-2">
                   <TerminalLogStatusIcon status="running" />
@@ -2276,7 +2432,7 @@ ${state.reportText}
             )}
           </div>
 
-          {uploadedFile?.status === 'FAILED' && (
+          {analysisInputMode === 'upload' && uploadedFile?.status === 'FAILED' && (
             <div className="rounded-xl border border-[color:var(--ui-text-danger)]/25 bg-[color:var(--ui-text-danger)]/[0.06] p-3 space-y-2 text-[length:var(--text-small-size)]">
               <p className="font-semibold text-[color:var(--ui-text-danger)]">解析失败</p>
               <p className="whitespace-pre-wrap break-words leading-relaxed text-[color:var(--ui-text-secondary)] [overflow-wrap:anywhere]">
@@ -2320,7 +2476,7 @@ ${state.reportText}
             </div>
           )}
 
-          {(uploadedFile?.status === 'PARSED' ||
+          {analysisInputMode === 'upload' && (uploadedFile?.status === 'PARSED' ||
             (uploadedFile?.status === 'PARSING' && uploadedFile.parsedContent?.trim())) && (
             <div className="rounded-lg border border-border/30 bg-muted/10 overflow-hidden">
               <button
