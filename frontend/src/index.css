@@ -2568,6 +2568,58 @@ html.light .login-page-root {
   backdrop-filter: blur(20px);
 }
 
+.login-form-notice {
+  color: var(--login-notice-text);
+  background: var(--login-notice-bg);
+  border-color: var(--login-notice-border);
+}
+
+.login-form-notice svg {
+  color: var(--login-notice-icon);
+}
+
+.login-form-notice--error {
+  --login-notice-bg: #fff1f2;
+  --login-notice-border: rgba(251, 113, 133, 0.48);
+  --login-notice-text: #7f1d1d;
+  --login-notice-icon: #e11d48;
+}
+
+.login-form-notice--warning {
+  --login-notice-bg: #fffbeb;
+  --login-notice-border: rgba(245, 158, 11, 0.5);
+  --login-notice-text: #78350f;
+  --login-notice-icon: #d97706;
+}
+
+.login-form-notice--success {
+  --login-notice-bg: #ecfdf5;
+  --login-notice-border: rgba(16, 185, 129, 0.46);
+  --login-notice-text: #064e3b;
+  --login-notice-icon: #059669;
+}
+
+.dark .login-form-notice--error {
+  --login-notice-bg: #4c0519;
+  --login-notice-border: rgba(251, 113, 133, 0.38);
+  --login-notice-text: #ffe4e6;
+  --login-notice-icon: #fb7185;
+}
+
+.dark .login-form-notice--warning {
+  --login-notice-bg: #451a03;
+  --login-notice-border: rgba(251, 191, 36, 0.38);
+  --login-notice-text: #fef3c7;
+  --login-notice-icon: #fbbf24;
+}
+
+.dark .login-form-notice--success {
+  --login-notice-bg: #022c22;
+  --login-notice-border: rgba(52, 211, 153, 0.36);
+  --login-notice-text: #d1fae5;
+  --login-notice-icon: #34d399;
+}
+
 .login-soft-input {
   appearance: none;
   -webkit-appearance: none;

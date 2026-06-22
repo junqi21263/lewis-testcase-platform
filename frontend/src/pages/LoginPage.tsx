@@ -491,14 +491,12 @@ export default function LoginPage() {
                     {notice && (
                       <div
                         role="alert"
+                        data-tone={notice.tone}
                         className={cn(
-                          "login-enter login-enter-delay-4 mb-5 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur",
-                          notice.tone === "error" &&
-                            "border-rose-300/55 bg-rose-50/95 text-rose-950 dark:border-rose-300/35 dark:bg-rose-500/12 dark:text-rose-50",
-                          notice.tone === "warning" &&
-                            "border-amber-300/70 bg-amber-50/95 text-amber-950 dark:border-amber-300/35 dark:bg-amber-400/12 dark:text-amber-50",
-                          notice.tone === "success" &&
-                            "border-emerald-300/60 bg-emerald-50/95 text-emerald-950 dark:border-emerald-300/35 dark:bg-emerald-400/12 dark:text-emerald-50",
+                          "login-enter login-enter-delay-4 login-form-notice mb-5 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur",
+                          notice.tone === "error" && "login-form-notice--error",
+                          notice.tone === "warning" && "login-form-notice--warning",
+                          notice.tone === "success" && "login-form-notice--success",
                         )}
                       >
                         <div className="flex gap-3">

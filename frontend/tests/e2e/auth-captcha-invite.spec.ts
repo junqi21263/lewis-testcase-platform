@@ -140,6 +140,48 @@ test.describe('邮箱注册登录：邀请码与图形验证码', () => {
     await expect(page.getByPlaceholder('请输入 6 位邮箱验证码')).toHaveCount(0)
   })
 
+  test('注册服务端错误提示在浅色和深色模式下都有稳定可读样式', async ({ page }) => {
+    await page.route('**/api/auth/register/send-code', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 400,
+          message: '当前已关闭注册功能，请使用管理员账号登录或联系管理员',
+          timestamp: new Date().toISOString(),
+        }),
+      })
+    })
+
+    await page.goto('/register')
+    await page.getByPlaceholder('请输入邮箱地址').fill('friend@example.com')
+    await page.getByPlaceholder('请输入密码').fill('Friend@123456')
+    await page.getByPlaceholder('请再次输入密码').fill('Friend@123456')
+    await page.getByPlaceholder('输入图中字符').fill('a7k9')
+    await page.getByPlaceholder('请输入邀请码').fill('0628')
+    await page.getByRole('button', { name: '发送验证码' }).click()
+
+    const alert = page.getByRole('alert')
+    await expect(alert).toContainText('当前已关闭注册功能')
+    await expect(alert).toHaveAttribute('data-tone', 'error')
+
+    const lightStyles = await alert.evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { color: s.color, background: s.backgroundColor }
+    })
+    expect(lightStyles.color).toBe('rgb(127, 29, 29)')
+    expect(lightStyles.background).toBe('rgb(255, 241, 242)')
+
+    await page.getByRole('button', { name: '切换到深色模式' }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    const darkStyles = await alert.evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { color: s.color, background: s.backgroundColor }
+    })
+    expect(darkStyles.color).toBe('rgb(255, 228, 230)')
+    expect(darkStyles.background).toBe('rgb(76, 5, 25)')
+  })
+
   test('注册页浅色和深色模式下提示与密码规则都有可读颜色', async ({ page }) => {
     await page.goto('/register')
     await page.getByPlaceholder('请输入密码').fill('Friend@123456')
