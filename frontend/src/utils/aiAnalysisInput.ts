@@ -1,4 +1,4 @@
-export type AiAnalysisInputMode = 'upload' | 'text'
+export type AiAnalysisInputMode = 'upload' | 'text' | 'history'
 
 export type AiAnalysisPageStatus =
   | 'idle'
@@ -26,6 +26,9 @@ export function canStartAiAnalysisFromInput(input: {
 }) {
   if (input.inputMode === 'text') {
     return input.directText.trim().length > 0
+  }
+  if (input.inputMode === 'history') {
+    return false
   }
   return input.hasParsedFile && input.additionalFilesParsed
 }
@@ -59,7 +62,9 @@ export function getAiAnalysisFlowSteps(input: {
 }): AiAnalysisFlowStep[] {
   const hasInput = input.inputMode === 'text'
     ? input.directText.trim().length > 0
-    : input.hasParsedFile || input.pageStatus === 'uploading' || input.pageStatus === 'parsing'
+    : input.inputMode === 'history'
+      ? false
+      : input.hasParsedFile || input.pageStatus === 'uploading' || input.pageStatus === 'parsing'
   const inputReady = canStartAiAnalysisFromInput({
     inputMode: input.inputMode,
     directText: input.directText,
@@ -95,7 +100,12 @@ export function getAiAnalysisFlowSteps(input: {
     {
       id: 'source',
       title: '选择输入来源',
-      description: input.inputMode === 'text' ? '粘贴需求文本' : '上传 PDF/图片/文档',
+      description:
+        input.inputMode === 'text'
+          ? '粘贴需求文本'
+          : input.inputMode === 'history'
+            ? '从历史记录恢复'
+            : '上传 PDF/图片/文档',
       status: sourceStatus,
     },
     {

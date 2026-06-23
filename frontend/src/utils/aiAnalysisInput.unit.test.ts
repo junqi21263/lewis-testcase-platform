@@ -78,4 +78,64 @@ describe('aiAnalysisInput', () => {
       '审阅与生成:active',
     ])
   })
+
+  it('marks upload parsing and completed states distinctly in the workflow', () => {
+    expect(
+      getAiAnalysisFlowSteps({
+        inputMode: 'upload',
+        directText: '',
+        hasParsedFile: true,
+        additionalFilesParsed: false,
+        pageStatus: 'parsing',
+        hasReport: false,
+      }).map((s) => `${s.title}:${s.status}`),
+    ).toEqual([
+      '选择输入来源:done',
+      '解析确认:active',
+      '开始分析:todo',
+      '审阅与生成:todo',
+    ])
+
+    expect(
+      getAiAnalysisFlowSteps({
+        inputMode: 'upload',
+        directText: '',
+        hasParsedFile: true,
+        additionalFilesParsed: true,
+        pageStatus: 'approved',
+        hasReport: true,
+      }).map((s) => `${s.title}:${s.status}`),
+    ).toEqual([
+      '选择输入来源:done',
+      '解析确认:done',
+      '开始分析:done',
+      '审阅与生成:done',
+    ])
+  })
+
+  it('treats history recovery as a source decision without enabling direct analysis', () => {
+    expect(
+      canStartAiAnalysisFromInput({
+        inputMode: 'history',
+        directText: '历史记录由用户选择，不应直接拿当前文本启动',
+        hasParsedFile: false,
+        additionalFilesParsed: true,
+      }),
+    ).toBe(false)
+
+    const steps = getAiAnalysisFlowSteps({
+      inputMode: 'history',
+      directText: '',
+      hasParsedFile: false,
+      additionalFilesParsed: true,
+      pageStatus: 'idle',
+      hasReport: false,
+    })
+
+    expect(steps[0]).toMatchObject({
+      title: '选择输入来源',
+      description: '从历史记录恢复',
+      status: 'active',
+    })
+  })
 })

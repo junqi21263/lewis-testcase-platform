@@ -17,6 +17,7 @@
     "test:pw:dev": "pnpm test:unit && pnpm test:ct && pnpm test:e2e:dev",
     "test:self": "node scripts/run-playwright.mjs test -c playwright-ct.config.ts",
     "test:unit": "vitest run",
+    "test:unit:coverage": "vitest run --coverage",
     "test:ct:allure": "node scripts/run-playwright.mjs test -c playwright-ct.config.ts",
     "allure:generate": "allure generate allure-results -o allure-report --clean",
     "allure:open": "allure open allure-report",

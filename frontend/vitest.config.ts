@@ -14,5 +14,21 @@ export default defineConfig({
     reporters: ['default', 'allure-vitest/reporter'],
     include: ['src/**/*.unit.test.ts', 'src/**/*.unit.test.tsx', 'src/**/*.dom.test.ts'],
     exclude: ['node_modules/**', 'src/__tests__/ct/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      include: [
+        'src/utils/aiAnalysisInput.ts',
+        'src/utils/aiAnalysisRecovery.ts',
+        'src/utils/aiAnalysisRuntime.ts',
+        'src/utils/analysisReviewSummary.ts',
+      ],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+      },
+    },
   },
 })

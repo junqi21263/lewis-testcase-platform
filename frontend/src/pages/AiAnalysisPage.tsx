@@ -62,6 +62,8 @@ import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
 import { AnalysisReviewSummaryPanel } from '@/components/analysis/AnalysisReviewSummaryPanel'
+import { AiAnalysisFlowStepper } from '@/components/analysis/AiAnalysisFlowStepper'
+import { AiAnalysisRuntimePanel } from '@/components/analysis/AiAnalysisRuntimePanel'
 import { saveAs } from 'file-saver'
 import {
   buildAnalysisExportBasename,
@@ -72,9 +74,12 @@ import {
 import { renderMermaidChartsToPngBase64 } from '@/utils/analysisMermaidPdf'
 import { buildAnalysisXmindBlob } from '@/utils/buildAnalysisXmind'
 import {
+  clearPendingAnalysisRecordId,
+  loadPendingAnalysisRecordId,
   loadHumanReviewPreference,
   resolveRecoveredAnalysisStatus,
   saveHumanReviewPreference,
+  savePendingAnalysisRecordId,
   type RecoveredAnalysisStatus,
 } from '@/utils/aiAnalysisRecovery'
 import {
@@ -83,6 +88,7 @@ import {
   getAiAnalysisFlowSteps,
   type AiAnalysisInputMode,
 } from '@/utils/aiAnalysisInput'
+import { buildAnalysisRuntimeMetrics } from '@/utils/aiAnalysisRuntime'
 import {
   ANALYSIS_PROMPT_PRESETS,
   findPresetIdForBody,
@@ -452,114 +458,6 @@ function mapParseStageMessage(stage: string | null | undefined): { text: string 
   }
 }
 
-type StudioStepState = 'pending' | 'running' | 'success' | 'error'
-
-const STUDIO_STEP_LABELS = [
-  '文件接收',
-  '文档解析',
-  'OCR / 多模态提取',
-  '需求归纳',
-  '结构化报告',
-] as const
-
-function deriveStudioStepStates(
-  status: AnalysisStatus,
-  uploadedFile: UploadedFile | null,
-  reportText: string,
-): StudioStepState[] {
-  const rep = reportText.trim().length > 0
-  const f = uploadedFile
-  const out: StudioStepState[] = ['pending', 'pending', 'pending', 'pending', 'pending']
-
-  if (!f) {
-    if (status === 'error') out[0] = 'error'
-    return out
-  }
-  if (status === 'uploading') {
-    out[0] = 'running'
-    return out
-  }
-  out[0] = 'success'
-
-  if (f.status === 'FAILED') {
-    out[1] = 'error'
-    return out
-  }
-  if (status === 'parsing' || f.status === 'PARSING' || f.status === 'PENDING') {
-    out[1] = 'running'
-    if (f.fileType === 'IMAGE' || f.fileType === 'PDF') out[2] = 'running'
-    return out
-  }
-
-  if (f.status === 'PARSED') {
-    out[1] = 'success'
-    out[2] = 'success'
-  }
-
-  if (status === 'idle') return out
-
-  if (status === 'analyzing') {
-    out[3] = 'running'
-    if (rep) out[4] = 'running'
-    return out
-  }
-
-  if (status === 'review' || status === 'approved') {
-    out[3] = 'success'
-    out[4] = rep ? 'success' : 'pending'
-    return out
-  }
-
-  if (status === 'error') {
-    if (rep) {
-      out[3] = 'success'
-      out[4] = 'error'
-    } else {
-      out[3] = 'error'
-    }
-    return out
-  }
-
-  return out
-}
-
-function AiStudioStepRail({
-  status,
-  uploadedFile,
-  reportText,
-}: {
-  status: AnalysisStatus
-  uploadedFile: UploadedFile | null
-  reportText: string
-}) {
-  const states = deriveStudioStepStates(status, uploadedFile, reportText)
-  const chip = (s: StudioStepState) =>
-    s === 'success'
-      ? 'border-emerald-500/45 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100'
-      : s === 'running'
-        ? 'border-cyan-500/55 bg-cyan-500/10 text-cyan-900 dark:text-cyan-100 motion-safe:animate-pulse'
-        : s === 'error'
-          ? 'border-red-500/50 bg-red-500/10 text-red-800 dark:text-red-100'
-          : 'border-workspace-panel-border/60 bg-workspace-panel-muted/50 text-workspace-text-secondary'
-
-  return (
-    <ol className="grid gap-1.5 sm:grid-cols-5">
-      {STUDIO_STEP_LABELS.map((label, i) => {
-        const s = states[i] ?? 'pending'
-        return (
-          <li
-            key={label}
-            className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${chip(s)}`}
-          >
-            <Circle className="h-2 w-2 shrink-0 fill-current opacity-80" aria-hidden />
-            <span className="truncate text-[10px] font-semibold leading-tight">{label}</span>
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
 /* ──────────────────── 子组件 ──────────────────────── */
 
 function terminalLogTextClassFromStatus(status: TerminalLogStatus): string {
@@ -761,12 +659,17 @@ function AiAnalysisPageInner() {
   const [historyFilter, setHistoryFilter] = useState('')
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [templateSearch, setTemplateSearch] = useState('')
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
+  const [runtimeLogOpen, setRuntimeLogOpen] = useState(false)
   const [rightTab, setRightTab] = useState<'process' | 'report'>('process')
   const [largeEditorField, setLargeEditorField] = useState<null | 'desc' | 'supp'>(null)
   const [usageHintOpen, setUsageHintOpen] = useState(false)
   const [dropzoneActive, setDropzoneActive] = useState(false)
   const [parseElapsed, setParseElapsed] = useState(0)
   const [analysisElapsed, setAnalysisElapsed] = useState(0)
+  const [analysisStartedAtMs, setAnalysisStartedAtMs] = useState<number | null>(null)
+  const [firstTokenAtMs, setFirstTokenAtMs] = useState<number | null>(null)
+  const [analysisFinishedAtMs, setAnalysisFinishedAtMs] = useState<number | null>(null)
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
   /** 本机选择的 File.name，避免接口 originalName 编码异常导致列表乱码 */
   const [uploadDisplayName, setUploadDisplayName] = useState<string | null>(null)
@@ -808,6 +711,7 @@ function AiAnalysisPageInner() {
   const parseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const analysisTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoOpenedReportForRunRef = useRef(false)
+  const pendingRecoveryTriedRef = useRef(false)
 
   const { uploadFile, progress: uploadProgressState, abort: abortUpload, reset: resetUploadProgress, validateFile } =
     useChunkedUpload()
@@ -918,6 +822,12 @@ function AiAnalysisPageInner() {
     }
     return undefined
   }, [state.status])
+
+  useEffect(() => {
+    if (state.status === 'review' || state.status === 'approved' || state.status === 'error') {
+      if (analysisStartedAtMs != null && analysisFinishedAtMs == null) setAnalysisFinishedAtMs(Date.now())
+    }
+  }, [analysisFinishedAtMs, analysisStartedAtMs, state.status])
 
   useEffect(() => {
     if (!autoScroll || !logContainerRef.current) return
@@ -1080,7 +990,14 @@ function AiAnalysisPageInner() {
     setExportingPdf(true)
     try {
       toast.loading('正在渲染流程图并生成 PDF…', { id: 'export-pdf' })
-      const mermaidImagesBase64 = await renderMermaidChartsToPngBase64(markdown).catch(() => [] as string[])
+      let mermaidRenderFallback = false
+      const mermaidImagesBase64 = await renderMermaidChartsToPngBase64(markdown).catch(() => {
+        mermaidRenderFallback = true
+        return [] as string[]
+      })
+      if (mermaidRenderFallback) {
+        toast('流程图 PNG 渲染失败，PDF 将保留 Mermaid 源码块作为兜底', { icon: 'ℹ️' })
+      }
       const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
       await saveAnalysisReportPdf(
         {
@@ -1398,6 +1315,7 @@ function AiAnalysisPageInner() {
           toast('该分析仍在后台处理中，稍后刷新或重新进入可恢复结果')
           return
         }
+        clearPendingAnalysisRecordId()
         toast.error('该记录无可展示内容')
         return
       }
@@ -1407,18 +1325,30 @@ function AiAnalysisPageInner() {
       setAnalysisVersions([])
       setAnalysisDiff([])
       setAnalysisVersionsOpen(false)
+      setAnalysisInputMode('history')
       dispatch({ type: 'LOAD_RECOVERED_REPORT', text, status: recoveredStatus })
       if (recoveredStatus === 'analyzing') {
+        savePendingAnalysisRecordId(r.id)
         toast('已恢复流式快照，任务仍在后台处理中')
       } else if (recoveredStatus === 'error') {
+        clearPendingAnalysisRecordId()
         toast.error('该分析记录已失败，已载入最后可用内容')
       } else {
+        clearPendingAnalysisRecordId()
         toast.success('已载入分析结果')
       }
     } catch {
       toast.error('加载记录失败')
     }
   }, [humanReview])
+
+  useEffect(() => {
+    if (pendingRecoveryTriedRef.current) return
+    pendingRecoveryTriedRef.current = true
+    const pendingId = loadPendingAnalysisRecordId()
+    if (!pendingId) return
+    void applyAnalysisRecord(pendingId)
+  }, [applyAnalysisRecord])
 
   const handleBatchImageUpload = useCallback(
     async (files: File[]) => {
@@ -1675,6 +1605,7 @@ function AiAnalysisPageInner() {
   }, [abortUpload, replaceImagePreviews])
 
   const selectHistoryFile = useCallback((f: UploadedFile) => {
+    setAnalysisInputMode('upload')
     setUploadDisplayName(null)
     replaceImagePreviews([])
     setAdditionalAnalysisFiles([])
@@ -1741,6 +1672,11 @@ function AiAnalysisPageInner() {
       streamAbortRef.current = controller
 
       dispatch({ type: isRevision ? 'REVIEW' : 'START_ANALYSIS' })
+      const startedAt = Date.now()
+      setAnalysisStartedAtMs(startedAt)
+      setFirstTokenAtMs(null)
+      setAnalysisFinishedAtMs(null)
+      setRuntimeLogOpen(false)
       if (!isRevision) {
         setCurrentAnalysisRecordId(null)
         setCurrentAnalysisStructured(null)
@@ -1812,10 +1748,15 @@ function AiAnalysisPageInner() {
           aiApi.analyzeStream(
             payload,
             (chunk: string) => {
+              setFirstTokenAtMs((prev) => prev ?? Date.now())
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
             (meta) => {
-              if (meta?.recordId) setCurrentAnalysisRecordId(meta.recordId)
+              setAnalysisFinishedAtMs(Date.now())
+              if (meta?.recordId) {
+                setCurrentAnalysisRecordId(meta.recordId)
+                savePendingAnalysisRecordId(meta.recordId)
+              }
               if (meta?.analysisStructuredResult) setCurrentAnalysisStructured(meta.analysisStructuredResult)
               if (typeof meta?.analysisVersionNumber === 'number') setCurrentAnalysisVersion(meta.analysisVersionNumber)
               void loadAnalysisRecords()
@@ -1824,14 +1765,18 @@ function AiAnalysisPageInner() {
                   '✅ AI 需求分析完成。您可审阅报告或输入修改意见（Ctrl+Enter 提交修订）。',
                 )
                 dispatch({ type: 'SET_REPORT' })
+                clearPendingAnalysisRecordId()
               } else {
                 addLog('✅ AI 需求分析完成（已跳过人工审阅，自动通过）。')
                 dispatch({ type: 'APPROVE' })
                 toast.success('需求分析已完成并已通过')
+                clearPendingAnalysisRecordId()
               }
               resolve()
             },
             (err: Error) => {
+              setAnalysisFinishedAtMs(Date.now())
+              clearPendingAnalysisRecordId()
               dispatch({ type: 'ERROR', log: makeLog(`❌ 分析失败：${err.message}`, 'error') })
               reject(err)
             },
@@ -2042,6 +1987,13 @@ ${state.reportText}
 
   const reportTabEnabled =
     state.reportText.trim().length > 0 || state.status === 'review' || state.status === 'approved'
+  const runtimeMetrics = buildAnalysisRuntimeMetrics({
+    parseElapsedSec: parseElapsed,
+    analysisStartedAtMs,
+    firstTokenAtMs,
+    analysisFinishedAtMs,
+    nowMs: Date.now(),
+  })
 
   return (
     <div
@@ -2107,47 +2059,7 @@ ${state.reportText}
         </div>
       )}
 
-      <div
-        className="shrink-0 border-b border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-panel-bg)]/85 px-4 py-3 backdrop-blur-md sm:px-5"
-        data-testid="ai-analysis-flow-stepper"
-      >
-        <div className="grid gap-2 sm:grid-cols-4">
-          {aiAnalysisFlowSteps.map((step, idx) => {
-            const active = step.status === 'active'
-            const done = step.status === 'done'
-            return (
-              <div
-                key={step.id}
-                className={`relative rounded-xl border px-3 py-2 transition-[background-color,border-color,box-shadow] ${
-                  done
-                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100'
-                    : active
-                      ? 'border-cyan-400/45 bg-cyan-500/10 text-cyan-950 shadow-[0_0_0_3px_rgba(34,211,238,0.08)] dark:text-cyan-100'
-                      : 'border-workspace-panel-border/60 bg-workspace-panel-muted/35 text-workspace-text-muted dark:border-white/10'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                      done
-                        ? 'bg-emerald-500 text-white'
-                        : active
-                          ? 'bg-cyan-500 text-white'
-                          : 'bg-workspace-panel-muted text-workspace-text-muted'
-                    }`}
-                  >
-                    {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : idx + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold">{step.title}</p>
-                    <p className="truncate text-[10px] opacity-75">{step.description}</p>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      <AiAnalysisFlowStepper steps={aiAnalysisFlowSteps} />
 
       {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
       <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,42%)_minmax(0,58%)] lg:grid-rows-1">
@@ -2168,7 +2080,7 @@ ${state.reportText}
             />
 
             <div
-              className="grid grid-cols-2 gap-1 rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)]/70 p-1"
+              className="grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--ai-ar-input-border)] bg-[color:var(--ai-ar-input-bg)]/70 p-1"
               data-testid="ai-analysis-input-mode-tabs"
             >
               <button
@@ -2197,6 +2109,19 @@ ${state.reportText}
                 <FileText className="h-3.5 w-3.5" />
                 直接输入
               </button>
+              <button
+                type="button"
+                data-testid="ai-analysis-input-mode-history"
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-[opacity,transform,background-color] ${
+                  analysisInputMode === 'history'
+                    ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white'
+                    : 'text-workspace-text-secondary hover:bg-white/50 hover:text-workspace-text-primary dark:hover:bg-white/5'
+                }`}
+                onClick={() => setAnalysisInputMode('history')}
+              >
+                <Search className="h-3.5 w-3.5" />
+                历史恢复
+              </button>
             </div>
 
             {analysisInputMode === 'text' && (
@@ -2220,6 +2145,15 @@ ${state.reportText}
                 />
                 <p className="mt-2 text-[11px] leading-relaxed text-workspace-text-secondary">
                   文本模式会直接调用需求分析通道，不经过文件上传和 OCR；下方“需求上下文”仍会作为补充说明发送给模型。
+                </p>
+              </div>
+            )}
+
+            {analysisInputMode === 'history' && (
+              <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.06] p-3 dark:border-violet-400/20 dark:bg-violet-400/[0.05]">
+                <p className="text-xs font-semibold text-workspace-text-primary">从历史记录恢复</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-workspace-text-secondary">
+                  在下方“历史恢复”选择已完成的分析报告，或选择已解析的上传文件继续分析。历史记录不会直接触发新分析，确认内容后再点击主按钮。
                 </p>
               </div>
             )}
@@ -2633,17 +2567,37 @@ ${state.reportText}
 
           <section className="relative rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.1)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.4)]">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-workspace-text-primary">分析指令模板</h2>
-              {isCustomTemplate ? (
-                <Badge variant="outline" className="border-amber-400/50 bg-amber-500/10 text-[10px] text-amber-950 dark:text-amber-100">
-                  已使用自定义指令
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="border-emerald-400/40 bg-emerald-500/10 text-[10px] text-emerald-950 dark:text-emerald-100">
-                  已匹配预设
-                </Badge>
-              )}
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-workspace-text-primary">高级设置</h2>
+                <p className="mt-0.5 text-[11px] text-workspace-text-muted">
+                  模板、模型与指令微调默认收起，不影响主流程
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {isCustomTemplate ? (
+                  <Badge variant="outline" className="border-amber-400/50 bg-amber-500/10 text-[10px] text-amber-950 dark:text-amber-100">
+                    自定义指令
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-emerald-400/40 bg-emerald-500/10 text-[10px] text-emerald-950 dark:text-emerald-100">
+                    {activePreset?.name ?? '预设模板'}
+                  </Badge>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1 border-workspace-panel-border/60 text-[11px]"
+                  onClick={() => setAdvancedSettingsOpen((v) => !v)}
+                  aria-expanded={advancedSettingsOpen}
+                >
+                  {advancedSettingsOpen ? '收起' : '展开'}
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${advancedSettingsOpen ? 'rotate-180' : ''}`} />
+                </Button>
+              </div>
             </div>
+            {advancedSettingsOpen && (
+              <>
             <button
               type="button"
               className="flex w-full items-start gap-3 rounded-xl border border-workspace-panel-border/70 bg-gradient-to-br from-cyan-500/10 via-white/40 to-violet-500/10 p-3 text-left transition-[opacity,transform] hover:border-cyan-500/40 dark:from-cyan-500/5 dark:via-slate-900/40 dark:to-violet-500/10 dark:hover:border-cyan-500/30"
@@ -2759,11 +2713,17 @@ ${state.reportText}
                 spellCheck={false}
               />
             </div>
+              </>
+            )}
           </section>
 
-          <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-panel-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.08)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.35)]">
+          <section className={`rounded-xl border p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.08)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.35)] ${
+            analysisInputMode === 'history'
+              ? 'border-violet-400/45 bg-violet-500/[0.06]'
+              : 'border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-panel-bg)]'
+          }`}>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-workspace-text-primary">历史与上传</h2>
+                <h2 className="text-sm font-semibold text-workspace-text-primary">历史恢复</h2>
                 <div className="inline-flex rounded-full border border-workspace-panel-border/60 bg-workspace-panel-muted/50 p-0.5 text-[11px] dark:border-white/10">
                   <button
                     type="button"
@@ -3131,7 +3091,7 @@ ${state.reportText}
                 }`}
                 onClick={() => setRightTab('process')}
               >
-                过程
+                运行日志
               </button>
               <button
                 type="button"
@@ -3143,7 +3103,7 @@ ${state.reportText}
                 }`}
                 onClick={() => reportTabEnabled && setRightTab('report')}
               >
-                报告
+                报告主视图
               </button>
             </div>
           </div>
@@ -3152,10 +3112,11 @@ ${state.reportText}
             {rightTab === 'process' ? (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-[color:var(--ai-ar-terminal-header-border)] bg-[color:var(--ai-ar-terminal-bg)]/70 p-3">
-                  <AiStudioStepRail
+                  <AiAnalysisRuntimePanel
                     status={state.status}
                     uploadedFile={uploadedFile}
                     reportText={state.reportText}
+                    metrics={runtimeMetrics}
                   />
                 </div>
                 <div
@@ -3183,6 +3144,14 @@ ${state.reportText}
               </div>
             ) : (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="shrink-0 border-b border-[color:var(--ai-ar-terminal-header-border)] bg-[color:var(--ai-ar-terminal-bg)]/70 p-3">
+                  <AiAnalysisRuntimePanel
+                    status={state.status}
+                    uploadedFile={uploadedFile}
+                    reportText={state.reportText}
+                    metrics={runtimeMetrics}
+                  />
+                </div>
                 <div
                   className={`ai-analysis-report-scroll box-border min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-[color:var(--ai-ar-report-bg)] px-4 py-3 [scrollbar-gutter:stable] select-text sm:px-5 ${
                     showReviewArea || showApprovedOnly ? 'scroll-pb-36 pb-32' : ''
@@ -3241,6 +3210,27 @@ ${state.reportText}
                     </div>
                   )}
                 </div>
+
+                {state.logs.length > 0 && (
+                  <div className="shrink-0 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-terminal-bg)]/90">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-4 py-2 text-left text-[11px] font-semibold text-workspace-text-secondary hover:text-workspace-text-primary"
+                      onClick={() => setRuntimeLogOpen((v) => !v)}
+                      aria-expanded={runtimeLogOpen}
+                    >
+                      <span>运行日志 · {state.logs.length} 条</span>
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${runtimeLogOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {runtimeLogOpen && (
+                      <div className="ai-analysis-terminal-scroll max-h-40 overflow-y-auto border-t border-[color:var(--ai-ar-divider)] px-3 py-2 font-mono text-[length:var(--text-terminal-size)]">
+                        {state.logs.map((log) => (
+                          <LogLine key={log.id} entry={log} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {(showReviewArea || showApprovedOnly) && (
                   <div className="relative shrink-0 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-card-bg)] p-4">

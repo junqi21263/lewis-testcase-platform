@@ -259,13 +259,18 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 上传区域
     await expect(page.getByText('拖拽文件到此处，或点击选择')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-mode-text')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-mode-history')).toBeVisible()
 
     // 补充说明输入框
     await expect(
       page.getByPlaceholder('约束、术语表、接口约定、非功能期望……写在这里，避免和正文混在一起。'),
     ).toBeVisible()
 
-    // 可编辑分析指令模板
+    // 高级设置默认收起，模板不再抢占主任务首屏
+    await expect(page.getByText('高级设置')).toBeVisible()
+    await expect(page.getByLabel('指令正文（可直接编辑）')).toHaveCount(0)
+    await page.getByRole('button', { name: '展开', exact: true }).click()
     await expect(page.getByLabel('指令正文（可直接编辑）')).toBeVisible()
 
     // 人工审阅开关（使用精确匹配）
@@ -361,6 +366,11 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
     await page.getByRole('button', { name: '开始分析' }).click()
     await expect(page.getByText('用户可以提交订单并查看支付结果')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('报告主视图')).toBeVisible()
+    const metrics = page.getByTestId('ai-analysis-runtime-metrics').last()
+    await expect(metrics.getByText('解析耗时')).toBeVisible()
+    await expect(metrics.getByText('TTFT')).toBeVisible()
+    await expect(metrics.getByText('总分析耗时')).toBeVisible()
     const reviewSummary = page.getByTestId('analysis-review-summary').last()
     await expect(reviewSummary).toBeVisible()
     await expect(page.getByText('审阅确认清单')).toBeVisible()
@@ -606,5 +616,19 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText(/解析状态连接已恢复/)).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/^✅ 解析完成/)).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
+  })
+
+  test('移动端布局保留四阶段主线且无横向溢出', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+
+    await expect(page.getByTestId('ai-analysis-flow-stepper')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-mode-upload')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-mode-text')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-mode-history')).toBeVisible()
+    await expect(page.getByRole('button', { name: '开始分析' })).toBeVisible()
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(2)
   })
 })
