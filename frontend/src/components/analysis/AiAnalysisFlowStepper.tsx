@@ -7,7 +7,7 @@ export function AiAnalysisFlowStepper({ steps }: { steps: AiAnalysisFlowStep[] }
       className="shrink-0 border-b border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-panel-bg)]/85 px-4 py-3 backdrop-blur-md sm:px-5"
       data-testid="ai-analysis-flow-stepper"
     >
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {steps.map((step, idx) => {
           const active = step.status === 'active'
           const done = step.status === 'done'

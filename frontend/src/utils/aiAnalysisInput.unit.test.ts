@@ -61,7 +61,7 @@ describe('aiAnalysisInput', () => {
     ).toContain('【补充说明】\n需要覆盖异常退款。')
   })
 
-  it('maps current state to the four-stage analysis workflow', () => {
+  it('maps current state to the five-stage analysis workflow', () => {
     const steps = getAiAnalysisFlowSteps({
       inputMode: 'text',
       directText: '需求文本',
@@ -72,10 +72,11 @@ describe('aiAnalysisInput', () => {
     })
 
     expect(steps.map((s) => `${s.title}:${s.status}`)).toEqual([
-      '选择输入来源:done',
-      '解析确认:done',
-      '开始分析:done',
-      '审阅与生成:active',
+      '选择输入:done',
+      '输入质检:done',
+      'AI 分析运行:done',
+      '结构化审阅:active',
+      '生成用例:todo',
     ])
   })
 
@@ -90,10 +91,11 @@ describe('aiAnalysisInput', () => {
         hasReport: false,
       }).map((s) => `${s.title}:${s.status}`),
     ).toEqual([
-      '选择输入来源:done',
-      '解析确认:active',
-      '开始分析:todo',
-      '审阅与生成:todo',
+      '选择输入:done',
+      '输入质检:active',
+      'AI 分析运行:todo',
+      '结构化审阅:todo',
+      '生成用例:todo',
     ])
 
     expect(
@@ -106,10 +108,11 @@ describe('aiAnalysisInput', () => {
         hasReport: true,
       }).map((s) => `${s.title}:${s.status}`),
     ).toEqual([
-      '选择输入来源:done',
-      '解析确认:done',
-      '开始分析:done',
-      '审阅与生成:done',
+      '选择输入:done',
+      '输入质检:done',
+      'AI 分析运行:done',
+      '结构化审阅:done',
+      '生成用例:active',
     ])
   })
 
@@ -133,7 +136,7 @@ describe('aiAnalysisInput', () => {
     })
 
     expect(steps[0]).toMatchObject({
-      title: '选择输入来源',
+      title: '选择输入',
       description: '从历史记录恢复',
       status: 'active',
     })

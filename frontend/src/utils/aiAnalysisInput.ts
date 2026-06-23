@@ -12,7 +12,7 @@ export type AiAnalysisPageStatus =
 export type AiAnalysisFlowStepStatus = 'todo' | 'active' | 'done'
 
 export type AiAnalysisFlowStep = {
-  id: 'source' | 'parse' | 'analysis' | 'review'
+  id: 'source' | 'quality' | 'analysis' | 'review' | 'generate'
   title: string
   description: string
   status: AiAnalysisFlowStepStatus
@@ -73,7 +73,7 @@ export function getAiAnalysisFlowSteps(input: {
   })
 
   const sourceStatus: AiAnalysisFlowStepStatus = hasInput ? 'done' : 'active'
-  const parseStatus: AiAnalysisFlowStepStatus =
+  const qualityStatus: AiAnalysisFlowStepStatus =
     input.pageStatus === 'uploading' || input.pageStatus === 'parsing'
       ? 'active'
       : inputReady
@@ -95,11 +95,15 @@ export function getAiAnalysisFlowSteps(input: {
       : input.pageStatus === 'approved'
         ? 'done'
         : 'todo'
+  const generateStatus: AiAnalysisFlowStepStatus =
+    input.pageStatus === 'approved'
+      ? 'active'
+      : 'todo'
 
   return [
     {
       id: 'source',
-      title: '选择输入来源',
+      title: '选择输入',
       description:
         input.inputMode === 'text'
           ? '粘贴需求文本'
@@ -109,22 +113,28 @@ export function getAiAnalysisFlowSteps(input: {
       status: sourceStatus,
     },
     {
-      id: 'parse',
-      title: '解析确认',
-      description: input.inputMode === 'text' ? '检查文本与补充说明' : '等待解析并可编辑文本',
-      status: parseStatus,
+      id: 'quality',
+      title: '输入质检',
+      description: input.inputMode === 'text' ? '检查文本与补充说明' : '解析质量与上下文确认',
+      status: qualityStatus,
     },
     {
       id: 'analysis',
-      title: '开始分析',
-      description: '调用模型生成结构化报告',
+      title: 'AI 分析运行',
+      description: '流式报告与耗时指标',
       status: analysisStatus,
     },
     {
       id: 'review',
-      title: '审阅与生成',
-      description: '修订、通过并生成用例',
+      title: '结构化审阅',
+      description: '问题确认与一键修订',
       status: reviewStatus,
+    },
+    {
+      id: 'generate',
+      title: '生成用例',
+      description: '携带 REQ/TP 进入用例生成',
+      status: generateStatus,
     },
   ]
 }

@@ -253,9 +253,17 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 标题
     await expect(page.getByRole('heading', { name: 'AI 需求分析' })).toBeVisible()
 
-    // 模型标签
+    const stepper = page.getByTestId('ai-analysis-flow-stepper')
+    await expect(stepper.getByText('选择输入')).toBeVisible()
+    await expect(stepper.getByText('输入质检')).toBeVisible()
+    await expect(stepper.getByText('AI 分析运行')).toBeVisible()
+    await expect(stepper.getByText('结构化审阅')).toBeVisible()
+    await expect(stepper.getByText('生成用例')).toBeVisible()
+
     // 功能区标题
-    await expect(page.getByText('需求上下文')).toBeVisible()
+    await expect(page.getByText('输入与质检')).toBeVisible()
+    await expect(page.getByText('输入质检与上下文')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-input-quality')).toBeVisible()
 
     // 上传区域
     await expect(page.getByText('拖拽文件到此处，或点击选择')).toBeVisible()
@@ -276,8 +284,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 人工审阅开关（使用精确匹配）
     await expect(page.getByText('人工审阅', { exact: true })).toBeVisible()
 
-    // 终端标题
-    await expect(page.getByText('AI 需求分析终端')).toBeVisible()
+    // 运行与结果标题
+    await expect(page.getByText('分析运行与结果')).toBeVisible()
 
     // 初始状态标签
     await expect(page.getByText('等待上传')).toBeVisible()
@@ -618,11 +626,12 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
   })
 
-  test('移动端布局保留四阶段主线且无横向溢出', async ({ page }) => {
+  test('移动端布局保留五阶段主线且无横向溢出', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
 
     await expect(page.getByTestId('ai-analysis-flow-stepper')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-flow-stepper').getByText('生成用例')).toBeVisible()
     await expect(page.getByTestId('ai-analysis-input-mode-upload')).toBeVisible()
     await expect(page.getByTestId('ai-analysis-input-mode-text')).toBeVisible()
     await expect(page.getByTestId('ai-analysis-input-mode-history')).toBeVisible()

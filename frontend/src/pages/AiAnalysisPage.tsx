@@ -1984,6 +1984,40 @@ ${state.reportText}
     if (canStartAnalysis && isIdle) bits.push('可开始分析')
     return bits.join(' · ')
   })()
+  const inputQualitySummary = (() => {
+    const sourceText =
+      analysisInputMode === 'text'
+        ? directRequirementText.trim()
+        : editedParsedText.trim() || uploadedFile?.parsedContent?.trim() || ''
+    const textLength = sourceText.length
+    const contextLength = requirementDescription.trim().length + requirementSupplement.trim().length
+    const uploadReady = analysisInputMode === 'upload' ? allSourcesParsed : true
+    const ready = canStartAnalysis && uploadReady
+    const qualityLabel = ready
+      ? textLength >= 500 || contextLength > 0
+        ? '良好'
+        : '可分析'
+      : analysisInputMode === 'history'
+        ? '待恢复'
+        : state.status === 'uploading' || state.status === 'parsing'
+          ? '解析中'
+          : '待补充'
+
+    return {
+      textLength,
+      contextLength,
+      ready,
+      qualityLabel,
+      sourceLabel:
+        analysisInputMode === 'text'
+          ? '纯文本需求'
+          : analysisInputMode === 'history'
+            ? '历史记录'
+            : uploadedFile
+              ? '需求文档'
+              : '未选择',
+    }
+  })()
 
   const reportTabEnabled =
     state.reportText.trim().length > 0 || state.status === 'review' || state.status === 'approved'
@@ -2028,7 +2062,7 @@ ${state.reportText}
               AI 需求分析
             </h1>
             <p className="truncate text-[11px] text-workspace-text-secondary sm:text-xs">
-              上传需求文档，AI 自动解析并生成结构化分析报告
+              选择输入、质检解析、生成结构化需求报告
             </p>
           </div>
         </div>
@@ -2068,7 +2102,22 @@ ${state.reportText}
           <div className="ai-analysis-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
             <div className="space-y-4 motion-safe:animate-[arsStudioIn_0.45s_ease-out_both]">
           <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.12)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.45)]">
-            <h2 className="mb-2 text-sm font-semibold text-workspace-text-primary">需求文档</h2>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-workspace-text-primary">输入与质检</h2>
+                <p className="mt-0.5 text-[11px] text-workspace-text-muted">选择输入来源，确认解析质量后再启动 AI 分析。</p>
+              </div>
+              <Badge
+                variant="outline"
+                className={`text-[10px] ${
+                  inputQualitySummary.ready
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-200'
+                }`}
+              >
+                {inputQualitySummary.ready ? '可进入分析' : '等待输入质检'}
+              </Badge>
+            </div>
           <div className="space-y-2">
             <input
               ref={fileInputRef}
@@ -2107,7 +2156,7 @@ ${state.reportText}
                 onClick={() => setAnalysisInputMode('text')}
               >
                 <FileText className="h-3.5 w-3.5" />
-                直接输入
+                直接粘贴文本
               </button>
               <button
                 type="button"
@@ -2144,7 +2193,7 @@ ${state.reportText}
                   onChange={(e) => setDirectRequirementText(e.target.value)}
                 />
                 <p className="mt-2 text-[11px] leading-relaxed text-workspace-text-secondary">
-                  文本模式会直接调用需求分析通道，不经过文件上传和 OCR；下方“需求上下文”仍会作为补充说明发送给模型。
+                  文本模式会直接调用需求分析通道，不经过文件上传和 OCR；下方“输入质检与上下文”仍会作为补充说明发送给模型。
                 </p>
               </div>
             )}
@@ -2379,6 +2428,34 @@ ${state.reportText}
                 })()}
               </div>
             )}
+
+            <div
+              className="grid gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.05] p-3 text-xs sm:grid-cols-4"
+              data-testid="ai-analysis-input-quality"
+            >
+              <div>
+                <p className="text-[10px] text-workspace-text-muted">输入来源</p>
+                <p className="mt-1 font-semibold text-workspace-text-primary">{inputQualitySummary.sourceLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-workspace-text-muted">文本完整度</p>
+                <p className="mt-1 font-semibold text-workspace-text-primary">
+                  {inputQualitySummary.textLength > 0 ? `${inputQualitySummary.textLength} 字` : '待提取'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-workspace-text-muted">补充上下文</p>
+                <p className="mt-1 font-semibold text-workspace-text-primary">
+                  {inputQualitySummary.contextLength > 0 ? `${inputQualitySummary.contextLength} 字` : '可选'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-workspace-text-muted">质检结论</p>
+                <p className={`mt-1 font-semibold ${inputQualitySummary.ready ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                  {inputQualitySummary.qualityLabel}
+                </p>
+              </div>
+            </div>
           </div>
 
           {analysisInputMode === 'upload' && uploadedFile?.status === 'FAILED' && (
@@ -2480,7 +2557,7 @@ ${state.reportText}
 
           <section className="rounded-xl border border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-card-bg)] p-3 shadow-[0_12px_40px_-28px_rgba(59,130,246,0.1)] dark:shadow-[0_16px_48px_-32px_rgba(0,0,0,0.4)]">
             <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-              <h2 className="text-sm font-semibold text-workspace-text-primary">需求上下文</h2>
+              <h2 className="text-sm font-semibold text-workspace-text-primary">输入质检与上下文</h2>
               <span className="text-[10px] text-workspace-text-muted">可选 · 与指令模板组合后发给模型</span>
             </div>
             <div className="space-y-3">
@@ -2987,13 +3064,13 @@ ${state.reportText}
           </div>
         </aside>
 
-        {/* 右栏：AI 分析终端 */}
+        {/* 右栏：分析运行与结果 */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-l border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-terminal-bg)] motion-safe:animate-[arsStudioIn_0.48s_ease-out_both] max-lg:border-t lg:border-l">
           <div className="flex shrink-0 flex-col gap-1.5 rounded-t-xl border border-b-0 border-[color:var(--ai-ar-panel-border)] bg-[color:var(--ai-ar-terminal-header-bg)] px-3 py-2.5 shadow-[0_8px_32px_-24px_rgba(59,130,246,0.12)] backdrop-blur-md sm:px-4">
             <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Terminal className="h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300" aria-hidden />
-                <span className="truncate text-sm font-semibold text-workspace-text-primary">AI 需求分析终端</span>
+                <span className="truncate text-sm font-semibold text-workspace-text-primary">分析运行与结果</span>
                 <StatusBadge status={state.status} labelOverride={terminalBadgeLabel} />
               </div>
               <div className="flex flex-wrap items-center justify-end gap-1.5">
