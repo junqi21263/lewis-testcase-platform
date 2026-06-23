@@ -195,6 +195,11 @@ export type StreamDoneMeta = {
 }
 
 /** 流式请求（SSE），用于 AI 生成流式响应 */
+export function buildStreamInterruptedMessage(url: string): string {
+  const endpoint = url.startsWith('/api/') ? url : `/api${url.startsWith('/') ? url : `/${url}`}`
+  return `流式连接被中断（常见于反代缓冲或负载均衡空闲超时）。请确认 Nginx 已对 ${endpoint} 关闭 buffering，或暂时改用非流式生成。`
+}
+
 export async function streamRequest(
   url: string,
   data: unknown,
@@ -336,11 +341,7 @@ export async function streamRequest(
         msg.includes('Failed to fetch') ||
         msg.includes('ERR_INCOMPLETE')
       ) {
-        onError?.(
-          new Error(
-            '流式连接被中断（常见于反代缓冲或负载均衡空闲超时）。请确认 Nginx 已对 /api/ai/generate/stream 关闭 buffering，或暂时改用非流式生成。',
-          ),
-        )
+        onError?.(new Error(buildStreamInterruptedMessage(url)))
       } else {
         onError?.(e)
       }

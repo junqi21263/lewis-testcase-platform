@@ -14,6 +14,7 @@ export class AiStreamRecoveryService {
     if (!this.canWrite(res)) return false
     try {
       res.write(payload)
+      ;(res as Response & { flush?: () => void }).flush?.()
       return true
     } catch {
       return false

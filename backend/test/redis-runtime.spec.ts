@@ -120,6 +120,21 @@ describe('Redis runtime helpers', () => {
     await expect(queue.drain('ai-generate', jest.fn())).resolves.toBeUndefined()
   })
 
+  it('flushes every SSE write so proxy chains receive heartbeat chunks immediately', () => {
+    const stream = new AiStreamRecoveryService(undefined as any)
+    const response = {
+      destroyed: false,
+      writableEnded: false,
+      write: jest.fn(),
+      flush: jest.fn(),
+    }
+
+    expect(stream.writeRaw(response as any, ': ping\n\n')).toBe(true)
+
+    expect(response.write).toHaveBeenCalledWith(': ping\n\n')
+    expect(response.flush).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps caching stream chunks when the browser response is already closed', async () => {
     const redis = {
       appendStreamChunk: jest.fn().mockResolvedValue(undefined),
