@@ -132,7 +132,7 @@ export function AnalysisReviewSummaryPanel({
         </div>
       )}
 
-      {!compact && (structured.testStrategy || structured.automationReadiness) && (
+      {!compact && (
         <div className="grid gap-2 lg:grid-cols-2">
           <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
             <p className="font-medium text-workspace-text-primary">一键测试策略</p>

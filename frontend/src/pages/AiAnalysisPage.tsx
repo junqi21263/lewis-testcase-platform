@@ -183,14 +183,11 @@ function pageReducer(state: PageState, action: Action): PageState {
       return { ...state, reviewText: action.text }
     case 'REVIEW': {
       const round = state.revisionCount + 1
-      const header = state.reportText.trim()
-        ? `\n\n---\n\n## 修订分析（第 ${round} 轮）\n\n`
-        : ''
       return {
         ...state,
         status: 'analyzing',
         logs: [],
-        reportText: state.reportText + header,
+        reportText: '',
         revisionCount: round,
       }
     }
@@ -1093,6 +1090,7 @@ function AiAnalysisPageInner() {
       requirementDescription: handoffFields.requirementDescription.slice(0, REQ_DESC_MAX),
       supplementaryNotes: handoffFields.supplementaryNotes.slice(0, REQ_SUPP_MAX),
     })
+    toast.success('正在带入生成用例页…')
     navigate('/generate')
   }, [
     currentAnalysisStructured,
@@ -1684,6 +1682,10 @@ function AiAnalysisPageInner() {
         setAnalysisVersions([])
         setAnalysisDiff([])
         setAnalysisVersionsOpen(false)
+      } else {
+        setCurrentAnalysisStructured(null)
+        setAnalysisDiff([])
+        setAnalysisVersionsOpen(false)
       }
       if (!isRevision) {
         addLog('🚀 开始需求分析...')
@@ -1942,8 +1944,8 @@ ${state.reportText}
   })
   const isIdle = state.status === 'idle' || state.status === 'error'
   const showStartButton = isIdle && canStartAnalysis
-  const showReviewArea = humanReview && (state.status === 'review' || state.status === 'approved')
-  const showApprovedOnly = !humanReview && state.status === 'approved'
+  const showReviewArea = humanReview && state.status === 'review'
+  const showApprovedOnly = state.status === 'approved'
   const isAnalyzingStream = state.status === 'analyzing'
   const isUploadingOrParsing = state.status === 'uploading' || state.status === 'parsing'
   const busy =
@@ -2093,7 +2095,10 @@ ${state.reportText}
         </div>
       )}
 
-      <AiAnalysisFlowStepper steps={aiAnalysisFlowSteps} />
+      <AiAnalysisFlowStepper
+        steps={aiAnalysisFlowSteps}
+        onGenerate={state.status === 'approved' ? () => void handleSendToGenerate() : undefined}
+      />
 
       {/* 主区：左右列各自 min-h-0 + 内部滚动，整体不撑高视口 */}
       <div className="grid min-h-0 flex-1 gap-0 overflow-hidden max-lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,42%)_minmax(0,58%)] lg:grid-rows-1">
@@ -3097,10 +3102,16 @@ ${state.reportText}
                   <>
                     <Button
                       type="button"
-                      variant="ghost"
                       size="sm"
-                      className="h-8 gap-1 text-[11px] text-violet-800 dark:text-violet-200"
+                      data-testid="ai-analysis-generate-handoff"
+                      className={`h-8 gap-1 px-3 text-[11px] font-semibold ${
+                        state.status === 'approved'
+                          ? 'bg-gradient-to-r from-cyan-600 to-violet-600 text-white shadow-md shadow-cyan-500/15 hover:from-cyan-500 hover:to-violet-500'
+                          : 'bg-workspace-panel-muted text-workspace-text-secondary hover:bg-workspace-panel-muted'
+                      }`}
+                      disabled={state.status !== 'approved'}
                       onClick={() => void handleSendToGenerate()}
+                      title={state.status === 'approved' ? '带入生成用例页' : '请先审阅通过需求分析'}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
                       生成用例
@@ -3218,6 +3229,32 @@ ${state.reportText}
                     <LogLine key={log.id} entry={log} />
                   ))}
                 </div>
+                {state.status === 'approved' && (
+                  <div
+                    className="flex shrink-0 flex-col gap-2 border-t border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-card-bg)] p-3 sm:flex-row sm:items-center sm:justify-end"
+                    data-testid="ai-analysis-approved-actions"
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-workspace-panel-border/70 text-workspace-text-secondary hover:bg-workspace-panel-muted"
+                      type="button"
+                      disabled={state.logs.length === 0}
+                      onClick={() => dispatch({ type: 'CLEAR_LOGS' })}
+                    >
+                      清空日志
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                      type="button"
+                      onClick={() => dispatch({ type: 'RESET' })}
+                    >
+                      重置分析
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -3300,7 +3337,10 @@ ${state.reportText}
                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${runtimeLogOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {runtimeLogOpen && (
-                      <div className="ai-analysis-terminal-scroll max-h-40 overflow-y-auto border-t border-[color:var(--ai-ar-divider)] px-3 py-2 font-mono text-[length:var(--text-terminal-size)]">
+                      <div
+                        className="ai-analysis-terminal-scroll max-h-28 overflow-y-auto border-t border-[color:var(--ai-ar-divider)] px-3 py-2 font-mono text-[length:var(--text-terminal-size)]"
+                        data-testid="ai-analysis-bottom-runtime-log"
+                      >
                         {state.logs.map((log) => (
                           <LogLine key={log.id} entry={log} />
                         ))}
@@ -3316,20 +3356,28 @@ ${state.reportText}
                       aria-hidden
                     />
                     {state.status === 'approved' ? (
-                      <div className="space-y-2 py-2 text-center">
-                        <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle2 className="h-5 w-5" />
-                          <span className="text-sm font-medium">需求分析已通过</span>
-                        </div>
-                        <p className="text-xs text-workspace-text-muted">可继续生成测试用例或重新分析</p>
+                      <div
+                        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
+                        data-testid="ai-analysis-approved-actions"
+                      >
                         <Button
                           variant="outline"
                           size="sm"
-                          className="mt-1 gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                          className="gap-1.5 border-workspace-panel-border/70 text-workspace-text-secondary hover:bg-workspace-panel-muted"
+                          type="button"
+                          disabled={state.logs.length === 0}
+                          onClick={() => dispatch({ type: 'CLEAR_LOGS' })}
+                        >
+                          清空日志
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
                           type="button"
                           onClick={() => dispatch({ type: 'RESET' })}
                         >
-                          清空并重置
+                          重置分析
                         </Button>
                       </div>
                     ) : (

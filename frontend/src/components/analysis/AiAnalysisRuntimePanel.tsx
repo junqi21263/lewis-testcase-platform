@@ -1,4 +1,4 @@
-import { Circle } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react'
 import type { UploadedFile } from '@/types'
 import type { AnalysisRuntimeMetric } from '@/utils/aiAnalysisRuntime'
 
@@ -84,11 +84,24 @@ export function deriveStudioStepStates(
   return out
 }
 
-function chipClass(state: StudioStepState) {
-  if (state === 'success') return 'border-emerald-500/45 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100'
-  if (state === 'running') return 'border-cyan-500/55 bg-cyan-500/10 text-cyan-900 dark:text-cyan-100 motion-safe:animate-pulse'
-  if (state === 'error') return 'border-red-500/50 bg-red-500/10 text-red-800 dark:text-red-100'
-  return 'border-workspace-panel-border/60 bg-workspace-panel-muted/50 text-workspace-text-secondary'
+function stepToneClass(state: StudioStepState) {
+  if (state === 'success') return 'text-emerald-700 dark:text-emerald-300'
+  if (state === 'running') return 'text-cyan-700 dark:text-cyan-300'
+  if (state === 'error') return 'text-red-700 dark:text-red-300'
+  return 'text-workspace-text-muted'
+}
+
+function connectorClass(done: boolean, running: boolean) {
+  if (done) return 'bg-emerald-400/60'
+  if (running) return 'bg-cyan-400/45'
+  return 'bg-workspace-panel-border/60'
+}
+
+function StepIcon({ state }: { state: StudioStepState }) {
+  if (state === 'success') return <CheckCircle2 className="h-4 w-4" aria-hidden />
+  if (state === 'running') return <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+  if (state === 'error') return <XCircle className="h-4 w-4" aria-hidden />
+  return <Circle className="h-3.5 w-3.5" aria-hidden />
 }
 
 function metricClass(tone: AnalysisRuntimeMetric['tone']) {
@@ -112,16 +125,25 @@ export function AiAnalysisRuntimePanel({
 
   return (
     <div className="space-y-2">
-      <ol className="grid gap-1.5 sm:grid-cols-5">
+      <ol className="grid gap-2 rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/25 px-3 py-3 sm:grid-cols-5">
         {STUDIO_STEP_LABELS.map((label, i) => {
           const state = states[i] ?? 'pending'
+          const nextState = states[i + 1]
           return (
             <li
               key={label}
-              className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${chipClass(state)}`}
+              className={`relative flex min-w-0 items-center gap-2 motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${stepToneClass(state)}`}
             >
-              <Circle className="h-2 w-2 shrink-0 fill-current opacity-80" aria-hidden />
-              <span className="truncate text-[10px] font-semibold leading-tight">{label}</span>
+              {i < STUDIO_STEP_LABELS.length - 1 && (
+                <span
+                  className={`absolute left-[1.7rem] right-[-0.7rem] top-3 hidden h-px sm:block ${connectorClass(state === 'success', state === 'running' || nextState === 'running')}`}
+                  aria-hidden
+                />
+              )}
+              <span className="relative z-[1] flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current/35 bg-workspace-card-bg/90">
+                <StepIcon state={state} />
+              </span>
+              <span className="relative z-[1] truncate text-[10px] font-semibold leading-tight">{label}</span>
             </li>
           )
         })}

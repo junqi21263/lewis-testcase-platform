@@ -242,9 +242,12 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 12. 点击确认通过
     await page.getByRole('button', { name: '确认通过' }).click()
 
-    // 13. 验证已通过状态（使用exact精确匹配状态标签）
+    // 13. 验证已通过状态（使用exact精确匹配状态标签），底部只保留操作按钮，不再重复展示通过文案
     await expect(page.getByText('已通过', { exact: true })).toBeVisible({ timeout: 5000 })
-    await expect(page.getByRole('main').getByText('需求分析已通过')).toBeVisible()
+    await expect(page.getByRole('main').getByText('需求分析已通过')).toHaveCount(0)
+    await expect(page.getByTestId('ai-analysis-approved-actions')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-generate-handoff')).toBeEnabled()
+    await expect(page.getByTestId('ai-analysis-flow-step-generate')).toBeEnabled()
   })
 
   test('初始状态验证：页面元素完整', async ({ page }) => {
@@ -453,6 +456,41 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByTestId('generate-custom-prompt')).toHaveValue(/REQ-001/)
     await expect(page.getByTestId('generate-custom-prompt')).toHaveValue(/TP-001/)
     await expect(page.getByRole('button', { name: /开始生成|生成中/ })).toBeEnabled()
+  })
+
+  test('提交修改意见后报告区只展示 AI 修订后的最终版本', async ({ page }) => {
+    let requestNo = 0
+    await page.route('**/api/ai/analyze/stream', async (route) => {
+      requestNo += 1
+      const firstBody = [
+        'data: {"content":"# 初版报告\\n"}\n\n',
+        'data: {"content":"初版仍然保留不准确的旧结论。\\n"}\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+      const revisedBody = [
+        'data: {"content":"# 修订后报告\\n"}\n\n',
+        'data: {"content":"修订版已经按意见补充边界和异常路径。\\n"}\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: { 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+        body: requestNo === 1 ? firstBody : revisedBody,
+      })
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+    await page.getByTestId('ai-analysis-input-mode-text').click()
+    await page.getByTestId('ai-analysis-direct-textarea').fill('登录流程需要补充异常路径。')
+    await page.getByRole('button', { name: '开始分析' }).click()
+    await expect(page.getByText('初版报告')).toBeVisible({ timeout: 15000 })
+
+    await page.getByPlaceholder(/请输入修改意见/).fill('删除旧结论，只保留修订后的完整报告。')
+    await page.getByRole('button', { name: /提交修改意见/ }).click()
+    await expect(page.getByText('修订后报告')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('ai-analysis-report-markdown').getByText('初版仍然保留不准确的旧结论')).toHaveCount(0)
   })
 
   test('分析报告内流程图支持 PNG 和 SVG 下载', async ({ page }) => {

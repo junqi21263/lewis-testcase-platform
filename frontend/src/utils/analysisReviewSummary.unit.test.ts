@@ -64,4 +64,36 @@ describe('analysisReviewSummary', () => {
     expect(summary.automationText.automatable).toBe('待识别')
     expect(summary.reviewPriority).toBe('normal')
   })
+
+  it('derives actionable strategy and agent readiness when model omits those sections', () => {
+    const structured: AnalysisStructuredResult = {
+      requirements: [
+        { id: 'REQ-001', text: '用户使用邮箱密码登录系统', type: 'functional' },
+        { id: 'REQ-002', text: '验证码错误时展示清晰提示', type: 'risk' },
+      ],
+      flowchart: {
+        nodes: [
+          { id: 'A', label: '输入邮箱密码', type: 'process' },
+          { id: 'B', label: '校验图形验证码', type: 'decision' },
+        ],
+        branches: [{ from: 'B', to: 'C', condition: '验证码错误', type: 'exception' }],
+        paths: [
+          { id: 'TP-001', type: 'main', nodes: ['输入邮箱密码', '进入工作台'] },
+          { id: 'TP-002', type: 'exception', nodes: ['输入邮箱密码', '验证码错误提示'] },
+        ],
+      },
+      risks: [{ level: 'P1', description: '暴力破解风险' }],
+      openQuestions: [{ category: 'permission', text: '哪些角色允许登录后台？' }],
+    }
+
+    const summary = buildAnalysisReviewSummary(structured)
+
+    expect(summary.testStrategyText.scope).toContain('REQ-001')
+    expect(summary.testStrategyText.types).toContain('功能测试')
+    expect(summary.testStrategyText.types).toContain('异常路径测试')
+    expect(summary.testStrategyText.entryCriteria).not.toBe('待补充')
+    expect(summary.automationText.automatable).toContain('TP-001')
+    expect(summary.automationText.manual).toContain('哪些角色允许登录后台？')
+    expect(summary.automationText.blocked).toContain('测试账号')
+  })
 })
