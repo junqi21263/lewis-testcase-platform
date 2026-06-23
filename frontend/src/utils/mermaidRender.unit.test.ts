@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isMermaidErrorSvg, normalizeMermaidSource } from './mermaidRender'
+import {
+  isMermaidErrorSvg,
+  normalizeMermaidSource,
+  prepareMermaidSvgForDownload,
+} from './mermaidRender'
 
 describe('normalizeMermaidSource contract behavior', () => {
   it('preserves labeled flowchart arrows and subroutine nodes', () => {
@@ -54,5 +58,16 @@ flowchart TD
         '<svg aria-roledescription="error"><text>Syntax error in text</text></svg>',
       ),
     ).toBe(true)
+  })
+
+  it('prepares rendered SVG markup for reliable svg/png download', () => {
+    const prepared = prepareMermaidSvgForDownload(
+      '<svg viewBox="0 0 640 360"><g><text>流程</text></g></svg>',
+    )
+
+    expect(prepared).toContain('xmlns="http://www.w3.org/2000/svg"')
+    expect(prepared).toContain('width="640"')
+    expect(prepared).toContain('height="360"')
+    expect(prepared).toContain('preserveAspectRatio="xMidYMid meet"')
   })
 })

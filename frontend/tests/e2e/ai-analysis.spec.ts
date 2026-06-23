@@ -392,6 +392,107 @@ test.describe('E2E: AI 需求分析全流程', () => {
     expect(analyzePayload?.fileId).toBeUndefined()
   })
 
+  test('分析报告标题不固定时也能带入生成页并启用生成', async ({ page }) => {
+    await page.route('**/api/ai/analyze/stream', async (route) => {
+      const structuredMeta = {
+        recordId: 'record-handoff-1',
+        analysisVersionNumber: 1,
+        analysisStructuredResult: {
+          requirements: [
+            { id: 'REQ-001', text: '用户提交订单后系统创建支付单', type: 'functional' },
+          ],
+          flowchart: {
+            nodes: [{ id: 'A', label: '提交订单', type: 'process' }],
+            branches: [],
+            paths: [{ id: 'TP-001', type: 'main', nodes: ['提交订单', '创建支付单'] }],
+          },
+          qualityScores: {
+            completeness: 80,
+            testability: 82,
+            interfaceClarity: 70,
+            riskCoverage: 76,
+            flowCompleteness: 78,
+            reasons: [],
+          },
+          inputWarnings: [],
+          openQuestions: [],
+        },
+      }
+      const sseBody = [
+        'data: {"content":"# 订单流程分析\\n"}\n\n',
+        'data: {"content":"这份报告没有使用固定的主要功能需求标题，但包含订单提交和支付单创建。\\n"}\n\n',
+        'data: {"content":"```mermaid\\nflowchart TD\\n  A[提交订单] --> B[创建支付单]\\n```\\n"}\n\n',
+        `data: ${JSON.stringify(structuredMeta)}\n\n`,
+        'data: [DONE]\n\n',
+      ].join('')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+        body: sseBody,
+      })
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+    await page.getByTestId('ai-analysis-input-mode-text').click()
+    await page
+      .getByTestId('ai-analysis-direct-textarea')
+      .fill('用户提交订单后，系统需要创建支付单并返回支付状态。')
+    await page.getByRole('button', { name: '开始分析' }).click()
+    await expect(page.getByText('订单流程分析')).toBeVisible({ timeout: 15000 })
+    await page.getByRole('button', { name: '确认通过' }).click()
+    await expect(page.getByText('已通过', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '生成用例' }).first().click()
+    await page.waitForURL(/\/generate/)
+    await expect(page.getByTestId('generate-text-input')).toHaveValue(/订单流程分析/)
+    await expect(page.getByTestId('generate-custom-prompt')).toHaveValue(/REQ-001/)
+    await expect(page.getByTestId('generate-custom-prompt')).toHaveValue(/TP-001/)
+    await expect(page.getByRole('button', { name: /开始生成|生成中/ })).toBeEnabled()
+  })
+
+  test('分析报告内流程图支持 PNG 和 SVG 下载', async ({ page }) => {
+    await page.route('**/api/ai/analyze/stream', async (route) => {
+      const sseBody = [
+        'data: {"content":"# 流程图下载验证\\n"}\n\n',
+        'data: {"content":"```mermaid\\nflowchart TD\\n  A[提交订单] --> B[创建支付单]\\n  B --> C[支付成功]\\n```\\n"}\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+        body: sseBody,
+      })
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+    await page.getByTestId('ai-analysis-input-mode-text').click()
+    await page
+      .getByTestId('ai-analysis-direct-textarea')
+      .fill('用户提交订单后系统创建支付单，并在支付成功后展示结果。')
+    await page.getByRole('button', { name: '开始分析' }).click()
+    await expect(page.getByTestId('ai-analysis-mermaid-chart')).toBeVisible({ timeout: 15000 })
+
+    const pngDownload = page.waitForEvent('download')
+    await page.getByTestId('mermaid-download-png').first().click()
+    const png = await pngDownload
+    expect(png.suggestedFilename()).toBe('flowchart.png')
+
+    const svgDownload = page.waitForEvent('download')
+    await page.getByTestId('mermaid-download-svg').first().click()
+    const svg = await svgDownload
+    expect(svg.suggestedFilename()).toBe('flowchart.svg')
+  })
+
   test('人工审阅开关切换', async ({ page }) => {
     await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
 

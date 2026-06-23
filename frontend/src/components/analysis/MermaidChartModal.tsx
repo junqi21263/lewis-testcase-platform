@@ -3,7 +3,12 @@ import { Download, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/utils/cn'
-import { downloadTextFile, svgToPngBlob } from '@/utils/mermaidRender'
+import {
+  downloadBlobFile,
+  downloadTextFile,
+  prepareMermaidSvgForDownload,
+  svgToPngBlob,
+} from '@/utils/mermaidRender'
 
 type Props = {
   open: boolean
@@ -26,7 +31,7 @@ export function MermaidChartModal({ open, svg, title = '流程图', onClose }: P
 
   const downloadSvg = () => {
     if (!svg) return
-    downloadTextFile(svg, `${title}.svg`, 'image/svg+xml')
+    downloadTextFile(prepareMermaidSvgForDownload(svg), `${title}.svg`, 'image/svg+xml')
     toast.success('已下载 SVG')
   }
 
@@ -34,12 +39,7 @@ export function MermaidChartModal({ open, svg, title = '流程图', onClose }: P
     if (!svg) return
     try {
       const blob = await svgToPngBlob(svg)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${title}.png`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlobFile(blob, `${title}.png`)
       toast.success('已下载 PNG')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '下载失败')

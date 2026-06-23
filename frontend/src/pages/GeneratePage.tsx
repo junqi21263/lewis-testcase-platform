@@ -371,6 +371,7 @@ function SoftTextarea(props: {
   maxHClass?: string
   onExpand?: () => void
   disabled?: boolean
+  testId?: string
 }) {
   const {
     title,
@@ -382,6 +383,7 @@ function SoftTextarea(props: {
     maxHClass = 'max-h-[260px]',
     onExpand,
     disabled,
+    testId,
   } = props
 
   return (
@@ -417,6 +419,7 @@ function SoftTextarea(props: {
         </div>
       </div>
       <textarea
+        data-testid={testId}
         className={`w-full resize-none rounded-xl border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-3 py-2 text-sm outline-none ring-0 transition focus:border-[hsl(var(--gcs-input-focus))] focus:shadow-[0_0_0_3px_hsl(var(--gcs-input-focus)/0.18)] disabled:opacity-60 ${minHClass} ${maxHClass} overflow-y-auto`}
         placeholder={placeholder}
         value={value}
@@ -1471,7 +1474,8 @@ export default function GeneratePage() {
     setSelectedTemplateId(h.templateId)
     setSourceType('text')
     if (h.handoffSource === 'ai-analysis') {
-      setInputText(h.combinedInputText?.trim() ?? '')
+      const fallbackText = h.rawText?.trim() || h.filledPrompt.trim()
+      setInputText(h.combinedInputText?.trim() || fallbackText)
       setRequirementDescription(h.requirementDescription?.trim() ?? '')
       setUserNotes(h.supplementaryNotes?.trim() ?? '')
     } else {
@@ -1861,6 +1865,7 @@ export default function GeneratePage() {
                       countLimit={5000}
                       minHClass="min-h-[140px]"
                       onExpand={() => setExpandField('requirement')}
+                      testId="generate-text-input"
                     />
                   )}
                 </div>
@@ -1874,6 +1879,7 @@ export default function GeneratePage() {
                 countLimit={5000}
                 minHClass="min-h-[140px]"
                 onExpand={() => setExpandField('requirement')}
+                testId="generate-requirement-description"
               />
 
               <SoftTextarea
@@ -1885,6 +1891,7 @@ export default function GeneratePage() {
                 minHClass="min-h-[110px]"
                 maxHClass="max-h-[220px]"
                 onExpand={() => setExpandField('notes')}
+                testId="generate-supplementary-notes"
               />
 
               <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
@@ -1972,6 +1979,7 @@ export default function GeneratePage() {
                     countLimit={12000}
                     minHClass="min-h-[140px]"
                     onExpand={() => setExpandField('prompt')}
+                    testId="generate-custom-prompt"
                   />
                 </div>
                 {customPrompt.length + inputText.length > INPUT_LENGTH_SOFT_WARN_CHARS && (

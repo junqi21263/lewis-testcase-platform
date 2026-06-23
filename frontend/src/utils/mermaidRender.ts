@@ -459,15 +459,25 @@ export async function renderMermaidSvg(
 
 export function svgToPngBlob(svgMarkup: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    const safeSvg = prepareMermaidSvgForDownload(svgMarkup)
+    const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`
     const img = new Image()
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      fn()
+    }
+    const timeout = window.setTimeout(() => {
+      finish(() => reject(new Error('SVG 转 PNG 超时，请先下载 SVG')))
+    }, 8000)
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       let w = img.naturalWidth
       let h = img.naturalHeight
       if (!w || !h) {
-        const vb = /viewBox\s*=\s*["']\s*([\d.\s-]+)\s*["']/i.exec(svgMarkup)
+        const vb = /viewBox\s*=\s*["']\s*([\d.\s-]+)\s*["']/i.exec(safeSvg)
         if (vb?.[1]) {
           const parts = vb[1].trim().split(/\s+/).map(Number)
           if (parts.length >= 4 && parts[2]! > 0 && parts[3]! > 0) {
@@ -486,26 +496,65 @@ export function svgToPngBlob(svgMarkup: string): Promise<Blob> {
       canvas.height = Math.ceil(h * dpr)
       const ctx = canvas.getContext('2d')
       if (!ctx) {
-        URL.revokeObjectURL(url)
-        reject(new Error('Canvas 不可用'))
+        finish(() => reject(new Error('Canvas 不可用')))
         return
       }
       ctx.scale(dpr, dpr)
       ctx.fillStyle = '#ffffff'
       ctx.fillRect(0, 0, w, h)
       ctx.drawImage(img, 0, 0, w, h)
-      URL.revokeObjectURL(url)
       canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('导出 PNG 失败'))),
+        (b) =>
+          finish(() =>
+            b ? resolve(b) : reject(new Error('导出 PNG 失败')),
+          ),
         'image/png',
       )
     }
     img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('SVG 加载失败'))
+      finish(() => reject(new Error('SVG 加载失败')))
     }
     img.src = url
   })
+}
+
+function parseSvgViewBoxSize(svgMarkup: string): { width: number; height: number } | null {
+  const vb = /viewBox\s*=\s*["']\s*([\d.\s-]+)\s*["']/i.exec(svgMarkup)
+  if (!vb?.[1]) return null
+  const parts = vb[1].trim().split(/\s+/).map(Number)
+  if (parts.length < 4 || !Number.isFinite(parts[2]) || !Number.isFinite(parts[3])) {
+    return null
+  }
+  const width = Math.max(1, Math.ceil(parts[2]!))
+  const height = Math.max(1, Math.ceil(parts[3]!))
+  return { width, height }
+}
+
+/**
+ * Mermaid 渲染出的 SVG 常只有 viewBox。下载 SVG/转 PNG 前补齐命名空间和尺寸，
+ * 避免浏览器把它当成 0x0 图片或缺失 XML namespace 的普通文本。
+ */
+export function prepareMermaidSvgForDownload(svgMarkup: string): string {
+  const trimmed = svgMarkup.trim()
+  const open = /^<svg\b([^>]*)>/i.exec(trimmed)
+  if (!open) return trimmed
+
+  let attrs = open[1] ?? ''
+  const size = parseSvgViewBoxSize(trimmed) ?? { width: 800, height: 480 }
+  if (!/\sxmlns\s*=/i.test(attrs)) {
+    attrs += ' xmlns="http://www.w3.org/2000/svg"'
+  }
+  if (!/\swidth\s*=/i.test(attrs)) {
+    attrs += ` width="${size.width}"`
+  }
+  if (!/\sheight\s*=/i.test(attrs)) {
+    attrs += ` height="${size.height}"`
+  }
+  if (!/\spreserveAspectRatio\s*=/i.test(attrs)) {
+    attrs += ' preserveAspectRatio="xMidYMid meet"'
+  }
+
+  return trimmed.replace(/^<svg\b[^>]*>/i, `<svg${attrs}>`)
 }
 
 export function downloadTextFile(
@@ -514,10 +563,18 @@ export function downloadTextFile(
   mime: string,
 ) {
   const blob = new Blob([content], { type: mime })
+  downloadBlobFile(blob, filename)
+}
+
+export function downloadBlobFile(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  a.rel = 'noopener'
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }

@@ -5,10 +5,12 @@ import { MermaidChartModal } from '@/components/analysis/MermaidChartModal'
 import { useThemeStore } from '@/store/themeStore'
 import { cn } from '@/utils/cn'
 import {
+  downloadBlobFile,
   downloadTextFile,
   friendlyMermaidErrorMessage,
   isMermaidSourceLikelyComplete,
   normalizeMermaidSource,
+  prepareMermaidSvgForDownload,
   renderMermaidSvg,
   svgToPngBlob,
 } from '@/utils/mermaidRender'
@@ -108,12 +110,7 @@ export function SafeMermaidRenderer({
     if (!svg) return
     try {
       const blob = await svgToPngBlob(svg)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'flowchart.png'
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlobFile(blob, 'flowchart.png')
       toast.success('已下载 PNG')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '下载失败')
@@ -122,7 +119,7 @@ export function SafeMermaidRenderer({
 
   const downloadSvg = () => {
     if (!svg) return
-    downloadTextFile(svg, 'flowchart.svg', 'image/svg+xml')
+    downloadTextFile(prepareMermaidSvgForDownload(svg), 'flowchart.svg', 'image/svg+xml')
     toast.success('已下载 SVG')
   }
 
@@ -189,6 +186,7 @@ export function SafeMermaidRenderer({
             </button>
             <button
               type="button"
+              data-testid="mermaid-download-png"
               className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs text-[color:var(--ui-report-text-muted)] hover:bg-[color:var(--ui-report-border)]/40"
               onClick={() => void downloadPng()}
             >
@@ -197,6 +195,7 @@ export function SafeMermaidRenderer({
             </button>
             <button
               type="button"
+              data-testid="mermaid-download-svg"
               className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs text-[color:var(--ui-report-text-muted)] hover:bg-[color:var(--ui-report-border)]/40"
               onClick={downloadSvg}
             >
@@ -207,6 +206,7 @@ export function SafeMermaidRenderer({
         </div>
         <button
           type="button"
+          data-testid="ai-analysis-mermaid-chart"
           className={cn(
             'group/mmd relative block w-full max-w-full cursor-zoom-in text-left',
             'min-h-[180px] max-h-[min(360px,45vh)] overflow-x-auto overflow-y-auto px-3 py-4',
