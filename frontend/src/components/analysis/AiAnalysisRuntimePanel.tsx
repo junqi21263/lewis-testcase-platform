@@ -125,25 +125,37 @@ export function AiAnalysisRuntimePanel({
 
   return (
     <div className="space-y-2">
-      <ol className="grid gap-2 rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/25 px-3 py-3 sm:grid-cols-5">
+      <ol
+        className="flex min-w-0 items-center overflow-x-auto rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/25 px-3 py-3 [scrollbar-width:thin]"
+        data-testid="ai-analysis-runtime-stage-track"
+      >
         {STUDIO_STEP_LABELS.map((label, i) => {
           const state = states[i] ?? 'pending'
           const nextState = states[i + 1]
           return (
             <li
               key={label}
-              className={`relative flex min-w-0 items-center gap-2 motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${stepToneClass(state)}`}
+              className={`flex shrink-0 items-center motion-safe:transition-[transform,opacity] motion-safe:duration-300 ${stepToneClass(state)}`}
             >
-              {i < STUDIO_STEP_LABELS.length - 1 && (
-                <span
-                  className={`absolute left-[1.7rem] right-[-0.7rem] top-3 hidden h-px sm:block ${connectorClass(state === 'success', state === 'running' || nextState === 'running')}`}
-                  aria-hidden
-                />
-              )}
               <span className="relative z-[1] flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current/35 bg-workspace-card-bg/90">
                 <StepIcon state={state} />
               </span>
-              <span className="relative z-[1] truncate text-[10px] font-semibold leading-tight">{label}</span>
+              <span
+                className={`mx-1.5 h-px w-5 shrink-0 sm:w-8 ${connectorClass(state === 'success', state === 'running')}`}
+                data-testid="ai-analysis-runtime-stage-connector"
+                aria-hidden
+              />
+              <span
+                className="relative z-[1] min-w-[4.5rem] text-center text-[10px] font-semibold leading-tight"
+                data-testid="ai-analysis-runtime-stage-label"
+              >
+                {label}
+              </span>
+              <span
+                className={`mx-1.5 h-px w-5 shrink-0 sm:w-8 ${connectorClass(state === 'success', nextState === 'running')}`}
+                data-testid="ai-analysis-runtime-stage-connector"
+                aria-hidden
+              />
             </li>
           )
         })}

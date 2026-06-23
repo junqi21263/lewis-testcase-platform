@@ -258,11 +258,15 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByRole('heading', { name: 'AI 需求分析' })).toBeVisible()
 
     const stepper = page.getByTestId('ai-analysis-flow-stepper')
+    await expect(stepper).toHaveAttribute('data-connectors', 'none')
     await expect(stepper.getByText('选择输入')).toBeVisible()
     await expect(stepper.getByText('输入质检')).toBeVisible()
     await expect(stepper.getByText('AI 分析运行')).toBeVisible()
     await expect(stepper.getByText('结构化审阅')).toBeVisible()
     await expect(stepper.getByText('生成用例')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-runtime-stage-label').first()).toHaveClass(/text-center/)
+    await expect(page.getByTestId('ai-analysis-runtime-stage-connector')).toHaveCount(10)
 
     // 功能区标题
     await expect(page.getByText('输入与质检')).toBeVisible()

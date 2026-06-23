@@ -12,6 +12,7 @@ export function AiAnalysisFlowStepper({
     <div
       className="shrink-0 border-b border-[color:var(--ai-ar-divider)] bg-[color:var(--ai-ar-panel-bg)]/85 px-4 py-3 backdrop-blur-md sm:px-5"
       data-testid="ai-analysis-flow-stepper"
+      data-connectors="none"
     >
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {steps.map((step, idx) => {
@@ -33,14 +34,6 @@ export function AiAnalysisFlowStepper({
                     : 'border-workspace-panel-border/60 bg-workspace-panel-muted/35 text-workspace-text-muted dark:border-white/10'
               } ${clickableGenerate ? 'cursor-pointer hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-500/15 focus:outline-none focus:ring-2 focus:ring-cyan-400/40' : ''}`}
             >
-              {idx < steps.length - 1 && (
-                <span
-                  className={`pointer-events-none absolute left-[calc(50%+1.25rem)] right-[-0.75rem] top-1/2 hidden h-px -translate-y-1/2 xl:block ${
-                    done ? 'bg-emerald-400/55' : active ? 'bg-cyan-400/45' : 'bg-workspace-panel-border/50'
-                  }`}
-                  aria-hidden
-                />
-              )}
               <div className="relative z-[1] flex items-center gap-2">
                 <span
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ring-1 ring-white/20 ${
