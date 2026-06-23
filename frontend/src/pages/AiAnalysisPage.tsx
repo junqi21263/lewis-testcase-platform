@@ -478,45 +478,72 @@ function terminalLogTextClassFromStatus(status: TerminalLogStatus): string {
 /** 固定 20×20 图标列 + CSS transform 旋转，避免 Loader2 与行高导致的错位 */
 function TerminalLogStatusIcon({ status }: { status: TerminalLogStatus }) {
   const c = (name: string) => ({ color: `var(${name})` } as const)
+  const shell =
+    'log-status-spinner-shell rounded-full border border-current/25 bg-[color:var(--ai-ar-terminal-bg)]/85 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]'
 
   if (status === 'running') {
     return (
-      <span className="log-status-spinner-shell" role="status" aria-label="进行中">
-        <span className="log-status-spinner-dial" />
+      <span
+        className={`${shell} text-[color:var(--ai-ar-log-running)]`}
+        role="status"
+        aria-label="进行中"
+        data-testid="ai-analysis-log-status-running"
+      >
+        <Loader2 className="h-[14px] w-[14px] animate-spin" strokeWidth={2.2} />
       </span>
     )
   }
   if (status === 'success') {
     return (
-      <span className="log-status-spinner-shell" aria-hidden>
+      <span
+        className={`${shell} text-[color:var(--ai-ar-log-success)]`}
+        aria-label="成功"
+        data-testid="ai-analysis-log-status-success"
+      >
         <CheckCircle2 className="h-[15px] w-[15px]" strokeWidth={2} style={c('--ai-ar-log-success')} />
       </span>
     )
   }
   if (status === 'error') {
     return (
-      <span className="log-status-spinner-shell" aria-hidden>
+      <span
+        className={`${shell} text-[color:var(--ai-ar-log-error)]`}
+        aria-label="失败"
+        data-testid="ai-analysis-log-status-error"
+      >
         <XCircle className="h-[15px] w-[15px]" strokeWidth={2} style={c('--ai-ar-log-error')} />
       </span>
     )
   }
   if (status === 'warning') {
     return (
-      <span className="log-status-spinner-shell" aria-hidden>
+      <span
+        className={`${shell} text-[color:var(--ai-ar-log-warning)]`}
+        aria-label="警告"
+        data-testid="ai-analysis-log-status-warning"
+      >
         <AlertTriangle className="h-[14px] w-[14px]" strokeWidth={2} style={c('--ai-ar-log-warning')} />
       </span>
     )
   }
   if (status === 'info') {
     return (
-      <span className="log-status-spinner-shell" aria-hidden>
+      <span
+        className={`${shell} text-[color:var(--ai-ar-log-info)]`}
+        aria-label="信息"
+        data-testid="ai-analysis-log-status-info"
+      >
         <Info className="h-[14px] w-[14px]" strokeWidth={2} style={c('--ai-ar-log-info')} />
       </span>
     )
   }
   /* pending */
   return (
-    <span className="log-status-spinner-shell" aria-hidden>
+    <span
+      className={`${shell} text-[color:var(--ai-ar-log-pending)]`}
+      aria-label="等待"
+      data-testid="ai-analysis-log-status-pending"
+    >
       <Circle className="h-3 w-3" strokeWidth={2} fill="none" style={c('--ai-ar-log-pending')} />
     </span>
   )

@@ -206,6 +206,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     // 4. 等待上传和解析完成
     await expect(page.getByText(/文件上传成功/)).toBeVisible({ timeout: 10000 })
     await expect(page.getByText(/需求解析完成/)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('ai-analysis-log-status-success')).toHaveCount(2)
 
     // 5. 验证文件已显示在左侧（使用精确匹配）
     await expect(page.getByText('需求文档.txt', { exact: true })).toBeVisible()
