@@ -2,6 +2,17 @@ import { NotFoundException } from '@nestjs/common'
 import { FilesService } from '@/modules/files/files.service'
 
 function createFilesService(prismaMock: any) {
+  prismaMock.uploadedFile = {
+    findMany: jest.fn().mockResolvedValue([]),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findFirst: jest.fn().mockResolvedValue(null),
+    findUnique: jest.fn().mockResolvedValue(null),
+    update: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
+    delete: jest.fn(),
+    create: jest.fn(),
+    ...(prismaMock.uploadedFile ?? {}),
+  }
   const configMock = {
     get: jest.fn((key: string, defaultValue?: string) => {
       if (key === 'UPLOAD_DIR') return './.tmp-test-uploads'

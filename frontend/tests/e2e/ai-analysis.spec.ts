@@ -293,9 +293,45 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     await page.route('**/api/ai/analyze/stream', async (route) => {
       analyzePayload = route.request().postDataJSON() as Record<string, unknown>
+      const structuredMeta = {
+        recordId: 'record-text-1',
+        analysisVersionNumber: 1,
+        analysisStructuredResult: {
+          requirements: [
+            { id: 'REQ-001', text: '用户提交订单', type: 'functional' },
+          ],
+          flowchart: {
+            nodes: [{ id: 'A', label: '提交订单', type: 'process' }],
+            branches: [],
+            paths: [{ id: 'TP-001', type: 'main', nodes: ['A'] }],
+          },
+          qualityScores: {
+            completeness: 82,
+            testability: 88,
+            interfaceClarity: 64,
+            riskCoverage: 75,
+            flowCompleteness: 80,
+            reasons: ['接口字段不完整'],
+          },
+          inputWarnings: [{ type: 'interface_missing', message: '缺少接口字段定义' }],
+          openQuestions: [{ category: 'permission', text: '谁可以取消订单？' }],
+          testStrategy: {
+            scope: ['订单主流程'],
+            types: ['功能测试', '异常测试'],
+            entryCriteria: ['需求已确认'],
+            exitCriteria: ['P0 用例通过'],
+          },
+          automationReadiness: {
+            automatable: ['订单提交'],
+            manual: ['视觉校验'],
+            blocked: ['缺少支付沙箱'],
+          },
+        },
+      }
       const sseBody = [
         'data: {"content":"## 1. 主要功能需求\\n"}\n\n',
         'data: {"content":"- 用户可以提交订单并查看支付结果\\n"}\n\n',
+        `data: ${JSON.stringify(structuredMeta)}\n\n`,
         'data: [DONE]\n\n',
       ].join('')
 
@@ -325,6 +361,11 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByRole('button', { name: '开始分析' })).toBeEnabled()
     await page.getByRole('button', { name: '开始分析' }).click()
     await expect(page.getByText('用户可以提交订单并查看支付结果')).toBeVisible({ timeout: 15000 })
+    const reviewSummary = page.getByTestId('analysis-review-summary').last()
+    await expect(reviewSummary).toBeVisible()
+    await expect(page.getByText('审阅确认清单')).toBeVisible()
+    await expect(reviewSummary.getByText('谁可以取消订单？')).toBeVisible()
+    await expect(reviewSummary.getByText('缺少接口字段定义')).toBeVisible()
 
     expect(analyzePayload?.sourceType).toBe('text')
     expect(String(analyzePayload?.text ?? '')).toContain('【直接输入需求】')

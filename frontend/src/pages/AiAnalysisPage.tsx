@@ -40,7 +40,6 @@ import {
   Maximize2,
   Info,
   Circle,
-  GitCompare,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -62,6 +61,7 @@ import { extractAnalysisReportHandoffFields } from '@/utils/analysisReportSectio
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
+import { AnalysisReviewSummaryPanel } from '@/components/analysis/AnalysisReviewSummaryPanel'
 import { saveAs } from 'file-saver'
 import {
   buildAnalysisExportBasename,
@@ -807,6 +807,7 @@ function AiAnalysisPageInner() {
   const uploadStartedAtRef = useRef<number>(0)
   const parseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const analysisTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoOpenedReportForRunRef = useRef(false)
 
   const { uploadFile, progress: uploadProgressState, abort: abortUpload, reset: resetUploadProgress, validateFile } =
     useChunkedUpload()
@@ -926,7 +927,10 @@ function AiAnalysisPageInner() {
   const prevStudioStatusRef = useRef<AnalysisStatus | null>(null)
   useEffect(() => {
     const prev = prevStudioStatusRef.current
-    if (state.status === 'analyzing' && prev !== 'analyzing') setRightTab('process')
+    if (state.status === 'analyzing' && prev !== 'analyzing') {
+      autoOpenedReportForRunRef.current = false
+      setRightTab('process')
+    }
     if (
       (state.status === 'review' || state.status === 'approved') &&
       state.reportText.trim().length > 0 &&
@@ -936,6 +940,17 @@ function AiAnalysisPageInner() {
       setRightTab('report')
     }
     prevStudioStatusRef.current = state.status
+  }, [state.status, state.reportText])
+
+  useEffect(() => {
+    if (
+      state.status === 'analyzing' &&
+      state.reportText.trim().length > 0 &&
+      !autoOpenedReportForRunRef.current
+    ) {
+      autoOpenedReportForRunRef.current = true
+      setRightTab('report')
+    }
   }, [state.status, state.reportText])
 
   const handleLogScroll = useCallback(() => {
@@ -3188,132 +3203,20 @@ ${state.reportText}
                         </h3>
                       </div>
                       {currentAnalysisStructured && (
-                        <div className="mb-4 space-y-3 rounded-lg border border-workspace-panel-border/70 bg-workspace-panel-muted/45 p-3 text-xs text-workspace-text-secondary dark:border-white/10 dark:bg-slate-950/35">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-workspace-text-primary">需求覆盖闭环</p>
-                              <p className="mt-0.5 text-[11px] text-workspace-text-muted">
-                                {currentAnalysisVersion ? `当前报告 v${currentAnalysisVersion} · ` : ''}
-                                REQ {currentAnalysisStructured.requirements?.length ?? 0} 个 · TP {currentAnalysisStructured.flowchart?.paths?.length ?? 0} 条
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 gap-1 border-workspace-panel-border/70 px-2 text-[11px]"
-                                disabled={analysisVersionLoading || !currentAnalysisRecordId}
-                                onClick={() => void handleLoadAnalysisVersions()}
-                              >
-                                {analysisVersionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitCompare className="h-3 w-3" />}
-                                版本/Diff
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 gap-1 border-workspace-panel-border/70 px-2 text-[11px]"
-                                disabled={crossReviewBusy || !currentAnalysisRecordId}
-                                onClick={() => void handleCrossReviewAnalysis()}
-                              >
-                                {crossReviewBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                                交叉评审
-                              </Button>
-                            </div>
-                          </div>
-
-                          {currentAnalysisStructured.qualityScores && (
-                            <div className="grid gap-2 sm:grid-cols-5">
-                              {[
-                                ['完整性', currentAnalysisStructured.qualityScores.completeness],
-                                ['可测试性', currentAnalysisStructured.qualityScores.testability],
-                                ['接口明确', currentAnalysisStructured.qualityScores.interfaceClarity],
-                                ['风险覆盖', currentAnalysisStructured.qualityScores.riskCoverage],
-                                ['流程完整', currentAnalysisStructured.qualityScores.flowCompleteness],
-                              ].map(([label, value]) => (
-                                <div key={label} className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
-                                  <p className="text-[11px] text-workspace-text-muted">{label}</p>
-                                  <p className="mt-1 text-base font-semibold text-workspace-text-primary">{value}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {(currentAnalysisStructured.inputWarnings?.length || currentAnalysisStructured.openQuestions?.length) ? (
-                            <div className="grid gap-2 lg:grid-cols-2">
-                              <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-2">
-                                <p className="font-medium text-amber-800 dark:text-amber-200">输入质量提醒</p>
-                                <ul className="mt-1 list-disc space-y-1 pl-4">
-                                  {(currentAnalysisStructured.inputWarnings ?? []).slice(0, 5).map((w, idx) => (
-                                    <li key={`${w.type}-${idx}`}>{w.message}</li>
-                                  ))}
-                                  {!currentAnalysisStructured.inputWarnings?.length && <li>暂无明显低质量输入提醒</li>}
-                                </ul>
-                              </div>
-                              <div className="rounded-md border border-cyan-500/25 bg-cyan-500/10 p-2">
-                                <p className="font-medium text-cyan-800 dark:text-cyan-200">待确认问题</p>
-                                <ul className="mt-1 list-disc space-y-1 pl-4">
-                                  {(currentAnalysisStructured.openQuestions ?? []).slice(0, 5).map((q, idx) => {
-                                    const text = typeof q === 'string' ? q : q.text
-                                    return <li key={`${text}-${idx}`}>{text}</li>
-                                  })}
-                                  {!currentAnalysisStructured.openQuestions?.length && <li>暂无待确认问题</li>}
-                                </ul>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {(currentAnalysisStructured.testStrategy || currentAnalysisStructured.automationReadiness) && (
-                            <div className="grid gap-2 lg:grid-cols-2">
-                              <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
-                                <p className="font-medium text-workspace-text-primary">一键测试策略</p>
-                                <p className="mt-1">范围：{currentAnalysisStructured.testStrategy?.scope?.join('、') || '待补充'}</p>
-                                <p className="mt-1">类型：{currentAnalysisStructured.testStrategy?.types?.join('、') || '待补充'}</p>
-                              </div>
-                              <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
-                                <p className="font-medium text-workspace-text-primary">Agent 执行准备</p>
-                                <p className="mt-1">可自动化：{currentAnalysisStructured.automationReadiness?.automatable?.join('、') || '待识别'}</p>
-                                <p className="mt-1">需人工：{currentAnalysisStructured.automationReadiness?.manual?.join('、') || '待识别'}</p>
-                                <p className="mt-1">缺环境：{currentAnalysisStructured.automationReadiness?.blocked?.join('、') || '无'}</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {analysisVersionsOpen && (
-                            <div className="rounded-md border border-workspace-panel-border/60 bg-workspace-card-bg/70 p-2">
-                              <div className="flex flex-wrap gap-1.5">
-                                {analysisVersions.map((v) => (
-                                  <Badge key={v.id} variant="outline" className="border-workspace-panel-border/70 text-[10px]">
-                                    v{v.versionNumber} · {v.sourceType} · {v.modelName}
-                                  </Badge>
-                                ))}
-                                {analysisVersions.length === 0 && <span className="text-workspace-text-muted">暂无版本记录</span>}
-                              </div>
-                              {analysisDiff.some((f) => f.changed) && (
-                                <div className="mt-2 space-y-1">
-                                  {analysisDiff.filter((f) => f.changed).slice(0, 4).map((f) => (
-                                    <p key={f.field} className="text-[11px]">
-                                      <span className="font-medium text-workspace-text-primary">{f.label}</span>
-                                      ：{f.before || '空'} → {f.after || '空'}
-                                    </p>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {currentAnalysisStructured.crossReview && (
-                            <div className="rounded-md border border-violet-500/25 bg-violet-500/10 p-2">
-                              <p className="font-medium text-violet-800 dark:text-violet-200">
-                                多模型交叉评审：{currentAnalysisStructured.crossReview.status}
-                                {currentAnalysisStructured.crossReview.modelName ? ` · ${currentAnalysisStructured.crossReview.modelName}` : ''}
-                              </p>
-                              {currentAnalysisStructured.crossReview.differences?.length ? (
-                                <p className="mt-1">{currentAnalysisStructured.crossReview.differences.slice(0, 3).join('；')}</p>
-                              ) : null}
-                            </div>
-                          )}
+                        <div className="mb-4">
+                          <AnalysisReviewSummaryPanel
+                            structured={currentAnalysisStructured}
+                            currentVersion={currentAnalysisVersion}
+                            versions={analysisVersions}
+                            diff={analysisDiff}
+                            versionsOpen={analysisVersionsOpen}
+                            versionLoading={analysisVersionLoading}
+                            crossReviewBusy={crossReviewBusy}
+                            canLoadVersions={Boolean(currentAnalysisRecordId)}
+                            canRunCrossReview={Boolean(currentAnalysisRecordId)}
+                            onLoadVersions={() => void handleLoadAnalysisVersions()}
+                            onCrossReview={() => void handleCrossReviewAnalysis()}
+                          />
                         </div>
                       )}
                       <div
@@ -3368,6 +3271,15 @@ ${state.reportText}
                           <User className="h-4 w-4 text-workspace-text-muted" />
                           人工审阅
                         </h4>
+                        {currentAnalysisStructured && (
+                          <div className="mb-3 max-h-56 overflow-y-auto rounded-xl">
+                            <AnalysisReviewSummaryPanel
+                              structured={currentAnalysisStructured}
+                              currentVersion={currentAnalysisVersion}
+                              compact
+                            />
+                          </div>
+                        )}
                         <textarea
                           rows={5}
                           className="min-h-[120px] w-full resize-y overflow-y-auto rounded-xl border border-workspace-panel-border/60 bg-[hsl(var(--workspace-panel-muted-bg)/0.55)] p-3 text-sm leading-relaxed text-workspace-text-primary shadow-inner placeholder:text-workspace-text-muted focus:border-violet-500/45 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:bg-slate-950/60"
