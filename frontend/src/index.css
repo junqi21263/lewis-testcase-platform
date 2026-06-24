@@ -1676,41 +1676,6 @@ div.ui-toast .text-muted-foreground {
 }
 
 /* ==================== AI 需求分析 Studio 组件样式 ==================== */
-@keyframes ai-ar-log-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.ai-analysis-studio .log-status-spinner-shell {
-  display: flex;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  font-size: 0;
-}
-
-.ai-analysis-studio .log-status-spinner-dial {
-  display: block;
-  width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  border: 2px solid var(--ai-ar-log-spin-track);
-  border-top-color: var(--ai-ar-log-spin-active);
-  border-radius: 9999px;
-  animation: ai-ar-log-spin 0.75s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ai-analysis-studio .log-status-spinner-dial {
-    animation: none;
-    border-top-color: var(--ai-ar-log-spin-track);
-  }
-}
-
 .ai-analysis-studio .ai-analysis-terminal-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
