@@ -126,7 +126,7 @@ export function AiAnalysisRuntimePanel({
   return (
     <div className="space-y-2">
       <ol
-        className="flex min-w-0 items-center overflow-x-auto rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/25 px-3 py-3 [scrollbar-width:thin]"
+        className="ai-analysis-stage-track flex min-w-0 items-center overflow-x-auto rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/25 px-3 py-3"
         data-testid="ai-analysis-runtime-stage-track"
       >
         {STUDIO_STEP_LABELS.map((label, i) => {

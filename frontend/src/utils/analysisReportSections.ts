@@ -77,3 +77,19 @@ export function extractAnalysisReportHandoffFields(reportMarkdown: string): Anal
     combinedInputText,
   }
 }
+
+const AUTO_QUALITY_REPAIR_HEADING_RE = /^##\s*自动质量修复版\s*$/m
+
+/**
+ * 页面主报告只展示自动质量修复后的最终版本。
+ * 后端会把修复版作为 `## 自动质量修复版` 附加在原报告后面；这里仅剥离该章节正文，
+ * 保留底层完整 reportText 以兼容旧记录与后续调试。
+ */
+export function getFinalAnalysisReportText(reportMarkdown: string): string {
+  const normalized = reportMarkdown.replace(/\r\n/g, '\n')
+  const match = AUTO_QUALITY_REPAIR_HEADING_RE.exec(normalized)
+  if (!match || match.index == null) return reportMarkdown
+
+  const bodyStart = match.index + match[0].length
+  return normalized.slice(bodyStart).replace(/^\s*\n/, '').trim() || reportMarkdown
+}

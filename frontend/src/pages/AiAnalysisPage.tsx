@@ -56,7 +56,7 @@ import { stashUploadedOriginalName } from '@/utils/uploadFilenameMemory'
 import { maybeShrinkParseErrorField, sanitizeErrorForDisplay } from '@/utils/sanitizeErrorForDisplay'
 import { recordsApi } from '@/api/records'
 import { AI_ANALYSIS_PROMPT_DEFAULT as ANALYSIS_PROMPT } from './aiAnalysisPromptDefault'
-import { extractAnalysisReportHandoffFields } from '@/utils/analysisReportSections'
+import { extractAnalysisReportHandoffFields, getFinalAnalysisReportText } from '@/utils/analysisReportSections'
 import { useChunkedUpload } from '@/hooks/useChunkedUpload'
 import { useGenerateStore } from '@/store/generateStore'
 import { AnalysisMarkdownReport } from '@/components/analysis/AnalysisMarkdownReport'
@@ -904,8 +904,13 @@ function AiAnalysisPageInner() {
     saveHumanReviewPreference(next)
   }, [])
 
+  const finalAnalysisReportText = useMemo(
+    () => getFinalAnalysisReportText(state.reportText).trim(),
+    [state.reportText],
+  )
+
   const copyAnalysisReport = useCallback(async () => {
-    const text = state.reportText.trim()
+    const text = finalAnalysisReportText
     if (!text) {
       toast.error('暂无分析报告可复制')
       return
@@ -936,11 +941,11 @@ function AiAnalysisPageInner() {
     } catch {
       toast.error('复制失败，请在下方报告中选中后手动复制')
     }
-  }, [state.reportText])
+  }, [finalAnalysisReportText])
 
   /** 新窗口打印：复用报告区 DOM，打印样式为白底便于纸质输出 */
   const handlePrintAnalysisReport = useCallback(() => {
-    const text = state.reportText.trim()
+    const text = finalAnalysisReportText
     if (!text) {
       toast.error('暂无可打印内容')
       return
@@ -973,7 +978,7 @@ function AiAnalysisPageInner() {
       w.print()
       w.close()
     })
-  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+  }, [finalAnalysisReportText, uploadDisplayName, uploadedFile?.originalName])
 
   const handleDeleteAnalysisRecord = useCallback(
     async (recordId: string, e: React.MouseEvent) => {
@@ -1011,7 +1016,7 @@ function AiAnalysisPageInner() {
   }, [])
 
   const handleExportAnalysisPdf = useCallback(async () => {
-    const markdown = state.reportText.trim()
+    const markdown = finalAnalysisReportText
     if (!markdown) {
       toast.error('暂无可导出的分析报告')
       return
@@ -1047,10 +1052,10 @@ function AiAnalysisPageInner() {
     } finally {
       setExportingPdf(false)
     }
-  }, [state.reportText, state.revisionCount, uploadDisplayName, uploadedFile?.originalName])
+  }, [finalAnalysisReportText, state.revisionCount, uploadDisplayName, uploadedFile?.originalName])
 
   const handleExportXmind = useCallback(async () => {
-    const markdown = state.reportText.trim()
+    const markdown = finalAnalysisReportText
     if (!markdown) {
       toast.error('暂无可导出的分析报告')
       return
@@ -1068,10 +1073,10 @@ function AiAnalysisPageInner() {
     } finally {
       setExportingXmind(false)
     }
-  }, [state.reportText, uploadDisplayName, uploadedFile?.originalName])
+  }, [finalAnalysisReportText, uploadDisplayName, uploadedFile?.originalName])
 
   const handleSendToGenerate = useCallback(() => {
-    const report = state.reportText.trim()
+    const report = finalAnalysisReportText
     if (!report) {
       toast.error('请先生成并通过分析报告后再跳转')
       return
@@ -1132,7 +1137,7 @@ function AiAnalysisPageInner() {
     requirementDescription,
     requirementSupplement,
     setPendingGenerateHandoff,
-    state.reportText,
+    finalAnalysisReportText,
     uploadedFile,
   ])
 
@@ -3386,7 +3391,7 @@ ${state.reportText}
                         className="ai-analysis-print-root min-w-0 max-w-full pb-2 text-workspace-text-primary"
                       >
                         <AnalysisMarkdownReport
-                          text={state.reportText}
+                          text={finalAnalysisReportText}
                           className="break-words [word-break:break-word]"
                           isStreaming={isAnalyzingStream}
                         />

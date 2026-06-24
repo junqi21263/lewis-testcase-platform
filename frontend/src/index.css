@@ -1681,6 +1681,15 @@ div.ui-toast .text-muted-foreground {
   scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
 }
 
+.ai-analysis-studio .ai-analysis-stage-track {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ai-analysis-studio .ai-analysis-stage-track::-webkit-scrollbar {
+  display: none;
+}
+
 .dark .ai-analysis-studio .ai-analysis-terminal-scroll {
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }

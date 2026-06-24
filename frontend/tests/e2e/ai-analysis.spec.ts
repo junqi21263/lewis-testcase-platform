@@ -270,6 +270,7 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(stepper.getByText('结构化审阅')).toBeVisible()
     await expect(stepper.getByText('生成用例')).toBeVisible()
     await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toBeVisible()
+    await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toHaveClass(/ai-analysis-stage-track/)
     await expect(page.getByTestId('ai-analysis-runtime-stage-label').first()).toHaveClass(/text-center/)
     await expect(page.getByTestId('ai-analysis-runtime-stage-connector')).toHaveCount(10)
 
@@ -505,6 +506,33 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await page.getByRole('button', { name: /提交修改意见/ }).click()
     await expect(page.getByText('修订后报告')).toBeVisible({ timeout: 15000 })
     await expect(page.getByTestId('ai-analysis-report-markdown').getByText('初版仍然保留不准确的旧结论')).toHaveCount(0)
+  })
+
+  test('自动质量修复后报告主视图只展示最终修复版', async ({ page }) => {
+    await page.route('**/api/ai/analyze/stream', async (route) => {
+      const sseBody = [
+        'data: {"content":"# 原始报告\\n\\n## 主要功能需求\\n\\n- 原始低质量内容\\n"}\n\n',
+        'data: {"content":"\\n---\\n\\n## 自动质量修复版\\n\\n# 最终报告\\n\\n## 主要功能需求\\n\\n- 自动修复后的完整内容\\n"}\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: { 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+        body: sseBody,
+      })
+    })
+
+    await page.goto('/ai-analysis', { waitUntil: 'networkidle' })
+    await page.getByTestId('ai-analysis-input-mode-text').click()
+    await page.getByTestId('ai-analysis-direct-textarea').fill('需要自动质量修复的需求。')
+    await page.getByRole('button', { name: '开始分析' }).click()
+    const report = page.getByTestId('ai-analysis-report-markdown')
+    await expect(report.getByText('最终报告')).toBeVisible({ timeout: 15000 })
+    await expect(report.getByText('自动修复后的完整内容')).toBeVisible()
+    await expect(report.getByText('自动质量修复版')).toHaveCount(0)
+    await expect(report.getByText('原始低质量内容')).toHaveCount(0)
   })
 
   test('分析报告内流程图支持 PNG 和 SVG 下载', async ({ page }) => {
