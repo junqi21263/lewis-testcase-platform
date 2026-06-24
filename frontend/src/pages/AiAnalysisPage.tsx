@@ -688,6 +688,7 @@ function AiAnalysisPageInner() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [templateSearch, setTemplateSearch] = useState('')
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false)
   const [runtimeLogOpen, setRuntimeLogOpen] = useState(false)
   const [rightTab, setRightTab] = useState<'process' | 'report'>('process')
   const [largeEditorField, setLargeEditorField] = useState<null | 'desc' | 'supp'>(null)
@@ -2683,7 +2684,7 @@ ${state.reportText}
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-workspace-text-primary">高级设置</h2>
                 <p className="mt-0.5 text-[11px] text-workspace-text-muted">
-                  模板、模型与指令微调默认收起，不影响主流程
+                  默认使用推荐模板；需要时再切换模板或微调指令
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -2701,7 +2702,16 @@ ${state.reportText}
                   size="sm"
                   variant="outline"
                   className="h-8 gap-1 border-workspace-panel-border/60 text-[11px]"
-                  onClick={() => setAdvancedSettingsOpen((v) => !v)}
+                  onClick={() => {
+                    setAdvancedSettingsOpen((v) => {
+                      const next = !v
+                      if (!next) {
+                        setTemplatePickerOpen(false)
+                        setPromptEditorOpen(false)
+                      }
+                      return next
+                    })
+                  }}
                   aria-expanded={advancedSettingsOpen}
                 >
                   {advancedSettingsOpen ? '收起' : '展开'}
@@ -2710,34 +2720,69 @@ ${state.reportText}
               </div>
             </div>
             {advancedSettingsOpen && (
-              <>
-            <button
-              type="button"
-              className="flex w-full items-start gap-3 rounded-xl border border-workspace-panel-border/70 bg-gradient-to-br from-cyan-500/10 via-white/40 to-violet-500/10 p-3 text-left transition-[opacity,transform] hover:border-cyan-500/40 dark:from-cyan-500/5 dark:via-slate-900/40 dark:to-violet-500/10 dark:hover:border-cyan-500/30"
-              onClick={() => {
-                setTemplatePickerOpen((o) => !o)
-                setTemplateSearch('')
-              }}
-              aria-expanded={templatePickerOpen}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/70 ring-1 ring-black/5 dark:bg-slate-800/80 dark:ring-white/10">
-                <Brain className="h-5 w-5 text-violet-600 dark:text-violet-300" />
-              </div>
-              <div className="min-w-0 flex-1 space-y-0.5">
-                <p className="truncate text-sm font-semibold text-workspace-text-primary">
-                  {activePreset?.name ?? '自定义分析指令'}
-                </p>
-                <p className="line-clamp-2 text-[11px] text-workspace-text-secondary">
-                  {activePreset ? `${activePreset.scenario} · ${activePreset.shortDesc}` : '当前内容与内置预设不一致，将按你编辑的文本优先发送'}
-                </p>
-                <p className="text-[10px] text-workspace-text-muted">点击展开模板库、搜索或切换预设</p>
-              </div>
-              <ChevronDown
-                className={`mt-1 h-4 w-4 shrink-0 text-workspace-text-muted transition-transform ${templatePickerOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {templatePickerOpen && (
-                <div className="absolute left-2 right-2 top-full z-20 mt-1 max-h-[min(52vh,380px)] overflow-hidden rounded-xl border border-workspace-panel-border/70 bg-workspace-panel/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+              <div className="space-y-2">
+                <div
+                  className="grid gap-2 rounded-xl border border-workspace-panel-border/60 bg-workspace-panel-muted/35 p-2 text-xs sm:grid-cols-3"
+                  data-testid="ai-analysis-advanced-summary"
+                >
+                  <div className="min-w-0 rounded-lg bg-workspace-panel/50 px-2.5 py-2 dark:bg-slate-950/35">
+                    <p className="text-[10px] text-workspace-text-muted">当前模板</p>
+                    <p className="mt-1 truncate font-semibold text-workspace-text-primary">
+                      {activePreset?.name ?? '自定义分析指令'}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-lg bg-workspace-panel/50 px-2.5 py-2 dark:bg-slate-950/35">
+                    <p className="text-[10px] text-workspace-text-muted">模型</p>
+                    <p className="mt-1 truncate font-semibold text-workspace-text-primary">
+                      {modelInfo?.name ?? '使用默认模型'}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-lg bg-workspace-panel/50 px-2.5 py-2 dark:bg-slate-950/35">
+                    <p className="text-[10px] text-workspace-text-muted">审阅方式</p>
+                    <p className="mt-1 truncate font-semibold text-workspace-text-primary">
+                      {humanReview ? '人工确认后通过' : '分析完成后自动通过'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1 border-workspace-panel-border/60 text-[11px]"
+                    onClick={() => {
+                      setTemplatePickerOpen((o) => !o)
+                      setTemplateSearch('')
+                    }}
+                    aria-expanded={templatePickerOpen}
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    {templatePickerOpen ? '收起模板库' : '切换模板'}
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${templatePickerOpen ? 'rotate-180' : ''}`} />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1 border-workspace-panel-border/60 text-[11px]"
+                    onClick={() => setPromptEditorOpen((v) => !v)}
+                    aria-expanded={promptEditorOpen}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    {promptEditorOpen ? '收起指令' : '编辑指令'}
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${promptEditorOpen ? 'rotate-180' : ''}`} />
+                  </Button>
+                </div>
+
+                {activePreset && (
+                  <p className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.05] px-3 py-2 text-[11px] leading-relaxed text-workspace-text-secondary">
+                    {activePreset.scenario} · {activePreset.shortDesc}
+                  </p>
+                )}
+
+                {templatePickerOpen && (
+                <div className="overflow-hidden rounded-xl border border-workspace-panel-border/70 bg-workspace-panel/95 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
                 <div className="border-b border-workspace-panel-border/50 p-2 dark:border-white/10">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-workspace-text-muted" />
@@ -2802,7 +2847,8 @@ ${state.reportText}
                 </div>
               </div>
             )}
-            <div className="mt-3 space-y-2">
+            {promptEditorOpen && (
+            <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-medium text-workspace-text-secondary" htmlFor="ai-analysis-prompt-template">
                   指令正文（可直接编辑）
@@ -2826,7 +2872,8 @@ ${state.reportText}
                 spellCheck={false}
               />
             </div>
-              </>
+            )}
+              </div>
             )}
           </section>
 

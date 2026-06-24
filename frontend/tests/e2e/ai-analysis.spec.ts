@@ -292,6 +292,10 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByText('高级设置')).toBeVisible()
     await expect(page.getByLabel('指令正文（可直接编辑）')).toHaveCount(0)
     await page.getByRole('button', { name: '展开', exact: true }).click()
+    await expect(page.getByTestId('ai-analysis-advanced-summary')).toBeVisible()
+    await expect(page.getByRole('button', { name: /编辑指令/ })).toBeVisible()
+    await expect(page.getByLabel('指令正文（可直接编辑）')).toHaveCount(0)
+    await page.getByRole('button', { name: /编辑指令/ }).click()
     await expect(page.getByLabel('指令正文（可直接编辑）')).toBeVisible()
 
     // 人工审阅开关（使用精确匹配）
