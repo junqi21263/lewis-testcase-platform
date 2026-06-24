@@ -1109,6 +1109,29 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
   }, [safePage, pageSize, query, priorityFilter, typeFilter, cases.length])
 
   const paginatedCases = pageData.visibleRows
+  const caseUiId = useCallback((c: TestCase) => getCaseUiId(c, cases.indexOf(c)), [cases])
+  const groupedPageCases = useMemo(() => {
+    if (!analysisPlan) return []
+    const coverage = buildGeneratedCaseCoverage(analysisPlan, paginatedCases)
+    const knownRequirementIds = new Set(coverage.groups.map((group) => group.requirement.id))
+    const matchedCaseIds = new Set<string>()
+    for (const group of coverage.groups) {
+      for (const item of group.cases) matchedCaseIds.add(caseUiId(item))
+    }
+    const groups = coverage.groups.filter((group) => group.cases.length > 0)
+    const unlinkedCases = paginatedCases.filter((item) => {
+      const reqIds = item.requirementIds ?? []
+      return reqIds.length === 0 || !reqIds.some((id) => knownRequirementIds.has(id)) || !matchedCaseIds.has(caseUiId(item))
+    })
+    if (unlinkedCases.length > 0) {
+      groups.push({
+        requirement: { id: 'UNLINKED', text: '未关联需求', type: 'unknown' },
+        cases: unlinkedCases,
+        testPathIds: Array.from(new Set(unlinkedCases.flatMap((item) => item.testPathIds ?? []))),
+      })
+    }
+    return groups
+  }, [analysisPlan, caseUiId, paginatedCases])
 
   const stats = useMemo(() => {
     const typeMap = filteredCases.reduce<Record<string, number>>((acc, c) => {
@@ -1142,7 +1165,6 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
     })
   }
 
-  const caseUiId = useCallback((c: TestCase) => getCaseUiId(c, cases.indexOf(c)), [cases])
   const selectedCases = filteredCases.filter((c) => selected.has(caseUiId(c)))
 
   const downloadTextFile = (filename: string, content: string, mime = 'text/plain;charset=utf-8') => {
@@ -1289,6 +1311,95 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
     }
   }
 
+  const renderCaseCard = (c: TestCase) => {
+    const caseId = caseUiId(c)
+    const isExpanded = expanded.has(caseId)
+    const caseModule = extractModuleFromTags(c.tags)
+    const caseTags = (c.tags ?? []).filter((t) => t && !t.startsWith('模块:'))
+    const shortPrecondition =
+      !c.precondition || isExpanded
+        ? c.precondition
+        : `${c.precondition.slice(0, 140)}${c.precondition.length > 140 ? '...' : ''}`
+    const showSteps = isExpanded ? c.steps : c.steps.slice(0, 3)
+    return (
+      <Card
+        key={caseId}
+        className="overflow-hidden border-[hsl(var(--gcs-testcase-card-border))] bg-[hsl(var(--gcs-testcase-card-bg))] transition hover:bg-[hsl(var(--gcs-card-hover-bg))]"
+      >
+        <CardContent className="p-4">
+          <div className="mb-2 flex min-w-0 items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-input"
+              checked={selected.has(caseId)}
+              onChange={(e) => toggleSelected(caseId, e.target.checked)}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <h4 className="text-sm font-semibold break-words [overflow-wrap:anywhere]">{c.title}</h4>
+                <div className="flex items-center gap-1.5">
+                  <CasePriorityBadge priority={c.priority} />
+                  <Badge
+                    variant="secondary"
+                    className="bg-sky-500/10 text-sky-500 ring-1 ring-inset ring-sky-500/20"
+                  >
+                    {c.type}
+                  </Badge>
+                </div>
+              </div>
+              {(caseModule || caseTags.length > 0 || (c.requirementIds?.length ?? 0) > 0 || (c.testPathIds?.length ?? 0) > 0) && (
+                <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">
+                  {caseModule ? `模块：${caseModule}` : ''}
+                  {caseModule && caseTags.length > 0 ? ' · ' : ''}
+                  {caseTags.length > 0 ? `标签：${caseTags.join(', ')}` : ''}
+                  {(caseModule || caseTags.length > 0) && ((c.requirementIds?.length ?? 0) > 0 || (c.testPathIds?.length ?? 0) > 0) ? ' · ' : ''}
+                  {c.requirementIds?.length ? `REQ：${c.requirementIds.join(', ')}` : ''}
+                  {c.requirementIds?.length && c.testPathIds?.length ? ' · ' : ''}
+                  {c.testPathIds?.length ? `TP：${c.testPathIds.join(', ')}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {shortPrecondition && (
+            <div className="mb-2 rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2.5 py-2 text-xs">
+              <span className="font-medium text-[hsl(var(--gcs-text-secondary))]">前置条件：</span>
+              <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{shortPrecondition}</span>
+            </div>
+          )}
+
+          <div className="rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2.5 py-2 text-xs">
+            <p className="mb-1 font-medium text-[hsl(var(--gcs-text-secondary))]">步骤描述</p>
+            <ol className="list-decimal space-y-1 pl-4">
+              {showSteps.map((step) => (
+                <li key={step.order} className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">
+                  {step.action}
+                  {step.expected ? (
+                    <span className="ml-1 text-[hsl(var(--gcs-text-muted))]">（期望：{step.expected}）</span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+            {!isExpanded && c.steps.length > 3 && (
+              <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">还有 {c.steps.length - 3} 步未展开</p>
+            )}
+          </div>
+
+          <p className="mt-2 text-xs">
+            <span className="font-medium text-emerald-500">预期结果：</span>
+            <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{c.expectedResult}</span>
+          </p>
+
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleExpanded(caseId)}>
+              {isExpanded ? '收起' : '展开'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-4">
@@ -1365,6 +1476,36 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
         cases={cases}
         qualityReport={qualityReport}
       />
+      <details className="gcs-advanced-settings mt-3" data-testid="generate-advanced-settings">
+        <summary className="gcs-advanced-summary">
+          <div className="min-w-0">
+            <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">生成上下文设置</p>
+            <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+              当前结果沿用已选模板、模型和 REQ/TP 范围；需要重新配置时返回输入区调整。
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <Badge variant={analysisPlan ? 'success' : 'outline'}>{analysisPlan ? 'AI 分析联动' : '普通生成'}</Badge>
+            <ChevronDown className="gcs-advanced-chevron h-4 w-4 text-[hsl(var(--gcs-text-muted))]" />
+          </div>
+        </summary>
+        <div className="gcs-advanced-content">
+          <div className="grid gap-2 text-xs text-[hsl(var(--gcs-text-secondary))] sm:grid-cols-3">
+            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+              <p className="text-[hsl(var(--gcs-text-muted))]">需求范围</p>
+              <p className="mt-1 font-semibold">REQ {analysisPlan?.requirements.length ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+              <p className="text-[hsl(var(--gcs-text-muted))]">路径范围</p>
+              <p className="mt-1 font-semibold">TP {analysisPlan?.testPaths.length ?? 0}</p>
+            </div>
+            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+              <p className="text-[hsl(var(--gcs-text-muted))]">当前筛选</p>
+              <p className="mt-1 font-semibold">{totalFiltered}/{cases.length} 条</p>
+            </div>
+          </div>
+        </div>
+      </details>
       <QualityReportPanel report={qualityReport} />
       <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
 
@@ -1553,90 +1694,35 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
           </div>
         )}
 
-        {paginatedCases.map((c) => {
-          const caseId = caseUiId(c)
-          const isExpanded = expanded.has(caseId)
-          const caseModule = extractModuleFromTags(c.tags)
-          const caseTags = (c.tags ?? []).filter((t) => t && !t.startsWith('模块:'))
-          const shortPrecondition =
-            !c.precondition || isExpanded
-              ? c.precondition
-              : `${c.precondition.slice(0, 140)}${c.precondition.length > 140 ? '...' : ''}`
-          const showSteps = isExpanded ? c.steps : c.steps.slice(0, 3)
-          return (
-            <Card
-              key={caseId}
-              className="overflow-hidden border-[hsl(var(--gcs-testcase-card-border))] bg-[hsl(var(--gcs-testcase-card-bg))] transition hover:bg-[hsl(var(--gcs-card-hover-bg))]"
-            >
-              <CardContent className="p-4">
-                <div className="mb-2 flex min-w-0 items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-input"
-                    checked={selected.has(caseId)}
-                    onChange={(e) => toggleSelected(caseId, e.target.checked)}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h4 className="text-sm font-semibold break-words [overflow-wrap:anywhere]">{c.title}</h4>
-                      <div className="flex items-center gap-1.5">
-                        <CasePriorityBadge priority={c.priority} />
-                        <Badge
-                          variant="secondary"
-                          className="bg-sky-500/10 text-sky-500 ring-1 ring-inset ring-sky-500/20"
-                        >
-                          {c.type}
-                        </Badge>
-                      </div>
-                    </div>
-                    {(caseModule || caseTags.length > 0) && (
+        {analysisPlan ? (
+          <div className="gcs-grouped-results space-y-3" data-testid="generate-grouped-results">
+            {groupedPageCases.map((group) => (
+              <section
+                key={group.requirement.id}
+                className="gcs-requirement-group"
+                data-testid={`generate-requirement-group-${group.requirement.id}`}
+              >
+                <div className="gcs-requirement-group-header">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[hsl(var(--gcs-text-primary))]">
+                      <span className="gcs-requirement-id">{group.requirement.id}</span>
+                      <span className="break-words [overflow-wrap:anywhere]">{group.requirement.text}</span>
+                    </p>
+                    {group.testPathIds.length > 0 && (
                       <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">
-                        {caseModule ? `模块：${caseModule}` : ''}
-                        {caseModule && caseTags.length > 0 ? ' · ' : ''}
-                        {caseTags.length > 0 ? `标签：${caseTags.join(', ')}` : ''}
+                        覆盖路径：{group.testPathIds.join(', ')}
                       </p>
                     )}
                   </div>
+                  <Badge variant="outline">{group.cases.length} 条</Badge>
                 </div>
-
-                {shortPrecondition && (
-                  <div className="mb-2 rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2.5 py-2 text-xs">
-                    <span className="font-medium text-[hsl(var(--gcs-text-secondary))]">前置条件：</span>
-                    <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{shortPrecondition}</span>
-                  </div>
-                )}
-
-                <div className="rounded-lg bg-[hsl(var(--gcs-panel-muted-bg))] px-2.5 py-2 text-xs">
-                  <p className="mb-1 font-medium text-[hsl(var(--gcs-text-secondary))]">步骤描述</p>
-                  <ol className="list-decimal space-y-1 pl-4">
-                    {showSteps.map((step) => (
-                      <li key={step.order} className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">
-                        {step.action}
-                        {step.expected ? (
-                          <span className="ml-1 text-[hsl(var(--gcs-text-muted))]">（期望：{step.expected}）</span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ol>
-                  {!isExpanded && c.steps.length > 3 && (
-                    <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">还有 {c.steps.length - 3} 步未展开</p>
-                  )}
-                </div>
-
-                <p className="mt-2 text-xs">
-                  <span className="font-medium text-emerald-500">预期结果：</span>
-                  <span className="text-[hsl(var(--gcs-text-secondary))] break-words [overflow-wrap:anywhere]">{c.expectedResult}</span>
-                </p>
-
-                <div className="mt-3 flex justify-end">
-                  <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleExpanded(caseId)}>
-                    {isExpanded ? '收起' : '展开'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
+                <div className="mt-3 space-y-3">{group.cases.map(renderCaseCard)}</div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          paginatedCases.map(renderCaseCard)
+        )}
       </div>
       <div className="gcs-result-panel-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-[hsl(var(--gcs-text-muted))]">
         <span>
@@ -2229,153 +2315,173 @@ export default function GeneratePage() {
                 testId="generate-supplementary-notes"
               />
 
-              <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">提示词 / 模板配置</p>
-                  <Badge variant={customPrompt.trim() ? 'success' : 'outline'}>
-                    {customPrompt.trim() ? '已使用自定义指令' : '未填写自定义指令'}
-                  </Badge>
-                </div>
-
-                <div className="relative mb-2">
-                  <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <input
-                    value={templateKeyword}
-                    onChange={(e) => setTemplateKeyword(e.target.value)}
-                    placeholder="搜索模板名称/分类"
-                    className="h-9 w-full rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] pl-8 pr-3 text-xs outline-none focus:border-[hsl(var(--gcs-input-focus))]"
-                  />
-                </div>
-
-                {selectedTemplate && (
-                  <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-2.5">
-                    <p className="text-xs font-semibold text-primary">当前模板：{selectedTemplate.name}</p>
-                    <p className="mt-1 line-clamp-2 text-[11px] text-[hsl(var(--gcs-text-muted))]">
-                      {selectedTemplate.description || '无描述'}
+              <details className="gcs-advanced-settings" data-testid="generate-advanced-settings">
+                <summary className="gcs-advanced-summary">
+                  <div className="min-w-0">
+                    <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">高级生成设置</p>
+                    <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+                      模板、模型参数和历史记录默认收起，主流程优先保持输入与生成。
                     </p>
                   </div>
-                )}
-
-                {recentTemplates.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {recentTemplates.slice(0, 6).map((tpl) => (
-                      <Button
-                        key={tpl.id}
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="h-7 text-[11px]"
-                        onClick={() => {
-                          setSelectedTemplateId(tpl.id)
-                          setCustomPrompt(tpl.content)
-                          pushRecentTemplateId(tpl.id)
-                          setRecentTplIds(loadRecentTemplateIds())
-                          toast.success(`已载入模板：${tpl.name}`)
-                        }}
-                      >
-                        {tpl.name}
-                      </Button>
-                    ))}
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <Badge variant={customPrompt.trim() ? 'success' : 'outline'}>
+                      {customPrompt.trim() ? '自定义指令' : '默认指令'}
+                    </Badge>
+                    <Badge variant="outline">{selectedTemplate?.name || '未选模板'}</Badge>
+                    <ChevronDown className="gcs-advanced-chevron h-4 w-4 text-[hsl(var(--gcs-text-muted))]" />
                   </div>
-                )}
+                </summary>
 
-                <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
-                  {filteredTemplates.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      className={`w-full rounded-lg border p-2 text-left transition ${
-                        selectedTemplateId === tpl.id
-                          ? 'border-primary/40 bg-primary/5'
-                          : 'border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] hover:bg-[hsl(var(--gcs-card-hover-bg))]'
-                      }`}
-                      onClick={() => {
-                        setSelectedTemplateId(tpl.id)
-                        setCustomPrompt(tpl.content)
-                        pushRecentTemplateId(tpl.id)
-                        setRecentTplIds(loadRecentTemplateIds())
-                        toast.success(`已载入模板：${tpl.name}`)
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="line-clamp-1 text-xs font-medium">{tpl.name}</p>
-                        <Badge variant="outline">{tpl.category}</Badge>
+                <div className="gcs-advanced-content">
+                  <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">提示词 / 模板配置</p>
+                      <Badge variant={customPrompt.trim() ? 'success' : 'outline'}>
+                        {customPrompt.trim() ? '已使用自定义指令' : '未填写自定义指令'}
+                      </Badge>
+                    </div>
+
+                    <div className="relative mb-2">
+                      <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <input
+                        value={templateKeyword}
+                        onChange={(e) => setTemplateKeyword(e.target.value)}
+                        placeholder="搜索模板名称/分类"
+                        className="h-9 w-full rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] pl-8 pr-3 text-xs outline-none focus:border-[hsl(var(--gcs-input-focus))]"
+                      />
+                    </div>
+
+                    {selectedTemplate && (
+                      <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-2.5">
+                        <p className="text-xs font-semibold text-primary">当前模板：{selectedTemplate.name}</p>
+                        <p className="mt-1 line-clamp-2 text-[11px] text-[hsl(var(--gcs-text-muted))]">
+                          {selectedTemplate.description || '无描述'}
+                        </p>
                       </div>
-                    </button>
-                  ))}
-                </div>
+                    )}
 
-                <div className="mt-3">
-                  <SoftTextarea
-                    title="自定义提示词"
-                    value={customPrompt}
-                    onChange={setCustomPrompt}
-                    placeholder="例如：请根据以上需求生成完整的功能测试用例，包含正向、逆向和边界测试..."
-                    countLimit={12000}
-                    minHClass="min-h-[140px]"
-                    onExpand={() => setExpandField('prompt')}
-                    testId="generate-custom-prompt"
-                  />
-                </div>
-                {customPrompt.length + inputText.length > INPUT_LENGTH_SOFT_WARN_CHARS && (
-                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
-                    当前提示词与文本合计约 {customPrompt.length + inputText.length} 字，已超过建议上限（约{' '}
-                    {INPUT_LENGTH_SOFT_WARN_CHARS.toLocaleString()} 字）。
-                  </p>
-                )}
-              </div>
+                    {recentTemplates.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {recentTemplates.slice(0, 6).map((tpl) => (
+                          <Button
+                            key={tpl.id}
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="h-7 text-[11px]"
+                            onClick={() => {
+                              setSelectedTemplateId(tpl.id)
+                              setCustomPrompt(tpl.content)
+                              pushRecentTemplateId(tpl.id)
+                              setRecentTplIds(loadRecentTemplateIds())
+                              toast.success(`已载入模板：${tpl.name}`)
+                            }}
+                          >
+                            {tpl.name}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
 
-              <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
-                <p className="mb-2 text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">生成设置</p>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={aiParams.stream}
-                      onChange={(e) => setAiParams({ stream: e.target.checked })}
-                      className="h-4 w-4 rounded border-input"
-                    />
-                    流式输出
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={aiParams.forceConfiguredModel !== false}
-                      onChange={(e) => setAiParams({ forceConfiguredModel: e.target.checked })}
-                      className="h-4 w-4 rounded border-input"
-                    />
-                    强制使用后台所选模型
-                  </label>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-[hsl(var(--gcs-text-muted))]">最大 Token</span>
-                    <select
-                      aria-label="最大 Token"
-                      value={aiParams.maxTokens}
-                      onChange={(e) => setAiParams({ maxTokens: Number(e.target.value) })}
-                      className="h-9 rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-2 text-xs"
-                    >
-                      {[2048, 4096, 8192, 16384, 32768, 65536, 128000].map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
+                    <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
+                      {filteredTemplates.map((tpl) => (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          className={`w-full rounded-lg border p-2 text-left transition ${
+                            selectedTemplateId === tpl.id
+                              ? 'border-primary/40 bg-primary/5'
+                              : 'border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] hover:bg-[hsl(var(--gcs-card-hover-bg))]'
+                          }`}
+                          onClick={() => {
+                            setSelectedTemplateId(tpl.id)
+                            setCustomPrompt(tpl.content)
+                            pushRecentTemplateId(tpl.id)
+                            setRecentTplIds(loadRecentTemplateIds())
+                            toast.success(`已载入模板：${tpl.name}`)
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="line-clamp-1 text-xs font-medium">{tpl.name}</p>
+                            <Badge variant="outline">{tpl.category}</Badge>
+                          </div>
+                        </button>
                       ))}
-                    </select>
+                    </div>
+
+                    <div className="mt-3">
+                      <SoftTextarea
+                        title="自定义提示词"
+                        value={customPrompt}
+                        onChange={setCustomPrompt}
+                        placeholder="例如：请根据以上需求生成完整的功能测试用例，包含正向、逆向和边界测试..."
+                        countLimit={12000}
+                        minHClass="min-h-[140px]"
+                        onExpand={() => setExpandField('prompt')}
+                        testId="generate-custom-prompt"
+                      />
+                    </div>
+                    {customPrompt.length + inputText.length > INPUT_LENGTH_SOFT_WARN_CHARS && (
+                      <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                        当前提示词与文本合计约 {customPrompt.length + inputText.length} 字，已超过建议上限（约{' '}
+                        {INPUT_LENGTH_SOFT_WARN_CHARS.toLocaleString()} 字）。
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+                    <p className="mb-2 text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">生成设置</p>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={aiParams.stream}
+                          onChange={(e) => setAiParams({ stream: e.target.checked })}
+                          className="h-4 w-4 rounded border-input"
+                        />
+                        流式输出
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={aiParams.forceConfiguredModel !== false}
+                          onChange={(e) => setAiParams({ forceConfiguredModel: e.target.checked })}
+                          className="h-4 w-4 rounded border-input"
+                        />
+                        强制使用后台所选模型
+                      </label>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-[hsl(var(--gcs-text-muted))]">最大 Token</span>
+                        <select
+                          aria-label="最大 Token"
+                          value={aiParams.maxTokens}
+                          onChange={(e) => setAiParams({ maxTokens: Number(e.target.value) })}
+                          className="h-9 rounded-lg border border-[hsl(var(--gcs-input-border))] bg-[hsl(var(--gcs-input-bg))] px-2 text-xs"
+                        >
+                          {[2048, 4096, 8192, 16384, 32768, 65536, 128000].map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-[hsl(var(--gcs-text-muted))]">
+                      开启后将跳过 hunyuan-vision 文件直出通道，始终按系统设置中的已选模型执行生成。
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">最近生成记录</p>
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowHistory((v) => !v)}>
+                        {showHistory ? '收起' : '展开'}
+                      </Button>
+                    </div>
+                    {showHistory && <RecentHistoryPanel />}
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-[hsl(var(--gcs-text-muted))]">
-                  开启后将跳过 hunyuan-vision 文件直出通道，始终按系统设置中的已选模型执行生成。
-                </p>
-              </div>
-
-              <div className="space-y-2 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">最近生成记录</p>
-                  <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowHistory((v) => !v)}>
-                    {showHistory ? '收起' : '展开'}
-                  </Button>
-                </div>
-                {showHistory && <RecentHistoryPanel />}
-              </div>
+              </details>
             </CardContent>
 
             <div className="gcs-action-footer relative z-[5] min-h-[74px] flex-shrink-0 border-t border-[hsl(var(--gcs-action-footer-border))] bg-[hsl(var(--gcs-action-footer-bg))] px-4 py-3">
