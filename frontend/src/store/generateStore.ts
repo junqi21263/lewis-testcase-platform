@@ -7,6 +7,7 @@ import type {
   GenerationOptions,
   QualityReport,
   ClosedLoopResult,
+  AnalysisStructuredResult,
 } from '@/types'
 import { loadGenPrefs } from '@/utils/genPrefs'
 
@@ -28,6 +29,20 @@ export interface PendingGenerateHandoff {
   requirementDescription?: string
   /** 生成页「补充说明」 */
   supplementaryNotes?: string
+  /** AI 需求分析记录 ID，用于后续覆盖闭环 */
+  analysisRecordId?: string | null
+  /** AI 需求分析报告标题 */
+  analysisTitle?: string | null
+  /** AI 需求分析结构化结果：REQ/TP/质量评分/自动化准备 */
+  analysisStructuredResult?: AnalysisStructuredResult | null
+}
+
+export interface GenerateAnalysisHandoffContext {
+  analysisRecordId?: string | null
+  analysisTitle?: string | null
+  structuredResult?: AnalysisStructuredResult | null
+  sourceReport?: string
+  createdAt: string
 }
 
 const defaultGenerationOptions: GenerationOptions = {
@@ -104,6 +119,9 @@ interface GenerateState {
   /** 解析页设置、生成页首屏消费后清空 */
   pendingGenerateHandoff: PendingGenerateHandoff | null
   setPendingGenerateHandoff: (v: PendingGenerateHandoff | null) => void
+  /** AI 需求分析带入后的持久化上下文，用于刷新后仍能展示 REQ/TP 生成范围 */
+  analysisHandoffContext: GenerateAnalysisHandoffContext | null
+  setAnalysisHandoffContext: (v: GenerateAnalysisHandoffContext | null) => void
 
   reset: () => void
 }
@@ -143,6 +161,7 @@ const buildInitial = (): Omit<
   | 'applyClosedLoopResult'
   | 'updateCaseLocal'
   | 'setPendingGenerateHandoff'
+  | 'setAnalysisHandoffContext'
   | 'reset'
 > => ({
   currentStep: 'upload',
@@ -168,6 +187,7 @@ const buildInitial = (): Omit<
   isGenerating: false,
   streamContent: '',
   pendingGenerateHandoff: null,
+  analysisHandoffContext: null,
 })
 
 export const useGenerateStore = create<GenerateState>()(
@@ -239,6 +259,7 @@ export const useGenerateStore = create<GenerateState>()(
         })),
 
       setPendingGenerateHandoff: (v) => set({ pendingGenerateHandoff: v }),
+      setAnalysisHandoffContext: (v) => set({ analysisHandoffContext: v }),
 
       reset: () =>
         set({
@@ -279,6 +300,7 @@ export const useGenerateStore = create<GenerateState>()(
         closedLoopStatus: s.closedLoopStatus,
         closedLoopSummary: s.closedLoopSummary,
         closedLoopError: s.closedLoopError,
+        analysisHandoffContext: s.analysisHandoffContext,
         // pendingGenerateHandoff 故意不持久化
       }),
     },

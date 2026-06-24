@@ -1126,6 +1126,9 @@ function AiAnalysisPageInner() {
       combinedInputText: handoffFields.combinedInputText,
       requirementDescription: handoffFields.requirementDescription.slice(0, REQ_DESC_MAX),
       supplementaryNotes: handoffFields.supplementaryNotes.slice(0, REQ_SUPP_MAX),
+      analysisRecordId: currentAnalysisRecordId,
+      analysisTitle: uploadedFile?.originalName ? normalizeUploadedFilename(uploadedFile.originalName) : 'AI 需求分析报告',
+      analysisStructuredResult: currentAnalysisStructured,
     })
     toast.success('正在带入生成用例页…')
     navigate('/generate')
@@ -1138,6 +1141,7 @@ function AiAnalysisPageInner() {
     requirementSupplement,
     setPendingGenerateHandoff,
     finalAnalysisReportText,
+    currentAnalysisRecordId,
     uploadedFile,
   ])
 

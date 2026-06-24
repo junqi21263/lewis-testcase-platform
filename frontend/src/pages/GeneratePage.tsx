@@ -60,6 +60,12 @@ import {
   pickTopQualityIssues,
   summarizeQualitySuggestions,
 } from '@/utils/qualityReport'
+import {
+  buildGenerateHandoffPlan,
+  buildGenerateScopePrompt,
+  buildGeneratedCaseCoverage,
+  type GenerateHandoffPlan,
+} from '@/utils/generateHandoffPlan'
 import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
 import { appConfirm } from '@/store/appConfirmStore'
 import toast from 'react-hot-toast'
@@ -356,6 +362,196 @@ function QualityReportPanel({ report }: { report: QualityReport | null }) {
           <p className="mb-2 text-xs font-semibold">改进建议</p>
           <p className="text-[11px] leading-5 text-[hsl(var(--gcs-text-secondary))]">{suggestions}</p>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function GenerateHandoffSummaryCard({
+  plan,
+  title,
+  selectedRequirementIds,
+  selectedTestPathIds,
+}: {
+  plan: GenerateHandoffPlan
+  title?: string | null
+  selectedRequirementIds: string[]
+  selectedTestPathIds: string[]
+}) {
+  return (
+    <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/10 p-3 ring-1 ring-inset ring-cyan-500/10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">AI 需求分析上下文</p>
+          <p className="mt-1 line-clamp-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+            {title || '已从 AI 需求分析报告接入结构化结果'}
+          </p>
+        </div>
+        <Badge variant="outline" className="border-cyan-500/35 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300">
+          覆盖驱动生成
+        </Badge>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="rounded-xl bg-[hsl(var(--gcs-card-bg))] p-2 ring-1 ring-inset ring-[hsl(var(--gcs-panel-border))]">
+          <p className="text-[11px] text-[hsl(var(--gcs-text-muted))]">需求范围</p>
+          <p className="mt-1 text-lg font-semibold">{selectedRequirementIds.length}/{plan.requirements.length}</p>
+        </div>
+        <div className="rounded-xl bg-[hsl(var(--gcs-card-bg))] p-2 ring-1 ring-inset ring-[hsl(var(--gcs-panel-border))]">
+          <p className="text-[11px] text-[hsl(var(--gcs-text-muted))]">流程路径</p>
+          <p className="mt-1 text-lg font-semibold">{selectedTestPathIds.length}/{plan.testPaths.length}</p>
+        </div>
+        <div className="rounded-xl bg-[hsl(var(--gcs-card-bg))] p-2 ring-1 ring-inset ring-[hsl(var(--gcs-panel-border))]">
+          <p className="text-[11px] text-[hsl(var(--gcs-text-muted))]">质量均分</p>
+          <p className="mt-1 text-lg font-semibold">{plan.qualityAverage ?? '--'}</p>
+        </div>
+        <div className="rounded-xl bg-[hsl(var(--gcs-card-bg))] p-2 ring-1 ring-inset ring-[hsl(var(--gcs-panel-border))]">
+          <p className="text-[11px] text-[hsl(var(--gcs-text-muted))]">预计用例</p>
+          <p className="mt-1 text-lg font-semibold">{plan.estimatedCaseCount}</p>
+        </div>
+      </div>
+      {(plan.openQuestionCount > 0 || plan.inputWarningCount > 0 || plan.automationSummary.blocked > 0) && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+          {plan.openQuestionCount > 0 && <Badge variant="warning">待确认 {plan.openQuestionCount}</Badge>}
+          {plan.inputWarningCount > 0 && <Badge variant="warning">输入提醒 {plan.inputWarningCount}</Badge>}
+          {plan.automationSummary.blocked > 0 && <Badge variant="outline">阻塞项 {plan.automationSummary.blocked}</Badge>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GenerateScopeSelector({
+  plan,
+  selectedRequirementIds,
+  selectedTestPathIds,
+  onRequirementChange,
+  onTestPathChange,
+}: {
+  plan: GenerateHandoffPlan
+  selectedRequirementIds: string[]
+  selectedTestPathIds: string[]
+  onRequirementChange: (ids: string[]) => void
+  onTestPathChange: (ids: string[]) => void
+}) {
+  const reqSet = new Set(selectedRequirementIds)
+  const tpSet = new Set(selectedTestPathIds)
+  const toggle = (ids: string[], id: string, checked: boolean) =>
+    checked ? Array.from(new Set([...ids, id])) : ids.filter((item) => item !== id)
+
+  return (
+    <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">生成范围选择</p>
+          <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">按 REQ/TP 控制本次生成范围，避免无关用例。</p>
+        </div>
+        <div className="flex gap-1.5">
+          <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+            onRequirementChange(plan.requirements.map((item) => item.id))
+            onTestPathChange(plan.testPaths.map((item) => item.id))
+          }}>
+            全选
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
+            onRequirementChange([])
+            onTestPathChange([])
+          }}>
+            清空
+          </Button>
+        </div>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">需求 REQ</p>
+          <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+            {plan.requirements.map((item) => (
+              <label key={item.id} className="flex cursor-pointer gap-2 rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-input"
+                  checked={reqSet.has(item.id)}
+                  onChange={(e) => onRequirementChange(toggle(selectedRequirementIds, item.id, e.target.checked))}
+                />
+                <span className="min-w-0">
+                  <span className="font-semibold text-primary">{item.id}</span>
+                  <span className="ml-1 text-[hsl(var(--gcs-text-secondary))]">{item.text}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">路径 TP</p>
+          <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+            {plan.testPaths.length === 0 && (
+              <div className="rounded-xl border border-dashed border-[hsl(var(--gcs-panel-border))] p-3 text-xs text-[hsl(var(--gcs-text-muted))]">
+                当前分析报告没有结构化 TP 路径，生成时会按需求范围关联。
+              </div>
+            )}
+            {plan.testPaths.map((item) => (
+              <label key={item.id} className="flex cursor-pointer gap-2 rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-input"
+                  checked={tpSet.has(item.id)}
+                  onChange={(e) => onTestPathChange(toggle(selectedTestPathIds, item.id, e.target.checked))}
+                />
+                <span className="min-w-0">
+                  <span className={item.type === 'exception' ? 'font-semibold text-amber-500' : 'font-semibold text-cyan-500'}>
+                    {item.id}
+                  </span>
+                  <span className="ml-1 text-[hsl(var(--gcs-text-secondary))]">{item.label}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GeneratedCoverageMatrix({
+  plan,
+  cases,
+}: {
+  plan: GenerateHandoffPlan | null
+  cases: TestCase[]
+}) {
+  if (!plan || plan.requirements.length === 0 || cases.length === 0) return null
+  const coverage = buildGeneratedCaseCoverage(plan, cases)
+  return (
+    <div className="mt-3 rounded-2xl border border-cyan-500/25 bg-cyan-500/10 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">REQ/TP 覆盖矩阵</p>
+          <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+            已覆盖 {coverage.coveredRequirementCount}/{coverage.totalRequirementCount} 个需求
+            {coverage.coverageRate != null ? ` · 覆盖率 ${coverage.coverageRate}%` : ''}
+            {' '}· 可自动化 {coverage.automatableCount} · 人工 {coverage.manualCount} · 阻塞 {coverage.blockedCount}
+          </p>
+        </div>
+        {coverage.uncoveredRequirements.length > 0 && (
+          <Badge variant="warning">未覆盖 {coverage.uncoveredRequirements.length}</Badge>
+        )}
+      </div>
+      <div className="mt-3 grid gap-2">
+        {coverage.groups.slice(0, 6).map((group) => (
+          <div key={group.requirement.id} className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 text-xs">
+                <span className="font-semibold text-primary">{group.requirement.id}</span>
+                <span className="ml-1 text-[hsl(var(--gcs-text-secondary))]">{group.requirement.text}</span>
+              </p>
+              <Badge variant={group.cases.length > 0 ? 'success' : 'warning'}>
+                {group.cases.length} 条
+              </Badge>
+            </div>
+            {group.testPathIds.length > 0 && (
+              <p className="mt-1 text-[11px] text-[hsl(var(--gcs-text-muted))]">路径：{group.testPathIds.join(', ')}</p>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -789,7 +985,7 @@ function RecentHistoryPanel() {
   )
 }
 
-function GenerateResult({ cases }: { cases: TestCase[] }) {
+function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPlan: GenerateHandoffPlan | null }) {
   const navigate = useNavigate()
   const {
     reset,
@@ -1099,6 +1295,7 @@ function GenerateResult({ cases }: { cases: TestCase[] }) {
       </div>
 
       <QualityReportPanel report={qualityReport} />
+      <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
 
       {qualityReport && cases.length > 0 && (
         <div className="mt-3 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
@@ -1451,6 +1648,8 @@ export default function GeneratePage() {
     streamContent,
     appendStreamContent,
     clearStreamContent,
+    analysisHandoffContext,
+    setAnalysisHandoffContext,
   } = useGenerateStore()
 
   const deferredStreamContent = useDeferredValue(streamContent)
@@ -1466,6 +1665,8 @@ export default function GeneratePage() {
   const [showHistory, setShowHistory] = useState(true)
   const [showLogs, setShowLogs] = useState(true)
   const [phaseIndex, setPhaseIndex] = useState(0)
+  const [selectedRequirementIds, setSelectedRequirementIds] = useState<string[]>([])
+  const [selectedTestPathIds, setSelectedTestPathIds] = useState<string[]>([])
 
   useEffect(() => {
     const h = useGenerateStore.getState().pendingGenerateHandoff
@@ -1478,10 +1679,24 @@ export default function GeneratePage() {
       setInputText(h.combinedInputText?.trim() || fallbackText)
       setRequirementDescription(h.requirementDescription?.trim() ?? '')
       setUserNotes(h.supplementaryNotes?.trim() ?? '')
+      const nextContext = {
+        analysisRecordId: h.analysisRecordId,
+        analysisTitle: h.analysisTitle,
+        structuredResult: h.analysisStructuredResult ?? null,
+        sourceReport: h.rawText,
+        createdAt: new Date().toISOString(),
+      }
+      const nextPlan = buildGenerateHandoffPlan(nextContext.structuredResult)
+      setAnalysisHandoffContext(nextContext)
+      setSelectedRequirementIds(nextPlan.selectedRequirementIds)
+      setSelectedTestPathIds(nextPlan.selectedTestPathIds)
     } else {
       setInputText('')
       setRequirementDescription('')
       setUserNotes('')
+      setAnalysisHandoffContext(null)
+      setSelectedRequirementIds([])
+      setSelectedTestPathIds([])
     }
     setUploadedFile(null)
     setStep('prompt')
@@ -1493,6 +1708,22 @@ export default function GeneratePage() {
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const analysisPlan = useMemo(
+    () => buildGenerateHandoffPlan(analysisHandoffContext?.structuredResult ?? null),
+    [analysisHandoffContext],
+  )
+  const hasAnalysisPlan = analysisPlan.requirements.length > 0 || analysisPlan.testPaths.length > 0
+
+  useEffect(() => {
+    if (!hasAnalysisPlan) return
+    setSelectedRequirementIds((current) =>
+      current.length ? current : analysisPlan.selectedRequirementIds,
+    )
+    setSelectedTestPathIds((current) =>
+      current.length ? current : analysisPlan.selectedTestPathIds,
+    )
+  }, [analysisPlan, hasAnalysisPlan])
 
   useEffect(() => {
     let cancelled = false
@@ -1615,6 +1846,16 @@ export default function GeneratePage() {
         return
       }
       if (!generationInputText.trim()) generationInputText = file.parsedContent
+    }
+    if (hasAnalysisPlan && analysisPlan.requirements.length > 0 && selectedRequirementIds.length === 0) {
+      toast.error('请至少选择一个 REQ 需求范围，或清空 AI 分析上下文后再生成')
+      return
+    }
+    if (hasAnalysisPlan) {
+      const scopePrompt = buildGenerateScopePrompt(analysisPlan, selectedRequirementIds, selectedTestPathIds)
+      generationInputText = generationInputText.trim()
+        ? `${generationInputText}\n\n${scopePrompt}`
+        : scopePrompt
     }
     const flowchartContext = sourceType === 'file'
       ? extractFlowchartSummary(fileForGeneration?.parsedContent)?.raw
@@ -1871,6 +2112,24 @@ export default function GeneratePage() {
                 </div>
               </div>
 
+              {hasAnalysisPlan && (
+                <>
+                  <GenerateHandoffSummaryCard
+                    plan={analysisPlan}
+                    title={analysisHandoffContext?.analysisTitle}
+                    selectedRequirementIds={selectedRequirementIds}
+                    selectedTestPathIds={selectedTestPathIds}
+                  />
+                  <GenerateScopeSelector
+                    plan={analysisPlan}
+                    selectedRequirementIds={selectedRequirementIds}
+                    selectedTestPathIds={selectedTestPathIds}
+                    onRequirementChange={setSelectedRequirementIds}
+                    onTestPathChange={setSelectedTestPathIds}
+                  />
+                </>
+              )}
+
               <SoftTextarea
                 title="需求描述"
                 value={requirementDescription}
@@ -2054,6 +2313,12 @@ export default function GeneratePage() {
                   <Badge variant="outline" className="gcs-action-chip">
                     {selectedTemplate ? `模板：${selectedTemplate.name}` : '未选模板'}
                   </Badge>
+                  {hasAnalysisPlan && (
+                    <Badge variant="outline" className="gcs-action-chip">
+                      REQ {selectedRequirementIds.length}/{analysisPlan.requirements.length}
+                      {analysisPlan.testPaths.length ? ` · TP ${selectedTestPathIds.length}/${analysisPlan.testPaths.length}` : ''}
+                    </Badge>
+                  )}
                   <Badge variant={canStartGenerate ? 'success' : 'outline'} className="gcs-action-chip">
                     {readinessLabel}
                   </Badge>
@@ -2095,12 +2360,19 @@ export default function GeneratePage() {
                     <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
                     <p className="text-sm font-semibold">配置输入后，AI 会在这里生成测试用例</p>
                     <p className="mx-auto mt-2 max-w-[520px] text-xs text-[hsl(var(--gcs-text-muted))]">
-                      将自动整理为标题、前置条件、步骤、预期结果和优先级
+                      {hasAnalysisPlan
+                        ? '已接入 AI 需求分析报告，将按所选 REQ/TP 生成并回填覆盖关系'
+                        : '将自动整理为标题、前置条件、步骤、预期结果和优先级'}
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">用例标题</Badge>
                       <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">操作步骤</Badge>
                       <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">预期结果</Badge>
+                      {hasAnalysisPlan && (
+                        <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">
+                          REQ {selectedRequirementIds.length} / TP {selectedTestPathIds.length}
+                        </Badge>
+                      )}
                     </div>
                     <div className="mx-auto mt-5 grid max-w-lg gap-2 rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3 text-left">
                       <div className="h-3 w-3/5 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
@@ -2163,7 +2435,7 @@ export default function GeneratePage() {
 
                 {!isGenerating && generatedCases.length > 0 && (
                   <div className="min-h-0 flex-1 overflow-hidden p-4">
-                    <GenerateResult cases={generatedCases} />
+                    <GenerateResult cases={generatedCases} analysisPlan={hasAnalysisPlan ? analysisPlan : null} />
                   </div>
                 )}
               </div>
