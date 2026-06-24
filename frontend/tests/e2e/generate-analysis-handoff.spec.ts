@@ -174,5 +174,26 @@ test.describe('AI 需求分析到生成用例联动', () => {
     await expect(page.getByText('TP-002')).toBeVisible()
     await expect(page.getByText('已接入 AI 需求分析报告，将按所选 REQ/TP 生成并回填覆盖关系')).toBeVisible()
     await expect(page.getByText('REQ 2/2 · TP 2/2')).toBeVisible()
+
+    const layout = await page.evaluate(() => {
+      const studio = document.querySelector('.generate-case-studio')
+      const main = document.querySelector('main')
+      const studioRect = studio?.getBoundingClientRect()
+      const mainRect = main?.getBoundingClientRect()
+      return {
+        documentScrollHeight: document.documentElement.scrollHeight,
+        documentClientHeight: document.documentElement.clientHeight,
+        mainScrollHeight: main?.scrollHeight ?? 0,
+        mainClientHeight: main?.clientHeight ?? 0,
+        studioTop: studioRect?.top ?? 0,
+        studioBottom: studioRect?.bottom ?? 0,
+        mainTop: mainRect?.top ?? 0,
+        mainBottom: mainRect?.bottom ?? 0,
+      }
+    })
+    expect(layout.documentScrollHeight).toBeLessThanOrEqual(layout.documentClientHeight + 1)
+    expect(layout.mainScrollHeight).toBeLessThanOrEqual(layout.mainClientHeight + 1)
+    expect(layout.studioTop).toBeGreaterThanOrEqual(layout.mainTop)
+    expect(layout.studioBottom).toBeLessThanOrEqual(layout.mainBottom + 1)
   })
 })
