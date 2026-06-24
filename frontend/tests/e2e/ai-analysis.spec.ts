@@ -230,6 +230,10 @@ test.describe('E2E: AI 需求分析全流程', () => {
 
     // 9. 等待流式报告出现
     await expect(page.getByText('需求文档分析报告')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toHaveAttribute(
+      'data-layout',
+      'inline-connectors',
+    )
     // 报告正文关键词（报告区目录按钮）
     await expect(page.getByRole('button', { name: '主要功能需求' })).toBeVisible()
     await expect(page.getByText('用户登录')).toBeVisible()
@@ -272,7 +276,8 @@ test.describe('E2E: AI 需求分析全流程', () => {
     await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toBeVisible()
     await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toHaveClass(/ai-analysis-stage-track/)
     await expect(page.getByTestId('ai-analysis-runtime-stage-label').first()).toHaveClass(/text-center/)
-    await expect(page.getByTestId('ai-analysis-runtime-stage-connector')).toHaveCount(10)
+    await expect(page.getByTestId('ai-analysis-runtime-stage-track')).toHaveAttribute('data-layout', 'inline-connectors')
+    await expect(page.getByTestId('ai-analysis-runtime-stage-connector')).toHaveCount(4)
 
     // 功能区标题
     await expect(page.getByText('输入与质检')).toBeVisible()

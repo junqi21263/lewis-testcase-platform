@@ -168,6 +168,9 @@ test.describe('AI 需求分析到生成用例联动', () => {
     await page.goto('/generate')
 
     await expect(page.getByText('AI 需求分析上下文')).toBeVisible()
+    await expect(page.getByTestId('generate-coverage-command-center')).toBeVisible()
+    await expect(page.getByTestId('generate-case-results-board')).toBeVisible()
+    await expect(page.getByTestId('generate-result-filter-bar')).toBeVisible()
     await expect(page.getByText('覆盖驱动生成')).toBeVisible()
     await expect(page.getByText('生成范围选择')).toBeVisible()
     await expect(page.getByText('REQ-001')).toBeVisible()

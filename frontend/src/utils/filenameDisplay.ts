@@ -13,8 +13,9 @@ export function normalizeUploadedFilename(name: string): string {
   for (let i = 0; i < name.length; i++) bytes[i] = name.charCodeAt(i)
   const recovered = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
   if (recovered.includes('\uFFFD')) return name
-  const hadWide = /[^\u0000-\u007f]/.test(name)
-  const recoveredWide = /[^\u0000-\u007f]/.test(recovered)
+  const hasWideChar = (value: string) => Array.from(value).some((ch) => ch.charCodeAt(0) > 0x7f)
+  const hadWide = hasWideChar(name)
+  const recoveredWide = hasWideChar(recovered)
   if (!hadWide && recoveredWide) return recovered
   if (recovered !== name && recoveredWide) return recovered
   return name

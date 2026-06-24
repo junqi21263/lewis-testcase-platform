@@ -1690,6 +1690,20 @@ div.ui-toast .text-muted-foreground {
   display: none;
 }
 
+.ai-analysis-studio .ai-analysis-stage-segment {
+  min-height: 2rem;
+}
+
+.ai-analysis-studio .ai-analysis-stage-bridge {
+  position: absolute;
+  left: calc(100% - 0.35rem);
+  top: 50%;
+  width: 0.7rem;
+  height: 1px;
+  transform: translateY(-50%);
+  opacity: 0.9;
+}
+
 .dark .ai-analysis-studio .ai-analysis-terminal-scroll {
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
@@ -2678,7 +2692,7 @@ html.light .login-page-root {
 }
 
 .gcs-result-body-scroll::-webkit-scrollbar {
-  width: 8px;
+  width: 7px;
 }
 
 .gcs-result-body-scroll::-webkit-scrollbar-track {
@@ -2688,6 +2702,8 @@ html.light .login-page-root {
 .gcs-result-body-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--gcs-result-scrollbar-thumb) / 0.72);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .gcs-result-body-scroll::-webkit-scrollbar-thumb:hover {
@@ -2716,6 +2732,46 @@ html.light .login-page-root {
   background: hsl(var(--gcs-button-disabled-bg));
   color: hsl(var(--gcs-button-disabled-text));
   box-shadow: none;
+}
+
+.gcs-command-center {
+  background:
+    linear-gradient(135deg, hsl(var(--gcs-panel-muted-bg)) 0%, hsl(var(--gcs-card-bg)) 100%),
+    radial-gradient(80% 80% at 0% 0%, hsl(var(--gcs-input-focus) / 0.14), transparent 70%);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05);
+}
+
+.gcs-command-metric {
+  min-width: 0;
+  border-radius: 0.875rem;
+  border: 1px solid hsl(var(--gcs-panel-border));
+  background: hsl(var(--gcs-card-bg) / 0.72);
+  padding: 0.65rem 0.75rem;
+}
+
+.gcs-command-metric p {
+  color: hsl(var(--gcs-text-muted));
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.gcs-command-metric strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: hsl(var(--gcs-text-primary));
+  font-size: 1.35rem;
+  line-height: 1.55rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gcs-command-metric span {
+  display: block;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--gcs-text-muted));
+  font-size: 0.6875rem;
 }
 
 .generate-case-studio ::-webkit-scrollbar-thumb {

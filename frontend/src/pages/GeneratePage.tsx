@@ -557,6 +557,72 @@ function GeneratedCoverageMatrix({
   )
 }
 
+function GenerateCoverageCommandCenter({
+  plan,
+  cases,
+  selectedRequirementIds,
+  selectedTestPathIds,
+  qualityReport,
+}: {
+  plan: GenerateHandoffPlan | null
+  cases: TestCase[]
+  selectedRequirementIds?: string[]
+  selectedTestPathIds?: string[]
+  qualityReport?: QualityReport | null
+}) {
+  const coverage = plan && cases.length > 0 ? buildGeneratedCaseCoverage(plan, cases) : null
+  const reqTotal = plan?.requirements.length ?? 0
+  const tpTotal = plan?.testPaths.length ?? 0
+  const selectedReq = selectedRequirementIds?.length ?? reqTotal
+  const selectedTp = selectedTestPathIds?.length ?? tpTotal
+  const coverageRate = coverage?.coverageRate ?? null
+  const readiness = coverageRate != null ? `${coverageRate}%` : plan ? '待生成' : '未接入'
+  const qualityScore = qualityReport?.score != null ? `${qualityReport.score}` : plan?.qualityAverage != null ? `${plan.qualityAverage}` : '--'
+  const blockedCount = coverage?.blockedCount ?? plan?.automationSummary.blocked ?? 0
+
+  return (
+    <section
+      className="gcs-command-center rounded-2xl border border-cyan-500/20 bg-[hsl(var(--gcs-panel-muted-bg))] p-3"
+      data-testid="generate-coverage-command-center"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">覆盖驾驶舱</p>
+          <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+            {plan ? '按 AI 分析报告的 REQ/TP 追踪生成范围与结果质量。' : '生成后会在这里汇总覆盖、质量和自动化准备度。'}
+          </p>
+        </div>
+        <Badge variant={coverageRate != null && coverageRate >= 80 ? 'success' : plan ? 'warning' : 'outline'}>
+          {coverageRate != null ? '覆盖已计算' : plan ? '等待生成' : '普通生成'}
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="gcs-command-metric">
+          <p>覆盖状态</p>
+          <strong>{readiness}</strong>
+          <span>{coverage ? `${coverage.coveredRequirementCount}/${coverage.totalRequirementCount} 个需求` : `REQ ${selectedReq}/${reqTotal || selectedReq}`}</span>
+        </div>
+        <div className="gcs-command-metric">
+          <p>路径范围</p>
+          <strong>{selectedTp || tpTotal || '--'}</strong>
+          <span>{tpTotal ? `TP ${selectedTp}/${tpTotal}` : '按需求推导路径'}</span>
+        </div>
+        <div className="gcs-command-metric">
+          <p>质量评分</p>
+          <strong>{qualityScore}</strong>
+          <span>{qualityReport ? '生成后质量检查' : '来自分析报告'}</span>
+        </div>
+        <div className="gcs-command-metric">
+          <p>自动化阻塞</p>
+          <strong>{blockedCount}</strong>
+          <span>缺环境或需人工确认</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function SoftTextarea(props: {
   title: string
   value: string
@@ -1294,6 +1360,11 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
         )}
       </div>
 
+      <GenerateCoverageCommandCenter
+        plan={analysisPlan}
+        cases={cases}
+        qualityReport={qualityReport}
+      />
       <QualityReportPanel report={qualityReport} />
       <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
 
@@ -1340,7 +1411,10 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
         </div>
       )}
 
-      <div className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
+      <div
+        className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3"
+        data-testid="generate-result-filter-bar"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1469,6 +1543,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       <div
         ref={resultScrollRef}
         className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4"
+        data-testid="generate-case-results-board"
       >
         {filteredCases.length === 0 && (
           <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-8 text-center">
@@ -1639,6 +1714,7 @@ export default function GeneratePage() {
     setAiParams,
     generatedCases,
     setGeneratedCases,
+    qualityReport,
     setLastRecordId,
     setLastSuiteId,
     setQualityReport,
@@ -2342,7 +2418,10 @@ export default function GeneratePage() {
         </section>
 
         <section className="gcs-appear-3 flex min-h-0 flex-col overflow-hidden">
-          <Card className="gcs-result-panel flex h-full min-h-0 flex-col overflow-hidden border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-result-panel-bg))]">
+          <Card
+            className="gcs-result-panel flex h-full min-h-0 flex-col overflow-hidden border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-result-panel-bg))]"
+            data-testid="generate-case-results-board"
+          >
             <CardHeader className="gcs-result-panel-header shrink-0 border-b pb-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -2355,30 +2434,57 @@ export default function GeneratePage() {
             <CardContent className="gcs-result-panel-body min-h-0 flex-1 overflow-hidden p-0">
               <div className="flex h-full min-h-0 flex-col">
               {!isGenerating && generatedCases.length === 0 && (
-                <div className="flex min-h-0 flex-1 items-center justify-center p-5">
-                  <div className="gcs-console-ready w-full max-w-2xl rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] p-8 text-center">
-                    <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
-                    <p className="text-sm font-semibold">配置输入后，AI 会在这里生成测试用例</p>
-                    <p className="mx-auto mt-2 max-w-[520px] text-xs text-[hsl(var(--gcs-text-muted))]">
-                      {hasAnalysisPlan
-                        ? '已接入 AI 需求分析报告，将按所选 REQ/TP 生成并回填覆盖关系'
-                        : '将自动整理为标题、前置条件、步骤、预期结果和优先级'}
-                    </p>
-                    <div className="mt-4 flex flex-wrap justify-center gap-2">
-                      <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">用例标题</Badge>
-                      <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">操作步骤</Badge>
-                      <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">预期结果</Badge>
-                      {hasAnalysisPlan && (
-                        <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">
-                          REQ {selectedRequirementIds.length} / TP {selectedTestPathIds.length}
-                        </Badge>
-                      )}
+                <div className="gcs-result-body-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
+                  <GenerateCoverageCommandCenter
+                    plan={hasAnalysisPlan ? analysisPlan : null}
+                    cases={generatedCases}
+                    selectedRequirementIds={selectedRequirementIds}
+                    selectedTestPathIds={selectedTestPathIds}
+                    qualityReport={qualityReport}
+                  />
+                  <div
+                    className="mt-3 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3"
+                    data-testid="generate-result-filter-bar"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">结果看板</p>
+                        <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+                          生成完成后会按 REQ/TP 聚合、筛选、导出和进入评审。
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline" className="gcs-action-chip">覆盖矩阵</Badge>
+                        <Badge variant="outline" className="gcs-action-chip">质量检查</Badge>
+                        <Badge variant="outline" className="gcs-action-chip">批量操作</Badge>
+                      </div>
                     </div>
-                    <div className="mx-auto mt-5 grid max-w-lg gap-2 rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3 text-left">
-                      <div className="h-3 w-3/5 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
-                      <div className="h-2.5 w-full rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
-                      <div className="h-2.5 w-5/6 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
-                      <div className="h-2.5 w-2/3 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
+                  </div>
+                  <div className="mt-3 flex min-h-[300px] items-center justify-center">
+                    <div className="gcs-console-ready w-full max-w-2xl rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] p-8 text-center">
+                      <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary" />
+                      <p className="text-sm font-semibold">配置输入后，AI 会在这里生成测试用例</p>
+                      <p className="mx-auto mt-2 max-w-[520px] text-xs text-[hsl(var(--gcs-text-muted))]">
+                        {hasAnalysisPlan
+                          ? '已接入 AI 需求分析报告，将按所选 REQ/TP 生成并回填覆盖关系'
+                          : '将自动整理为标题、前置条件、步骤、预期结果和优先级'}
+                      </p>
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">用例标题</Badge>
+                        <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">操作步骤</Badge>
+                        <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">预期结果</Badge>
+                        {hasAnalysisPlan && (
+                          <Badge variant="outline" className="bg-[hsl(var(--gcs-panel-muted-bg))]">
+                            REQ {selectedRequirementIds.length} / TP {selectedTestPathIds.length}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="mx-auto mt-5 grid max-w-lg gap-2 rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3 text-left">
+                        <div className="h-3 w-3/5 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
+                        <div className="h-2.5 w-full rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
+                        <div className="h-2.5 w-5/6 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
+                        <div className="h-2.5 w-2/3 rounded-full bg-[hsl(var(--gcs-panel-muted-bg))]" />
+                      </div>
                     </div>
                   </div>
                 </div>
