@@ -406,5 +406,10 @@ test.describe('AI 需求分析到生成用例联动', () => {
     await expect(page.getByTestId('generate-requirement-group-REQ-002')).toBeVisible()
     await expect(page.getByRole('heading', { name: '邮箱密码登录成功' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '验证码错误时展示提示' })).toBeVisible()
+
+    const qualityPanelInScrollableBody = await page
+      .getByText('AI 输出质量检查')
+      .evaluate((node) => Boolean(node.closest('.gcs-result-body-scroll')))
+    expect(qualityPanelInScrollableBody).toBe(true)
   })
 })

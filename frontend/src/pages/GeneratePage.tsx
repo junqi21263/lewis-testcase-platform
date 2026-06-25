@@ -1470,92 +1470,96 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
           </div>
         )}
       </div>
-
-      <GenerateCoverageCommandCenter
-        plan={analysisPlan}
-        cases={cases}
-        qualityReport={qualityReport}
-      />
-      <details className="gcs-advanced-settings mt-3" data-testid="generate-advanced-settings">
-        <summary className="gcs-advanced-summary">
-          <div className="min-w-0">
-            <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">生成上下文设置</p>
-            <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
-              当前结果沿用已选模板、模型和 REQ/TP 范围；需要重新配置时返回输入区调整。
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            <Badge variant={analysisPlan ? 'success' : 'outline'}>{analysisPlan ? 'AI 分析联动' : '普通生成'}</Badge>
-            <ChevronDown className="gcs-advanced-chevron h-4 w-4 text-[hsl(var(--gcs-text-muted))]" />
-          </div>
-        </summary>
-        <div className="gcs-advanced-content">
-          <div className="grid gap-2 text-xs text-[hsl(var(--gcs-text-secondary))] sm:grid-cols-3">
-            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
-              <p className="text-[hsl(var(--gcs-text-muted))]">需求范围</p>
-              <p className="mt-1 font-semibold">REQ {analysisPlan?.requirements.length ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
-              <p className="text-[hsl(var(--gcs-text-muted))]">路径范围</p>
-              <p className="mt-1 font-semibold">TP {analysisPlan?.testPaths.length ?? 0}</p>
-            </div>
-            <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
-              <p className="text-[hsl(var(--gcs-text-muted))]">当前筛选</p>
-              <p className="mt-1 font-semibold">{totalFiltered}/{cases.length} 条</p>
-            </div>
-          </div>
-        </div>
-      </details>
-      <QualityReportPanel report={qualityReport} />
-      <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
-
-      {qualityReport && cases.length > 0 && (
-        <div className="mt-3 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-[220px]">
-              <p className="flex items-center gap-1.5 text-sm font-semibold">
-                <Sparkles className="h-4 w-4 text-primary" />
-                AI 需求-用例闭环代理
-              </p>
-              <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
-                自动补齐缺失需求点，修正空泛/不可执行用例，并把原因写入评审中心。
-              </p>
-              {closedLoopSummary && (
-                <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-300">{closedLoopSummary}</p>
-              )}
-              {closedLoopError && (
-                <p className="mt-2 text-xs text-destructive">{closedLoopError}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {lastRecordId && lastSuiteId && closedLoopStatus === 'succeeded' && (
-                <Button variant="outline" size="sm" onClick={() => navigate(`/reviews/${lastRecordId}`)}>
-                  进入评审中心
-                </Button>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                className="gap-1.5"
-                onClick={handleRunClosedLoop}
-                disabled={!lastRecordId || closedLoopStatus === 'running'}
-              >
-                {closedLoopStatus === 'running' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                {closedLoopStatus === 'running' ? '优化中' : '生成最终推荐版'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div
-        className="mt-3 shrink-0 rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3"
-        data-testid="generate-result-filter-bar"
+        ref={resultScrollRef}
+        className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4"
+        data-testid="generate-case-results-board"
       >
+        <GenerateCoverageCommandCenter
+          plan={analysisPlan}
+          cases={cases}
+          qualityReport={qualityReport}
+        />
+        <details className="gcs-advanced-settings" data-testid="generate-advanced-settings">
+          <summary className="gcs-advanced-summary">
+            <div className="min-w-0">
+              <p className="text-sm font-[650] text-[hsl(var(--gcs-text-primary))]">生成上下文设置</p>
+              <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+                当前结果沿用已选模板、模型和 REQ/TP 范围；需要重新配置时返回输入区调整。
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <Badge variant={analysisPlan ? 'success' : 'outline'}>{analysisPlan ? 'AI 分析联动' : '普通生成'}</Badge>
+              <ChevronDown className="gcs-advanced-chevron h-4 w-4 text-[hsl(var(--gcs-text-muted))]" />
+            </div>
+          </summary>
+          <div className="gcs-advanced-content">
+            <div className="grid gap-2 text-xs text-[hsl(var(--gcs-text-secondary))] sm:grid-cols-3">
+              <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+                <p className="text-[hsl(var(--gcs-text-muted))]">需求范围</p>
+                <p className="mt-1 font-semibold">REQ {analysisPlan?.requirements.length ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+                <p className="text-[hsl(var(--gcs-text-muted))]">路径范围</p>
+                <p className="mt-1 font-semibold">TP {analysisPlan?.testPaths.length ?? 0}</p>
+              </div>
+              <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
+                <p className="text-[hsl(var(--gcs-text-muted))]">当前筛选</p>
+                <p className="mt-1 font-semibold">{totalFiltered}/{cases.length} 条</p>
+              </div>
+            </div>
+          </div>
+        </details>
+        <QualityReportPanel report={qualityReport} />
+        <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
+
+        {qualityReport && cases.length > 0 && (
+          <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-[220px]">
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI 需求-用例闭环代理
+                </p>
+                <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
+                  自动补齐缺失需求点，修正空泛/不可执行用例，并把原因写入评审中心。
+                </p>
+                {closedLoopSummary && (
+                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-300">{closedLoopSummary}</p>
+                )}
+                {closedLoopError && (
+                  <p className="mt-2 text-xs text-destructive">{closedLoopError}</p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {lastRecordId && lastSuiteId && closedLoopStatus === 'succeeded' && (
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/reviews/${lastRecordId}`)}>
+                    进入评审中心
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleRunClosedLoop}
+                  disabled={!lastRecordId || closedLoopStatus === 'running'}
+                >
+                  {closedLoopStatus === 'running' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {closedLoopStatus === 'running' ? '优化中' : '生成最终推荐版'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3"
+          data-testid="generate-result-filter-bar"
+        >
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1681,11 +1685,6 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
         </div>
       </div>
 
-      <div
-        ref={resultScrollRef}
-        className="gcs-result-body-scroll mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1 pb-4"
-        data-testid="generate-case-results-board"
-      >
         {filteredCases.length === 0 && (
           <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-8 text-center">
             <ListFilter className="mx-auto mb-2 h-5 w-5 text-[hsl(var(--gcs-text-muted))]" />
