@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { PrismaService } from '@/prisma/prisma.service'
 import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
 import type { CreateTestCaseDto } from './dto/create-test-case.dto'
+import type { CreateSuiteDto, UpdateSuiteDto, UpdateTestCaseDto } from './dto/testcase-update.dto'
 import { extractModuleFromTags } from '../ai/parse-loose-ai-output.util'
 
 /** Excel 导出表头顺序（与业务约定一致） */
@@ -120,13 +121,13 @@ export class TestcasesService {
     return this.getOwnedSuiteOrThrow(id, userId)
   }
 
-  async createSuite(userId: string, data: { name: string; description?: string; projectName?: string }) {
+  async createSuite(userId: string, data: CreateSuiteDto) {
     return this.prisma.testSuite.create({
       data: { ...data, creatorId: userId },
     })
   }
 
-  async updateSuite(id: string, userId: string, data: Partial<{ name: string; description: string; status: TestCaseStatus }>) {
+  async updateSuite(id: string, userId: string, data: UpdateSuiteDto) {
     const suite = await this.prisma.testSuite.findUnique({ where: { id } })
     if (!suite) throw new NotFoundException('用例集不存在')
     if (suite.creatorId !== userId) throw new ForbiddenException('无权修改该用例集')
@@ -150,9 +151,17 @@ export class TestcasesService {
     })
   }
 
-  async updateCase(id: string, userId: string, data: any) {
+  async updateCase(id: string, userId: string, data: UpdateTestCaseDto) {
     await this.getOwnedCaseOrThrow(id, userId)
-    return this.prisma.testCase.update({ where: { id }, data })
+    const { steps, automationReadiness, ...rest } = data
+    const patch: Prisma.TestCaseUpdateInput = {
+      ...rest,
+      ...(steps ? { steps: steps as unknown as Prisma.InputJsonValue } : {}),
+      ...(automationReadiness
+        ? { automationReadiness: automationReadiness as Prisma.InputJsonValue }
+        : {}),
+    }
+    return this.prisma.testCase.update({ where: { id }, data: patch })
   }
 
   async deleteCase(id: string, userId: string) {

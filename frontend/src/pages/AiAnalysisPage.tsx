@@ -1035,6 +1035,7 @@ function AiAnalysisPageInner() {
       const name = buildAnalysisPdfFileName(uploadDisplayName ?? uploadedFile?.originalName)
       await saveAnalysisReportPdf(
         {
+          recordId: currentAnalysisRecordId ?? undefined,
           markdown,
           documentTitle: uploadDisplayName ?? uploadedFile?.originalName ?? undefined,
           version:
@@ -1052,7 +1053,13 @@ function AiAnalysisPageInner() {
     } finally {
       setExportingPdf(false)
     }
-  }, [finalAnalysisReportText, state.revisionCount, uploadDisplayName, uploadedFile?.originalName])
+  }, [
+    currentAnalysisRecordId,
+    finalAnalysisReportText,
+    state.revisionCount,
+    uploadDisplayName,
+    uploadedFile?.originalName,
+  ])
 
   const handleExportXmind = useCallback(async () => {
     const markdown = finalAnalysisReportText

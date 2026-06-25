@@ -20,7 +20,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     const url = process.env.REDIS_URL?.trim()
     const disabled = ['0', 'false', 'off'].includes((process.env.REDIS_ENABLED || '').trim().toLowerCase())
+    const required = ['1', 'true', 'yes'].includes((process.env.REDIS_REQUIRED || '').trim().toLowerCase())
     if (!url || disabled) {
+      if (required) {
+        throw new Error('REDIS_REQUIRED=true but REDIS_URL is missing or REDIS_ENABLED is disabled.')
+      }
       this.logger.log('Redis backend off (set REDIS_URL and keep REDIS_ENABLED!=0 to enable cache/queue/realtime state).')
       return
     }
@@ -31,6 +35,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Redis: connected; cache/queue/realtime state enabled.')
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      if (required) {
+        throw new Error(`REDIS_REQUIRED=true but Redis connect failed: ${msg}`)
+      }
       this.logger.warn(`Redis connect failed (${msg}); template list cache uses in-process only.`)
       this.client?.disconnect()
       this.client = null

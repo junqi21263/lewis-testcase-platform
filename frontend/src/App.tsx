@@ -21,6 +21,8 @@ const AiAnalysisPage = lazy(() => import('@/pages/AiAnalysisPage'))
 const UsageStatsPage = lazy(() => import('@/pages/UsageStatsPage'))
 const ReviewCenterPage = lazy(() => import('@/pages/ReviewCenterPage'))
 const ReviewsIndexPage = lazy(() => import('@/pages/ReviewsIndexPage'))
+const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'))
 
 function RouteFallback() {
   return (
@@ -79,8 +81,8 @@ export default function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<LoginPage />} />
               <Route path="/verify-email" element={<Navigate to="/login" replace />} />
-              <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
-              <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Route>
 
             <Route path="/records/public/shares/:token" element={<RecordSharePublicPage />} />

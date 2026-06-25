@@ -57,7 +57,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       )
     }
 
-    response.status(HttpStatus.OK).json({
+    response.status(status >= 500 ? status : HttpStatus.OK).json({
       code: status,
       message: resolveErrorMessage(status, message),
       data: null,
@@ -90,7 +90,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof Error ? exception.stack : String(exception),
     )
 
-    response.status(HttpStatus.OK).json({
+    response.status(status).json({
       code: status,
       message: message || DEFAULT_ERROR_MESSAGES[status] || '请求失败',
       data: null,

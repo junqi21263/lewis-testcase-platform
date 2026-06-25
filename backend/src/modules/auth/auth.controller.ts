@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Patch, HttpCode, HttpStatus, Body, Query } from '@nestjs/common'
+import { Controller, Post, Get, Patch, HttpCode, HttpStatus, Body, Query, Req } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger'
+import type { Request } from 'express'
 import { AuthService } from './auth.service'
 import {
   LoginDto,
@@ -106,7 +107,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: '退出登录' })
-  logout(@CurrentUser('id') userId: string) {
-    return this.authService.logout(userId)
+  logout(@CurrentUser('id') userId: string, @Req() req: Request) {
+    const authorization = req.headers.authorization ?? ''
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+    return this.authService.logout(userId, token)
   }
 }

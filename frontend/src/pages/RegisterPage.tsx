@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { PasswordStrength } from '@/components/PasswordStrength'
 import { passwordPolicyMessage } from '@/utils/passwordPolicy'
+import { sanitizeInlineSvg } from '@/utils/safeSvg'
 import type { CaptchaChallenge } from '@/types'
 
 interface RegisterForm {
@@ -259,7 +260,7 @@ export default function RegisterPage() {
                   ) : (
                     <span
                       className="flex h-full w-full items-center justify-center [&>svg]:h-full [&>svg]:w-full"
-                      dangerouslySetInnerHTML={{ __html: captcha.imageSvg }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeInlineSvg(captcha.imageSvg) }}
                     />
                   )}
                 </button>

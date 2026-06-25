@@ -6,11 +6,12 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Optional,
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
 import { randomInt } from 'node:crypto'
-import { EmailOtpPurpose, type Prisma } from '@prisma/client'
+import { EmailOtpPurpose, type User } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import {
   LoginDto,
@@ -25,6 +26,7 @@ import { PasswordValidator } from '@/common/validators/password.validator'
 import { isDirectAvatarImageUrl, resolveAvatarUrlForStorage } from '@/common/avatar-url.util'
 import { MailService } from '@/modules/mail/mail.service'
 import { CaptchaService, type CaptchaAction } from './captcha.service'
+import { JwtDenylistService } from './jwt-denylist.service'
 
 const OTP_TTL_MS = 15 * 60 * 1000
 const RESEND_COOLDOWN_MS = 60 * 1000
@@ -40,6 +42,7 @@ export class AuthService {
     private passwordValidator: PasswordValidator,
     private mail: MailService,
     private captcha: CaptchaService,
+    @Optional() private jwtDenylist?: JwtDenylistService,
   ) {}
 
   /**
@@ -179,21 +182,30 @@ export class AuthService {
 
     const asEmail = rawLogin.includes('@') ? this.normalizeEmail(rawLogin) : null
 
-    const orFilters: Prisma.UserWhereInput[] = [
-      { username: rawLogin },
-      { username: { equals: rawLogin, mode: 'insensitive' } },
-    ]
-    if (asEmail) {
-      orFilters.push({ email: asEmail })
-      orFilters.push({ email: { equals: asEmail, mode: 'insensitive' } })
+    const users: User[] = []
+    const pushUnique = (user: User | null) => {
+      if (user && !users.some((item) => item.id === user.id)) users.push(user)
     }
 
-    // 登录框可填「用户名」或「邮箱」；username 可能重复时，匹配任意一条密码正确的记录。
-    const users = await this.prisma.user.findMany({
-      where: { OR: orFilters },
-      orderBy: { updatedAt: 'desc' },
-      take: 50,
-    })
+    // 登录框可填「用户名」或「邮箱」。优先精确命中，再做大小写不敏感兜底，避免一次登录扫描多条记录。
+    pushUnique(await this.prisma.user.findUnique({ where: { username: rawLogin } }))
+    if (asEmail) {
+      pushUnique(await this.prisma.user.findUnique({ where: { email: asEmail } }))
+    }
+    pushUnique(
+      await this.prisma.user.findFirst({
+        where: { username: { equals: rawLogin, mode: 'insensitive' } },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    )
+    if (asEmail) {
+      pushUnique(
+        await this.prisma.user.findFirst({
+          where: { email: { equals: asEmail, mode: 'insensitive' } },
+          orderBy: { updatedAt: 'desc' },
+        }),
+      )
+    }
     if (users.length === 0) throw new UnauthorizedException('用户名或密码错误')
 
     let matched = null as (typeof users)[number] | null
@@ -581,8 +593,14 @@ export class AuthService {
     return {}
   }
 
-  async logout(userId: string) {
-    console.log(`User ${userId} logged out`)
+  async logout(userId: string, token?: string) {
+    const decoded = token ? this.jwtService.decode(token) : null
+    const exp =
+      typeof decoded === 'object' && decoded && 'exp' in decoded
+        ? Number((decoded as { exp?: unknown }).exp)
+        : undefined
+    await this.jwtDenylist?.revoke(token, Number.isFinite(exp) ? exp : undefined)
+    this.logger.log(`User ${userId} logged out`)
     return {}
   }
 }

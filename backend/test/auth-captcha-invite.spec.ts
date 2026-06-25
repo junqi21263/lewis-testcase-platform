@@ -137,16 +137,18 @@ describe('AuthService captcha and invite gate', () => {
 
   it('requires captcha for email login', async () => {
     const { service, prisma, captcha } = createAuthService({ captchaValid: false })
-    prisma.user.findMany.mockResolvedValue([
-      {
-        id: 'user-1',
-        email: 'friend@example.com',
-        username: 'friend',
-        password: await bcrypt.hash('Friend@123456', 10),
-        role: UserRole.MEMBER,
-        emailVerified: true,
-      },
-    ])
+    prisma.user.findUnique.mockImplementation(async ({ where }: { where: { email?: string; username?: string } }) =>
+      where.email === 'friend@example.com'
+        ? {
+            id: 'user-1',
+            email: 'friend@example.com',
+            username: 'friend',
+            password: await bcrypt.hash('Friend@123456', 10),
+            role: UserRole.MEMBER,
+            emailVerified: true,
+          }
+        : null,
+    )
 
     await expect(
       service.login({
@@ -162,16 +164,19 @@ describe('AuthService captcha and invite gate', () => {
 
   it('logs in with registered email when captcha and password are valid', async () => {
     const { service, prisma, captcha, jwt } = createAuthService()
-    prisma.user.findMany.mockResolvedValue([
-      {
-        id: 'user-1',
-        email: 'friend@example.com',
-        username: 'friend',
-        password: await bcrypt.hash('Friend@123456', 10),
-        role: UserRole.MEMBER,
-        emailVerified: true,
-      },
-    ])
+    const password = await bcrypt.hash('Friend@123456', 10)
+    prisma.user.findUnique.mockImplementation(async ({ where }: { where: { email?: string; username?: string } }) =>
+      where.email === 'friend@example.com'
+        ? {
+            id: 'user-1',
+            email: 'friend@example.com',
+            username: 'friend',
+            password,
+            role: UserRole.MEMBER,
+            emailVerified: true,
+          }
+        : null,
+    )
 
     const result = await service.login({
       email: 'friend@example.com',

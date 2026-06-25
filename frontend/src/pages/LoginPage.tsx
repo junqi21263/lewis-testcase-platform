@@ -19,6 +19,7 @@ import {
 } from "@/components/auth/LoginMascot";
 import { LoginThemeToggle } from "@/components/auth/LoginThemeToggle";
 import type { CaptchaChallenge } from "@/types";
+import { sanitizeInlineSvg } from "@/utils/safeSvg";
 
 /** 简单邮箱格式（与后端 LoginDto 的邮箱分支一致） */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -673,7 +674,7 @@ export default function LoginPage() {
                               ) : (
                                 <span
                                   className="flex h-full w-full items-center justify-center [&>svg]:h-full [&>svg]:w-full"
-                                  dangerouslySetInnerHTML={{ __html: captcha.imageSvg }}
+                                  dangerouslySetInnerHTML={{ __html: sanitizeInlineSvg(captcha.imageSvg) }}
                                 />
                               )}
                             </button>
@@ -906,7 +907,7 @@ export default function LoginPage() {
                                 ) : (
                                   <span
                                     className="flex h-full w-full items-center justify-center [&>svg]:h-full [&>svg]:w-full"
-                                    dangerouslySetInnerHTML={{ __html: captcha.imageSvg }}
+                                    dangerouslySetInnerHTML={{ __html: sanitizeInlineSvg(captcha.imageSvg) }}
                                   />
                                 )}
                               </button>

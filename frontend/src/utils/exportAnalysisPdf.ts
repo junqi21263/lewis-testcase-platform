@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import { getApiBaseUrl } from '@/utils/apiBaseUrl'
 
 export interface ExportAnalysisPdfPayload {
+  recordId?: string
   markdown: string
   documentTitle?: string
   version?: string

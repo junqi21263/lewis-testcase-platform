@@ -1,8 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
-import { CaseReviewStatus } from '@prisma/client'
 import { ReviewsService } from './reviews.service'
+import {
+  AddReviewCommentDto,
+  BatchReviewStatusDto,
+  ImportExecutionResultsDto,
+  SaveReviewCaseDto,
+  UpdateReviewStatusDto,
+} from './dto/review.dto'
 
 @ApiTags('用例评审')
 @ApiBearerAuth()
@@ -31,7 +37,7 @@ export class ReviewsController {
   saveCase(
     @Param('recordId') recordId: string,
     @Param('caseId') caseId: string,
-    @Body() body: Record<string, unknown>,
+    @Body() body: SaveReviewCaseDto,
     @CurrentUser() user: { id: string; role: string; teamId?: string },
   ) {
     return this.service.saveCaseEdit(recordId, caseId, user as any, body as any)
@@ -42,7 +48,7 @@ export class ReviewsController {
   updateStatus(
     @Param('recordId') recordId: string,
     @Param('caseId') caseId: string,
-    @Body() body: { status: CaseReviewStatus; comment?: string; commentType?: 'note' | 'change_request' },
+    @Body() body: UpdateReviewStatusDto,
     @CurrentUser() user: { id: string; role: string; teamId?: string },
   ) {
     return this.service.updateReviewStatus(
@@ -59,7 +65,7 @@ export class ReviewsController {
   @ApiOperation({ summary: '批量更新评审状态' })
   batchStatus(
     @Param('recordId') recordId: string,
-    @Body() body: { caseIds: string[]; status: CaseReviewStatus; comment?: string },
+    @Body() body: BatchReviewStatusDto,
     @CurrentUser() user: { id: string; role: string; teamId?: string },
   ) {
     return this.service.batchUpdateReviewStatus(recordId, user as any, body.caseIds, body.status, body.comment)
@@ -69,7 +75,7 @@ export class ReviewsController {
   @ApiOperation({ summary: '导入自动化执行结果并回写评审中心' })
   importExecutionResults(
     @Param('recordId') recordId: string,
-    @Body() body: { source?: string; summary?: string; results?: unknown[] },
+    @Body() body: ImportExecutionResultsDto,
     @CurrentUser() user: { id: string; role: string; teamId?: string },
   ) {
     return this.service.importExecutionResults(recordId, user as any, body)
@@ -115,7 +121,7 @@ export class ReviewsController {
   addComment(
     @Param('recordId') recordId: string,
     @Param('caseId') caseId: string,
-    @Body() body: { content: string; commentType?: 'note' | 'change_request' },
+    @Body() body: AddReviewCommentDto,
     @CurrentUser() user: { id: string; role: string; teamId?: string },
   ) {
     return this.service.addComment(recordId, caseId, user as any, body.content, body.commentType)

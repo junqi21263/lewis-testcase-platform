@@ -47,7 +47,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,         // 过滤多余字段
       transform: true,         // 自动类型转换
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
       transformOptions: { enableImplicitConversion: true },
     }),
   )

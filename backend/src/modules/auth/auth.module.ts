@@ -10,6 +10,7 @@ import { MailModule } from '@/modules/mail/mail.module'
 import { getJwtExpiresIn, getJwtSecret } from './jwt-config.util'
 import { CaptchaService } from './captcha.service'
 import { RedisModule } from '@/redis/redis.module'
+import { JwtDenylistService } from './jwt-denylist.service'
 
 @Module({
   imports: [
@@ -25,8 +26,8 @@ import { RedisModule } from '@/redis/redis.module'
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, PasswordValidator, CaptchaService],
+  providers: [AuthService, JwtStrategy, PasswordValidator, CaptchaService, JwtDenylistService],
   controllers: [AuthController],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, JwtDenylistService],
 })
 export class AuthModule {}

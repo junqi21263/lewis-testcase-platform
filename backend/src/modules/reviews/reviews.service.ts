@@ -9,6 +9,7 @@ import {
   CaseReviewStatus,
   Prisma,
   RecordReviewStatus,
+  TestCaseCommentType,
   TestCaseVersionSource,
   UserRole,
 } from '@prisma/client'
@@ -624,7 +625,7 @@ export class ReviewsService {
     user: SessionUser,
     status: CaseReviewStatus,
     comment?: string,
-    commentType: 'note' | 'change_request' = 'note',
+    commentType: TestCaseCommentType = TestCaseCommentType.note,
   ) {
     if (user.role === UserRole.VIEWER) throw new ForbiddenException('只读用户不可评审')
     await this.getOwnedRecord(recordId, user)
@@ -865,7 +866,7 @@ export class ReviewsService {
     caseId: string,
     user: SessionUser,
     content: string,
-    commentType: 'note' | 'change_request' = 'note',
+    commentType: TestCaseCommentType = TestCaseCommentType.note,
   ) {
     if (!content.trim()) throw new BadRequestException('评论不能为空')
     await this.getOwnedRecord(recordId, user)

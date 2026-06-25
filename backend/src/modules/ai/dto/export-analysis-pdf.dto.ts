@@ -2,6 +2,12 @@ import { ArrayMaxSize, IsArray, IsNotEmpty, IsOptional, IsString, MaxLength } fr
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 export class ExportAnalysisPdfDto {
+  @ApiPropertyOptional({ description: '关联的 AI 需求分析记录 ID，用于导出前做归属校验', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  recordId?: string
+
   @ApiProperty({ description: 'Markdown 格式的分析报告正文', maxLength: 2_000_000 })
   @IsString()
   @IsNotEmpty()

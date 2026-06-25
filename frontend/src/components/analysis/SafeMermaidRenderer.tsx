@@ -14,6 +14,7 @@ import {
   renderMermaidSvg,
   svgToPngBlob,
 } from '@/utils/mermaidRender'
+import { sanitizeInlineSvg } from '@/utils/safeSvg'
 
 export type SafeMermaidRendererProps = {
   /** 原始 Mermaid 源码（来自 markdown 代码块） */
@@ -39,6 +40,7 @@ export function SafeMermaidRenderer({
     () => normalizeMermaidSource(rawSource.trim()),
     [rawSource],
   )
+  const safeSvg = useMemo(() => sanitizeInlineSvg(svg), [svg])
 
   useEffect(() => {
     const delay = isStreaming ? 900 : 200
@@ -216,7 +218,7 @@ export function SafeMermaidRenderer({
         >
           <div
             className="mx-auto min-w-0 max-w-full [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
-            dangerouslySetInnerHTML={{ __html: svg! }}
+            dangerouslySetInnerHTML={{ __html: safeSvg }}
           />
           <span className="pointer-events-none absolute bottom-2 right-3 rounded-md bg-black/50 px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover/mmd:opacity-100">
             点击放大
@@ -225,7 +227,7 @@ export function SafeMermaidRenderer({
       </div>
       <MermaidChartModal
         open={modalOpen}
-        svg={svg}
+        svg={safeSvg}
         onClose={() => setModalOpen(false)}
       />
     </>

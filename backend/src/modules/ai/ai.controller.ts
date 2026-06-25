@@ -90,7 +90,14 @@ export class AiController {
   @ApiOperation({ summary: '导出 AI 需求分析报告为专业排版 PDF（pdfkit，适合打印与分享）' })
   @ApiResponse({ status: 200, description: 'application/pdf 二进制流' })
   @Header('Cache-Control', 'no-store')
-  async exportAnalysisPdf(@Body() dto: ExportAnalysisPdfDto, @Res({ passthrough: false }) res: Response) {
+  async exportAnalysisPdf(
+    @Body() dto: ExportAnalysisPdfDto,
+    @CurrentUser('id') userId: string,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    if (dto.recordId) {
+      await this.aiService.assertCanAccessAnalysisRecord(dto.recordId, userId)
+    }
     const pdf = await this.analysisReportPdf.render(dto)
     const base =
       (dto.documentTitle?.trim() &&

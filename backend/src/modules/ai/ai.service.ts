@@ -926,6 +926,10 @@ export class AiService {
     return record
   }
 
+  async assertCanAccessAnalysisRecord(recordId: string, userId: string) {
+    await this.getOwnedAnalysisRecord(recordId, userId)
+  }
+
   private async createAnalysisReportVersion(input: {
     recordId: string
     markdown: string

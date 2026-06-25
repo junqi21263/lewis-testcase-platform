@@ -4,6 +4,7 @@ import { Response } from 'express'
 import { TestcasesService } from './testcases.service'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { CreateTestCaseDto } from './dto/create-test-case.dto'
+import { CreateSuiteDto, UpdateSuiteDto, UpdateTestCaseDto } from './dto/testcase-update.dto'
 
 @ApiTags('测试用例')
 @ApiBearerAuth()
@@ -37,13 +38,13 @@ export class TestcasesController {
 
   @Post('suites')
   @ApiOperation({ summary: '创建用例集' })
-  createSuite(@CurrentUser('id') userId: string, @Body() data: any) {
+  createSuite(@CurrentUser('id') userId: string, @Body() data: CreateSuiteDto) {
     return this.service.createSuite(userId, data)
   }
 
   @Patch('suites/:id')
   @ApiOperation({ summary: '更新用例集' })
-  updateSuite(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: any) {
+  updateSuite(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: UpdateSuiteDto) {
     return this.service.updateSuite(id, userId, data)
   }
 
@@ -72,7 +73,7 @@ export class TestcasesController {
 
   @Patch('cases/:id')
   @ApiOperation({ summary: '更新用例' })
-  updateCase(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: any) {
+  updateCase(@Param('id') id: string, @CurrentUser('id') userId: string, @Body() data: UpdateTestCaseDto) {
     return this.service.updateCase(id, userId, data)
   }
 

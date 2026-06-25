@@ -9,6 +9,7 @@ import {
   prepareMermaidSvgForDownload,
   svgToPngBlob,
 } from '@/utils/mermaidRender'
+import { sanitizeInlineSvg } from '@/utils/safeSvg'
 
 type Props = {
   open: boolean
@@ -19,6 +20,7 @@ type Props = {
 
 export function MermaidChartModal({ open, svg, title = '流程图', onClose }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const safeSvg = svg ? sanitizeInlineSvg(svg) : null
 
   useEffect(() => {
     if (!open) return
@@ -30,15 +32,15 @@ export function MermaidChartModal({ open, svg, title = '流程图', onClose }: P
   }, [open])
 
   const downloadSvg = () => {
-    if (!svg) return
-    downloadTextFile(prepareMermaidSvgForDownload(svg), `${title}.svg`, 'image/svg+xml')
+    if (!safeSvg) return
+    downloadTextFile(prepareMermaidSvgForDownload(safeSvg), `${title}.svg`, 'image/svg+xml')
     toast.success('已下载 SVG')
   }
 
   const downloadPng = async () => {
-    if (!svg) return
+    if (!safeSvg) return
     try {
-      const blob = await svgToPngBlob(svg)
+      const blob = await svgToPngBlob(safeSvg)
       downloadBlobFile(blob, `${title}.png`)
       toast.success('已下载 PNG')
     } catch (e) {
@@ -102,10 +104,10 @@ export function MermaidChartModal({ open, svg, title = '流程图', onClose }: P
               </div>
             </header>
             <div className="min-h-0 flex-1 overflow-auto p-5 [scrollbar-gutter:stable]">
-              {svg ? (
+              {safeSvg ? (
                 <div
                   className="mx-auto max-w-full [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
-                  dangerouslySetInnerHTML={{ __html: svg }}
+                  dangerouslySetInnerHTML={{ __html: safeSvg }}
                 />
               ) : (
                 <p className="py-12 text-center text-sm text-[color:var(--ui-report-text-muted)]">
