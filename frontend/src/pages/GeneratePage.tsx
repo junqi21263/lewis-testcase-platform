@@ -26,6 +26,7 @@ import {
   Gauge,
   AlertTriangle,
   ShieldCheck,
+  Images,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -67,6 +68,12 @@ import {
   type GenerateHandoffPlan,
 } from '@/utils/generateHandoffPlan'
 import { preprocessPdfForUpload } from '@/utils/pdfPreprocess'
+import {
+  buildMultiImageGenerationText,
+  isUploadedImageFile,
+  MAX_GENERATE_IMAGE_UPLOADS,
+  selectGenerateUploadFiles,
+} from '@/utils/generateMultiImageUpload'
 import { appConfirm } from '@/store/appConfirmStore'
 import toast from 'react-hot-toast'
 import type { TestCase, PromptTemplate, FileStatus, GenerationRecord, QualityReport } from '@/types'
@@ -170,7 +177,7 @@ async function pollFileUntilParsed(fileId: string) {
     try {
       const f = await filesApi.getFileById(fileId)
       transientErrors = 0
-      useGenerateStore.getState().setUploadedFile(f)
+      useGenerateStore.getState().updateUploadedFile(f)
       if (f.status === 'PARSED') {
         if (f.fileType === 'IMAGE' && !f.parsedContent?.trim()) {
           toast.error('图片未识别出文字，请在下方用文本补充需求，或换更清晰的截图')
@@ -693,27 +700,32 @@ function SoftTextarea(props: {
 }
 
 function FileUploadZone() {
-  const { setUploadedFile, uploadedFile } = useGenerateStore()
+  const {
+    setUploadedFile,
+    uploadedFile,
+    uploadedFiles,
+    setUploadedFiles,
+    updateUploadedFile,
+    removeUploadedFile,
+  } = useGenerateStore()
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [dragging, setDragging] = useState(false)
+  const filesForDisplay = uploadedFiles.length > 0 ? uploadedFiles : uploadedFile ? [uploadedFile] : []
+  const allDisplayedAreImages = filesForDisplay.length > 0 && filesForDisplay.every(isUploadedImageFile)
   const flowchartSummary = useMemo(
-    () => extractFlowchartSummary(uploadedFile?.parsedContent),
-    [uploadedFile?.parsedContent],
+    () => extractFlowchartSummary(
+      filesForDisplay.length > 1
+        ? buildMultiImageGenerationText(filesForDisplay)
+        : filesForDisplay[0]?.parsedContent,
+    ),
+    [filesForDisplay],
   )
 
-  const handleDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
-      setDragging(false)
-      const file = e.dataTransfer.files[0]
-      if (!file) return
-      await uploadFile(file)
-    },
-    [],
-  )
-
-  const uploadFile = async (file: File) => {
+  const uploadOneFile = async (
+    file: File,
+    onProgress?: (percent: number) => void,
+  ) => {
     const allowed = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -724,53 +736,168 @@ function FileUploadZone() {
       'image/jpeg',
     ]
     const okMime = allowed.some((t) => file.type.includes(t.split('/')[1]))
-    const okExt = file.name.match(/\.(pdf|docx|xlsx|txt|yaml|yml|png|jpg|jpeg)$/i)
+    const okExt = file.name.match(/\.(pdf|docx|xlsx|txt|yaml|yml|png|jpg|jpeg|webp)$/i)
     if (!okMime && !okExt) {
       toast.error('不支持的文件格式，请上传 PDF/Word/Excel/YAML/图片 文件')
-      return
+      return null
     }
+    let toUpload = file
+    if (file.name.toLowerCase().endsWith('.pdf')) toUpload = await preprocessPdfForUpload(file)
+    return filesApi.upload(toUpload, onProgress)
+  }
+
+  const uploadFiles = async (files: File[]) => {
+    let selection = selectGenerateUploadFiles(files)
+    const appendingToImages = filesForDisplay.length > 0 && allDisplayedAreImages && selection.mode === 'multi-image'
+    if (appendingToImages) {
+      const remaining = MAX_GENERATE_IMAGE_UPLOADS - filesForDisplay.length
+      if (remaining <= 0) {
+        toast.error(`最多只能上传 ${MAX_GENERATE_IMAGE_UPLOADS} 张图片`)
+        return
+      }
+      const accepted = selection.accepted.slice(0, remaining)
+      const rejected = [...selection.accepted.slice(remaining), ...selection.rejected]
+      selection = {
+        ...selection,
+        accepted,
+        rejected,
+        warning: rejected.length > 0 ? `最多 5 张图片，本次已自动忽略 ${rejected.length} 张。` : selection.warning,
+      }
+    }
+    if (selection.warning) toast(selection.warning, { duration: 6000 })
+    if (selection.accepted.length === 0) return
     setUploading(true)
     setProgress(0)
     try {
-      let toUpload = file
-      if (file.name.toLowerCase().endsWith('.pdf')) toUpload = await preprocessPdfForUpload(file)
-      const result = await filesApi.upload(toUpload, setProgress)
-      setUploadedFile(result)
-      toast.success('上传成功，正在解析文档…')
-      void pollFileUntilParsed(result.id)
+      if (selection.mode === 'single') {
+        const result = await uploadOneFile(selection.accepted[0], setProgress)
+        if (!result) return
+        setUploadedFile(result)
+        toast.success('上传成功，正在解析文档…')
+        void pollFileUntilParsed(result.id)
+        return
+      }
+
+      if (!appendingToImages) setUploadedFiles([])
+      const uploaded: typeof filesForDisplay = []
+      for (const [index, file] of selection.accepted.entries()) {
+        const result = await uploadOneFile(file, (percent) => {
+          const total = selection.accepted.length
+          setProgress(Math.round(((index + percent / 100) / total) * 100))
+        })
+        if (!result) continue
+        uploaded.push(result)
+        updateUploadedFile(result)
+        void pollFileUntilParsed(result.id)
+      }
+      if (uploaded.length > 0) {
+        toast.success(`已上传 ${uploaded.length} 张图片，正在解析…`)
+      }
     } catch {
       toast.error('文件上传失败')
     } finally {
       setUploading(false)
+      setProgress(0)
     }
   }
 
-  if (uploadedFile) {
-    const parsing = uploadedFile.status === 'PENDING' || uploadedFile.status === 'PARSING'
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragging(false)
+    await uploadFiles(Array.from(e.dataTransfer.files))
+  }
+
+  if (filesForDisplay.length > 0) {
+    const parsing = filesForDisplay.some((file) => file.status === 'PENDING' || file.status === 'PARSING')
+    const parsedCount = filesForDisplay.filter((file) => file.status === 'PARSED').length
     return (
       <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-card-bg))] p-3">
-        <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
-          <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
-            <FileText className="h-7 w-7 shrink-0 text-emerald-500" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{uploadedFile.originalName}</p>
-              <p className="text-xs text-[hsl(var(--gcs-text-muted))]">
-                {formatFileSize(uploadedFile.size)} · {uploadedFile.fileType}
-                {' · '}
-                <span className={uploadedFile.status === 'FAILED' ? 'text-destructive' : ''}>
-                  {fileStatusLabels[uploadedFile.status]}
-                </span>
-              </p>
-            </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setUploadedFile(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[hsl(var(--gcs-text-secondary))]">
+            {filesForDisplay.length > 1
+              ? `多图上传 · ${parsedCount}/${filesForDisplay.length} 已解析`
+              : '已上传文件'}
+          </p>
+          {allDisplayedAreImages && (
+            <Badge variant="outline">最多 {MAX_GENERATE_IMAGE_UPLOADS} 张图片</Badge>
+          )}
         </div>
+        <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+          {filesForDisplay.map((file) => {
+            const isImage = isUploadedImageFile(file)
+            return (
+              <div
+                key={file.id}
+                className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3"
+              >
+                {isImage ? (
+                  <Images className="h-7 w-7 shrink-0 text-emerald-500" />
+                ) : (
+                  <FileText className="h-7 w-7 shrink-0 text-emerald-500" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{file.originalName}</p>
+                  <p className="text-xs text-[hsl(var(--gcs-text-muted))]">
+                    {formatFileSize(file.size)} · {file.fileType}
+                    {' · '}
+                    <span className={file.status === 'FAILED' ? 'text-destructive' : ''}>
+                      {fileStatusLabels[file.status]}
+                    </span>
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => removeUploadedFile(file.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+        {filesForDisplay.length < MAX_GENERATE_IMAGE_UPLOADS && allDisplayedAreImages && (
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => document.getElementById('file-input')?.click()}
+              disabled={uploading}
+            >
+              继续添加图片
+            </Button>
+            <input
+              id="file-input"
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.docx,.xlsx,.txt,.yaml,.yml,.png,.jpg,.jpeg,.webp"
+              onChange={(e) => {
+                const selected = Array.from(e.target.files ?? [])
+                e.currentTarget.value = ''
+                if (selected.length) void uploadFiles(selected)
+              }}
+            />
+          </div>
+        )}
+        {uploading && (
+          <div className="mt-3 space-y-2">
+            <p className="flex items-center gap-1 text-xs text-primary">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              上传中... {progress}%
+            </p>
+            <div className="h-1.5 w-full rounded-full bg-secondary">
+              <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        )}
         {parsing && (
           <p className="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-300">
             <Loader2 className="h-3 w-3 animate-spin" />
-            正在解析文档，完成后再开始生成
+            正在解析，全部完成后再开始生成
           </p>
         )}
         {flowchartSummary && (
@@ -828,9 +955,14 @@ function FileUploadZone() {
       <input
         id="file-input"
         type="file"
+        multiple
         className="hidden"
-        accept=".pdf,.docx,.xlsx,.txt,.yaml,.yml,.png,.jpg,.jpeg"
-        onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])}
+        accept=".pdf,.docx,.xlsx,.txt,.yaml,.yml,.png,.jpg,.jpeg,.webp"
+        onChange={(e) => {
+          const selected = Array.from(e.target.files ?? [])
+          e.currentTarget.value = ''
+          if (selected.length) void uploadFiles(selected)
+        }}
       />
       {uploading ? (
         <div className="space-y-3">
@@ -845,7 +977,7 @@ function FileUploadZone() {
           <Upload className="mx-auto mb-3 h-9 w-9 text-[hsl(var(--gcs-text-muted))]" />
           <p className="text-sm font-medium">拖拽文件到这里，或点击上传</p>
           <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
-            支持 PDF、Word、Excel、YAML、图片
+            支持 PDF、Word、Excel、YAML；图片可一次最多选择 {MAX_GENERATE_IMAGE_UPLOADS} 张
           </p>
         </>
       )}
@@ -1790,6 +1922,7 @@ export default function GeneratePage() {
     setSourceType,
     uploadedFile,
     setUploadedFile,
+    uploadedFiles,
     inputText,
     setInputText,
     requirementDescription,
@@ -1962,16 +2095,20 @@ export default function GeneratePage() {
     requirementDescription.trim().length > 0 ||
     userNotes.trim().length > 0
   const promptReady = customPrompt.trim().length > 0
-  const fileReady = sourceType !== 'file' || (uploadedFile && uploadedFile.status === 'PARSED')
-  const sourceReady = sourceType === 'file' ? Boolean(uploadedFile) : textReady
+  const activeUploadedFiles = uploadedFiles.length > 0 ? uploadedFiles : uploadedFile ? [uploadedFile] : []
+  const multiImageReady = activeUploadedFiles.length > 1 && activeUploadedFiles.every(isUploadedImageFile)
+  const fileReady = sourceType !== 'file' || (activeUploadedFiles.length > 0 && activeUploadedFiles.every((file) => file.status === 'PARSED'))
+  const sourceReady = sourceType === 'file' ? activeUploadedFiles.length > 0 : textReady
   const canStartGenerate = sourceReady && promptReady && fileReady
   const readinessLabel = canStartGenerate
     ? '已准备好生成'
     : sourceType === 'file'
-      ? !uploadedFile
+      ? activeUploadedFiles.length === 0
         ? '需先上传文档'
-        : uploadedFile.status !== 'PARSED'
-          ? '等待文档解析完成'
+        : !fileReady
+          ? multiImageReady
+            ? '等待图片解析完成'
+            : '等待文档解析完成'
           : '请补充提示词'
       : !textReady
         ? '请填写需求内容'
@@ -1979,8 +2116,9 @@ export default function GeneratePage() {
 
   const handleGenerate = async () => {
     let generationInputText = buildGenerateRequestText(inputText, requirementDescription, userNotes)
-    let fileForGeneration = uploadedFile
-    if (sourceType === 'file' && !uploadedFile) {
+    let fileForGeneration: (typeof activeUploadedFiles)[number] | null = activeUploadedFiles[0] ?? null
+    let payloadSourceType: 'file' | 'text' = sourceType
+    if (sourceType === 'file' && activeUploadedFiles.length === 0) {
       toast.error('请先上传文件')
       return
     }
@@ -1993,25 +2131,41 @@ export default function GeneratePage() {
       return
     }
 
-    if (sourceType === 'file' && uploadedFile) {
-      let file = uploadedFile
+    if (sourceType === 'file' && activeUploadedFiles.length > 0) {
+      let refreshedFiles = activeUploadedFiles
       try {
-        file = await filesApi.getFileById(uploadedFile.id)
-        fileForGeneration = file
-        useGenerateStore.getState().setUploadedFile(file)
+        refreshedFiles = await Promise.all(activeUploadedFiles.map((file) => filesApi.getFileById(file.id)))
+        fileForGeneration = refreshedFiles[0] ?? null
+        useGenerateStore.getState().setUploadedFiles(refreshedFiles)
       } catch {
         toast.error('无法获取文件状态，请重试')
         return
       }
-      if (file.status !== 'PARSED') {
-        toast.error('请等待文件解析完成（须显示「解析完成」）后再生成')
+      const pending = refreshedFiles.find((file) => file.status !== 'PARSED')
+      if (pending) {
+        toast.error('请等待全部文件解析完成（须显示「解析完成」）后再生成')
         return
       }
-      if (!file.parsedContent?.trim()) {
-        toast.error('文件没有可用文本。请改用文本输入补充需求，或换一份文档。')
-        return
+      const allImages = refreshedFiles.length > 1 && refreshedFiles.every(isUploadedImageFile)
+      if (allImages) {
+        const multiImageText = buildMultiImageGenerationText(refreshedFiles)
+        if (!multiImageText.trim()) {
+          toast.error('图片没有可用解析文本。请用文本输入补充需求，或换更清晰的截图。')
+          return
+        }
+        generationInputText = generationInputText.trim()
+          ? `${generationInputText}\n\n${multiImageText}`
+          : multiImageText
+        payloadSourceType = 'text'
+        fileForGeneration = null
+      } else {
+        const file = refreshedFiles[0]
+        if (!file?.parsedContent?.trim()) {
+          toast.error('文件没有可用文本。请改用文本输入补充需求，或换一份文档。')
+          return
+        }
+        if (!generationInputText.trim()) generationInputText = file.parsedContent
       }
-      if (!generationInputText.trim()) generationInputText = file.parsedContent
     }
     if (hasAnalysisPlan && analysisPlan.requirements.length > 0 && selectedRequirementIds.length === 0) {
       toast.error('请至少选择一个 REQ 需求范围，或清空 AI 分析上下文后再生成')
@@ -2023,7 +2177,7 @@ export default function GeneratePage() {
         ? `${generationInputText}\n\n${scopePrompt}`
         : scopePrompt
     }
-    const flowchartContext = sourceType === 'file'
+    const flowchartContext = payloadSourceType === 'file'
       ? extractFlowchartSummary(fileForGeneration?.parsedContent)?.raw
       : extractFlowchartSummary(generationInputText)?.raw
 
@@ -2037,7 +2191,7 @@ export default function GeneratePage() {
       if (aiParams.stream) {
         await aiApi.generateStream(
           {
-            sourceType,
+            sourceType: payloadSourceType,
             fileId: fileForGeneration?.id,
             text: generationInputText,
             customPrompt,
@@ -2106,7 +2260,7 @@ export default function GeneratePage() {
         )
       } else {
         const result = await aiApi.generateTestCases({
-          sourceType,
+          sourceType: payloadSourceType,
           fileId: fileForGeneration?.id,
           text: generationInputText,
           customPrompt,
@@ -2494,7 +2648,13 @@ export default function GeneratePage() {
               <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
                 <div className="gcs-footer-status flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <Badge variant="outline" className="gcs-action-chip">
-                    {sourceType === 'text' ? `文本输入 ${textReady ? '已填写' : '未填写'}` : uploadedFile ? `文档 ${fileStatusLabels[uploadedFile.status]}` : '文档 未上传'}
+                    {sourceType === 'text'
+                      ? `文本输入 ${textReady ? '已填写' : '未填写'}`
+                      : activeUploadedFiles.length > 1
+                        ? `图片 ${activeUploadedFiles.filter((file) => file.status === 'PARSED').length}/${activeUploadedFiles.length} 已解析`
+                        : activeUploadedFiles[0]
+                          ? `文档 ${fileStatusLabels[activeUploadedFiles[0].status]}`
+                          : '文档 未上传'}
                   </Badge>
                   <Badge variant="outline" className="gcs-action-chip">文本 {inputText.length} 字</Badge>
                   <Badge variant="outline" className="gcs-action-chip">

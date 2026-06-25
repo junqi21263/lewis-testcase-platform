@@ -64,6 +64,10 @@ interface GenerateState {
 
   uploadedFile: UploadedFile | null
   setUploadedFile: (file: UploadedFile | null) => void
+  uploadedFiles: UploadedFile[]
+  setUploadedFiles: (files: UploadedFile[]) => void
+  updateUploadedFile: (file: UploadedFile) => void
+  removeUploadedFile: (id: string) => void
 
   inputText: string
   setInputText: (text: string) => void
@@ -141,6 +145,9 @@ const buildInitial = (): Omit<
   | 'setStep'
   | 'setSourceType'
   | 'setUploadedFile'
+  | 'setUploadedFiles'
+  | 'updateUploadedFile'
+  | 'removeUploadedFile'
   | 'setInputText'
   | 'setRequirementDescription'
   | 'setInputUrl'
@@ -167,6 +174,7 @@ const buildInitial = (): Omit<
   currentStep: 'upload',
   sourceType: 'file',
   uploadedFile: null,
+  uploadedFiles: [],
   inputText: '',
   requirementDescription: '',
   inputUrl: '',
@@ -197,7 +205,29 @@ export const useGenerateStore = create<GenerateState>()(
 
       setStep: (step) => set({ currentStep: step }),
       setSourceType: (type) => set({ sourceType: type }),
-      setUploadedFile: (file) => set({ uploadedFile: file }),
+      setUploadedFile: (file) => set({ uploadedFile: file, uploadedFiles: file ? [file] : [] }),
+      setUploadedFiles: (files) => set({ uploadedFiles: files, uploadedFile: files[0] ?? null }),
+      updateUploadedFile: (file) =>
+        set((state) => {
+          const exists = state.uploadedFiles.some((item) => item.id === file.id)
+          const uploadedFiles = exists
+            ? state.uploadedFiles.map((item) => (item.id === file.id ? file : item))
+            : [...state.uploadedFiles, file]
+          const uploadedFile =
+            state.uploadedFile?.id === file.id || !state.uploadedFile
+              ? file
+              : uploadedFiles.find((item) => item.id === state.uploadedFile?.id) ?? uploadedFiles[0] ?? null
+          return { uploadedFiles, uploadedFile }
+        }),
+      removeUploadedFile: (id) =>
+        set((state) => {
+          const uploadedFiles = state.uploadedFiles.filter((item) => item.id !== id)
+          const uploadedFile =
+            state.uploadedFile?.id === id
+              ? uploadedFiles[0] ?? null
+              : uploadedFiles.find((item) => item.id === state.uploadedFile?.id) ?? uploadedFiles[0] ?? null
+          return { uploadedFiles, uploadedFile }
+        }),
       setInputText: (text) => set({ inputText: text }),
       setRequirementDescription: (text) => set({ requirementDescription: text }),
       setInputUrl: (url) => set({ inputUrl: url }),
