@@ -12,6 +12,25 @@ function tryJson(s: string): unknown {
   }
 }
 
+function isJsonLikeTestcaseOutput(raw: string): boolean {
+  const t = (raw || '').trim()
+  if (!t) return false
+  const startsLikeJson = t.startsWith('{') || t.startsWith('[')
+  const hasSchemaKeys = /"?(cases|title|priority|steps|expectedResult|precondition)"?\s*[:：]/i.test(t)
+  if (startsLikeJson && hasSchemaKeys) return true
+
+  const lines = t
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length < 4 || !hasSchemaKeys) return false
+  const jsonSyntaxLines = lines.filter((line) =>
+    /^["{}\[\],]/.test(line) ||
+    /^"?(cases|title|priority|steps|expectedResult|precondition|type|tags)"?\s*[:：]/i.test(line),
+  ).length
+  return jsonSyntaxLines >= Math.max(4, Math.floor(lines.length * 0.35))
+}
+
 /** 从「形似 JSON 但结构错误」的包裹里取出大段 Markdown（如仅含 steps + expectedResult） */
 export function unwrapWrongJsonWrapper(raw: string): string {
   const t = (raw || '').trim()
@@ -259,6 +278,7 @@ function tryExplodeNumberedScenarioList(row: LooseCaseRow): LooseCaseRow[] {
 export function parseLooseMarkdownToCaseRows(raw: string): LooseCaseRow[] {
   const base = unwrapWrongJsonWrapper((raw || '').trim())
   if (!base.trim()) return []
+  if (isJsonLikeTestcaseOutput(base)) return []
 
   const chunks = splitIntoCaseChunks(base)
   const seen = new Set<string>()

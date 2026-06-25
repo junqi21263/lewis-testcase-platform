@@ -29,4 +29,36 @@ describe('parseLooseMarkdownToCaseRows contract fixtures', () => {
       expectedResult: '支付失败且订单保持待支付状态',
     })
   })
+
+  it('does not convert corrupted testcase JSON fragments into fake markdown cases', () => {
+    const corruptedJson = `{
+  "cases": [
+    {
+      "title": "密码登录成功",
+      "priority": "P0",
+      "type": "FUNCTIONAL",
+      "precondition": "用户已注册",
+      "steps": [
+        { "order": 1, "action": "输入邮箱和密码", "expected": "校验通过" },
+        { "order": 2, "action": "点击登录", "expected": "进入工作台" }
+      ],
+      "expectedResult": "[1] 校验通过\\n[2] 进入工作台"
+    },
+    {
+      "priority": "P0",
+      "type": "FUNCTIONAL",
+      "precondition": "测试账号具备核心流程访问权限",
+      "steps": [
+        "进入核心流程相关页面或功能入口",
+        "按需求执行 \\"priority\\": \\"P0\\" 对应操作",
+        "观察页面反馈、数据状态与后续入口"
+      ],
+      "expectedResult": "[1] 核心流程入口可正常访问 [2] 系统按需完成 \\"priority\\": \\"P0\\""
+    }
+`
+
+    const rows = parseLooseMarkdownToCaseRows(corruptedJson)
+
+    expect(rows).toEqual([])
+  })
 })
