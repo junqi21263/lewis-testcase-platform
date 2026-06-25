@@ -1,4 +1,4 @@
-import { normalizeCaseRowForPersistence, type NormalizedCaseShape } from './case-row-normalize.util'
+import { isPromptInstructionArtifactText, normalizeCaseRowForPersistence, type NormalizedCaseShape } from './case-row-normalize.util'
 import type { CoverageItem, QualityIssueItem, QualityReport } from './quality-check.util'
 
 export type ClosedLoopActionType =
@@ -202,6 +202,7 @@ function caseByTitle(cases: ClosedLoopCase[]): Map<string, ClosedLoopCase> {
 function buildAdditions(cases: ClosedLoopCase[], coverage: CoverageItem[]) {
   return coverage
     .filter((item) => item.status === 'missing')
+    .filter((item) => !isPromptInstructionArtifactText(item.requirement))
     .filter((item) => !hasLoopRequirementTag(cases, item.requirement))
     .map((item) => ({
       type: 'add_missing_requirement' as const,

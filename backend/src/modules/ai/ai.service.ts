@@ -10,7 +10,7 @@ import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { parseLooseMarkdownToCaseRows } from './parse-loose-ai-output.util'
 import { clampGenerationUserContent, humanizeAiProviderError, INPUT_CLAMPED_NOTICE_PREFIX, OUTPUT_TRUNCATED_NOTICE, roughTokenEstimateFromChars } from './ai-generation-limits.util'
-import { normalizeCaseRowForPersistence } from './case-row-normalize.util'
+import { filterPromptInstructionArtifactCases, normalizeCaseRowForPersistence } from './case-row-normalize.util'
 import { buildQualityReport as buildAiOutputQualityReport } from './quality-check.util'
 import { buildAutoRepairNotice, shouldAutoRepairQuality } from './auto-repair-quality.util'
 import {
@@ -526,10 +526,40 @@ export class AiService {
     return true
   }
 
+  private sanitizeParsedCaseRows(rows: any[]): { rows: any[]; removed: number } {
+    const filtered = filterPromptInstructionArtifactCases(rows)
+    return { rows: filtered, removed: Math.max(0, rows.length - filtered.length) }
+  }
+
+  private promptArtifactFallback(rawText: string, removed: number): {
+    rows: any[]
+    repaired: boolean
+    outputTruncated: boolean
+    schemaRepaired: boolean
+    schemaValidationWarnings: string[]
+  } {
+    const fallback = this.fallbackCasesFromRawOutput(rawText)
+    return {
+      rows: fallback,
+      repaired: false,
+      outputTruncated: false,
+      schemaRepaired: false,
+      schemaValidationWarnings: fallback.length
+        ? [`模型输出中 ${removed} 条疑似提示词规则/模板约束，已过滤并保存原文占位记录。`]
+        : [],
+    }
+  }
+
   private resolveCasesForPersistence(fullText: string): any[] {
-    const rows = this.extractCaseRows(fullText)
-    if (rows.length > 0) return rows
-    const loose = parseLooseMarkdownToCaseRows(fullText)
+    const extracted = this.extractCaseRows(fullText)
+    if (extracted.length > 0) {
+      const sanitized = this.sanitizeParsedCaseRows(extracted)
+      if (sanitized.rows.length > 0) return sanitized.rows
+      const fallback = this.fallbackCasesFromRawOutput(fullText)
+      if (fallback.length > 0) return fallback
+      return []
+    }
+    const loose = this.sanitizeParsedCaseRows(parseLooseMarkdownToCaseRows(fullText) as any[]).rows
     if (this.shouldUseLooseParsedCases(loose, fullText)) return loose as any[]
     const fallback = this.fallbackCasesFromRawOutput(fullText)
     if (fallback.length > 0) return fallback
@@ -550,8 +580,13 @@ export class AiService {
     schemaRepaired: boolean
     schemaValidationWarnings: string[]
   }> {
-    const direct = this.extractCaseRows(rawText)
-    if (direct.length > 0) {
+    const extractedDirect = this.extractCaseRows(rawText)
+    if (extractedDirect.length > 0) {
+      const directSanitized = this.sanitizeParsedCaseRows(extractedDirect)
+      if (directSanitized.rows.length === 0) {
+        return this.promptArtifactFallback(rawText, directSanitized.removed)
+      }
+      const direct = directSanitized.rows
       const validation = validateCaseRowsAgainstSchema(direct)
       if (validation.ok) {
         return {
@@ -565,7 +600,9 @@ export class AiService {
 
       const repairedDirect = await this.tryRepairToJsonObject(client, modelId, rawText, validation.errors)
       if (repairedDirect?.repairedText) {
-        const fixed = this.extractCaseRows(repairedDirect.repairedText)
+        const fixedRaw = this.extractCaseRows(repairedDirect.repairedText)
+        const fixedSanitized = this.sanitizeParsedCaseRows(fixedRaw)
+        const fixed = fixedSanitized.rows
         const fixedValidation = validateCaseRowsAgainstSchema(fixed)
         if (fixed.length > 0 && fixedValidation.ok) {
           return {
@@ -598,7 +635,9 @@ export class AiService {
 
     const repaired = await this.tryRepairToJsonObject(client, modelId, rawText)
     if (repaired?.repairedText) {
-      const fixed = this.extractCaseRows(repaired.repairedText)
+      const fixedRaw = this.extractCaseRows(repaired.repairedText)
+      const fixedSanitized = this.sanitizeParsedCaseRows(fixedRaw)
+      const fixed = fixedSanitized.rows
       if (fixed.length > 0) {
         const validation = validateCaseRowsAgainstSchema(fixed)
         return {
@@ -611,7 +650,9 @@ export class AiService {
       }
     }
 
-    const loose = parseLooseMarkdownToCaseRows(rawText)
+    const looseRaw = parseLooseMarkdownToCaseRows(rawText)
+    const looseSanitized = this.sanitizeParsedCaseRows(looseRaw as any[])
+    const loose = looseSanitized.rows
     if (this.shouldUseLooseParsedCases(loose, rawText)) {
       return {
         rows: loose as any[],

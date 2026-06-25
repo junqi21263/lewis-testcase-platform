@@ -217,6 +217,72 @@ function appendMermaidToDescription(description: string | undefined, mermaid: st
   return [base, `Mermaid:\n${m}`].filter(Boolean).join('\n\n')
 }
 
+function cleanArtifactText(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\*\*/g, '')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .trim()
+}
+
+function stepsToArtifactText(raw: unknown): string {
+  if (!Array.isArray(raw)) return cleanArtifactText(raw)
+  return raw
+    .map((step) => {
+      if (typeof step === 'string') return step
+      if (step && typeof step === 'object') {
+        const obj = step as Record<string, unknown>
+        return [obj.action, obj.desc, obj.description, obj.expected].map(cleanArtifactText).filter(Boolean).join(' ')
+      }
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+const PROMPT_INSTRUCTION_ARTIFACT_RE =
+  /(所有用例必须|无重复场景|覆盖维度要求|颗粒度要求|步骤必须|一步一动作|禁止合并多个操作|输出格式|仅输出|顶层必须|字段不能缺失|JSON\s*schema|Prompt|提示词|模板规则|评测模式|批量数量规则|输出前自检|枚举约束)/i
+
+const GENERIC_SCAFFOLD_RE = [
+  /测试账号具备.+访问权限/,
+  /测试数据满足该需求触发条件/,
+  /进入核心流程相关页面或功能入口/,
+  /按需求执行.+对应操作/,
+  /观察页面反馈、数据状态与后续操作入口/,
+  /核心流程入口可正常访问/,
+]
+
+export function isPromptInstructionArtifactText(raw: unknown): boolean {
+  const text = cleanArtifactText(raw)
+  if (!text) return false
+  return PROMPT_INSTRUCTION_ARTIFACT_RE.test(text)
+}
+
+export function isPromptInstructionArtifactCase(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const c = raw as Record<string, unknown>
+  const title = cleanArtifactText(c.title ?? c['用例名称'] ?? c.caseTitle ?? c.name)
+  const precondition = cleanArtifactText(c.precondition ?? c['前置条件'] ?? c.preCondition ?? c.prerequisite)
+  const expectedResult = cleanArtifactText(c.expectedResult ?? c['预期结果'] ?? c.expected ?? c['期望结果'])
+  const description = cleanArtifactText(c.description ?? c['备注'] ?? c.notes)
+  const steps = stepsToArtifactText(c.steps ?? c['测试步骤'] ?? c['步骤'])
+  const tags = Array.isArray(c.tags) ? c.tags.map(cleanArtifactText).join(' ') : cleanArtifactText(c.tags)
+  const allText = [title, precondition, steps, expectedResult, description, tags].filter(Boolean).join('\n')
+
+  const titleLooksLikePromptRule = PROMPT_INSTRUCTION_ARTIFACT_RE.test(title)
+  const scaffoldHits = GENERIC_SCAFFOLD_RE.filter((re) => re.test(allText)).length
+  const closedLoopPromptRule = /ai-closed-loop/.test(tags) && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText) && scaffoldHits >= 1
+  const genericCoreFlowPromptRule =
+    /核心流程/.test(title) && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText) && scaffoldHits >= 1
+  const fullyGenericScaffold = scaffoldHits >= 3 && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText)
+
+  return titleLooksLikePromptRule || closedLoopPromptRule || genericCoreFlowPromptRule || fullyGenericScaffold
+}
+
+export function filterPromptInstructionArtifactCases<T>(rows: T[]): T[] {
+  return rows.filter((row) => !isPromptInstructionArtifactCase(row))
+}
+
 /** 标签：补全「功能」等与 type 对应的中文标签（Excel 示例为 UI、功能） */
 function enrichTagsFromType(tags: string[], type: string): string[] {
   const next = [...tags]

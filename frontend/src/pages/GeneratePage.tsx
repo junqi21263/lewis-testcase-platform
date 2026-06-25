@@ -36,7 +36,7 @@ import { aiApi } from '@/api/ai'
 import { templatesApi } from '@/api/templates'
 import { downloadSuiteExport, testcasesApi } from '@/api/testcases'
 import { recordsApi } from '@/api/records'
-import { parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
+import { filterPromptInstructionArtifactCases, parseAiCasesFromText } from '@/utils/parseAiCasesFromText'
 import { formatFileSize } from '@/utils/format'
 import { loadRecentTemplateIds, pushRecentTemplateId } from '@/utils/recentTemplates'
 import {
@@ -1075,10 +1075,13 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
   const [pageSize, setPageSize] = useState(DEFAULT_CASE_PAGE_SIZE)
   const resultScrollRef = useRef<HTMLDivElement>(null)
 
-  const canExport = Boolean(lastSuiteId) || cases.length > 0
-  const availableTypes = useMemo(() => Array.from(new Set(cases.map((c) => c.type))), [cases])
+  const displayCases = useMemo(() => filterPromptInstructionArtifactCases(cases), [cases])
+  const hiddenArtifactCount = Math.max(0, cases.length - displayCases.length)
+  const canUseSuiteExport = Boolean(lastSuiteId) && hiddenArtifactCount === 0
+  const canExport = canUseSuiteExport || displayCases.length > 0
+  const availableTypes = useMemo(() => Array.from(new Set(displayCases.map((c) => c.type))), [displayCases])
   const filteredCases = useMemo(() => {
-    return cases.filter((c) => {
+    return displayCases.filter((c) => {
       const hitQuery = query.trim()
         ? `${c.title} ${c.precondition ?? ''} ${c.expectedResult} ${(c.tags ?? []).join(' ')}`.toLowerCase().includes(query.toLowerCase())
         : true
@@ -1086,7 +1089,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       const hitType = typeFilter === 'ALL' ? true : c.type === typeFilter
       return hitQuery && hitPriority && hitType
     })
-  }, [cases, query, priorityFilter, typeFilter])
+  }, [displayCases, query, priorityFilter, typeFilter])
 
   useEffect(() => {
     setPage(1)
@@ -1106,10 +1109,10 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
 
   useEffect(() => {
     resultScrollRef.current?.scrollTo({ top: 0 })
-  }, [safePage, pageSize, query, priorityFilter, typeFilter, cases.length])
+  }, [safePage, pageSize, query, priorityFilter, typeFilter, displayCases.length])
 
   const paginatedCases = pageData.visibleRows
-  const caseUiId = useCallback((c: TestCase) => getCaseUiId(c, cases.indexOf(c)), [cases])
+  const caseUiId = useCallback((c: TestCase) => getCaseUiId(c, displayCases.indexOf(c)), [displayCases])
   const groupedPageCases = useMemo(() => {
     if (!analysisPlan) return []
     const coverage = buildGeneratedCaseCoverage(analysisPlan, paginatedCases)
@@ -1203,7 +1206,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       toast.error('暂无可导出的用例')
       return
     }
-    if (lastSuiteId) {
+    if (lastSuiteId && canUseSuiteExport) {
       try {
         await downloadSuiteExport(lastSuiteId, format)
         toast.success('已开始下载')
@@ -1214,9 +1217,9 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
     }
     const tsName = `${exportFilenameTimestamp()}`
     const resolveModuleLabel = async () => {
-      if (!cases[0]?.suiteId) return ''
+      if (!displayCases[0]?.suiteId) return ''
       try {
-        const suite = await testcasesApi.getSuiteById(cases[0].suiteId)
+        const suite = await testcasesApi.getSuiteById(displayCases[0].suiteId)
         return (suite.projectName && suite.projectName.trim()) || suite.name || ''
       } catch {
         return ''
@@ -1224,7 +1227,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
     }
     if (format === 'EXCEL') {
       try {
-        await downloadTestcasesXlsx(cases, { moduleLabel: await resolveModuleLabel() })
+        await downloadTestcasesXlsx(displayCases, { moduleLabel: await resolveModuleLabel() })
         toast.success('已导出 Excel')
       } catch {
         toast.error('导出 Excel 失败，请稍后重试')
@@ -1232,12 +1235,12 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       return
     }
     if (format === 'JSON') {
-      downloadTextFile(`${tsName}.json`, JSON.stringify(cases, null, 2), 'application/json;charset=utf-8')
+      downloadTextFile(`${tsName}.json`, JSON.stringify(displayCases, null, 2), 'application/json;charset=utf-8')
       toast.success('已导出 JSON')
       return
     }
     if (format === 'MARKDOWN') {
-      downloadTextFile(`${tsName}.md`, toMarkdown(cases), 'text/markdown;charset=utf-8')
+      downloadTextFile(`${tsName}.md`, toMarkdown(displayCases), 'text/markdown;charset=utf-8')
       toast.success('已导出 Markdown')
       return
     }
@@ -1245,7 +1248,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       const moduleLabel = await resolveModuleLabel()
       const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
       const header = TESTCASE_EXPORT_COLUMNS_CN.map((h) => esc(h)).join(',')
-      const rows = cases.map((c) => testcaseDelimitedValues(c, moduleLabel).map(esc).join(','))
+      const rows = displayCases.map((c) => testcaseDelimitedValues(c, moduleLabel).map(esc).join(','))
       downloadTextFile(`${tsName}.csv`, [header, ...rows].join('\n'), 'text/csv;charset=utf-8')
       toast.success('已导出 CSV')
       return
@@ -1253,7 +1256,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
   }
 
   const handleCopyJson = async () => {
-    const text = JSON.stringify(cases, null, 2)
+    const text = JSON.stringify(displayCases, null, 2)
     const ok = await copyTextToClipboard(text)
     if (ok) toast.success('已复制 JSON 到剪贴板')
     else toast.error('复制失败，请手动复制')
@@ -1287,7 +1290,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       confirmVariant: 'destructive',
     })
     if (!ok) return
-    setGeneratedCases(cases.filter((c) => !selected.has(caseUiId(c))))
+    setGeneratedCases(displayCases.filter((c) => !selected.has(caseUiId(c))))
     setSelected(new Set())
     toast.success('已删除选中项')
   }
@@ -1407,10 +1410,11 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
           <div>
             <h3 className="text-base font-semibold">生成完成</h3>
             <p className="mt-1 text-xs text-[hsl(var(--gcs-text-muted))]">
-              共 {cases.length} 条
-              {stats.total !== cases.length ? `（筛选 ${stats.total} 条）` : ''}
+              共 {displayCases.length} 条
+              {stats.total !== displayCases.length ? `（筛选 ${stats.total} 条）` : ''}
               {' '}
               · 功能 {stats.functional} · 异常 {stats.negative} · 边界 {stats.edge}
+              {hiddenArtifactCount > 0 ? ` · 已隐藏 ${hiddenArtifactCount} 条提示词规则噪声` : ''}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1423,7 +1427,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
             <Button variant="outline" size="sm" onClick={() => handleExport('JSON')} disabled={!canExport}>
               导出 JSON
             </Button>
-            <Button variant="outline" size="sm" onClick={handleCopyJson} disabled={cases.length === 0}>
+            <Button variant="outline" size="sm" onClick={handleCopyJson} disabled={displayCases.length === 0}>
               复制 JSON
             </Button>
             <Button variant="ghost" size="sm" className="gap-1" onClick={() => setShowMoreActions((v) => !v)}>
@@ -1477,7 +1481,7 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       >
         <GenerateCoverageCommandCenter
           plan={analysisPlan}
-          cases={cases}
+          cases={displayCases}
           qualityReport={qualityReport}
         />
         <details className="gcs-advanced-settings" data-testid="generate-advanced-settings">
@@ -1505,15 +1509,15 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
               </div>
               <div className="rounded-xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-muted-bg))] p-3">
                 <p className="text-[hsl(var(--gcs-text-muted))]">当前筛选</p>
-                <p className="mt-1 font-semibold">{totalFiltered}/{cases.length} 条</p>
+                <p className="mt-1 font-semibold">{totalFiltered}/{displayCases.length} 条</p>
               </div>
             </div>
           </div>
         </details>
         <QualityReportPanel report={qualityReport} />
-        <GeneratedCoverageMatrix plan={analysisPlan} cases={cases} />
+        <GeneratedCoverageMatrix plan={analysisPlan} cases={displayCases} />
 
-        {qualityReport && cases.length > 0 && (
+        {qualityReport && displayCases.length > 0 && (
           <div className="rounded-2xl border border-[hsl(var(--gcs-panel-border))] bg-[hsl(var(--gcs-panel-bg))] p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-[220px]">
@@ -1725,7 +1729,8 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
       </div>
       <div className="gcs-result-panel-footer flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-[hsl(var(--gcs-text-muted))]">
         <span>
-          共 {cases.length} 条 · 筛选 {totalFiltered} 条 · 已选 {selected.size} 条
+          共 {displayCases.length} 条 · 筛选 {totalFiltered} 条 · 已选 {selected.size} 条
+          {hiddenArtifactCount > 0 ? ` · 已隐藏 ${hiddenArtifactCount} 条噪声` : ''}
         </span>
         {totalFiltered > 0 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -2049,7 +2054,7 @@ export default function GeneratePage() {
             let cases: TestCase[] = []
             if (meta?.suiteId) {
               try {
-                cases = await testcasesApi.getCasesBySuiteId(meta.suiteId)
+                cases = filterPromptInstructionArtifactCases(await testcasesApi.getCasesBySuiteId(meta.suiteId))
               } catch {
                 toast.error('用例集加载失败，将尝试从流式输出解析')
                 cases = []
@@ -2109,10 +2114,11 @@ export default function GeneratePage() {
           ...aiParams,
           flowchartContext,
         })
-        setGeneratedCases(result.cases)
+        const cleanCases = filterPromptInstructionArtifactCases(result.cases)
+        setGeneratedCases(cleanCases)
         setLastRecordId(result.recordId ?? null)
         setQualityReport(
-          result.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, result.cases),
+          result.qualityReport ?? buildLocalQualityReport(generationInputText || customPrompt, cleanCases),
         )
         if (result.autoRepair) {
           setClosedLoopStatus('succeeded', { summary: result.autoRepair.summary, error: null })
@@ -2128,7 +2134,7 @@ export default function GeneratePage() {
         if (result.warnings?.length) {
           for (const w of result.warnings) toast(w, { duration: 9000 })
         }
-        toast.success(`成功生成 ${result.cases.length} 条用例！`)
+        toast.success(`成功生成 ${cleanCases.length} 条用例！`)
       }
     } catch {
       setIsGenerating(false)

@@ -62,4 +62,56 @@ describe('parseLooseMarkdownToCaseRows contract fixtures', () => {
     expect(cases[0]?.title).not.toContain('"cases"')
     expect(cases[0]?.title).not.toContain('"priority"')
   })
+
+  it('does not show prompt instruction artifacts as generated cases', () => {
+    const pollutedJson = JSON.stringify({
+      cases: [
+        {
+          title: '密码登录-密码错误提示',
+          priority: 'P1',
+          type: 'FUNCTIONAL',
+          precondition: '1. 用户处于登录页面\n2. 用户已注册邮箱账号',
+          steps: [
+            { order: 1, action: '输入已注册邮箱和错误密码', expected: '字段可正常输入' },
+            { order: 2, action: '点击登录', expected: '显示密码错误提示' },
+          ],
+          expectedResult: '[1] 字段可正常输入\n[2] 显示密码错误提示',
+          tags: ['用户登录', '功能'],
+        },
+        {
+          title: '核心流程-所有用例必须唯一，无重复场景验证',
+          priority: 'P2',
+          type: 'FUNCTIONAL',
+          precondition: '1. 测试账号具备核心流程访问权限 2. 测试数据满足该需求触发条件',
+          steps: [
+            { order: 1, action: '进入核心流程相关页面或功能入口' },
+            { order: 2, action: '按需求执行「所有用例必须唯一，无重复场景」对应操作' },
+            { order: 3, action: '观察页面反馈、数据状态与后续操作入口' },
+          ],
+          expectedResult: '[1] 核心流程入口可正常访问 [2] 系统按需完成「所有用例必须唯一，无重复场景」并给出明确反馈',
+          tags: ['ai-closed-loop', '功能'],
+        },
+        {
+          title: '核心流程-覆盖维度要求**：验证',
+          priority: 'P2',
+          type: 'FUNCTIONAL',
+          precondition: '1. 测试账号具备核心流程访问权限 2. 测试数据满足该需求触发条件',
+          steps: [
+            { order: 1, action: '进入核心流程相关页面或功能入口' },
+            { order: 2, action: '按需求执行「覆盖维度要求」对应操作' },
+            { order: 3, action: '观察页面反馈、数据状态与后续操作入口' },
+          ],
+          expectedResult: '[1] 核心流程入口可正常访问 [2] 系统按需完成「覆盖维度要求」并给出明确反馈',
+          tags: ['ai-closed-loop', '功能'],
+        },
+      ],
+    })
+
+    const cases = parseAiCasesFromText(pollutedJson)
+
+    expect(cases).toHaveLength(1)
+    expect(cases[0]?.title).toBe('密码登录-密码错误提示')
+    expect(cases.map((item) => item.title).join('\n')).not.toContain('所有用例必须')
+    expect(cases.map((item) => item.title).join('\n')).not.toContain('覆盖维度要求')
+  })
 })
