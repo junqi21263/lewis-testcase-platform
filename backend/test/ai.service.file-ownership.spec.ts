@@ -17,7 +17,7 @@ describe('AiService file ownership checks', () => {
   it('generate rejects foreign fileId', async () => {
     const prismaMock = {
       uploadedFile: {
-        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     }
     const service = createAiService(prismaMock)
@@ -29,7 +29,7 @@ describe('AiService file ownership checks', () => {
   it('generateStream rejects foreign fileId', async () => {
     const prismaMock = {
       uploadedFile: {
-        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     }
     const service = createAiService(prismaMock)

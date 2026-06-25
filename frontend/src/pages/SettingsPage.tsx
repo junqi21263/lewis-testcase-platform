@@ -18,7 +18,7 @@ import { Separator } from '@/components/ui/separator'
 import { aiApi } from '@/api/ai'
 import { settingsApi, type AIModelAdmin, type RuntimeHints, type MultimodalRuntimeConfig } from '@/api/settings'
 import { authApi } from '@/api/auth'
-import { adminApi, type AdminAuditLogItem, type AdminUserItem } from '@/api/admin'
+import { adminApi, type AdminAuditLogItem, type AdminInviteCodeItem, type AdminUserItem } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
 import { useGenerateStore } from '@/store/generateStore'
 import type { AIModel, UserRole } from '@/types'
@@ -60,6 +60,8 @@ function auditActionLabel(action: string): string {
   if (action === 'SETTINGS_AI_MODEL_DELETE') return '删除模型'
   if (action === 'SETTINGS_AI_MODEL_SET_DEFAULT') return '设为默认模型'
   if (action === 'SETTINGS_MULTIMODAL_CONFIG_UPDATE') return '修改多模态配置'
+  if (action === 'INVITE_CODE_CREATE') return '创建邀请码'
+  if (action === 'INVITE_CODE_STATUS_UPDATE') return '更新邀请码'
   return action
 }
 
@@ -92,6 +94,7 @@ function formatAuditExtra(action: string, detail: unknown): string {
     return `${changed}${apiKeyHint}`
   }
   if (typeof d.modelId === 'string' && d.modelId.trim()) return `模型：${d.modelId}`
+  if (typeof d.inviteCodeId === 'string' && d.inviteCodeId.trim()) return `邀请码：${d.inviteCodeId}`
   return ''
 }
 
@@ -163,6 +166,11 @@ export default function SettingsPage() {
 
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogItem[]>([])
   const [adminAuditLoading, setAdminAuditLoading] = useState(false)
+  const [inviteCodes, setInviteCodes] = useState<AdminInviteCodeItem[]>([])
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteCreating, setInviteCreating] = useState(false)
+  const [inviteDraft, setInviteDraft] = useState({ code: '', maxUses: '', expiresAt: '', remark: '' })
+  const [lastCreatedInviteCode, setLastCreatedInviteCode] = useState('')
 
   const refreshModels = useCallback(async () => {
     setLoadingModels(true)
@@ -532,10 +540,24 @@ export default function SettingsPage() {
     }
   }, [superAdmin])
 
+  const refreshInviteCodes = useCallback(async () => {
+    if (!superAdmin) return
+    setInviteLoading(true)
+    try {
+      const res = await adminApi.listInviteCodes({ page: 1, pageSize: 20 })
+      setInviteCodes(res.list)
+    } catch {
+      toast.error('加载邀请码列表失败')
+    } finally {
+      setInviteLoading(false)
+    }
+  }, [superAdmin])
+
   useEffect(() => {
     if (!superAdmin) return
     void refreshAuditLogs()
-  }, [superAdmin, refreshAuditLogs])
+    void refreshInviteCodes()
+  }, [superAdmin, refreshAuditLogs, refreshInviteCodes])
 
   const resetSelectedUserPassword = async () => {
     if (!superAdmin) return
@@ -573,6 +595,7 @@ export default function SettingsPage() {
       { id: 'appearance-weather', label: '外观天气' },
       { id: 'section-ai-models', label: 'AI 模型' },
       ...(superAdmin ? [{ id: 'section-super-admin', label: '管理工具' }] : []),
+      ...(superAdmin ? [{ id: 'section-invite-codes', label: '邀请码' }] : []),
       ...(superAdmin ? [{ id: 'section-audit', label: '审计日志' }] : []),
     ],
     [admin, superAdmin],
@@ -596,6 +619,48 @@ export default function SettingsPage() {
       /* toast by interceptor */
     } finally {
       setAdminOpLoading(false)
+    }
+  }
+
+  const createInviteCode = async () => {
+    if (!superAdmin) return
+    setInviteCreating(true)
+    try {
+      const maxUses = inviteDraft.maxUses.trim() ? Number(inviteDraft.maxUses) : undefined
+      if (maxUses !== undefined && (!Number.isInteger(maxUses) || maxUses < 1)) {
+        toast.error('最大使用次数必须是正整数')
+        return
+      }
+      const res = await adminApi.createInviteCode({
+        code: inviteDraft.code.trim() || undefined,
+        maxUses,
+        expiresAt: inviteDraft.expiresAt.trim() || undefined,
+        remark: inviteDraft.remark.trim() || undefined,
+      })
+      setLastCreatedInviteCode(res.code)
+      setInviteDraft({ code: '', maxUses: '', expiresAt: '', remark: '' })
+      toast.success('邀请码已创建，请立即复制保存')
+      await refreshInviteCodes()
+      await refreshAuditLogs()
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setInviteCreating(false)
+    }
+  }
+
+  const setInviteCodeStatus = async (item: AdminInviteCodeItem, status: 'ACTIVE' | 'DISABLED') => {
+    if (!superAdmin) return
+    setInviteLoading(true)
+    try {
+      await adminApi.updateInviteCodeStatus(item.id, { status })
+      toast.success(status === 'ACTIVE' ? '邀请码已启用' : '邀请码已停用')
+      await refreshInviteCodes()
+      await refreshAuditLogs()
+    } catch {
+      /* toast by interceptor */
+    } finally {
+      setInviteLoading(false)
     }
   }
 
@@ -1088,6 +1153,131 @@ export default function SettingsPage() {
                       </>
                     )}
                   </div>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {superAdmin ? (
+              <SettingsCard
+                id="section-invite-codes"
+                icon={KeyRound}
+                title="注册邀请码"
+                description="管理灰度注册入口；历史邀请码只显示指纹，不回显明文"
+                actions={
+                  <Button
+                    variant="outline"
+                    className={set.btnSecondary}
+                    onClick={() => void refreshInviteCodes()}
+                    disabled={inviteLoading}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', inviteLoading && 'animate-spin')} />
+                    刷新
+                  </Button>
+                }
+              >
+                <div className={cn(set.modelCard, 'space-y-3')}>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <div className={set.formRow}>
+                      <label className={set.label}>邀请码</label>
+                      <Input
+                        className={set.control}
+                        placeholder="留空自动生成"
+                        value={inviteDraft.code}
+                        onChange={(e) => setInviteDraft((prev) => ({ ...prev, code: e.target.value }))}
+                      />
+                    </div>
+                    <div className={set.formRow}>
+                      <label className={set.label}>最大使用次数</label>
+                      <Input
+                        className={set.control}
+                        inputMode="numeric"
+                        placeholder="不限"
+                        value={inviteDraft.maxUses}
+                        onChange={(e) => setInviteDraft((prev) => ({ ...prev, maxUses: e.target.value }))}
+                      />
+                    </div>
+                    <div className={set.formRow}>
+                      <label className={set.label}>过期时间</label>
+                      <Input
+                        className={set.control}
+                        type="datetime-local"
+                        value={inviteDraft.expiresAt}
+                        onChange={(e) => setInviteDraft((prev) => ({ ...prev, expiresAt: e.target.value }))}
+                      />
+                    </div>
+                    <div className={set.formRow}>
+                      <label className={set.label}>备注</label>
+                      <Input
+                        className={set.control}
+                        placeholder="例如：朋友灰度测试"
+                        value={inviteDraft.remark}
+                        onChange={(e) => setInviteDraft((prev) => ({ ...prev, remark: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button className={set.btnPrimary} onClick={createInviteCode} disabled={inviteCreating}>
+                      创建邀请码
+                    </Button>
+                    {lastCreatedInviteCode ? (
+                      <div className="rounded-[14px] border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                        新邀请码：<span className="font-mono font-semibold">{lastCreatedInviteCode}</span>
+                        <span className="ml-2 text-emerald-100/70">仅显示一次，请保存后分享</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className={set.auditList}>
+                  {inviteCodes.length === 0 && !inviteLoading ? (
+                    <div className={set.empty}>
+                      <KeyRound className={set.emptyIcon} />
+                      <p className={set.emptyTitle}>暂无邀请码</p>
+                      <p className={set.emptySub}>创建后即可开放邀请注册</p>
+                    </div>
+                  ) : (
+                    inviteCodes.map((item) => {
+                      const active = item.status === 'ACTIVE'
+                      const usage =
+                        item.maxUses === null ? `${item.usedCount} / 不限` : `${item.usedCount} / ${item.maxUses}`
+                      return (
+                        <div key={item.id} className={set.auditItem}>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-[hsl(var(--settings-text-primary))]">
+                                指纹 #{item.codeFingerprint}
+                              </p>
+                              <p className="text-xs text-[hsl(var(--settings-text-muted))]">
+                                使用次数：{usage}
+                                {item.expiresAt ? ` · 过期：${format(new Date(item.expiresAt), 'yyyy-MM-dd HH:mm')}` : ' · 不限期'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={cn(set.badge, active ? set.badgeSuccess : set.badgeMuted)}>
+                                {active ? '启用中' : '已停用'}
+                              </span>
+                              <Button
+                                variant="outline"
+                                className={set.btnSecondary}
+                                onClick={() => void setInviteCodeStatus(item, active ? 'DISABLED' : 'ACTIVE')}
+                                disabled={inviteLoading}
+                              >
+                                {active ? '停用' : '启用'}
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-[hsl(var(--settings-text-muted))]">
+                            创建人：{item.createdBy?.username ?? '系统'} · 创建时间：
+                            {format(new Date(item.createdAt), 'yyyy-MM-dd HH:mm')}
+                            {item.lastUsedAt ? ` · 最近使用：${format(new Date(item.lastUsedAt), 'yyyy-MM-dd HH:mm')}` : ''}
+                          </p>
+                          {item.remark ? (
+                            <p className="text-xs text-[hsl(var(--settings-text-muted))]">备注：{item.remark}</p>
+                          ) : null}
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </SettingsCard>
             ) : null}

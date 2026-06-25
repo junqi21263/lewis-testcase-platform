@@ -4,6 +4,8 @@ import type { AIModel, AIGenerateParams, AnalysisCrossReview, AnalysisStructured
 export interface GenerateTestCasesPayload extends AIGenerateParams {
   sourceType: 'file' | 'text'
   fileId?: string
+  /** 与 fileId 合计 ≤5；多文件时需均为图片 */
+  additionalFileIds?: string[]
   text?: string
   templateId?: string
   customPrompt?: string

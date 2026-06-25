@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, TemplateCategory } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
+import { createHash } from 'node:crypto'
 
 const prisma = new PrismaClient()
 
@@ -37,6 +38,21 @@ async function main() {
     },
   })
   console.log('✅ 管理员账号创建成功:', admin.email)
+
+  const defaultInviteCode = process.env.AUTH_REGISTER_INVITE_CODE?.trim() || '0628'
+  const defaultInviteHash = createHash('sha256').update(defaultInviteCode).digest('hex')
+  await prisma.inviteCode.upsert({
+    where: { codeHash: defaultInviteHash },
+    update: { status: 'ACTIVE' },
+    create: {
+      id: defaultInviteCode === '0628' ? 'default-invite-0628' : undefined,
+      codeHash: defaultInviteHash,
+      status: 'ACTIVE',
+      remark: defaultInviteCode === '0628' ? '默认灰度邀请码 0628' : '环境变量初始化的邀请码',
+      createdById: admin.id,
+    },
+  })
+  console.log('✅ 默认邀请码初始化成功')
 
   // 创建测试用团队
   const team = await prisma.team.upsert({

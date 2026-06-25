@@ -203,6 +203,7 @@ model User {
   batchTasks                BatchTask[]
   adminAuditLogsAsOperator  AdminAuditLog[]             @relation("AdminAuditOperator")
   adminAuditLogsAsTarget    AdminAuditLog[]             @relation("AdminAuditTarget")
+  inviteCodesCreated        InviteCode[]                @relation("InviteCodeCreator")
   preference                UserPreference?
   testCaseReviews           TestCaseReview[]     @relation("ReviewReviewer")
   testCaseVersions          TestCaseVersion[]
@@ -270,12 +271,36 @@ model EmailOtpChallenge {
   username     String?         @db.VarChar(50)
   passwordHash String?         @db.VarChar(255)
   avatar       String?         @db.VarChar(500)
+  inviteCodeId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([email, purpose])
+  @@index([inviteCodeId])
   @@map("email_otp_challenges")
+}
+
+/// 注册邀请码（不保存明文邀请码）
+model InviteCode {
+  id          String    @id @default(cuid())
+  codeHash    String    @unique @db.VarChar(64)
+  status      String    @default("ACTIVE") @db.VarChar(20)
+  maxUses     Int?
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?
+  createdById String?
+  lastUsedAt  DateTime?
+  remark      String?   @db.VarChar(500)
+
+  createdBy User? @relation("InviteCodeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdById])
+  @@map("invite_codes")
 }
 
 /// 团队成员表（多对多关系）

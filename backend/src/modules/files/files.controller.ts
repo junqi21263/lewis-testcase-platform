@@ -26,6 +26,7 @@ import { RestructureFileDto } from './dto/restructure-file.dto'
 import { UploadChunkFieldsDto } from './dto/upload-chunk-fields.dto'
 import { MergeChunksDto } from './dto/merge-chunks.dto'
 import { RetryParseDto } from './dto/retry-parse.dto'
+import { assertAllowedUploadIdentity } from './file-upload-validation.util'
 import type { Request, Response } from 'express'
 
 /**
@@ -58,6 +59,15 @@ const effectiveMaxUpload =
   Number.isFinite(maxUploadBytes) && maxUploadBytes > 0 ? maxUploadBytes : DEFAULT_MAX_FILE_BYTES
 /** 单个分片请求体上限（略大于常见 2MB 分片） */
 const chunkRequestBodyMax = Math.min(8 * 1024 * 1024, effectiveMaxUpload)
+
+function uploadFileFilter(_req: Request, file: Express.Multer.File, cb: (error: Error | null, acceptFile: boolean) => void) {
+  try {
+    assertAllowedUploadIdentity(file.originalname, file.mimetype)
+    cb(null, true)
+  } catch (error) {
+    cb(error as Error, false)
+  }
+}
 
 /** COS 四项齐全且未强制本地盘时：单文件上传走内存直传 COS */
 function cosDirectUploadEnabled(): boolean {
@@ -99,6 +109,7 @@ export class FilesController {
             },
           }),
       limits: { fileSize: effectiveMaxUpload },
+      fileFilter: uploadFileFilter,
     }),
   )
   upload(

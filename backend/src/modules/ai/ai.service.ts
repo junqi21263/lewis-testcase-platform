@@ -1836,21 +1836,58 @@ ${originalPrompt}
     return `## 流程图结构化摘要${summary}`.trim().slice(0, 6000)
   }
 
+  private async resolveGenerationFileInput(
+    dto: GenerateDto,
+    userId: string,
+  ): Promise<{ fileRow: UploadedFile | null; fileContent?: string }> {
+    const rawIds = [dto.fileId, ...(dto.additionalFileIds ?? [])].filter(
+      (id): id is string => typeof id === 'string' && id.trim().length > 0,
+    )
+    const orderedIds = [...new Set(rawIds.map((id) => id.trim()))]
+    if (orderedIds.length === 0) {
+      if (dto.sourceType === 'file') throw new BadRequestException('请选择已解析完成的文件')
+      return { fileRow: null }
+    }
+    if (orderedIds.length > 5) throw new BadRequestException('最多支持 5 张图片一起生成用例')
+
+    const rows = await this.prisma.uploadedFile.findMany({
+      where: { id: { in: orderedIds }, uploaderId: userId },
+    })
+    if (rows.length !== orderedIds.length) throw new BadRequestException('文件不存在或无权访问')
+
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    const ordered = orderedIds.map((id) => byId.get(id)!)
+    if (ordered.length > 1) {
+      const invalid = ordered.find((row) => !(row.mimeType || '').toLowerCase().startsWith('image/'))
+      if (invalid) throw new BadRequestException('多文件生成仅支持图片，PDF/Word/Excel 请一次上传一个')
+    }
+
+    const notParsed = ordered.find((row) => row.status !== 'PARSED' || !row.parsedContent?.trim())
+    if (notParsed) throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
+
+    if (ordered.length === 1) {
+      return { fileRow: ordered[0], fileContent: ordered[0].parsedContent ?? undefined }
+    }
+
+    const fileContent = ordered
+      .map((row, index) => {
+        const name = row.originalName || row.name || `image-${index + 1}`
+        return `### 图片 ${index + 1}: ${name}\n${(row.parsedContent || '').trim()}`
+      })
+      .join('\n\n')
+    return { fileRow: ordered[0], fileContent }
+  }
+
   /** 非流式生成 */
   async generate(dto: GenerateDto, userId: string) {
-    this.logger.log(`generate: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
+    const generationFileIds = [dto.fileId, ...(dto.additionalFileIds ?? [])].filter(Boolean).join(',')
+    this.logger.log(`generate: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileIds=${generationFileIds || '(none)'}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    let fileContent: string | undefined
-    let fileRow: UploadedFile | null = null
-    if (dto.fileId) {
-      fileRow = await this.prisma.uploadedFile.findFirst({
-        where: { id: dto.fileId, uploaderId: userId },
-      })
-      if (!fileRow) throw new BadRequestException('文件不存在或无权访问')
-      fileContent = fileRow.parsedContent ?? undefined
-    }
+    const resolvedFileInput = await this.resolveGenerationFileInput(dto, userId)
+    const fileRow = resolvedFileInput.fileRow
+    let fileContent = resolvedFileInput.fileContent
 
     const extras = await this.buildRecordPersistExtras(dto, userId)
     const record = await this.prisma.generationRecord.create({
@@ -1876,7 +1913,7 @@ ${originalPrompt}
     try {
       // 单文件图片/PDF：默认优先混元 hunyuan-vision 端到端 JSON；
       // forceConfiguredModel=true 时跳过该捷径，直接走后台已选模型。
-      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
+      if (dto.fileId && !dto.additionalFileIds?.length && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
         const mime = (fileRow.mimeType || '').toLowerCase()
         const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
         if (isImgPdf && fileRow.path) {
@@ -1948,10 +1985,6 @@ ${originalPrompt}
             this.logger.warn(`generate: 混元多模态端到端失败，回退配置模型: ${(e as Error).message}`)
           }
         }
-      }
-
-      if (dto.fileId && !fileContent?.trim()) {
-        throw new BadRequestException('文件内容尚未解析完成，请稍后重试')
       }
 
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
@@ -2069,19 +2102,14 @@ ${originalPrompt}
 
   /** 流式生成（SSE） */
   async generateStream(dto: GenerateDto, userId: string, res: Response) {
-    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileId=${dto.fileId}`)
+    const generationFileIds = [dto.fileId, ...(dto.additionalFileIds ?? [])].filter(Boolean).join(',')
+    this.logger.log(`generateStream: modelConfigId=${dto.modelConfigId}, sourceType=${dto.sourceType}, fileIds=${generationFileIds || '(none)'}`)
     const { client, modelId, modelName } = await this.getOpenAIClient(dto.modelConfigId)
     const startTime = Date.now()
 
-    let fileContent: string | undefined
-    let fileRow: UploadedFile | null = null
-    if (dto.fileId) {
-      fileRow = await this.prisma.uploadedFile.findFirst({
-        where: { id: dto.fileId, uploaderId: userId },
-      })
-      if (!fileRow) throw new BadRequestException('文件不存在或无权访问')
-      fileContent = fileRow.parsedContent ?? undefined
-    }
+    const resolvedFileInput = await this.resolveGenerationFileInput(dto, userId)
+    const fileRow = resolvedFileInput.fileRow
+    let fileContent = resolvedFileInput.fileContent
 
     const extras = await this.buildRecordPersistExtras(dto, userId)
     const record = await this.prisma.generationRecord.create({
@@ -2127,7 +2155,7 @@ ${originalPrompt}
     try {
       // 单文件图片/PDF：默认可走混元多模态直出；
       // forceConfiguredModel=true 时跳过该捷径，始终走后台已选模型流式生成。
-      if (dto.fileId && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
+      if (dto.fileId && !dto.additionalFileIds?.length && fileRow && this.hunyuanMultimodalEnvReady() && !dto.forceConfiguredModel) {
         const mime = (fileRow.mimeType || '').toLowerCase()
         const isImgPdf = mime.startsWith('image/') || mime.includes('pdf')
         if (isImgPdf && fileRow.path) {
@@ -2208,10 +2236,6 @@ ${originalPrompt}
             this.logger.warn(`generateStream: 混元多模态端到端失败，回退流式模型: ${(e as Error).message}`)
           }
         }
-      }
-
-      if (dto.fileId && !fileContent?.trim()) {
-        throw new BadRequestException('文件内容尚未解析完成')
       }
 
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
@@ -2367,7 +2391,7 @@ ${originalPrompt}
         where: { id: record.id },
         data: { status: GenerationStatus.FAILED, errorMessage: message },
       })
-      this.aiStreamRecovery.writeData(res, { error: message })
+      this.aiStreamRecovery.writeData(res, { recordId: record.id, error: message })
       this.aiStreamRecovery.end(res)
     } finally {
       clearInterval(keepAlive)
@@ -2574,6 +2598,12 @@ ${originalPrompt}
           this.writeStreamNotice(res, `自动续写中断：${continued.failureReason}`)
         }
         if (finishReason === 'length') this.writeStreamNotice(res, OUTPUT_TRUNCATED_NOTICE)
+      }
+
+      if (!fullContent.trim()) {
+        throw new Error(
+          `AI 需求分析未产出报告正文，finish_reason=${finishReason || 'unknown'}。请检查当前模型是否支持流式文本输出，或切换模型后重试。`,
+        )
       }
 
       let analysisStructuredResult = buildAnalysisStructuredResult(fullContent)

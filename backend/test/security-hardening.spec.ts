@@ -12,6 +12,8 @@ import {
 } from '@/modules/reviews/dto/review.dto'
 import { ExportAnalysisPdfDto } from '@/modules/ai/dto/export-analysis-pdf.dto'
 import { JwtDenylistService } from '@/modules/auth/jwt-denylist.service'
+import { LoginAttemptService } from '@/modules/auth/login-attempt.service'
+import { assertUploadMagicNumber } from '@/modules/files/file-upload-validation.util'
 
 async function validateDto<T extends object>(cls: new () => T, payload: unknown) {
   return validate(plainToInstance(cls, payload), {
@@ -38,11 +40,11 @@ function mockHost(exceptionPath = '/api/boom') {
 }
 
 describe('security hardening regressions from quality report', () => {
-  it('keeps HTTP 4xx compatibility but returns real HTTP status for 5xx HttpException', () => {
+  it('returns real HTTP status for 4xx and 5xx HttpException', () => {
     const filter = new HttpExceptionFilter()
     const badRequest = mockHost('/api/bad-request')
     filter.catch(new BadRequestException('bad'), badRequest.host)
-    expect(badRequest.response.status).toHaveBeenCalledWith(HttpStatus.OK)
+    expect(badRequest.response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST)
 
     const unavailable = mockHost('/api/unavailable')
     filter.catch(new HttpException('upstream down', HttpStatus.SERVICE_UNAVAILABLE), unavailable.host)
@@ -117,5 +119,29 @@ describe('security hardening regressions from quality report', () => {
 
     await expect(denylist.assertNotRevoked('token-1')).rejects.toBeInstanceOf(UnauthorizedException)
     await expect(denylist.assertNotRevoked('token-2')).resolves.toBeUndefined()
+  })
+
+  it('locks repeated login failures and clears the lock state after success', async () => {
+    const attempts = new LoginAttemptService(undefined as any)
+
+    for (let i = 0; i < 5; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await attempts.recordFailure('friend@example.com', '127.0.0.1')
+    }
+
+    await expect(attempts.assertAllowed('friend@example.com', '127.0.0.1')).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+    })
+
+    await attempts.clear('friend@example.com', '127.0.0.1')
+    await expect(attempts.assertAllowed('friend@example.com', '127.0.0.1')).resolves.toBeUndefined()
+  })
+
+  it('rejects forged upload magic number before parsing large files', () => {
+    const forgedPng = Buffer.from('%PDF- fake png content')
+    expect(() => assertUploadMagicNumber(forgedPng, 'flow.png', 'image/png')).toThrow(BadRequestException)
+
+    const validPngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
+    expect(() => assertUploadMagicNumber(validPngHeader, 'flow.png', 'image/png')).not.toThrow()
   })
 })

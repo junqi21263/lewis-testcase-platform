@@ -148,11 +148,12 @@ apiClient.interceptors.response.use(
         case 429:
           toast.error(extractErrorMessage(data, '请求过于频繁，请稍后再试'))
           break
-        case 500:
-          toast.error(extractErrorMessage(data, '服务器内部错误'))
-          break
         default:
-          toast.error(extractErrorMessage(data, '网络异常，请稍后重试'))
+          if (status >= 500) {
+            toast.error(extractErrorMessage(data, '服务器内部错误'))
+          } else {
+            toast.error(extractErrorMessage(data, '网络异常，请稍后重试'))
+          }
       }
     } else if (error.request) {
       if (shouldSuppressToast(error.config)) return Promise.reject(error)

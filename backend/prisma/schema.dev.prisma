@@ -133,8 +133,28 @@ model User {
   uploadedFiles  UploadedFile[]
   records        GenerationRecord[]
   preference     UserPreference?
+  inviteCodesCreated InviteCode[] @relation("InviteCodeCreator")
   
   @@map("users")
+}
+
+model InviteCode {
+  id          String    @id @default(cuid())
+  codeHash    String    @unique
+  status      String    @default("ACTIVE")
+  maxUses     Int?
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?
+  createdById String?
+  lastUsedAt  DateTime?
+  remark      String?
+
+  createdBy User? @relation("InviteCodeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invite_codes")
 }
 
 /// 用户偏好（壁纸/天气等）

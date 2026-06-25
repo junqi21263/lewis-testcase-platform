@@ -6,6 +6,7 @@ import { AnalysisReportPdfService } from './analysis-report-pdf.service'
 import { GenerateDto } from './dto/generate.dto'
 import { CreateAnalysisDto } from './dto/create-analysis.dto'
 import { ExportAnalysisPdfDto } from './dto/export-analysis-pdf.dto'
+import { TestModelConnectivityDto } from './dto/test-model-connectivity.dto'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Roles } from '@/common/decorators/roles.decorator'
 import { UserRole } from '@prisma/client'
@@ -112,7 +113,7 @@ export class AiController {
   @Post('test')
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: '管理员：测试模型连通性（小请求）' })
-  testModel(@Body() body: { modelConfigId?: string; prompt?: string }) {
+  testModel(@Body() body: TestModelConnectivityDto) {
     return this.aiService.testModelConnectivity(body)
   }
 }

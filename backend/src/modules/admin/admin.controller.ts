@@ -3,7 +3,12 @@ import { UserRole } from '@prisma/client'
 import { CurrentUser } from '../../common/decorators/current-user.decorator'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { AdminService } from './admin.service'
-import { AdminResetPasswordDto, AdminUpdateUserRoleDto } from './dto/admin.dto'
+import {
+  AdminCreateInviteCodeDto,
+  AdminResetPasswordDto,
+  AdminUpdateInviteCodeStatusDto,
+  AdminUpdateUserRoleDto,
+} from './dto/admin.dto'
 
 @Controller('admin')
 export class AdminController {
@@ -51,5 +56,33 @@ export class AdminController {
     const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeRaw || '20', 10) || 20))
     return this.admin.listAuditLogs({ take: pageSize, skip: (page - 1) * pageSize })
   }
-}
 
+  @Get('invite-codes')
+  @Roles(UserRole.SUPER_ADMIN)
+  async inviteCodes(@Query('page') pageRaw?: string, @Query('pageSize') pageSizeRaw?: string) {
+    const page = Math.max(1, parseInt(pageRaw || '1', 10) || 1)
+    const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeRaw || '20', 10) || 20))
+    return this.admin.listInviteCodes({ take: pageSize, skip: (page - 1) * pageSize })
+  }
+
+  @Post('invite-codes')
+  @Roles(UserRole.SUPER_ADMIN)
+  async createInviteCode(
+    @Body() dto: AdminCreateInviteCodeDto,
+    @CurrentUser('id') operatorId: string,
+    @Ip() ip: string,
+  ) {
+    return this.admin.createInviteCode(dto, operatorId, ip)
+  }
+
+  @Patch('invite-codes/:id/status')
+  @Roles(UserRole.SUPER_ADMIN)
+  async updateInviteCodeStatus(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateInviteCodeStatusDto,
+    @CurrentUser('id') operatorId: string,
+    @Ip() ip: string,
+  ) {
+    return this.admin.updateInviteCodeStatus(id, dto.status, operatorId, ip)
+  }
+}

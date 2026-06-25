@@ -30,6 +30,7 @@ import { decidePdfParseStrategy } from './pdf-fast-parse-strategy.util'
 import { MultimodalService } from '@/modules/multimodal/multimodal.service'
 import { FileParseRuntimeService } from './file-parse-runtime.service'
 import { sanitizeErrorMessageForClient } from '@/utils/sanitizeErrorMessage'
+import { assertUploadMagicNumber } from './file-upload-validation.util'
 import {
   buildPdfPagedVisionExtractionPrompt,
   isGenericHunyuanPlaceholderOutput,
@@ -385,6 +386,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (!uploadBuffer || uploadBuffer.length < 1) {
       throw new BadRequestException('上传文件为空（0 bytes），请重试。')
     }
+    assertUploadMagicNumber(uploadBuffer, file.originalname, file.mimetype)
 
     try {
       const uri = await this.cosStorage.uploadBuffer(uploadBuffer, file.originalname)
@@ -435,6 +437,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (!uploadBuffer || uploadBuffer.length < 1) {
       throw new BadRequestException('上传文件为空（0 bytes），请重试。')
     }
+    assertUploadMagicNumber(uploadBuffer, file.originalname, file.mimetype)
 
     const storedPath = file.path?.trim()
       ? path.resolve(file.path.trim())
@@ -479,6 +482,14 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     if (stat.size < 1) {
       throw new BadRequestException('合并后文件为空')
     }
+    const head = Buffer.alloc(Math.min(stat.size, 4096))
+    const fd = fs.openSync(localPath, 'r')
+    try {
+      fs.readSync(fd, head, 0, head.length, 0)
+    } finally {
+      fs.closeSync(fd)
+    }
+    assertUploadMagicNumber(head, originalName, mimeType)
     const fileType = this.detectFileType(mimeType, originalName)
     const safeName = `${uuid()}${path.extname(originalName) || ''}`
 

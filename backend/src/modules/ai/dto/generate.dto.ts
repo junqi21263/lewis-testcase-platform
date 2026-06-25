@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsIn, Max, Min, MaxLength } from 'class-validator'
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class GenerateDto {
@@ -10,6 +10,13 @@ export class GenerateDto {
   @IsString()
   @MaxLength(128)
   fileId?: string
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsString({ each: true })
+  @MaxLength(128, { each: true })
+  additionalFileIds?: string[]
 
   @IsOptional()
   @IsString()

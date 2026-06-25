@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
-import { randomInt } from 'node:crypto'
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { EmailOtpPurpose, type User } from '@prisma/client'
 import { PrismaService } from '@/prisma/prisma.service'
 import {
@@ -27,6 +27,7 @@ import { isDirectAvatarImageUrl, resolveAvatarUrlForStorage } from '@/common/ava
 import { MailService } from '@/modules/mail/mail.service'
 import { CaptchaService, type CaptchaAction } from './captcha.service'
 import { JwtDenylistService } from './jwt-denylist.service'
+import { LoginAttemptService } from './login-attempt.service'
 
 const OTP_TTL_MS = 15 * 60 * 1000
 const RESEND_COOLDOWN_MS = 60 * 1000
@@ -43,6 +44,7 @@ export class AuthService {
     private mail: MailService,
     private captcha: CaptchaService,
     @Optional() private jwtDenylist?: JwtDenylistService,
+    @Optional() private loginAttempts?: LoginAttemptService,
   ) {}
 
   /**
@@ -66,14 +68,32 @@ export class AuthService {
     return raw.trim().toLowerCase()
   }
 
-  private expectedInviteCode(): string {
-    return (process.env.AUTH_REGISTER_INVITE_CODE || '0628').trim()
+  private hashInviteCode(inviteCode: string): string {
+    return createHash('sha256').update(inviteCode.trim()).digest('hex')
   }
 
-  private assertInviteCode(inviteCode?: string | null) {
-    if ((inviteCode ?? '').trim() !== this.expectedInviteCode()) {
+  private safeHashEquals(a: string, b: string): boolean {
+    const left = Buffer.from(a)
+    const right = Buffer.from(b)
+    return left.length === right.length && timingSafeEqual(left, right)
+  }
+
+  private async findActiveInviteCode(inviteCode?: string | null) {
+    const raw = (inviteCode ?? '').trim()
+    if (!raw) throw new BadRequestException('请输入邀请码')
+    const codeHash = this.hashInviteCode(raw)
+    const row = await this.prisma.inviteCode.findFirst({ where: { codeHash } })
+    if (!row || !this.safeHashEquals(row.codeHash, codeHash)) {
       throw new BadRequestException('邀请码无效，请确认后再注册')
     }
+    if (row.status !== 'ACTIVE') throw new BadRequestException('邀请码已停用，请联系管理员')
+    if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('邀请码已过期，请联系管理员')
+    }
+    if (typeof row.maxUses === 'number' && row.usedCount >= row.maxUses) {
+      throw new BadRequestException('邀请码使用次数已达上限，请联系管理员')
+    }
+    return row
   }
 
   private async assertCaptcha(action: CaptchaAction, captchaId?: string | null, captchaCode?: string | null) {
@@ -172,13 +192,14 @@ export class AuthService {
     }
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip?: string | null) {
     await this.assertCaptcha('login', dto.captchaId, dto.captchaCode)
     const rawLogin = (dto.email || dto.username || '').trim()
     const plainPwd = (dto.password ?? '').trim()
     if (!rawLogin || !plainPwd) {
       throw new UnauthorizedException('用户名或密码错误')
     }
+    await this.loginAttempts?.assertAllowed(rawLogin, ip)
 
     const asEmail = rawLogin.includes('@') ? this.normalizeEmail(rawLogin) : null
 
@@ -206,7 +227,10 @@ export class AuthService {
         }),
       )
     }
-    if (users.length === 0) throw new UnauthorizedException('用户名或密码错误')
+    if (users.length === 0) {
+      await this.loginAttempts?.recordFailure(rawLogin, ip)
+      throw new UnauthorizedException('用户名或密码错误')
+    }
 
     let matched = null as (typeof users)[number] | null
     for (const u of users) {
@@ -217,7 +241,11 @@ export class AuthService {
         break
       }
     }
-    if (!matched) throw new UnauthorizedException('用户名或密码错误')
+    if (!matched) {
+      await this.loginAttempts?.recordFailure(rawLogin, ip)
+      throw new UnauthorizedException('用户名或密码错误')
+    }
+    await this.loginAttempts?.clear(rawLogin, ip)
 
     const token = this.jwtService.sign({
       sub: matched.id,
@@ -232,7 +260,7 @@ export class AuthService {
   /** 注册第一步：校验资料、写入待验证记录、发验证码（不写 users） */
   async registerSendCode(dto: RegisterSendCodeDto) {
     this.assertAdminOnlyAllowed('注册')
-    this.assertInviteCode(dto.inviteCode)
+    const invite = await this.findActiveInviteCode(dto.inviteCode)
 
     const email = this.normalizeEmail(dto.email)
     const mailReady = this.mail.getMailTransportReadiness()
@@ -285,6 +313,7 @@ export class AuthService {
         username,
         passwordHash,
         avatar: dto.avatar ?? null,
+        inviteCodeId: invite.id,
       },
       update: {
         codeHash,
@@ -292,6 +321,7 @@ export class AuthService {
         username,
         passwordHash,
         avatar: dto.avatar ?? null,
+        inviteCodeId: invite.id,
       },
     })
 
@@ -348,6 +378,22 @@ export class AuthService {
     if (usernameTaken) throw new ConflictException('该用户名已被使用')
 
     const user = await this.prisma.$transaction(async (tx) => {
+      if (challenge.inviteCodeId) {
+        const invite = await tx.inviteCode.findUnique({ where: { id: challenge.inviteCodeId } })
+        if (!invite || invite.status !== 'ACTIVE') {
+          throw new BadRequestException('邀请码已失效，请重新获取验证码')
+        }
+        if (invite.expiresAt && invite.expiresAt.getTime() <= Date.now()) {
+          throw new BadRequestException('邀请码已过期，请重新获取验证码')
+        }
+        if (typeof invite.maxUses === 'number' && invite.usedCount >= invite.maxUses) {
+          throw new BadRequestException('邀请码使用次数已达上限，请重新获取验证码')
+        }
+        await tx.inviteCode.update({
+          where: { id: challenge.inviteCodeId },
+          data: { usedCount: { increment: 1 }, lastUsedAt: new Date() },
+        })
+      }
       await tx.emailOtpChallenge.delete({
         where: { email_purpose: { email, purpose: EmailOtpPurpose.REGISTER } },
       })
@@ -389,7 +435,10 @@ export class AuthService {
     })
 
     if (!challenge) {
-      return {}
+      return {
+        message: '若该邮箱存在待验证注册，验证码会重新发送',
+        data: { email },
+      }
     }
 
     this.assertResendCooldown(challenge.updatedAt)
@@ -544,7 +593,10 @@ export class AuthService {
       }
     }
 
-    return {}
+    return {
+      message: '若该邮箱已注册，重置验证码会发送至邮箱',
+      data: { email },
+    }
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -590,7 +642,10 @@ export class AuthService {
       this.prisma.user.update({ where: { id: user.id }, data: { password: hashed } }),
     ])
 
-    return {}
+    return {
+      message: '密码已重置，请使用新密码登录',
+      data: { email },
+    }
   }
 
   async logout(userId: string, token?: string) {
@@ -601,6 +656,6 @@ export class AuthService {
         : undefined
     await this.jwtDenylist?.revoke(token, Number.isFinite(exp) ? exp : undefined)
     this.logger.log(`User ${userId} logged out`)
-    return {}
+    return { message: '已退出登录', data: null }
   }
 }

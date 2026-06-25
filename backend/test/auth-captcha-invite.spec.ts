@@ -1,9 +1,12 @@
 import * as bcrypt from 'bcryptjs'
 import { BadRequestException } from '@nestjs/common'
 import { EmailOtpPurpose, UserRole } from '@prisma/client'
+import { createHash } from 'node:crypto'
 import { AuthService } from '@/modules/auth/auth.service'
 import { CaptchaService } from '@/modules/auth/captcha.service'
 import { PasswordValidator } from '@/common/validators/password.validator'
+
+const validInviteCodeHash = createHash('sha256').update('0628').digest('hex')
 
 function createPrismaMock() {
   const prisma: any = {
@@ -19,6 +22,31 @@ function createPrismaMock() {
       upsert: jest.fn().mockResolvedValue({ id: 'otp-1' }),
       update: jest.fn(),
       delete: jest.fn(),
+    },
+    inviteCode: {
+      findFirst: jest.fn(async ({ where }: { where: { codeHash?: string } }) =>
+        where.codeHash === validInviteCodeHash
+          ? {
+              id: 'invite-0628',
+              codeHash: validInviteCodeHash,
+              status: 'ACTIVE',
+              maxUses: null,
+              usedCount: 0,
+              expiresAt: null,
+              lastUsedAt: null,
+            }
+          : null,
+      ),
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'invite-0628',
+        codeHash: validInviteCodeHash,
+        status: 'ACTIVE',
+        maxUses: null,
+        usedCount: 0,
+        expiresAt: null,
+        lastUsedAt: null,
+      }),
+      update: jest.fn().mockResolvedValue({}),
     },
     $transaction: jest.fn(async (fnOrOps: any) => {
       if (typeof fnOrOps === 'function') return fnOrOps(prisma)
@@ -72,7 +100,7 @@ describe('AuthService captcha and invite gate', () => {
     jest.restoreAllMocks()
   })
 
-  it('rejects registration before email OTP when invite code is not 0628', async () => {
+  it('rejects registration before email OTP when invite code is not active in DB', async () => {
     const { service, prisma, captcha, mail } = createAuthService()
 
     await expect(
@@ -125,10 +153,12 @@ describe('AuthService captcha and invite gate', () => {
         purpose: EmailOtpPurpose.REGISTER,
         username: expect.stringMatching(/^friend/),
         passwordHash: expect.stringMatching(/^\$2/),
+        inviteCodeId: 'invite-0628',
       }),
       update: expect.objectContaining({
         username: expect.stringMatching(/^friend/),
         passwordHash: expect.stringMatching(/^\$2/),
+        inviteCodeId: 'invite-0628',
       }),
     })
     expect(JSON.stringify(prisma.emailOtpChallenge.upsert.mock.calls[0][0])).not.toContain('Friend@123456')

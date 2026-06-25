@@ -11,6 +11,7 @@ import { getJwtExpiresIn, getJwtSecret } from './jwt-config.util'
 import { CaptchaService } from './captcha.service'
 import { RedisModule } from '@/redis/redis.module'
 import { JwtDenylistService } from './jwt-denylist.service'
+import { LoginAttemptService } from './login-attempt.service'
 
 @Module({
   imports: [
@@ -26,8 +27,8 @@ import { JwtDenylistService } from './jwt-denylist.service'
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, PasswordValidator, CaptchaService, JwtDenylistService],
+  providers: [AuthService, JwtStrategy, PasswordValidator, CaptchaService, JwtDenylistService, LoginAttemptService],
   controllers: [AuthController],
-  exports: [AuthService, JwtModule, JwtDenylistService],
+  exports: [AuthService, JwtModule, JwtDenylistService, LoginAttemptService],
 })
 export class AuthModule {}

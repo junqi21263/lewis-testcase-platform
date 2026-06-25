@@ -36,6 +36,16 @@ develop:
         INSTALL_CJK_FONTS: "0"
         # 可选（CNB 仓库变量）：CNB_FRONTEND_DEV_HOST_PORT、CNB_BACKEND_DEV_HOST_PORT、CNB_BACKEND_EXTRA_NETWORKS — 见 scripts/ci/cnb-vps-remote-deploy.sh
       stages:
+        - name: 部署前质量门禁
+          script:
+            - |
+              set -eu
+              docker run --rm \
+                -v "$PWD:/workspace" \
+                -w /workspace \
+                node:20-bookworm \
+                sh ./scripts/ci/quality-gate.sh
+
         - name: 构建后端开发镜像
           script:
             - |
@@ -102,6 +112,16 @@ main:
         # 若宿主机 80 已被系统 Nginx/Apache 占用，在密钥或变量设 CNB_FRONTEND_PROD_HOST_PORT（如 8080）
         # 可选：CNB_FRONTEND_PROD_HOST_PORT、CNB_BACKEND_PROD_HOST_PORT — 默认 80 / 8081
       stages:
+        - name: 部署前质量门禁
+          script:
+            - |
+              set -eu
+              docker run --rm \
+                -v "$PWD:/workspace" \
+                -w /workspace \
+                node:20-bookworm \
+                sh ./scripts/ci/quality-gate.sh
+
         - name: 构建后端生产镜像
           script:
             - |

@@ -1794,10 +1794,12 @@ function AiAnalysisPageInner() {
       }
 
       try {
+        let receivedReport = ''
         await new Promise<void>((resolve, reject) => {
           aiApi.analyzeStream(
             payload,
             (chunk: string) => {
+              receivedReport += chunk
               setFirstTokenAtMs((prev) => prev ?? Date.now())
               dispatch({ type: 'APPEND_REPORT', chunk })
             },
@@ -1809,6 +1811,12 @@ function AiAnalysisPageInner() {
               }
               if (meta?.analysisStructuredResult) setCurrentAnalysisStructured(meta.analysisStructuredResult)
               if (typeof meta?.analysisVersionNumber === 'number') setCurrentAnalysisVersion(meta.analysisVersionNumber)
+              if (!receivedReport.trim()) {
+                const error = new Error('AI 需求分析未产出报告，请切换模型或重试')
+                dispatch({ type: 'ERROR', log: makeLog(`❌ 分析失败：${error.message}`, 'error') })
+                reject(error)
+                return
+              }
               void loadAnalysisRecords()
               if (humanReview) {
                 addLog(

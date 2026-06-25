@@ -15,6 +15,12 @@ async function bootstrap() {
     if (!jwt) {
       throw new Error('JWT_SECRET is required in production. Set it in Railway service variables.')
     }
+    const allowPlainPassword = ['1', 'true', 'yes'].includes(
+      (process.env.AUTH_ALLOW_PLAINTEXT_PASSWORD || '').trim().toLowerCase(),
+    )
+    if (allowPlainPassword) {
+      throw new Error('AUTH_ALLOW_PLAINTEXT_PASSWORD is not allowed in production.')
+    }
   }
 
   const logger = new Logger('Bootstrap')
@@ -36,8 +42,12 @@ async function bootstrap() {
   }
 
   const expressAppEarly = app.getHttpAdapter().getInstance()
-  expressAppEarly.use(express.json({ limit: '50mb' }))
-  expressAppEarly.use(express.urlencoded({ extended: true, limit: '50mb' }))
+  expressAppEarly.use('/api/ai/analyze/export-pdf', express.json({ limit: '20mb' }))
+  expressAppEarly.use('/api/ai/analyze/stream', express.json({ limit: '4mb' }))
+  expressAppEarly.use('/api/ai/generate/stream', express.json({ limit: '4mb' }))
+  expressAppEarly.use('/api/ai/generate', express.json({ limit: '4mb' }))
+  expressAppEarly.use(express.json({ limit: '1mb' }))
+  expressAppEarly.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
   // 统一 API 前缀
   app.setGlobalPrefix('api')

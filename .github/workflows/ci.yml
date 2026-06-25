@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  backend:
+    name: Backend Test And Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+      - name: Install backend dependencies
+        run: pnpm -C backend install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm -C backend exec prisma generate --schema=./prisma/schema.prod.prisma
+      - name: Backend tests
+        run: pnpm -C backend test
+      - name: Backend build
+        run: pnpm -C backend build
+
+  frontend:
+    name: Frontend Test Build And Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+      - name: Install frontend dependencies
+        run: pnpm -C frontend install --frozen-lockfile
+      - name: Frontend unit tests
+        run: pnpm -C frontend test:unit
+      - name: Frontend build
+        run: pnpm -C frontend build
+      - name: Install Playwright Chromium
+        run: pnpm -C frontend exec playwright install --with-deps chromium
+      - name: Playwright smoke
+        run: pnpm -C frontend test:e2e -- tests/e2e/login-failed-inputs-visible.spec.ts tests/e2e/auth-captcha-invite.spec.ts

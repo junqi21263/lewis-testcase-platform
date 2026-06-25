@@ -66,7 +66,7 @@
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | seed 时创建默认管理员 |
 | `AUTH_ADMIN_ONLY` | 管理员模式，关闭公开注册等入口 |
 | `AUTH_ALLOW_PLAINTEXT_PASSWORD` | 紧急密码救援，平时不要开启 |
-| `AUTH_REGISTER_INVITE_CODE` | 邀请注册码 |
+| `AUTH_REGISTER_INVITE_CODE` | 首次 seed 默认邀请码；运行时以数据库 `invite_codes` 和系统设置页为准 |
 | `AUTH_CAPTCHA_TTL_SEC` | 图形验证码有效期 |
 
 ## 5. AI 文本生成
