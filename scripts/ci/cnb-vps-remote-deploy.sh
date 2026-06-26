@@ -79,16 +79,16 @@ esac
 # testcase_* 容器占用相同宿主端口。只自动替换本项目已知旧容器名，其他端口占用直接失败。
 case "$FLAVOR" in
   backend-dev)
-    KNOWN_PORT_OWNER_NAMES="testcase_dev_backend ${CNAME}"
+    KNOWN_PORT_OWNER_NAMES="testcase_dev_backend testcase_backend_dev ${CNAME}"
     ;;
   frontend-dev)
-    KNOWN_PORT_OWNER_NAMES="testcase_dev_frontend ${CNAME}"
+    KNOWN_PORT_OWNER_NAMES="testcase_dev_frontend testcase_frontend_dev ${CNAME}"
     ;;
   backend-prod)
-    KNOWN_PORT_OWNER_NAMES="testcase_prod_backend ${CNAME}"
+    KNOWN_PORT_OWNER_NAMES="testcase_prod_backend testcase_backend ${CNAME}"
     ;;
   frontend-prod)
-    KNOWN_PORT_OWNER_NAMES="testcase_prod_frontend ${CNAME}"
+    KNOWN_PORT_OWNER_NAMES="testcase_prod_frontend testcase_frontend ${CNAME}"
     ;;
   *)
     KNOWN_PORT_OWNER_NAMES="${CNAME}"
