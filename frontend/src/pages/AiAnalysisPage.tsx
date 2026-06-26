@@ -1424,7 +1424,6 @@ function AiAnalysisPageInner() {
               sourceType: 'text' as const,
               text: directText.trim(),
               customPrompt,
-              stream: true as const,
               modelConfigId: selectedModelId,
               ...(isRevision && currentAnalysisRecordId
                 ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }
@@ -1435,7 +1434,6 @@ function AiAnalysisPageInner() {
               sourceType: 'text' as const,
               text: editedParsedText.trim(),
               customPrompt,
-              stream: true as const,
               modelConfigId: selectedModelId,
               ...(isRevision && currentAnalysisRecordId
                 ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }
@@ -1449,7 +1447,6 @@ function AiAnalysisPageInner() {
                   ? { additionalFileIds: additionalAnalysisFiles.map((f) => f.id) }
                   : {}),
                 customPrompt,
-                stream: true as const,
                 modelConfigId: selectedModelId,
                 ...(isRevision && currentAnalysisRecordId
                   ? { baseRecordId: currentAnalysisRecordId, revisionNote: state.reviewText.trim() }

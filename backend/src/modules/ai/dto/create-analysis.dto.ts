@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsIn, Max, Min, IsArray, ArrayMaxSize, MaxLength } from 'class-validator'
+import { IsString, IsOptional, IsNumber, IsIn, Max, Min, IsArray, ArrayMaxSize, MaxLength, IsBoolean } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateAnalysisDto {
@@ -60,4 +60,9 @@ export class CreateAnalysisDto {
   @Min(256)
   @Max(128000)
   maxTokens?: number
+
+  @ApiProperty({ required: false, description: '兼容旧前端的流式标记；/analyze/stream 固定按流式处理' })
+  @IsOptional()
+  @IsBoolean()
+  stream?: boolean
 }

@@ -11,6 +11,7 @@ import {
   UpdateReviewStatusDto,
 } from '@/modules/reviews/dto/review.dto'
 import { ExportAnalysisPdfDto } from '@/modules/ai/dto/export-analysis-pdf.dto'
+import { CreateAnalysisDto } from '@/modules/ai/dto/create-analysis.dto'
 import { JwtDenylistService } from '@/modules/auth/jwt-denylist.service'
 import { LoginAttemptService } from '@/modules/auth/login-attempt.service'
 import { assertUploadMagicNumber } from '@/modules/files/file-upload-validation.util'
@@ -108,6 +109,24 @@ describe('security hardening regressions from quality report', () => {
   it('accepts recordId on PDF export DTO for ownership checks and rejects extra fields', async () => {
     await expect(validateDto(ExportAnalysisPdfDto, { markdown: '# ok', recordId: 'record-1' })).resolves.toHaveLength(0)
     await expect(validateDto(ExportAnalysisPdfDto, { markdown: '# ok', creatorId: 'attacker' })).resolves.toHaveLength(1)
+  })
+
+  it('accepts legacy stream flag on AI analysis stream DTO but rejects unrelated fields', async () => {
+    await expect(
+      validateDto(CreateAnalysisDto, {
+        sourceType: 'file',
+        fileId: 'file-1',
+        modelConfigId: 'model-1',
+        stream: true,
+      }),
+    ).resolves.toHaveLength(0)
+    await expect(
+      validateDto(CreateAnalysisDto, {
+        sourceType: 'file',
+        fileId: 'file-1',
+        creatorId: 'attacker',
+      }),
+    ).resolves.toHaveLength(1)
   })
 
   it('stores logout token in denylist and rejects it until expiry', async () => {
