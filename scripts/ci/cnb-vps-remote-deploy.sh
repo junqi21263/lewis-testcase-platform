@@ -75,6 +75,27 @@ case "$FLAVOR" in
     ;;
 esac
 
+# CNB docker-run 部署曾经从 docker-compose 部署迁移而来；同一台 VPS 上可能还残留
+# testcase_* 容器占用相同宿主端口。只自动替换本项目已知旧容器名，其他端口占用直接失败。
+case "$FLAVOR" in
+  backend-dev)
+    KNOWN_PORT_OWNER_NAMES="testcase_dev_backend ${CNAME}"
+    ;;
+  frontend-dev)
+    KNOWN_PORT_OWNER_NAMES="testcase_dev_frontend ${CNAME}"
+    ;;
+  backend-prod)
+    KNOWN_PORT_OWNER_NAMES="testcase_prod_backend ${CNAME}"
+    ;;
+  frontend-prod)
+    KNOWN_PORT_OWNER_NAMES="testcase_prod_frontend ${CNAME}"
+    ;;
+  *)
+    KNOWN_PORT_OWNER_NAMES="${CNAME}"
+    ;;
+esac
+REPLACE_KNOWN_PORT_OWNER="${CNB_REPLACE_KNOWN_PORT_OWNER:-1}"
+
 # 前端 nginx 将 /api、/health 反代到主机名 backend:3000（见 frontend/nginx.conf.template）。
 # 独立 docker run 时默认 bridge 无 DNS，必须让前后端加入同一 user-defined 网络，并为后端设置别名 backend。
 case "$FLAVOR" in
@@ -170,12 +191,39 @@ case "$FLAVOR" in
 esac
 
 ssh_vps "
-  set -e
+  set -eu
   docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
-  docker pull ${IMG} &&
-  docker stop ${CNAME} || true &&
-  docker rm ${CNAME} || true &&
-  docker run -d --name ${CNAME} --restart=always ${RUN_BACKEND_NET} ${RUN_WORKER_NET} ${RUN_FRONTEND_NET} ${BACKEND_ENV_ARGS} ${RUN_ENV_ARGS} ${RUN_PORT_ARGS} ${IMG} &&
+  docker pull ${IMG}
+
+  docker stop ${CNAME} >/dev/null 2>&1 || true
+  docker rm ${CNAME} >/dev/null 2>&1 || true
+
+  if [ -n '${HPORT}' ]; then
+    PORT_OWNER=\$(docker ps --filter publish=${HPORT} --format '{{.ID}} {{.Names}}' | head -n 1 || true)
+    if [ -n \"\${PORT_OWNER}\" ]; then
+      OWNER_ID=\$(printf '%s\n' \"\${PORT_OWNER}\" | awk '{print \$1}')
+      OWNER_NAME=\$(printf '%s\n' \"\${PORT_OWNER}\" | awk '{print \$2}')
+      MATCHED=0
+      for known in ${KNOWN_PORT_OWNER_NAMES}; do
+        if [ \"\${OWNER_NAME}\" = \"\${known}\" ]; then
+          MATCHED=1
+          break
+        fi
+      done
+
+      if [ \"\${MATCHED}\" = '1' ] && [ '${REPLACE_KNOWN_PORT_OWNER}' = '1' ]; then
+        echo \"cnb-vps-remote-deploy: replacing known port owner \${OWNER_NAME} on ${HPORT}\"
+        docker stop \"\${OWNER_ID}\" >/dev/null 2>&1 || true
+        docker rm \"\${OWNER_ID}\" >/dev/null 2>&1 || true
+      else
+        echo \"cnb-vps-remote-deploy: ERROR: host port ${HPORT} is already used by \${OWNER_NAME} (\${OWNER_ID}).\" >&2
+        echo \"  Set a different CNB_*_HOST_PORT or stop the owner container on VPS.\" >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  docker run -d --name ${CNAME} --restart=always ${RUN_BACKEND_NET} ${RUN_WORKER_NET} ${RUN_FRONTEND_NET} ${BACKEND_ENV_ARGS} ${RUN_ENV_ARGS} ${RUN_PORT_ARGS} ${IMG}
   docker image prune -f >/dev/null 2>&1 || true
 "
 
