@@ -1,8 +1,8 @@
-import { AiService } from '@/modules/ai/ai.service'
+import { AiStructuredOutputService } from '@/modules/ai/ai-structured-output.service'
 
 function createService() {
   const config = { get: jest.fn((key: string) => (key === 'AI_STRICT_SCHEMA_OUTPUT' ? 'true' : undefined)) }
-  return new AiService({} as any, config as any, {} as any, {} as any) as any
+  return new AiStructuredOutputService(config as any) as any
 }
 
 function createClient() {

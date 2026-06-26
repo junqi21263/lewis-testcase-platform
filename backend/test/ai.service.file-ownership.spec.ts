@@ -3,7 +3,7 @@ import { AiService } from '@/modules/ai/ai.service'
 
 function createAiService(prismaMock: any) {
   const configMock = { get: jest.fn() }
-  const service = new AiService(prismaMock as any, configMock as any, {} as any, {} as any)
+  const service = new AiService(prismaMock as any, configMock as any, {} as any, {} as any, {} as any)
   jest.spyOn(service as any, 'getOpenAIClient').mockResolvedValue({
     client: {} as any,
     modelId: 'test-model',

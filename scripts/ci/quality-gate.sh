@@ -1,14 +1,19 @@
 #!/bin/sh
 set -eu
 
-corepack enable
-corepack prepare pnpm@10.33.0 --activate >/dev/null
+if command -v corepack >/dev/null 2>&1; then
+  corepack enable
+  corepack prepare pnpm@10.33.0 --activate >/dev/null
+  PNPM_CMD="pnpm"
+else
+  PNPM_CMD="npx pnpm@10.33.0"
+fi
 
-pnpm -C backend install --frozen-lockfile
-pnpm -C backend exec prisma generate --schema=./prisma/schema.prod.prisma
-pnpm -C backend test
-pnpm -C backend build
+$PNPM_CMD -C backend install --frozen-lockfile
+$PNPM_CMD -C backend exec prisma generate --schema=./prisma/schema.prod.prisma
+$PNPM_CMD -C backend test
+$PNPM_CMD -C backend build
 
-pnpm -C frontend install --frozen-lockfile
-pnpm -C frontend test:unit
-pnpm -C frontend build
+$PNPM_CMD -C frontend install --frozen-lockfile
+$PNPM_CMD -C frontend test:unit
+$PNPM_CMD -C frontend build

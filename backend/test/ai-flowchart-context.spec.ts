@@ -7,6 +7,7 @@ describe('AiService flowchart context prompt', () => {
       { get: jest.fn(() => undefined) } as any,
       {} as any,
       { bootstrapForRecord: jest.fn() } as any,
+      {} as any,
     )
   }
 

@@ -20,7 +20,7 @@ import {
   shouldAttemptContinuation,
   buildPlainTextContinuationMessages,
 } from './ai-output-budget.util'
-import { buildJsonObjectResponseFormat, buildStrictCaseResponseFormat, isStructuredOutputUnsupportedError, validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
+import { validateCaseRowsAgainstSchema } from './testcase-output-schema.util'
 import { buildClosedLoopPlan, type ClosedLoopCase, type ClosedLoopMutation } from './closed-loop-agent.util'
 import {
   buildAnalysisRepairPrompt,
@@ -49,6 +49,7 @@ import { ReviewsService } from '@/modules/reviews/reviews.service'
 import { buildSnapshotFromCase } from '@/modules/reviews/case-snapshot.util'
 import { AiRuntimeQueueService } from './ai-runtime-queue.service'
 import { AiStreamRecoveryService } from './ai-stream-recovery.service'
+import { AiStructuredOutputService } from './ai-structured-output.service'
 
 type PromptEvaluationProgressEvent = {
   stage?:
@@ -65,8 +66,6 @@ type PromptEvaluationProgressEvent = {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name)
-  private readonly jsonSchemaUnsupportedModels = new Set<string>()
-  private readonly jsonObjectUnsupportedModels = new Set<string>()
 
   /** 从模型输出中尽量提取 cases 数组（兼容 Markdown 代码块、前后缀说明文字） */
   private extractCaseRows(raw: string): any[] {
@@ -144,7 +143,7 @@ export class AiService {
             .map((x) => `- ${x}`)
             .join('\n')}`
         : ''
-      const { completion } = await this.createCaseCompletion(client, {
+      const { completion } = await this.aiStructuredOutput.createCaseCompletion(client, {
         model: modelId,
         messages: [
           {
@@ -224,19 +223,6 @@ export class AiService {
     this.aiStreamRecovery.writeData(res, { notice: text })
   }
 
-  private strictSchemaEnabled(): boolean {
-    const raw = String(this.config.get<string>('AI_STRICT_SCHEMA_OUTPUT') ?? 'true').toLowerCase()
-    return !['0', 'false', 'off', 'no'].includes(raw)
-  }
-
-  private structuredOutputFallbackNotice(): string {
-    return '当前模型网关不支持 json_schema 严格结构化输出，已回退兼容模式，并继续执行本地 schema 校验与自动修复。'
-  }
-
-  private jsonObjectFallbackNotice(): string {
-    return '当前模型网关不支持 response_format json_object，已改用 Prompt JSON 约束与本地解析/修复兼容模式。'
-  }
-
   private schemaRepairNotice(errors?: string[]): string {
     const detail = errors?.length ? `（${errors.slice(0, 4).join('；')}）` : ''
     return `AI 输出未完全符合严格用例 schema${detail}，已自动修复/规范化后入库。`
@@ -278,118 +264,6 @@ export class AiService {
     }
   }
 
-  private structuredOutputCacheKey(payload: Record<string, unknown>): string {
-    const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : 'unknown-model'
-    return model
-  }
-
-  private joinFallbackNotices(values: Array<string | undefined>): string | undefined {
-    const unique = [...new Set(values.filter((v): v is string => Boolean(v)))]
-    return unique.length > 0 ? unique.join(' ') : undefined
-  }
-
-  private async createJsonObjectCompatibleCompletion(
-    client: OpenAI,
-    payload: Record<string, unknown>,
-    context: string,
-  ): Promise<{ completion: any; fallbackNotice?: string }> {
-    const cacheKey = this.structuredOutputCacheKey(payload)
-    if (!this.jsonObjectUnsupportedModels.has(cacheKey)) {
-      try {
-        const completion = await client.chat.completions.create({
-          ...payload,
-          response_format: buildJsonObjectResponseFormat() as any,
-        } as any)
-        return { completion }
-      } catch (err) {
-        if (!isStructuredOutputUnsupportedError(err)) throw err
-        this.jsonObjectUnsupportedModels.add(cacheKey)
-        this.logger.warn(`${context} json_object 输出不可用，回退无 response_format: ${(err as Error).message}`)
-      }
-    }
-
-    const completion = await client.chat.completions.create({
-      ...payload,
-    } as any)
-    return {
-      completion,
-      fallbackNotice: this.jsonObjectFallbackNotice(),
-    }
-  }
-
-  private async createCaseCompletion(client: OpenAI, payload: Record<string, unknown>): Promise<{ completion: any; fallbackNotice?: string }> {
-    const cacheKey = this.structuredOutputCacheKey(payload)
-    const shouldTryStrictSchema = this.strictSchemaEnabled() && !this.jsonSchemaUnsupportedModels.has(cacheKey)
-    let discoveredUnsupported = false
-
-    if (shouldTryStrictSchema) {
-      try {
-        const completion = await client.chat.completions.create({
-          ...payload,
-          response_format: buildStrictCaseResponseFormat() as any,
-        } as any)
-        return { completion }
-      } catch (err) {
-        if (!isStructuredOutputUnsupportedError(err)) throw err
-        this.jsonSchemaUnsupportedModels.add(cacheKey)
-        discoveredUnsupported = true
-        this.logger.warn(`严格 json_schema 输出不可用，回退 json_object: ${(err as Error).message}`)
-      }
-    }
-
-    const { completion, fallbackNotice } = await this.createJsonObjectCompatibleCompletion(
-      client,
-      payload,
-      '用例生成',
-    )
-    return {
-      completion,
-      fallbackNotice: this.joinFallbackNotices([
-        discoveredUnsupported ? this.structuredOutputFallbackNotice() : undefined,
-        fallbackNotice,
-      ]),
-    }
-  }
-
-  private async createCaseStream(client: OpenAI, payload: Record<string, unknown>): Promise<{ stream: AsyncIterable<any>; fallbackNotice?: string }> {
-    if (this.strictSchemaEnabled()) {
-      try {
-        const stream = await client.chat.completions.create({
-          ...payload,
-          stream: true,
-          response_format: buildStrictCaseResponseFormat() as any,
-        } as any)
-        return { stream: stream as unknown as AsyncIterable<any> }
-      } catch (err) {
-        if (!isStructuredOutputUnsupportedError(err)) throw err
-        this.logger.warn(`流式严格 json_schema 输出不可用，回退普通流式: ${(err as Error).message}`)
-      }
-    }
-
-    try {
-      const stream = await client.chat.completions.create({
-        ...payload,
-        stream: true,
-        response_format: buildJsonObjectResponseFormat() as any,
-      } as any)
-      return {
-        stream: stream as unknown as AsyncIterable<any>,
-        fallbackNotice: this.structuredOutputFallbackNotice(),
-      }
-    } catch (err) {
-      if (!isStructuredOutputUnsupportedError(err)) throw err
-      this.logger.warn(`流式 json_object 输出不可用，回退无 response_format: ${(err as Error).message}`)
-      const stream = await client.chat.completions.create({
-        ...payload,
-        stream: true,
-      } as any)
-      return {
-        stream: stream as unknown as AsyncIterable<any>,
-        fallbackNotice: this.structuredOutputFallbackNotice(),
-      }
-    }
-  }
-
   private async rebuildTruncatedCaseJson(
     client: OpenAI,
     modelId: string,
@@ -410,7 +284,7 @@ export class AiService {
     while (shouldAttemptContinuation(lastFinishReason, attempts, maxAttempts)) {
       attempts += 1
       try {
-        const result = await this.createCaseCompletion(client, {
+        const result = await this.aiStructuredOutput.createCaseCompletion(client, {
           model: modelId,
           messages: [
             {
@@ -695,6 +569,7 @@ export class AiService {
     private config: ConfigService,
     private readonly multimodal: MultimodalService,
     private readonly reviews: ReviewsService,
+    private readonly aiStructuredOutput: AiStructuredOutputService,
     private readonly aiRuntimeQueue: AiRuntimeQueueService = new AiRuntimeQueueService(),
     private readonly aiStreamRecovery: AiStreamRecoveryService = new AiStreamRecoveryService(),
   ) {}
@@ -1528,7 +1403,7 @@ export class AiService {
         } as GenerateDto
         const { system, user, inputNotices } = this.buildPromptMessages(dto)
         warnings.push(...inputNotices)
-        const { completion, fallbackNotice } = await this.createCaseCompletion(opts.client, {
+        const { completion, fallbackNotice } = await this.aiStructuredOutput.createCaseCompletion(opts.client, {
           model: opts.modelId,
           messages: [
             { role: 'system', content: system },
@@ -1654,7 +1529,7 @@ export class AiService {
     localAnalysisSummary: string,
   ): Promise<PromptOptimizationDraft> {
     try {
-      const { completion, fallbackNotice } = await this.createJsonObjectCompatibleCompletion(client, {
+      const { completion, fallbackNotice } = await this.aiStructuredOutput.createJsonObjectCompatibleCompletion(client, {
         model: modelId,
         temperature: 0.2,
         max_tokens: this.effectiveMaxTokens(),
@@ -1989,7 +1864,7 @@ ${originalPrompt}
 
       const { system, user, inputNotices } = this.buildPromptMessages(dto, fileContent)
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
-      const { completion, fallbackNotice } = await this.createCaseCompletion(client, {
+      const { completion, fallbackNotice } = await this.aiStructuredOutput.createCaseCompletion(client, {
         model: modelId,
         messages: [
           { role: 'system', content: system },
@@ -2244,7 +2119,7 @@ ${originalPrompt}
       }
 
       const maxOut = this.effectiveMaxTokens(dto.maxTokens)
-      const { stream, fallbackNotice } = await this.createCaseStream(client, {
+      const { stream, fallbackNotice } = await this.aiStructuredOutput.createCaseStream(client, {
         model: modelId,
         messages: [
           { role: 'system', content: system },
