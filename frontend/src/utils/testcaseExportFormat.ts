@@ -17,10 +17,19 @@ export const TESTCASE_EXPORT_COLUMNS_CN = [
   '用例等级',
 ] as const
 
-/** 与后端 Excel 文件名一致：`YYYYMMDD_HHmm` */
+/** 与后端 Excel 文件名一致：`YYYYMMDD_HHmm`，固定按 Asia/Shanghai 输出，避免 CI/容器 UTC 漂移。 */
 export function exportFilenameTimestamp(d = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '00'
+  return `${value('year')}${value('month')}${value('day')}_${value('hour')}${value('minute')}`
 }
 
 export function formatStepsForExport(steps: TestStep[] | undefined): string {

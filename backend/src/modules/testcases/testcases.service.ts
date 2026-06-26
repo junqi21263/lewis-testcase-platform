@@ -19,13 +19,17 @@ const EXCEL_CASE_HEADERS = [
 ] as const
 
 function excelExportFilenameTimestamp(d = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const y = d.getFullYear()
-  const m = pad(d.getMonth() + 1)
-  const day = pad(d.getDate())
-  const h = pad(d.getHours())
-  const min = pad(d.getMinutes())
-  return `${y}${m}${day}_${h}${min}`
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '00'
+  return `${value('year')}${value('month')}${value('day')}_${value('hour')}${value('minute')}`
 }
 
 function formatStepsForExcel(steps: unknown): string {
