@@ -12,6 +12,10 @@ test.describe('SafeMermaidRenderer', () => {
     await expect(
       component.locator('button[title="点击放大查看流程图"] svg'),
     ).toBeVisible({ timeout: 10_000 })
+    await expect(component.locator('svg text')).toContainText(
+      ['提交(移动端, iOS)', '是否成功?', '失败(网络异常)'],
+      { timeout: 10_000 },
+    )
     await expect(component.getByText('流程图暂时无法渲染')).toHaveCount(0)
   })
 

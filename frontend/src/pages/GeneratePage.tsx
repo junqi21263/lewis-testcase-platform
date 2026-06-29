@@ -1096,7 +1096,13 @@ function GenerateResult({ cases, analysisPlan }: { cases: TestCase[]; analysisPl
 
   const displayCases = useMemo(() => filterPromptInstructionArtifactCases(cases), [cases])
   const hiddenArtifactCount = Math.max(0, cases.length - displayCases.length)
-  const canUseSuiteExport = Boolean(lastSuiteId) && hiddenArtifactCount === 0
+  const canUseSuiteExport =
+    Boolean(lastSuiteId)
+    && hiddenArtifactCount === 0
+    && !analysisPlan
+    && !query.trim()
+    && priorityFilter === 'ALL'
+    && typeFilter === 'ALL'
   const canExport = canUseSuiteExport || displayCases.length > 0
   const availableTypes = useMemo(() => Array.from(new Set(displayCases.map((c) => c.type))), [displayCases])
   const filteredCases = useMemo(() => {

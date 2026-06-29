@@ -4,6 +4,7 @@ import { ExportFormat, Prisma, TestCaseStatus } from '@prisma/client'
 import type { CreateTestCaseDto } from './dto/create-test-case.dto'
 import type { CreateSuiteDto, UpdateSuiteDto, UpdateTestCaseDto } from './dto/testcase-update.dto'
 import { extractModuleFromTags } from '../ai/parse-loose-ai-output.util'
+import { filterPromptInstructionArtifactCases } from '../ai/case-row-normalize.util'
 
 /** Excel 导出表头顺序（与业务约定一致） */
 const EXCEL_CASE_HEADERS = [
@@ -67,6 +68,13 @@ function tagsCellExcludingModulePrefix(tags: unknown): string {
 export class TestcasesService {
   constructor(private prisma: PrismaService) {}
 
+  private sanitizeSuiteCases<T extends { cases: any[] }>(suite: T): T {
+    return {
+      ...suite,
+      cases: filterPromptInstructionArtifactCases(suite.cases ?? []),
+    }
+  }
+
   private async getOwnedSuiteOrThrow(id: string, userId: string) {
     const suite = await this.prisma.testSuite.findFirst({
       where: { id, creatorId: userId },
@@ -122,7 +130,8 @@ export class TestcasesService {
   }
 
   async getSuiteById(id: string, userId: string) {
-    return this.getOwnedSuiteOrThrow(id, userId)
+    const suite = await this.getOwnedSuiteOrThrow(id, userId)
+    return this.sanitizeSuiteCases(suite)
   }
 
   async createSuite(userId: string, data: CreateSuiteDto) {
@@ -149,10 +158,11 @@ export class TestcasesService {
 
   async getCasesBySuiteId(suiteId: string, userId: string) {
     await this.getOwnedSuiteOrThrow(suiteId, userId)
-    return this.prisma.testCase.findMany({
+    const cases = await this.prisma.testCase.findMany({
       where: { suiteId },
       orderBy: { createdAt: 'asc' },
     })
+    return filterPromptInstructionArtifactCases(cases)
   }
 
   async updateCase(id: string, userId: string, data: UpdateTestCaseDto) {
@@ -206,7 +216,7 @@ export class TestcasesService {
     if (!allowed.includes(normalizedFormat as ExportFormat)) {
       throw new BadRequestException('不支持的导出格式')
     }
-    const suite = await this.getSuiteById(suiteId, userId)
+    const suite = this.sanitizeSuiteCases(await this.getOwnedSuiteOrThrow(suiteId, userId))
     let content: Buffer
     let filename: string
     let mimeType: string

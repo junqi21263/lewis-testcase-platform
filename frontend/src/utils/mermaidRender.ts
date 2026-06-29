@@ -1,6 +1,7 @@
 /**
  * 共享 Mermaid 初始化、源码规范化与渲染（页面预览 + PDF 导出共用）。
  */
+import type { MermaidConfig } from 'mermaid'
 
 export type MermaidThemeMode = 'light' | 'dark'
 
@@ -12,6 +13,43 @@ const FLOWCHART_EDGE = /(?:-->|---|-\.-|==>)/
 
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null
 let lastTheme: MermaidThemeMode | null = null
+
+export function buildMermaidInitConfig(theme: MermaidThemeMode): MermaidConfig {
+  const dark = theme === 'dark'
+  return {
+    startOnLoad: false,
+    suppressErrorRendering: true,
+    theme: dark ? 'dark' : 'base',
+    htmlLabels: false,
+    securityLevel: 'loose' as const,
+    fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+    themeVariables: dark
+      ? {
+          primaryColor: '#6366f1',
+          primaryTextColor: '#e2e8f0',
+          primaryBorderColor: '#4f46e5',
+          lineColor: '#64748b',
+          secondaryColor: '#1e293b',
+          tertiaryColor: '#0f172a',
+          background: '#111125',
+          mainBkg: '#1a1a2e',
+          nodeBorder: '#475569',
+          clusterBkg: '#1e293b',
+          titleColor: '#f1f5f9',
+          edgeLabelBackground: '#1e293b',
+        }
+      : {
+          fontFamily: 'sans-serif',
+          background: '#ffffff',
+          primaryColor: '#ffffff',
+          primaryTextColor: '#1e293b',
+          primaryBorderColor: '#cbd5e1',
+          lineColor: '#64748b',
+          secondaryColor: '#f8fafc',
+          tertiaryColor: '#f1f5f9',
+        },
+  }
+}
 
 const DEV = typeof import.meta !== 'undefined' && import.meta.env?.DEV
 
@@ -363,39 +401,7 @@ async function loadMermaid(theme: MermaidThemeMode) {
   lastTheme = theme
   mermaidReady = (async () => {
     const mermaid = (await import('mermaid')).default
-    const dark = theme === 'dark'
-    mermaid.initialize({
-      startOnLoad: false,
-      suppressErrorRendering: true,
-      theme: dark ? 'dark' : 'base',
-      securityLevel: 'loose',
-      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-      themeVariables: dark
-        ? {
-            primaryColor: '#6366f1',
-            primaryTextColor: '#e2e8f0',
-            primaryBorderColor: '#4f46e5',
-            lineColor: '#64748b',
-            secondaryColor: '#1e293b',
-            tertiaryColor: '#0f172a',
-            background: '#111125',
-            mainBkg: '#1a1a2e',
-            nodeBorder: '#475569',
-            clusterBkg: '#1e293b',
-            titleColor: '#f1f5f9',
-            edgeLabelBackground: '#1e293b',
-          }
-        : {
-            fontFamily: 'sans-serif',
-            background: '#ffffff',
-            primaryColor: '#ffffff',
-            primaryTextColor: '#1e293b',
-            primaryBorderColor: '#cbd5e1',
-            lineColor: '#64748b',
-            secondaryColor: '#f8fafc',
-            tertiaryColor: '#f1f5f9',
-          },
-    })
+    mermaid.initialize(buildMermaidInitConfig(theme))
     return mermaid
   })()
   return mermaidReady

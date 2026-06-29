@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildMermaidInitConfig,
   isMermaidErrorSvg,
   normalizeMermaidSource,
   prepareMermaidSvgForDownload,
@@ -69,5 +70,10 @@ flowchart TD
     expect(prepared).toContain('width="640"')
     expect(prepared).toContain('height="360"')
     expect(prepared).toContain('preserveAspectRatio="xMidYMid meet"')
+  })
+
+  it('disables htmlLabels so flowchart text stays inside pure svg nodes', () => {
+    expect(buildMermaidInitConfig('dark').htmlLabels).toBe(false)
+    expect(buildMermaidInitConfig('light').htmlLabels).toBe(false)
   })
 })

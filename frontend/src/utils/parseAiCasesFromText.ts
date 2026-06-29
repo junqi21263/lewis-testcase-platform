@@ -159,6 +159,8 @@ function stepsToArtifactText(raw: unknown): string {
 
 const PROMPT_INSTRUCTION_ARTIFACT_RE =
   /(所有用例必须|无重复场景|覆盖维度要求|颗粒度要求|步骤必须|一步一动作|禁止合并多个操作|输出格式|仅输出|顶层必须|字段不能缺失|JSON\s*schema|Prompt|提示词|模板规则|评测模式|批量数量规则|输出前自检|枚举约束)/i
+const JSON_FIELD_ARTIFACT_RE =
+  /["']?(cases|priority|riskLevel|type|precondition|expectedResult|steps|tags|module|requirementIds|testPathIds)["']?\s*:/i
 
 const GENERIC_SCAFFOLD_RE = [
   /测试账号具备.+访问权限/,
@@ -183,6 +185,7 @@ function isPromptInstructionArtifactCase(raw: unknown): boolean {
 
   return (
     PROMPT_INSTRUCTION_ARTIFACT_RE.test(title) ||
+    JSON_FIELD_ARTIFACT_RE.test(title) ||
     (/ai-closed-loop/.test(tags) && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText) && scaffoldHits >= 1) ||
     (/核心流程/.test(title) && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText) && scaffoldHits >= 1) ||
     (scaffoldHits >= 3 && PROMPT_INSTRUCTION_ARTIFACT_RE.test(allText))

@@ -456,8 +456,11 @@ describe('HTTP contract', () => {
     expect(badBody.message).toContain('文件内容与声明类型不一致')
 
     const goodForm = new FormData()
-    const pngHeader = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
-    goodForm.append('file', new File([pngHeader], 'ok.png', { type: 'image/png' }))
+    const onePixelPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0R8AAAAASUVORK5CYII=',
+      'base64',
+    )
+    goodForm.append('file', new File([onePixelPng], 'ok.png', { type: 'image/png' }))
     const good = await fetch(`${baseUrl}/files/upload`, {
       method: 'POST',
       headers: { Authorization: 'Bearer test-token' },
