@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Res, Header, Param, Query } from '@nestjs/common'
+import { Controller, Get, Post, Body, Res, Header, Param, Query, HttpCode } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger'
 import { Response } from 'express'
 import { AiService } from './ai.service'
@@ -39,6 +39,7 @@ export class AiController {
   }
 
   @Post('generate/stream')
+  @HttpCode(200)
   @ApiOperation({ summary: '流式生成测试用例（SSE）' })
   generateStream(
     @Body() dto: GenerateDto,
@@ -49,6 +50,7 @@ export class AiController {
   }
 
   @Post('analyze/stream')
+  @HttpCode(200)
   @ApiOperation({ summary: '需求分析专用流式（SSE，不走用例管线）' })
   analyzeStream(
     @Body() dto: CreateAnalysisDto,

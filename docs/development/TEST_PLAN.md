@@ -88,10 +88,10 @@ pnpm -C frontend test:ct
 
 | 编号 | 场景 | 验收点 | 自动化覆盖 |
 | --- | --- | --- | --- |
-| D1 | 模板列表缓存 | `TEMPLATES_LIST_CACHE_REDIS=1` 时走 Redis 缓存和 generation 失效 | `templates.service` 路径，建议补专用测试 |
+| D1 | 模板列表缓存 | `TEMPLATES_LIST_CACHE_REDIS=1` 时走 Redis 缓存和 generation 失效 | `backend/test/templates-list-cache.spec.ts` |
 | D2 | OCR Redis 缓存 | Redis 命中优先，本地 LRU 兜底 | `ocr-guardrails.spec.ts` |
 | D3 | 文件解析实时态 | Redis 进度覆盖 DB 状态，完成后清理 | `redis-runtime.spec.ts` |
-| D4 | AI 流式恢复 | Redis 保存分片，`/ai/streams/:recordId/snapshot` 可读 | `redis-runtime.spec.ts`，建议补 API 层测试 |
+| D4 | AI 流式恢复 | Redis 保存分片，`/ai/streams/:recordId/snapshot` 可读 | `backend/test/redis-runtime.spec.ts`、`backend/test/ai-stream-snapshot.spec.ts` |
 | D5 | 轻量队列 | `file-parse`、`ai-analysis`、`ai-generate`、`ai-cross-review` 可入队/出队 | `redis-runtime.spec.ts` |
 
 ## 安全测试重点
@@ -170,7 +170,7 @@ curl -fsSI http://139.199.69.115/ai-analysis | head -20
 | --- | --- | --- |
 | 真实模型 live 测试默认跳过 | 模型兼容性问题可能只在人工使用时发现 | 增加 `LIVE_AI_SMOKE=1` 夜间或手动触发 |
 | 固定流程图 PDF 夹具不足 | PDF 解析质量难量化对比 | 增加脱敏 2-3 页流程图 PDF fixture |
-| Redis API 层测试不足 | 仅测 service helper，未测 HTTP snapshot 接口 | 增加 `ai-stream-snapshot.spec.ts` |
+| Redis API 层测试不足 | 已补 `HTTP snapshot` 契约，但真实 Redis + HTTP 联动仍主要靠 smoke | 保留 `LIVE_AI_SMOKE=1` 的 VPS 验证 |
 | 依赖审计未纳入固定门禁 | 安全风险延后发现 | 每周运行 `pnpm audit` 并归档 |
 | 可观测性不足 | 长任务失败定位依赖日志 | 增加任务状态接口和前端任务面板 |
 
