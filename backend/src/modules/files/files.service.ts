@@ -842,7 +842,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private sanitizeParsedText(text: string): string {
-    return text.replace(/\u0000/g, '')
+    return text.split('\0').join('')
   }
 
   private enrichParsedContentWithFlowchart(
@@ -1565,9 +1565,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
     const results = new Array<R>(items.length)
     let nextIndex = 0
     const workerFn = async () => {
-      while (true) {
+      for (;;) {
         const idx = nextIndex++
-        if (idx >= items.length) break
+        if (idx >= items.length) return
         results[idx] = await worker(items[idx], idx)
       }
     }

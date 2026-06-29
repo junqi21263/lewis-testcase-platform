@@ -50,6 +50,21 @@ describe('analysisPageState', () => {
     expect(state.logs[0]?.text).toContain('流式快照恢复')
   })
 
+  it('switches to error state with a terminal error log when analysis fails', () => {
+    const state = pageReducer(initialPageState, {
+      type: 'ERROR',
+      log: {
+        id: 'log-error',
+        text: '分析失败：模型空输出',
+        timestamp: '10:12:00',
+      },
+    })
+
+    expect(state.status).toBe('error')
+    expect(state.logs.at(-1)?.text).toContain('分析失败')
+    expect(terminalLogStatusFromText(state.logs.at(-1)?.text ?? '')).toBe('error')
+  })
+
   it('maps terminal log semantics without relying on emoji', () => {
     expect(terminalLogStatusFromText('解析失败：模型空输出')).toBe('error')
     expect(terminalLogStatusFromText('文件上传成功，等待解析...')).toBe('pending')

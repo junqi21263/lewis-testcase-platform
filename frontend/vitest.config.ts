@@ -10,9 +10,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['allure-vitest/setup', './src/test/vitest-localstorage.ts'],
+    setupFiles: ['allure-vitest/setup', './src/test/vitest-localstorage.ts', './src/test/vitest-setup.ts'],
     reporters: ['default', 'allure-vitest/reporter'],
-    include: ['src/**/*.unit.test.ts', 'src/**/*.unit.test.tsx', 'src/**/*.dom.test.ts'],
+    include: ['src/**/*.unit.test.ts', 'src/**/*.unit.test.tsx', 'src/**/*.dom.test.ts', 'src/**/*.dom.test.tsx'],
     exclude: ['node_modules/**', 'src/__tests__/ct/**'],
     coverage: {
       provider: 'v8',

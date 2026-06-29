@@ -7,17 +7,25 @@ import { Controller, Get, Module } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import { Observable } from 'rxjs'
+import request from 'supertest'
 import { AuthController } from '@/modules/auth/auth.controller'
 import { AiController } from '@/modules/ai/ai.controller'
 import { FilesController } from '@/modules/files/files.controller'
+import { RecordsController } from '@/modules/records/records.controller'
+import { ReviewsController } from '@/modules/reviews/reviews.controller'
+import { SettingsController } from '@/modules/settings/settings.controller'
 import { AuthService } from '@/modules/auth/auth.service'
 import { CaptchaService } from '@/modules/auth/captcha.service'
 import { AiService } from '@/modules/ai/ai.service'
 import { AnalysisReportPdfService } from '@/modules/ai/analysis-report-pdf.service'
 import { FilesService } from '@/modules/files/files.service'
+import { RecordsService } from '@/modules/records/records.service'
+import { ReviewsService } from '@/modules/reviews/reviews.service'
+import { SettingsService } from '@/modules/settings/settings.service'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
 import { HttpExceptionFilter, AllExceptionsFilter } from '@/common/filters/http-exception.filter'
 import { ResponseInterceptor } from '@/common/interceptors/response.interceptor'
+import { RolesGuard } from '@/common/guards/roles.guard'
 import { assertUploadMagicNumber } from '@/modules/files/file-upload-validation.util'
 
 type JsonEnvelope<T> = {
@@ -50,23 +58,42 @@ class TestJwtGuard implements CanActivate {
       user?: Record<string, string>
     }>()
     const authorization = req.headers?.authorization ?? ''
-    if (authorization !== 'Bearer test-token') {
+    if (!authorization.startsWith('Bearer ')) {
       throw new UnauthorizedException('未授权，请先登录')
     }
+    const token = authorization.slice('Bearer '.length)
+    const role =
+      token === 'viewer-token'
+        ? 'VIEWER'
+        : token === 'member-token'
+          ? 'MEMBER'
+          : token === 'super-token'
+            ? 'SUPER_ADMIN'
+            : 'ADMIN'
     req.user = {
       id: 'u-1',
       username: 'tester',
-      role: 'ADMIN',
+      role,
       email: 'tester@example.com',
+      teamId: 'team-1',
     }
     return true
   }
 }
 
 @Module({
-  controllers: [AuthController, AiController, FilesController, TestHealthController],
+  controllers: [
+    AuthController,
+    AiController,
+    FilesController,
+    RecordsController,
+    ReviewsController,
+    SettingsController,
+    TestHealthController,
+  ],
   providers: [
     { provide: APP_GUARD, useClass: TestJwtGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     {
       provide: AuthService,
       useValue: {
@@ -155,6 +182,88 @@ class TestJwtGuard implements CanActivate {
         deleteFile: jest.fn(async () => ({ deleted: true })),
       },
     },
+    {
+      provide: RecordsService,
+      useValue: {
+        getPublicShareContent: jest.fn(async (token: string) => ({ token, recordId: 'record-1' })),
+        getTeamStats: jest.fn(async () => ({ total: 1 })),
+        compare: jest.fn(async () => ({ diff: [] })),
+        getSummary: jest.fn(async () => ({ total: 1 })),
+        getDistinctModels: jest.fn(async () => ['ark-code-latest']),
+        getMatchingIds: jest.fn(async (_user: unknown, q: Record<string, unknown>) => ({
+          ids: ['record-1'],
+          page: Number(q.page ?? 1),
+          pageSize: Number(q.pageSize ?? 20),
+        })),
+        batch: jest.fn(async (_user: unknown, ids: string[], action: string, tags?: string[]) => ({
+          affected: ids.length,
+          action,
+          tags: tags ?? [],
+        })),
+        getRecords: jest.fn(async (_user: unknown, q: Record<string, unknown>) => ({
+          list: [{ id: 'record-1', title: '支付流程', status: 'SUCCESS' }],
+          total: 1,
+          page: Number(q.page ?? 1),
+          pageSize: Number(q.pageSize ?? 20),
+        })),
+        listAuditLogs: jest.fn(async () => [{ id: 'audit-1' }]),
+        listDownloadsForRecord: jest.fn(async () => [{ id: 'download-1' }]),
+        exportRecord: jest.fn(async () => ({
+          content: Buffer.from('excel'),
+          filename: 'record.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })),
+        createShare: jest.fn(async () => ({ token: 'share-token' })),
+        patch: jest.fn(async (_id: string, _user: unknown, dto: unknown) => ({ updated: true, dto })),
+        getById: jest.fn(async () => ({ id: 'record-1', title: '支付流程' })),
+        restore: jest.fn(async () => ({ restored: true })),
+        permanentDelete: jest.fn(async () => ({ deleted: true })),
+        softDelete: jest.fn(async () => ({ deleted: true })),
+      },
+    },
+    {
+      provide: ReviewsService,
+      useValue: {
+        getWorkspace: jest.fn(async (recordId: string) => ({ recordId, cases: [] })),
+        getCaseDetail: jest.fn(async (recordId: string, caseId: string) => ({ recordId, caseId })),
+        saveCaseEdit: jest.fn(async (_recordId: string, _caseId: string, _user: unknown, body: unknown) => ({
+          saved: true,
+          body,
+        })),
+        updateReviewStatus: jest.fn(async () => ({ updated: true })),
+        batchUpdateReviewStatus: jest.fn(async (_recordId: string, _user: unknown, caseIds: string[]) => ({
+          affected: caseIds.length,
+        })),
+        importExecutionResults: jest.fn(async (_recordId: string, _user: unknown, body: unknown) => ({
+          imported: Array.isArray((body as { results?: unknown[] }).results)
+            ? (body as { results: unknown[] }).results.length
+            : 0,
+        })),
+        listVersions: jest.fn(async () => []),
+        getVersion: jest.fn(async (versionId: string) => ({ id: versionId })),
+        restoreVersion: jest.fn(async () => ({ restored: true })),
+        diffVersions: jest.fn(async () => ({ fields: [] })),
+        listComments: jest.fn(async () => []),
+        addComment: jest.fn(async (_recordId: string, _caseId: string, _user: unknown, content: string) => ({
+          content,
+        })),
+        bootstrapForRecordByRecordId: jest.fn(async () => ({ bootstrapped: true })),
+      },
+    },
+    {
+      provide: SettingsService,
+      useValue: {
+        getRuntimeHints: jest.fn(() => ({ maxUploadMb: 10, maxImages: 5 })),
+        getMultimodalConfig: jest.fn(() => ({ multimodalEnabled: true })),
+        updateMultimodalConfig: jest.fn(async (dto: unknown) => ({ updated: true, dto })),
+        listAiModelsAdmin: jest.fn(async () => [{ id: 'model-1', name: 'ark-code-latest' }]),
+        createAiModel: jest.fn(async (dto: unknown) => ({ id: 'model-1', dto })),
+        updateAiModel: jest.fn(async (_id: string, dto: unknown) => ({ updated: true, dto })),
+        archiveAiModel: jest.fn(async () => ({ archived: true })),
+        deleteAiModel: jest.fn(async () => ({ deleted: true })),
+        setDefaultAiModel: jest.fn(async () => ({ isDefault: true })),
+      },
+    },
   ],
 })
 class HttpContractTestModule {}
@@ -184,6 +293,9 @@ async function startApp() {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
     authService: moduleRef.get(AuthService) as jest.Mocked<AuthService>,
     filesService: moduleRef.get(FilesService) as jest.Mocked<FilesService>,
+    recordsService: moduleRef.get(RecordsService) as jest.Mocked<RecordsService>,
+    reviewsService: moduleRef.get(ReviewsService) as jest.Mocked<ReviewsService>,
+    settingsService: moduleRef.get(SettingsService) as jest.Mocked<SettingsService>,
   }
 }
 
@@ -201,6 +313,9 @@ describe('HTTP contract', () => {
   let baseUrl: string
   let authService: jest.Mocked<AuthService>
   let filesService: jest.Mocked<FilesService>
+  let recordsService: jest.Mocked<RecordsService>
+  let reviewsService: jest.Mocked<ReviewsService>
+  let settingsService: jest.Mocked<SettingsService>
 
   beforeAll(async () => {
     const started = await startApp()
@@ -208,6 +323,9 @@ describe('HTTP contract', () => {
     baseUrl = started.baseUrl
     authService = started.authService
     filesService = started.filesService
+    recordsService = started.recordsService
+    reviewsService = started.reviewsService
+    settingsService = started.settingsService
   })
 
   afterAll(async () => {
@@ -383,5 +501,149 @@ describe('HTTP contract', () => {
     })
     expect(analysis.response.status).toBe(400)
     expect(analysis.body?.message).toContain('additionalFileIds')
+  })
+
+  it('keeps records list on a stable HTTP/body contract and passes pagination through service', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/records')
+      .query({ page: 2, pageSize: 30, keyword: '支付' })
+      .set('Authorization', 'Bearer admin-token')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({
+      code: 0,
+      message: '查询成功',
+      data: {
+        total: 1,
+        page: 2,
+        pageSize: 30,
+      },
+    })
+    expect(recordsService.getRecords).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'ADMIN' }),
+      expect.objectContaining({ page: '2', pageSize: '30', keyword: '支付' }),
+    )
+  })
+
+  it('rejects non-whitelisted records batch payload fields before service execution', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/records/batch')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        ids: ['record-1'],
+        action: 'UPDATE_TAGS',
+        tags: ['支付'],
+        rogue: 'blocked',
+      })
+
+    expect(res.status).toBe(400)
+    expect(res.body.code).toBe(400)
+    expect(res.body.message).toContain('rogue')
+    expect(recordsService.batch).not.toHaveBeenCalled()
+  })
+
+  it('validates review edit dto and keeps success envelope on save', async () => {
+    const ok = await request(app.getHttpServer())
+      .patch('/reviews/records/record-1/cases/case-1')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        title: '登录成功-邮箱密码登录',
+        priority: 'P1',
+        type: 'FUNCTIONAL',
+        tags: ['登录', '邮箱'],
+        precondition: '用户已注册',
+        steps: [{ order: 1, action: '输入邮箱密码', expected: '页面接受输入' }],
+        expectedResults: ['登录成功'],
+        expectedResult: '进入工作台',
+      })
+
+    expect(ok.status).toBe(200)
+    expect(ok.body.code).toBe(0)
+    expect(reviewsService.saveCaseEdit).toHaveBeenCalledWith(
+      'record-1',
+      'case-1',
+      expect.objectContaining({ role: 'ADMIN' }),
+      expect.objectContaining({
+        title: '登录成功-邮箱密码登录',
+        tags: ['登录', '邮箱'],
+      }),
+    )
+
+    const bad = await request(app.getHttpServer())
+      .patch('/reviews/records/record-1/cases/case-1')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        title: '非法 payload',
+        priority: 'P1',
+        type: 'FUNCTIONAL',
+        tags: ['登录'],
+        steps: [{ order: 1, action: '输入', unexpected: 'x' }],
+        expectedResults: ['成功'],
+        expectedResult: '成功',
+      })
+
+    expect(bad.status).toBe(400)
+    expect(bad.body.message).toContain('unexpected')
+  })
+
+  it('rejects oversized reviews batch payloads before service and preserves error code', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/reviews/records/record-1/batch-status')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        caseIds: Array.from({ length: 101 }, (_, index) => `case-${index}`),
+        status: 'APPROVED',
+      })
+
+    expect(res.status).toBe(400)
+    expect(res.body.code).toBe(400)
+    expect(reviewsService.batchUpdateReviewStatus).not.toHaveBeenCalled()
+  })
+
+  it('enforces admin role on settings endpoints and transforms runtime dto values', async () => {
+    const forbidden = await request(app.getHttpServer())
+      .post('/settings/models')
+      .set('Authorization', 'Bearer viewer-token')
+      .send({
+        name: 'Viewer Model',
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'sk-test',
+      })
+
+    expect(forbidden.status).toBe(403)
+    expect(forbidden.body.code).toBe(403)
+
+    const runtime = await request(app.getHttpServer())
+      .patch('/settings/multimodal-config')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        multimodalEnabled: false,
+        maxConcurrentTasks: '4',
+      })
+
+    expect(runtime.status).toBe(200)
+    expect(runtime.body.code).toBe(0)
+    expect(settingsService.updateMultimodalConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ multimodalEnabled: false, maxConcurrentTasks: 4 }),
+      'u-1',
+      expect.any(String),
+    )
+
+    const invalidModel = await request(app.getHttpServer())
+      .post('/settings/models')
+      .set('Authorization', 'Bearer admin-token')
+      .send({
+        name: 'Ark',
+        provider: 'OpenAI',
+        modelId: 'ark-code-latest',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-test',
+        leakedField: 'blocked',
+      })
+
+    expect(invalidModel.status).toBe(400)
+    expect(invalidModel.body.message).toContain('leakedField')
   })
 })

@@ -79,7 +79,7 @@ export class ImagePreprocessService {
     const startQ = parseInt(this.config.get<string>('IMAGE_OCR_JPEG_QUALITY') || '80', 10)
     const maxBytes = parseInt(this.config.get<string>('IMAGE_OCR_MAX_OUTPUT_BYTES') || '512000', 10)
     const wCap = Number.isFinite(maxW) && maxW >= 640 ? Math.min(maxW, 8192) : 1920
-    let base = sharpMod(input).rotate().resize({
+    const base = sharpMod(input).rotate().resize({
       width: wCap,
       height: undefined,
       fit: 'inside',

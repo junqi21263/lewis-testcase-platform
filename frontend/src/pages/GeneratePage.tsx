@@ -261,7 +261,7 @@ function QualityReportPanel({ report }: { report: QualityReport | null }) {
   )
 }
 
-function GenerateHandoffSummaryCard({
+export function GenerateHandoffSummaryCard({
   plan,
   title,
   selectedRequirementIds,
@@ -314,7 +314,7 @@ function GenerateHandoffSummaryCard({
   )
 }
 
-function GenerateScopeSelector({
+export function GenerateScopeSelector({
   plan,
   selectedRequirementIds,
   selectedTestPathIds,
@@ -451,7 +451,7 @@ function GeneratedCoverageMatrix({
   )
 }
 
-function GenerateCoverageCommandCenter({
+export function GenerateCoverageCommandCenter({
   plan,
   cases,
   selectedRequirementIds,

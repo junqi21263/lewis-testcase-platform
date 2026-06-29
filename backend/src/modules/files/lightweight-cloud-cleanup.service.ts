@@ -184,7 +184,7 @@ export class LightweightCloudCleanupService implements OnModuleInit {
   }
 
   private trimDirKeepNewest(root: string, keep: number): void {
-    let entries: { mtime: number; full: string }[] = []
+    const entries: { mtime: number; full: string }[] = []
     try {
       for (const name of fs.readdirSync(root)) {
         const full = path.join(root, name)
