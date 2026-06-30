@@ -6,6 +6,7 @@ import type { CanActivate, ExecutionContext, INestApplication } from '@nestjs/co
 import { Controller, Get, Module } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
+import { readFileSync } from 'fs'
 import { Observable } from 'rxjs'
 import request from 'supertest'
 import { AuthController } from '@/modules/auth/auth.controller'
@@ -157,7 +158,11 @@ class TestJwtGuard implements CanActivate {
       provide: FilesService,
       useValue: {
         saveUploadedFile: jest.fn(async (file: Express.Multer.File) => {
-          const uploadBuffer = file.buffer?.length ? file.buffer : Buffer.from([])
+          const uploadBuffer = file.buffer?.length
+            ? file.buffer
+            : file.path?.trim()
+              ? readFileSync(file.path)
+              : Buffer.from([])
           assertUploadMagicNumber(uploadBuffer, file.originalname, file.mimetype)
           return {
             id: 'file-1',
